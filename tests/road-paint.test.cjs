@@ -321,6 +321,7 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
   const unary = (fn) => (a) => new TNode(() => arr(a).map(fn));
 
   const sandbox = {
+    EDE_DATA: null,
     Math,
     THREE: { MeshStandardNodeMaterial: class { constructor(o) { Object.assign(this, o); } } },
     _transparentEffectMRT: {},

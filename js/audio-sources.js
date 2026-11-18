@@ -1,4 +1,5 @@
 import { signalPhase, walkSignal } from './city-config.js';
+import { terrainHeightAt } from './terrain.js';
 
 const MOTOR_RANGE = 180;
 const SIREN_RANGE = 220;
@@ -14,16 +15,16 @@ function driveLoad(keys, speed, cyclist) {
   return Math.abs(throttle);
 }
 
-function helicopterVerticalSpeed(entity) {
+function helicopterVerticalSpeed(entity, height) {
   const speed = Number.isFinite(entity.verticalSpeed) ? entity.verticalSpeed : 0;
   // The controller clamps altitude without clearing its stored vertical velocity.
-  return (entity.position.y <= 0.25 && speed < 0) || (entity.position.y >= 380 && speed > 0) ? 0 : speed;
+  return (height <= 0.25 && speed < 0) || (entity.position.y >= 380 && speed > 0) ? 0 : speed;
 }
 
-function helicopterLoad(entity, keys, verticalSpeed) {
+function helicopterLoad(entity, keys, height, verticalSpeed) {
   const forward = unit(+keys.forward) || -unit(+keys.backward);
   const collective = unit(+keys.up) || -unit(+keys.down);
-  const grounded = entity.position.y <= 0.35 && verticalSpeed <= 0.03;
+  const grounded = height <= 0.35 && verticalSpeed <= 0.03;
   return unit((grounded ? 0.12 : 0.45)
     + 0.28 * Math.max(collective, 0) - 0.16 * Math.max(-collective, 0)
     + 0.15 * unit(verticalSpeed / 16) - 0.08 * unit(-verticalSpeed / 16)
@@ -145,7 +146,8 @@ class CityAudioSources {
     for (let i = 0; i < vehicles.length; i++) {
       const v = vehicles[i];
       if (!v.edge) continue;
-      const d2 = this.distanceSq(v.x, 0.7, v.z);
+      const y = v.y + 0.7;
+      const d2 = this.distanceSq(v.x, y, v.z);
       const range = v.isPolice ? SIREN_RANGE : MOTOR_RANGE;
       if (!Number.isFinite(d2) || d2 > range * range) continue;
       if (d2 <= MOTOR_RANGE * MOTOR_RANGE) {
@@ -153,7 +155,7 @@ class CityAudioSources {
       }
       const green = !v.edge.to.signal || signalPhase(elapsed, v.edge.axisIndex === 0) === 'green';
       const blocked = v.wait > 2 && v.speed < 0.5 && v.gap < 8 && v.leaderSpeed < 0.5 && green && !v.conn && !v.yielding;
-      this.motor(v, v.bus ? 'bus' : v.engine, v.x, 0.7, v.z,
+      this.motor(v, v.bus ? 'bus' : v.engine, v.x, y, v.z,
         v.speed, roadLoad(v.speed, v.acc, v.driver.a), v.yaw + v.yawOffset, !!v.isPolice, false, seedAt(seedOffset + i), blocked);
     }
   }
@@ -163,15 +165,19 @@ class CityAudioSources {
     this.motors.items.length = this.sirens.items.length = this.people.items.length = this.signals.items.length = 0;
     this.snapshot.traffic = 0;
     const active = this.controllers.getActiveEntity();
+    const activeGround = terrainHeightAt(active.position.x, active.position.z);
+    const activeHeight = active.position.y - activeGround;
+    const activeVerticalSpeed = active.type === 'helicopter' ? helicopterVerticalSpeed(active, activeHeight) : 0;
     const keys = this.controllers.keys;
-    this.snapshot.motion = active.type === 'person' ? active.rig.speed
-      : Math.hypot(active.speed, active.type === 'helicopter' ? helicopterVerticalSpeed(active) : 0);
+    this.snapshot.motion = active.type === 'person' ? active.rig.speed : Math.hypot(active.speed, activeVerticalSpeed);
 
     for (let i = 0; i < this.players.length; i++) {
       const entity = this.players[i];
-      if (entity.mesh.visible === false || entity.position.y < -0.05) continue;
+      if (entity.mesh.visible === false) continue;
       const { x, y, z } = entity.position;
       const player = entity === active;
+      const height = player ? activeHeight : y - terrainHeightAt(x, z);
+      if (height < -0.05) continue;
       if (entity.type === 'person') {
         const ground = this.controllers.getGroundHeight(x, z, 'person');
         const grounded = y <= ground + 0.03 && Math.abs(entity.verticalVel) < 0.1;
@@ -181,8 +187,8 @@ class CityAudioSources {
         if (!player && (entity.type === 'cyclist' || entity.type === 'cargobike')) continue;
         const kind = entity.type === 'car' ? 'sedan' : entity.type === 'cargobike' ? 'cyclist' : entity.type;
         const helicopter = kind === 'helicopter';
-        const verticalSpeed = player && helicopter ? helicopterVerticalSpeed(entity) : 0;
-        const load = player ? helicopter ? helicopterLoad(entity, keys, verticalSpeed) : driveLoad(keys, entity.speed, kind === 'cyclist') : 0;
+        const verticalSpeed = player && helicopter ? activeVerticalSpeed : 0;
+        const load = player ? helicopter ? helicopterLoad(entity, keys, height, verticalSpeed) : driveLoad(keys, entity.speed, kind === 'cyclist') : 0;
         const gain = player ? 1 : helicopter ? 0.22 : 0.5;
         const range = helicopter ? (player ? 500 : 200) : 160;
         this.motor(entity, kind, x, y + (helicopter ? 2.66 : 0.7), z, player ? entity.speed : 0, load, entity.heading,
@@ -207,9 +213,7 @@ class CityAudioSources {
     for (let i = 0; i < this.peds.length; i++) {
       const ped = this.peds[i];
       if (!ped.placed) continue;
-      const t = (ped.x - ped.ax) * ped.ux + (ped.z - ped.az) * ped.uz;
-      const y = ped.node && t > 2 && t < ped.len - 2 ? 0.012 : 0.22;
-      this.person(ped, ped.x, y, ped.z, ped.v, true, ped.rig);
+      this.person(ped, ped.x, ped.y, ped.z, ped.v, true, ped.rig);
     }
     for (let i = 0; i < this.signalSites.length; i++) {
       const site = this.signalSites[i];

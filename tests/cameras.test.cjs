@@ -43,7 +43,7 @@ function eventTarget() {
 function cameraHarness(entity = {
   position: new Vector3(0, 0, 100), heading: 0, speed: 0, type: 'car',
   chaseDistance: 6.9, chaseHeight: 2.12, cameraTargetOffset: new Vector3(0, 1, 0)
-}) {
+}, terrainHeightAt = () => 0) {
   const window = eventTarget();
   const document = { ...eventTarget(), hidden: false };
   const canvas = { ...eventTarget(), style: {} };
@@ -59,7 +59,11 @@ function cameraHarness(entity = {
   window.innerHeight = 900;
   const { CameraSystem } = loadModule(source, {
     globals: { window, document },
-    imports: { 'three/webgpu': { Vector3, PerspectiveCamera }, './city-config.js': { LANDMARK_SITES: { 'Station Ede Centrum': { x: -230, z: 305 } } } }
+    imports: {
+      'three/webgpu': { Vector3, PerspectiveCamera },
+      './city-config.js': { LANDMARK_SITES: { 'Station Ede Centrum': { x: -230, z: 305 } } },
+      './terrain.js': { terrainHeightAt }
+    }
   });
   const camera = new CameraSystem(canvas, { getActiveEntity: () => entity });
   return {
@@ -80,6 +84,33 @@ function cameraHarness(entity = {
 function close(actual, expected) {
   assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} should equal ${expected}`);
 }
+
+test('follow cameras clear higher ground at the camera position, including during smoothing', () => {
+  const terrainHeightAt = (x, z) => z < 98 ? 30 : 0;
+  const { camera, entity } = cameraHarness(undefined, terrainHeightAt);
+  entity.position.z = 108;
+  camera.update(1 / 60, 0);
+  camera.update(1 / 60, 0);
+  entity.position.z = 100;
+  camera.update(1 / 60, 0);
+  assert.ok(camera.currentPos.z < 98);
+  assert.ok(camera.currentPos.y >= 30.55);
+  camera.setCameraPreset('chase', true);
+  camera.update(1 / 60, 0);
+  close(camera.currentPos.y, 30.65);
+  camera.setCameraPreset('action', true);
+  camera.update(1 / 60, 0);
+  close(camera.currentPos.y, 30.55);
+});
+
+test('scenic camera and target offsets are relative to their own ground elevations', () => {
+  const terrainHeightAt = (x, z) => 20 + x * 0.025 + z * 0.05;
+  const { camera } = cameraHarness(undefined, terrainHeightAt);
+  camera.setCameraPreset('observatory', true);
+  camera.update(1 / 60, 0);
+  assert.deepEqual(camera.currentPos, new Vector3(-5, 145 + terrainHeightAt(-5, 490), 490));
+  assert.deepEqual(camera.currentLookAt, new Vector3(-230, 15 + terrainHeightAt(-230, 305), 305));
+});
 
 test('UI touches neither move nor release an active canvas orbit', () => {
   const h = cameraHarness();

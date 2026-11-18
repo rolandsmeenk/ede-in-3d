@@ -1,4 +1,5 @@
 import { blockAt } from './city-config.js';
+import { terrainHeightAt } from './terrain.js';
 import { createPedestrianRoutes } from './pedestrian-routes.js';
 import { PersonCrowd, PersonRig, PEDESTRIAN_DIVE_DURATION } from './pedestrians.js';
 
@@ -38,6 +39,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
       placed: false,
       crossesStreets: i % 6 === 0, // some start near crossings; everyone can use them along their route
       x: 0,
+      y: 0,
       z: 0,
       ax: 0, // track: start, direction, length; position along it and walking direction
       az: 0,
@@ -595,16 +597,18 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
   const SIDEWALK_Y = 0.22;
   const CROSSWALK_Y = 0.012;
   function pedGround(p, x, z) {
-    if (!p.node) return SIDEWALK_Y;
+    const ground = terrainHeightAt(x, z);
+    if (!p.node) return ground + SIDEWALK_Y;
     const t = (x - p.ax) * p.ux + (z - p.az) * p.uz;
-    return t > 2 && t < p.len - 2 ? CROSSWALK_Y : SIDEWALK_Y;
+    return ground + (t > 2 && t < p.len - 2 ? CROSSWALK_Y : SIDEWALK_Y);
   }
 
   // Visible people (and hidden ones within footstep/turn range) advance their gait; only those the camera may see
   // solve their bone transforms and are drawn, the far ones with the light LOD. Walkers also begin turning towards
   // the next leg of their route over its last metre so the body rounds corners instead of swinging about on the spot.
   function renderPed(p, dt) {
-    const draw = !hasView || visible(p.x, p.z, 7);
+    p.y = pedGround(p, p.x, p.z);
+    const draw = !hasView || visible(p.x, p.z, 7, p.y);
     const diveTime = clock - p.diveStart;
     const diving = diveTime < PEDESTRIAN_DIVE_DURATION;
     const dx = p.x - focusX, dz = p.z - focusZ;
@@ -638,7 +642,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
     focusX = x;
     focusZ = z;
     hasView = view;
-    pedRange = player.active && (activeMode === 'car' || activeMode === 'cyclist' || activeMode === 'cargobike') && player.entity.position.y > -1
+    pedRange = player.active && (activeMode === 'car' || activeMode === 'cyclist' || activeMode === 'cargobike') && player.height > -1
       ? Math.sqrt(player.vx * player.vx + player.vz * player.vz) * PED_LOOKAHEAD + player.halfL + 6 : 0;
 
     for (const n of walkedNodes) n.walkers.length = 0;

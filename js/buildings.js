@@ -47,6 +47,7 @@ import { fdrViaduct, pavedPlazaRects, parkTreeSites, sidewalkBlocks } from './ci
 import { edePoints, edeBounds, edePolygonGeometry, nearestEdeRoad, edeSpatialGroups, edeGeometryGroups } from './ede-geometry.js';
 import { createShopSigns } from './shop-signs.js';
 import { solidWallSpans } from './passages.js';
+import { terrainHeightAt } from './terrain.js';
 import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js';
 
 // Building massing follows each block's lots and frontage frames. Footprints combine non-overlapping boxes.
@@ -256,6 +257,7 @@ function buildCityBlocks(scene, { bag = false } = {}) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeCityBlocks' : 'ManhattanCityBlocks';
   const colliders = [];
+  const buildingGrounds = new Map();
 
   // Frame of the lots being populated. Irregular blocks come with frontage frames (city-config.js BLOCKS: lots laid
   // out along the streets they front, in a frame turned by θ about p); the generator works in the frame as on a grid
@@ -1986,6 +1988,8 @@ function buildCityBlocks(scene, { bag = false } = {}) {
       if (cx < ISLAND_BOUNDS.minX - 100 || cx > ISLAND_BOUNDS.maxX + 100 || cz < ISLAND_BOUNDS.minZ - 100 || cz > ISLAND_BOUNDS.maxZ + 100) continue;
       if (LANDMARK_EXCLUSIONS.some(r => cx > r.minX && cx < r.maxX && cz > r.minZ && cz < r.maxZ)) continue;
       if (Math.abs(signedArea(poly)) < 7) continue;
+      const ground = terrainHeightAt(cx, cz);
+      buildingGrounds.set(source, ground);
       const base = Math.max(0, source.minHeight || 0);
       const height = Math.max(base + 0.15, source.h || (source.levels || 6) * 3.4);
       const roofHeight = Math.max(0, Math.min(source.roofHeight || 0, height * 0.4));
@@ -2019,7 +2023,16 @@ function buildCityBlocks(scene, { bag = false } = {}) {
           const road = !updated && ringIndex === 0 && length > 6 && base < 0.5 ? nearestEdeRoad(x + nx * 3, z + nz * 3, 35) : null;
           const shop = !updated && road && road.distance < road.width / 2 + 13 && !['church', 'cathedral', 'school', 'university', 'civic'].includes(source.kind);
           const face = ringIndex ? WALL_KINDS.rear : shop ? WALL_KINDS.shop : WALL_KINDS.entry;
-          if (!bag) buckets[matIndex].push({ x, y: base + (eave - base) / 2 + 0.02, z, w: length + 0.06, h: eave - base, d: thickness,
+          let wallBottom = ground + base;
+          if (base === 0) {
+            // Extend the bottom of the wall to close any gap on the low side of the footprint.
+            const steps = Math.ceil(length / 4);
+            for (let j = 0; j <= steps; j++) {
+              wallBottom = Math.min(wallBottom, terrainHeightAt(a.x + dx * j / steps, a.z + dz * j / steps));
+            }
+          }
+          const wallTop = ground + eave;
+          if (!bag) buckets[matIndex].push({ x, y: (wallBottom + wallTop) / 2 + 0.02, z, w: length + 0.06, h: wallTop - wallBottom, d: thickness,
             ry, tone, facadeColour, facadeLevels: source.facadeLevels, faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, face, face] });
           if (base < 1) {
             // Walkways crossing the wall open a 2.8 m gap (passages and arcades), and so does a road running right along it; the rest stays solid
@@ -2030,17 +2043,17 @@ function buildCityBlocks(scene, { bag = false } = {}) {
               if (segLen < 0.2) continue;
               const sx = a.x + dx * (t0 + t1) / 2, sz = a.z + dz * (t0 + t1) / 2, hx = segLen / 2;
               const ex = Math.abs(cs) * hx + Math.abs(sn) * hz, ez = Math.abs(sn) * hx + Math.abs(cs) * hz;
-              colliders.push({ minX: sx - ex, maxX: sx + ex, minZ: sz - ez, maxZ: sz + ez, maxY: height,
+              colliders.push({ minX: sx - ex, maxX: sx + ex, minZ: sz - ez, maxZ: sz + ez, minY: wallBottom, maxY: ground + height,
                 obb: { cx: sx, cz: sz, hx, hz, cs, sn } });
             }
           }
           if (!bag && !modern && height > 7 && length > 1.5) {
-            detail.cornices.push({ x, z, y: eave, w: length + 0.2, h: 0.44, d: 0.85, ry });
-            if (height > 13) detail.cornices.push({ x, z, y: 4.4, w: length + 0.12, h: 0.22, d: 0.62, ry });
+            detail.cornices.push({ x, z, y: ground + eave, w: length + 0.2, h: 0.44, d: 0.85, ry });
+            if (height > 13) detail.cornices.push({ x, z, y: ground + 4.4, w: length + 0.12, h: 0.22, d: 0.62, ry });
           }
         }
       }
-      let roof = bag ? null : edePolygonGeometry(poly, holes, eave + 0.035);
+      let roof = bag ? null : edePolygonGeometry(poly, holes, ground + eave + 0.035);
       if (pitched && !bag) {
         // Hipped/gabled roof on a mapped quadrilateral, preserving every eave
         // corner; no guessed Manhattan towers or rooftop water tanks.
@@ -2050,9 +2063,9 @@ function buildCityBlocks(scene, { bag = false } = {}) {
         const inset = source.roofShape === 'gabled' ? 0 : 0.18;
         const left = { x: (p[0].x + p[3].x) / 2, z: (p[0].z + p[3].z) / 2 };
         const right = { x: (p[1].x + p[2].x) / 2, z: (p[1].z + p[2].z) / 2 };
-        const v = p.map(q => [q.x, eave + 0.03, q.z]);
-        v.push([left.x + (right.x - left.x) * inset, height + 0.03, left.z + (right.z - left.z) * inset]);
-        v.push([right.x + (left.x - right.x) * inset, height + 0.03, right.z + (left.z - right.z) * inset]);
+        const v = p.map(q => [q.x, ground + eave + 0.03, q.z]);
+        v.push([left.x + (right.x - left.x) * inset, ground + height + 0.03, left.z + (right.z - left.z) * inset]);
+        v.push([right.x + (left.x - right.x) * inset, ground + height + 0.03, right.z + (left.z - right.z) * inset]);
         const indices = [0, 4, 5, 0, 5, 1, 3, 2, 5, 3, 5, 4, 0, 3, 4, 1, 5, 2];
         const positions = [], uvs = [];
         for (const index of indices) { positions.push(...v[index]); uvs.push(v[index][0], v[index][2]); }
@@ -2062,7 +2075,7 @@ function buildCityBlocks(scene, { bag = false } = {}) {
       }
       if (roof) roofBuckets[Math.floor(tone * 3)].push(roof);
       if (!bag && !pitched && !holes.length && !source.part && height > 12 && rand() < 0.34) {
-        detail.hvacUnits.push({ x: cx, z: cz, y: height, w: 2.2, h: 0.85, d: 3.0, ry: 0 });
+        detail.hvacUnits.push({ x: cx, z: cz, y: ground + height, w: 2.2, h: 0.85, d: 3.0, ry: 0 });
       }
       quadtree.insert(detail); allBlocks.push(detail); built++;
     }
@@ -2643,7 +2656,7 @@ function buildCityBlocks(scene, { bag = false } = {}) {
   update(0, 62, true);
 
   if (EDE_DATA) {
-    const shopSigns = createShopSigns(EDE_DATA.buildings || []);
+    const shopSigns = createShopSigns(EDE_DATA.buildings || [], bag ? undefined : buildingGrounds);
     if (shopSigns) group.add(shopSigns);
   }
 

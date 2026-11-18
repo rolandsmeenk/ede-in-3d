@@ -30,6 +30,7 @@ import { PersonCrowd, PersonRig } from './pedestrians.js';
 import { HEADLIGHTS, createVehicleHeadlight, placeVehicleHeadlight } from './vehicle-lights.js';
 import { bryantParkLawn } from './landmarks.js';
 import { polygonContact } from './building-collision.js';
+import { terrainHeightAt } from './terrain.js';
 
 // js/controllers.js
 // Sculpted, non-blocky GTA 6-style 3D models, animations, and physics controllers
@@ -49,6 +50,27 @@ function spawnPosition(lateral, forward, y) {
   return new THREE.Vector3(SPAWN_X + lateral * cs + forward * sn, y, SPAWN_Z - lateral * sn + forward * cs);
 }
 const groundCollider = { type: 'ground' };
+
+function helicopterAltitude(x, z, y, clearance = 0.25) {
+  return Math.max(terrainHeightAt(x, z) + clearance, Math.min(380, y));
+}
+
+function placeEntityMesh(entity) {
+  const { mesh, position: { x, z }, heading, type } = entity;
+  mesh.position.copy(entity.position);
+  mesh.rotation.y = heading;
+  if (type !== 'car' && type !== 'cyclist' && type !== 'cargobike') return;
+  const sin = Math.sin(heading), cos = Math.cos(heading);
+  const halfLength = type === 'car' ? 1.38 : 0.72;
+  const halfWidth = type === 'car' ? 0.85 : 0.3;
+  const front = terrainHeightAt(x + sin * halfLength, z + cos * halfLength);
+  const back = terrainHeightAt(x - sin * halfLength, z - cos * halfLength);
+  const right = terrainHeightAt(x + cos * halfWidth, z - sin * halfWidth);
+  const left = terrainHeightAt(x - cos * halfWidth, z + sin * halfWidth);
+  mesh.rotation.order = 'YXZ';
+  mesh.rotation.x = -Math.atan2(front - back, 2 * halfLength);
+  mesh.rotation.z = Math.atan2(right - left, 2 * halfWidth);
+}
 
 const CAR_DRIVE = {
   speed: 36, reverseSpeed: 10.5, acceleration: 4.5,
@@ -432,7 +454,12 @@ class ThirdPersonControllerManager {
     };
 
     Object.values(this.entities).forEach((ent) => {
+      const { x, z } = ent.position;
+      ent.position.y = ent.type === 'helicopter'
+        ? helicopterAltitude(x, z, terrainHeightAt(x, z) + ent.position.y)
+        : this.getGroundHeight(x, z, ent.type);
       if (ent.mesh) {
+        placeEntityMesh(ent);
         ent.mesh.traverse((child) => {
           if (
             child.isMesh &&
@@ -564,13 +591,16 @@ class ThirdPersonControllerManager {
     this.resetInput();
     if (!Number.isFinite(heading)) heading = ent.heading;
     const heli = this.activeMode === 'helicopter';
-    const altitude = heli ? Math.max(0.25, Math.min(380, savedAltitude ?? Math.max(92, ent.position.y))) : 0;
-    const destination = this.findTeleportPosition(x, z, heading, altitude);
+    const altitude = savedAltitude ?? ent.position.y;
+    const clearance = savedAltitude == null ? 92 : 0.25;
+    const destination = this.findTeleportPosition(x, z, heading, altitude, clearance);
     if (destination) {
       ent.position.x = destination.x;
       ent.position.z = destination.z;
       ent.heading = heading;
-      ent.position.y = heli ? altitude : this.getGroundHeight(destination.x, destination.z, this.activeMode);
+      ent.position.y = heli
+        ? helicopterAltitude(destination.x, destination.z, altitude, clearance)
+        : this.getGroundHeight(destination.x, destination.z, this.activeMode);
     }
     ent.speed = 0;
     if (this.activeMode === 'person') {
@@ -604,14 +634,13 @@ class ThirdPersonControllerManager {
       ent.tiltPivot.rotation.x = ent.tiltPivot.rotation.z = 0;
       ent.tiltPivot.position.y = 0;
     }
-    ent.mesh.position.copy(ent.position);
-    ent.mesh.rotation.y = ent.heading;
+    placeEntityMesh(ent);
     return { x: ent.position.x, z: ent.position.z };
   }
 
   // Find a fully clear arrival before moving the player. Sequential collision pushes can leave a player trapped
   // between overlapping buildings, so test whole candidate footprints instead; retain the old position if none fits.
-  findTeleportPosition(x, z, heading, altitude) {
+  findTeleportPosition(x, z, heading, altitude, clearance = 0.25) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
     const heli = this.activeMode === 'helicopter';
     const radius = heli ? 4.5 : this.activeMode === 'person' ? 0.48 : 0.65;
@@ -642,7 +671,7 @@ class ThirdPersonControllerManager {
     const clear = (p) => {
       if (!p) return false;
       if (!heli && this.isUnbridgedWater(p.x, p.z)) return false;
-      const baseY = heli ? altitude : this.getGroundHeight(p.x, p.z, this.activeMode);
+      const baseY = heli ? helicopterAltitude(p.x, p.z, altitude, clearance) : this.getGroundHeight(p.x, p.z, this.activeMode);
       // Keep other player models out of both the arrival and its default chase view. A corridor also prevents a
       // parked car between camera and character from hiding the character even when the camera itself is outside it.
       const viewTop = baseY + Math.max(body[entity.type][1], cameraUp);
@@ -1656,20 +1685,21 @@ class ThirdPersonControllerManager {
   }
 
   getGroundHeight(x, z, mode = 'person') {
+    const y = terrainHeightAt(x, z);
     // Inside Central Park (5th Ave to Central Park West, 59th St to 110th St)
     const cp = CENTRAL_PARK_BOUNDS;
     if (x > cp.minX && x < cp.maxX && z > cp.minZ && z < cp.maxZ) {
-      return 0.22;
+      return y + 0.22;
     }
     // Inside Bryant Park's Great Lawn (west of the New York Public Library, 40th-42nd St)
     const lawn = bryantParkLawn;
     if (lawn && x > lawn.minX && x < lawn.maxX && z > lawn.minZ && z < lawn.maxZ) {
-      return lawn.top;
+      return y + lawn.top;
     }
     if (mode === 'person') {
-      return this.isPointOnSidewalk(x, z) ? ISLAND_BOUNDS.sidewalkHeight : 0.0;
+      return y + (this.isPointOnSidewalk(x, z) ? ISLAND_BOUNDS.sidewalkHeight : 0);
     }
-    return 0.0;
+    return y;
   }
 
   // Static colliders within `r` of (x, z), kept in their original order and indexed once into 48 m cells.
@@ -1710,7 +1740,13 @@ class ThirdPersonControllerManager {
     return out;
   }
 
-  resolveHorizontalCollision(pos, radius, carEntity = null, entity = carEntity) {
+  collisionHeight(pos, groundOffset) {
+    if (this.activeMode === 'helicopter') return helicopterAltitude(pos.x, pos.z, pos.y);
+    if (groundOffset === null) return pos.y;
+    return this.getGroundHeight(pos.x, pos.z, this.activeMode) + groundOffset;
+  }
+
+  resolveHorizontalCollision(pos, radius, carEntity = null, entity = carEntity, groundOffset = null) {
     // The detailed island (the helicopter may roam out over the harbour & the boroughs)
     const heli = this.activeMode === 'helicopter';
     if (!heli && this.isUnbridgedWater(pos.x, pos.z)) {
@@ -1745,10 +1781,11 @@ class ThirdPersonControllerManager {
     const reach = Math.max(extX, extZ) + 6;
     let gx = pos.x;
     let gz = pos.z;
+    let y = this.collisionHeight(pos, groundOffset);
     let near = this.nearColliders(gx, gz, reach);
     for (let i = 0; i < near.length; i++) {
       const c = near[i];
-      if (buildingContact(c, pos.x, pos.y, pos.z, body, contact)) {
+      if (buildingContact(c, pos.x, y, pos.z, body, contact)) {
         const { nx, nz, depth } = contact;
         pos.x += nx * depth;
         pos.z += nz * depth;
@@ -1760,7 +1797,7 @@ class ThirdPersonControllerManager {
           const support = body.oriented
             ? Math.abs(nx * cos - nz * sin) * body.hx + Math.abs(nx * sin + nz * cos) * body.hz
             : radius;
-          this.reportCollision(collisionEntity, c, 'building', pos.x - nx * support, pos.y + (heli ? 1.1 : 0.56), pos.z - nz * support,
+          this.reportCollision(collisionEntity, c, 'building', pos.x - nx * support, y + (heli ? 1.1 : 0.56), pos.z - nz * support,
             nx, 0, nz, approachSpeed);
         }
 
@@ -1795,6 +1832,7 @@ class ThirdPersonControllerManager {
           }
         }
 
+        y = this.collisionHeight(pos, groundOffset);
         // A push that carried it far from where the candidates were gathered (dropped inside a building): gather
         // them again around where it is now, carrying on in the same order
         if (Math.abs(pos.x - gx) > 5 || Math.abs(pos.z - gz) > 5) {
@@ -1898,6 +1936,8 @@ class ThirdPersonControllerManager {
       p.speed = walkSpeed;
       p.position.x += Math.sin(p.heading) * walkSpeed * dt;
       p.position.z += Math.cos(p.heading) * walkSpeed * dt;
+      p.position.y = this.getGroundHeight(p.position.x, p.position.z, 'person');
+      p.verticalVel = 0;
       if (p.position.z < -340) p.heading = 0;
       else if (p.position.z > 340) p.heading = Math.PI;
     }
@@ -1914,8 +1954,7 @@ class ThirdPersonControllerManager {
 
     for (const key of Object.keys(this.entities)) {
       const e = this.entities[key];
-      e.mesh.position.copy(e.position);
-      e.mesh.rotation.y = e.heading;
+      placeEntityMesh(e);
     }
 
     // Modulate clustered vehicle & bike lights by time of day (off during Midday & Golden Hour; fade in at Dusk & Night)
@@ -1952,20 +1991,21 @@ class ThirdPersonControllerManager {
     const acceleration = accelerating ? 5.5 * Math.abs(targetSpeed) / maxSpeed : 12;
     p.speed += Math.max(-acceleration * dt, Math.min(acceleration * dt, targetSpeed - p.speed));
 
+    let air = Math.max(0, p.position.y - this.getGroundHeight(p.position.x, p.position.z, 'person'));
     p.position.x += Math.sin(p.heading) * p.speed * dt;
     p.position.z += Math.cos(p.heading) * p.speed * dt;
-    this.resolveHorizontalCollision(p.position, 0.48);
+    this.resolveHorizontalCollision(p.position, 0.48, null, null, air);
 
-    const groundY = this.getGroundHeight(p.position.x, p.position.z, 'person');
-    if (this.keys.up && p.position.y <= groundY + 0.02) {
+    if (this.keys.up && air <= 0.02) {
       p.verticalVel = 5.2;
     }
     p.verticalVel -= 14.5 * dt;
-    p.position.y += p.verticalVel * dt;
-    if (p.position.y < groundY) {
-      p.position.y = groundY;
+    air += p.verticalVel * dt;
+    if (air < 0) {
+      air = 0;
       p.verticalVel = 0;
     }
+    p.position.y = this.getGroundHeight(p.position.x, p.position.z, 'person') + air;
   }
 
   updateCar(dt) {
@@ -2030,7 +2070,7 @@ class ThirdPersonControllerManager {
       c.vz = -nextSin * (slip + correction);
       c.position.x += (nextSin * c.speed + c.vx) * step;
       c.position.z += (nextCos * c.speed + c.vz) * step;
-      this.resolveHorizontalCollision(c.position, 1.35, c);
+      this.resolveHorizontalCollision(c.position, 1.35, c, c, 0);
 
       const targetPitch = -Math.max(-1, Math.min(1, acceleration / CAR_DRIVE.acceleration)) * 0.026;
       const targetRoll = Math.max(-0.09, Math.min(0.09, correction / step * 0.012));
@@ -2083,7 +2123,7 @@ class ThirdPersonControllerManager {
 
     b.position.x += Math.sin(b.heading) * b.speed * dt;
     b.position.z += Math.cos(b.heading) * b.speed * dt;
-    this.resolveHorizontalCollision(b.position, 0.65, null, b);
+    this.resolveHorizontalCollision(b.position, 0.65, null, b, 0);
     b.position.y = this.getGroundHeight(b.position.x, b.position.z, mode);
 
     const targetLean = -turnInput * Math.min(1.0, Math.abs(b.speed) / 9.0) * 0.34;
@@ -2158,11 +2198,12 @@ class ThirdPersonControllerManager {
     h.position.z += Math.cos(h.heading) * h.speed * dt;
     h.position.y += h.verticalSpeed * dt;
 
-    if (h.position.y < 0.25) {
-      this.reportCollision(h, groundCollider, 'ground', h.position.x, 0.25, h.position.z, 0, 1, 0, -h.verticalSpeed);
-    }
-    h.position.y = Math.max(0.25, Math.min(380, h.position.y));
     this.resolveHorizontalCollision(h.position, 4.5, null, h);
+    const y = helicopterAltitude(h.position.x, h.position.z, h.position.y);
+    if (h.position.y < y) {
+      this.reportCollision(h, groundCollider, 'ground', h.position.x, y, h.position.z, 0, 1, 0, -h.verticalSpeed);
+    }
+    h.position.y = y;
 
     const targetPitch = (h.speed / maxHorizSpeed) * 0.24;
     const targetRoll = -yawInput * 0.28;

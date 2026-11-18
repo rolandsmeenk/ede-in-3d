@@ -1964,7 +1964,7 @@ function createRoadPaintMaterial() {
     const inFront = step(0.05, min(edge.w, centre.w));
     return clamp(float(0.75).div(max(halfWidthPx, 0.001)), 1.0, 16.0).mul(inFront).max(1.0);
   })();
-  mat.positionNode = positionGeometry.add(sideOffset.mul(widen.sub(1.0)));
+  if (!EDE_DATA) mat.positionNode = positionGeometry.add(sideOffset.mul(widen.sub(1.0)));
 
   // Exact box filter of the dashes (on for `duty` of each period) over the pixel footprint
   const t = paint.x.div(paint.y);
@@ -1984,7 +1984,7 @@ function createRoadPaintMaterial() {
     });
     return w;
   })();
-  mat.opacityNode = dashes.mul(varying(float(1.0).div(widen))).mul(smoothstep(0.1, 0.6, wear).mul(0.4).add(0.55)).mul(distFade);
+  mat.opacityNode = dashes.mul(varying(float(1.0).div(EDE_DATA ? 1.0 : widen))).mul(smoothstep(0.1, 0.6, wear).mul(0.4).add(0.55)).mul(distFade);
 
   // Standing-water puddle mask is zero when uRoadWetness <= 0.1 (e.g. midday); evaluate once and share across channels
   const puddle = Fn(() => {

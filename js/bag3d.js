@@ -1,8 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { mx_noise_float, positionWorld, normalWorld, float, smoothstep, fract, step, vertexColor } from 'three/tsl';
+import { attribute, mx_noise_float, positionWorld, normalWorld, float, smoothstep, fract, step, vertexColor } from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GEO } from './nyc-geodata.js';
+import { terrainHeightAt } from './terrain.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
 // https://3dbag.nl — tiles are glTF with node matrices in ECEF (glTF axes: x = X, y = Z, z = -Y).
@@ -122,15 +123,28 @@ export function bakeTile(gltf, matrix) {
       else c.setHSL(0.08 + s * 0.05, 0.08, 0.40 + s * 0.15);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
-    // Keep BAG roof heights while seating every building on the simulator's flat ground.
+    // Use the low side of each footprint to seat the whole building without bending its roof.
+    const relativeHeights = new Float32Array(count);
+    const groundByBuilding = new Map();
+    for (let i = 0; i < count; i++) {
+      const seed = fid ? Math.round(fid.getX(i)) : 0, j = i * 3;
+      const relativeHeight = positions[j + 1] - baseByBuilding.get(seed);
+      relativeHeights[i] = relativeHeight;
+      // The ECEF-to-local transform tilts a level building base slightly at the map edges.
+      if (relativeHeight <= 0.25) {
+        const ground = terrainHeightAt(positions[j], positions[j + 2]) - relativeHeight;
+        groundByBuilding.set(seed, Math.min(groundByBuilding.get(seed) ?? Infinity, ground));
+      }
+    }
     for (let i = 0; i < count; i++) {
       const seed = fid ? Math.round(fid.getX(i)) : 0;
-      positions[i * 3 + 1] -= baseByBuilding.get(seed);
+      positions[i * 3 + 1] = relativeHeights[i] + groundByBuilding.get(seed);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    g.setAttribute('buildingHeight', new THREE.BufferAttribute(relativeHeights, 1));
     if (src.index) g.setIndex(src.index.array instanceof Uint32Array || count > 65535 ? new THREE.BufferAttribute(Uint32Array.from(src.index.array), 1) : new THREE.BufferAttribute(Uint16Array.from(src.index.array), 1));
     g.computeBoundingSphere(); g.computeBoundingBox();
     geometries.push(g);
@@ -144,8 +158,9 @@ function createMaterial() {
   const grain = mx_noise_float(positionWorld.mul(0.7)).mul(0.1).add(0.95);
   const wall = step(normalWorld.y.abs(), 0.35);
   const along = positionWorld.x.mul(normalWorld.z.abs()).add(positionWorld.z.mul(normalWorld.x.abs()));
-  const u = fract(along.div(3.1)), v = fract(positionWorld.y.sub(0.0).div(3.2));
-  const above = step(2.6, positionWorld.y);
+  const height = attribute('buildingHeight', 'float');
+  const u = fract(along.div(3.1)), v = fract(height.div(3.2));
+  const above = step(2.6, height);
   const win = smoothstep(0.18, 0.22, u).mul(smoothstep(0.82, 0.78, u)).mul(smoothstep(0.34, 0.38, v)).mul(smoothstep(0.82, 0.78, v));
   const glass = win.mul(wall).mul(above).mul(0.55);
   m.colorNode = vertexColor().mul(grain).mul(float(1).sub(glass));

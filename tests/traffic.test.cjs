@@ -202,6 +202,7 @@ function populationContext() {
     Math: Object.assign(Object.create(Math), { random: () => 0.5 }),
     clamp: (x, lo, hi) => Math.max(lo, Math.min(hi, x)),
     hasView: true, camX: 0, camY: 10, camZ: 0, visible: () => true,
+    terrainHeightAt: () => 0,
     focusX: 0, focusZ: 0, player: { active: false },
     clock: 0,
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
@@ -216,6 +217,18 @@ function populationContext() {
 function straightEdge(z, len = 20) {
   return { sx: 0, sz: z, dx: 0, dz: 1, rx: -1, rz: 0, len, lanes: [0], occ: [[]] };
 }
+
+test('frustum and spawn protection use the elevation of the actor', () => {
+  const context = populationContext();
+  context.camY = 30;
+  context.terrainHeightAt = () => 30;
+  context.frustum = { planes: Array(4).fill({ normal: { x: 0, y: 1, z: 0 }, constant: -25 }) };
+  context.visible = trafficFunction('visible', context);
+  assert.equal(context.visible(0, 0, 2, 0), false);
+  assert.equal(context.visible(0, 0, 2, 30), true);
+  assert.equal(context.nearView(0, 4, 2, 5), true);
+  assert.equal(context.nearView(0, 6, 2, 5), false);
+});
 
 test('cars replenish the road ahead while nearby visible spawning stays blocked', () => {
   const context = populationContext();

@@ -2,6 +2,7 @@ import { createSynthResources, createMotorVoice, setControlRate } from './audio-
 import { createEventResources, playEvent, createWindVoice } from './audio-events.js';
 import { CityAudioSources } from './audio-sources.js';
 import { CityAcoustics } from './audio-acoustics.js';
+import { terrainHeightAt } from './terrain.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (param, value, now, time = 0.035, immediate = false) => {
@@ -366,7 +367,8 @@ class CityAudioSystem {
     if (vehicle && separated && now - contact.horn > 1.5) {
       // anything involving a cyclist rings a bell instead of sounding a horn
       const cyclist = vehicle.bike || player?.type === 'cyclist' || player?.type === 'cargobike';
-      honked = this.emit(cyclist ? 'bell' : 'horn', { id: vehicle, x: vehicle.x, y: 0.7, z: vehicle.z,
+      const y = terrainHeightAt(vehicle.x, vehicle.z) + 0.7;
+      honked = this.emit(cyclist ? 'bell' : 'horn', { id: vehicle, x: vehicle.x, y, z: vehicle.z,
         heading: vehicle.yaw + vehicle.yawOffset, seed: ++this.collisionSequence },
       { intensity: 0.8, when: now + 0.12, priority: true });
       if (honked) contact.horn = this.lastHorn = now;
@@ -439,6 +441,7 @@ class CityAudioSystem {
         else if ((event.kind === 'horn' || event.kind === 'bell') && event.id.edge) {
           // Collision horns can belong to traffic outside the nearest motor voices.
           event.position.x = event.id.x;
+          event.position.y = event.id.y + 0.7;
           event.position.z = event.id.z;
           event.position.heading = event.id.yaw + event.id.yawOffset;
         }
@@ -500,7 +503,7 @@ class CityAudioSystem {
         }
       }
     }
-    Object.assign(this.windParams, { speed: Math.min(sources.motion, 50), altitude: position.y, traffic: sources.traffic, night: night ? 1 : 0, enclosure });
+    Object.assign(this.windParams, { speed: Math.min(sources.motion, 50), altitude: Math.max(0, position.y - terrainHeightAt(position.x, position.z)), traffic: sources.traffic, night: night ? 1 : 0, enclosure });
     this.wind.update(this.windParams, now);
   }
 

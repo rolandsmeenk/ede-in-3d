@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, float, color, positionWorld, uniform, mod, fract, step, smoothstep, mix } from 'three/tsl';
+import { Fn, float, color, positionGeometry, uniform, mod, fract, step, smoothstep, mix } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   AVENUES,
@@ -22,6 +22,7 @@ import { createFoodCartParts } from './street-props.js';
 import { pavedPlazaRects, centralParkClearings, parkTreeSites, sidewalkBlocks, parkLampSites, edeStreetSites } from './city-grid.js';
 import { bryantParkLawn } from './landmarks.js';
 import { nearestEdeRoad } from './ede-geometry.js';
+import { terrainHeightAt } from './terrain.js';
 
 // Instanced street furniture, traffic signals, trees and nearby light pools.
 
@@ -54,9 +55,9 @@ function createTrafficSignalLensMaterial(isAvenueHead, clock) {
   const mat = new THREE.MeshBasicNodeMaterial();
   mat.colorNode = Fn(() => {
     const t = mod(clock, cycle);
-    const wy = positionWorld.y;
-    const isTopRed = step(5.60, wy);
-    const isBottomGreen = float(1.0).sub(step(5.24, wy));
+    const y = positionGeometry.y;
+    const isTopRed = step(0.18, y);
+    const isBottomGreen = float(1.0).sub(step(-0.18, y));
     const isMidAmber = float(1.0).sub(isTopRed).mul(float(1.0).sub(isBottomGreen));
 
     // Avenue phase: Green, then Amber from avenueAmber, Red from avenueRed
@@ -143,7 +144,7 @@ function buildStreetDetails(scene, colliders = []) {
 
   // 12-inch three-section signal head (origin at its centre, y = 5.42): yellow housing, a tunnel visor over each lens
   // and a hanger to the mast arm, lenses on both faces (+-z) so it reads from both approaches; the lens material
-  // picks red / amber / green from each lens's world height (5.78 / 5.42 / 5.06)
+  // picks red / amber / green from each lens's height relative to the housing
   const HEAD_W = 0.4;
   const HEAD_H = 1.12;
   const HEAD_D = 0.28;
@@ -502,15 +503,16 @@ function buildStreetDetails(scene, colliders = []) {
       if (waterAt(s.x, s.z) && !s.road.bridge) continue;
       const block = blockAt(s.x, s.z);
       if (block && !block.sidewalk && !block.id?.toString().startsWith('sidewalk') && block.source && !block.park) continue;
-      setMatrix(poleMatrices, s.x, 4.1, s.z, 0.11, 8.2, 0.11);
+      const ground = terrainHeightAt(s.x, s.z);
+      setMatrix(poleMatrices, s.x, ground + 4.1, s.z, 0.11, 8.2, 0.11);
       const yaw = Math.atan2(-s.nz, s.nx);
-      setMatrix(armMatrices, s.x + s.nx * 1.1, 8.08, s.z + s.nz * 1.1, 2.2, 0.085, 0.085, yaw);
-      setMatrix(lampHeadMatrices, s.x + s.nx * 2.1, 8.1, s.z + s.nz * 2.1, 1, 1, 1, yaw);
-      cobraLampSites.push({ x: s.x + s.nx * 2.1, y: 8.04, z: s.z + s.nz * 2.1, tx: s.x + s.nx * 3.5, tz: s.z + s.nz * 3.5 });
+      setMatrix(armMatrices, s.x + s.nx * 1.1, ground + 8.08, s.z + s.nz * 1.1, 2.2, 0.085, 0.085, yaw);
+      setMatrix(lampHeadMatrices, s.x + s.nx * 2.1, ground + 8.1, s.z + s.nz * 2.1, 1, 1, 1, yaw);
+      cobraLampSites.push({ x: s.x + s.nx * 2.1, y: ground + 8.04, z: s.z + s.nz * 2.1, tx: s.x + s.nx * 3.5, tz: s.z + s.nz * 3.5 });
       addPole(s.x, s.z, 0.11);
       if (s.name && i % 4 === 0 && (edeSignMatrices.has(s.name) || edeSignMatrices.size < 70 || centreStreetSigns.has(s.name))) {
         if (!edeSignMatrices.has(s.name)) edeSignMatrices.set(s.name, []);
-        setMatrix(edeSignMatrices.get(s.name), s.x, 3.25, s.z, 1.8, 0.33, 0.055, -Math.atan2(s.uz, s.ux));
+        setMatrix(edeSignMatrices.get(s.name), s.x, ground + 3.25, s.z, 1.8, 0.33, 0.055, -Math.atan2(s.uz, s.ux));
       }
     }
     const signalKeys = new Set();
@@ -524,11 +526,12 @@ function buildStreetDetails(scene, colliders = []) {
       if (signalKeys.has(key)) continue;
       signalKeys.add(key);
       const yaw = Math.atan2(road.ux, road.uz), isAvenue = Math.abs(road.uz) >= Math.abs(road.ux);
-      setMatrix(poleMatrices, x, 3.0, z, 0.09, 6, 0.09);
-      setMatrix(yellowBoxMatrices, x, 5.42, z, 1, 1, 1, yaw);
-      setMatrix(isAvenue ? aveLensMatrices : streetLensMatrices, x, 5.42, z, 1, 1, 1, yaw);
-      setMatrix(walkBoxMatrices, x, 2.7, z, 1, 1, 1, yaw + Math.PI / 2);
-      audioSignals.push({ x, y: 2.7, z, isAvenue });
+      const ground = terrainHeightAt(x, z);
+      setMatrix(poleMatrices, x, ground + 3.0, z, 0.09, 6, 0.09);
+      setMatrix(yellowBoxMatrices, x, ground + 5.42, z, 1, 1, 1, yaw);
+      setMatrix(isAvenue ? aveLensMatrices : streetLensMatrices, x, ground + 5.42, z, 1, 1, 1, yaw);
+      setMatrix(walkBoxMatrices, x, ground + 2.7, z, 1, 1, 1, yaw + Math.PI / 2);
+      audioSignals.push({ x, y: ground + 2.7, z, isAvenue });
     }
   }
 
@@ -587,7 +590,7 @@ function buildStreetDetails(scene, colliders = []) {
   for (const cs of canyonShafts) {
     const shaft = new THREE.Mesh(godRayGeo, godRayMat);
     const at = fromOldFrame(cs.x, cs.z); // (authored on the former compressed grid)
-    shaft.position.set(at.x, cs.y, at.z);
+    shaft.position.set(at.x, terrainHeightAt(at.x, at.z) + cs.y, at.z);
     shaft.rotation.set(0.12, cs.rotY, cs.rotZ);
     group.add(shaft);
   }
@@ -778,9 +781,10 @@ function buildStreetDetails(scene, colliders = []) {
     const site = findPropSite(raw.x, raw.z, 3.5, 3.5);
     if (!site) continue;
     const { x, z } = site;
-    cartMatrices.push(new THREE.Matrix4().makeTranslation(x, 0, z));
+    const ground = terrainHeightAt(x, z);
+    cartMatrices.push(new THREE.Matrix4().makeTranslation(x, ground, z));
     addFootprint(x, z, 1.5, 2.2);
-    streetPointSites.push({ x, y: 2.15, z, color: 0xffdf9e, intensity: 28, dist: 9.5 });
+    streetPointSites.push({ x, y: ground + 2.15, z, color: 0xffdf9e, intensity: 28, dist: 9.5 });
   }
   for (const part of createFoodCartParts()) {
     addMatrixArrayInstanced(part.geometry, part.material, cartMatrices, part.castShadow);
@@ -824,7 +828,7 @@ function buildStreetDetails(scene, colliders = []) {
   const mailboxInst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.65, 1.25, 0.65), uspsMat, Math.max(1, mailboxPositions.length));
   mailboxInst.count = mailboxPositions.length;
   mailboxPositions.forEach(([mx, mz], i) => {
-    dummy.position.set(mx, 0.84, mz);
+    dummy.position.set(mx, terrainHeightAt(mx, mz) + 0.84, mz);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     mailboxInst.setMatrixAt(i, dummy.matrix);
@@ -1185,7 +1189,7 @@ function buildStreetDetails(scene, colliders = []) {
       const fade = smoothFade(s._effDist, cobraCutoff * 0.62, cobraCutoff);
       const spot = streetlightSpotPool[i];
       spot.position.set(s.x, s.y, s.z);
-      spot.target.position.set(s.tx, 0.0, s.tz);
+      spot.target.position.set(s.tx, terrainHeightAt(s.tx, s.tz), s.tz);
       spot.target.updateMatrixWorld();
       spot.intensity = 88.0 * lampScale * fade;
     }

@@ -3,6 +3,7 @@
 import * as THREE from 'three/webgpu';
 import { EDE_SHOPS } from './ede-shops.js';
 import { waterAt } from './city-config.js';
+import { terrainHeightAt } from './terrain.js';
 
 const CELL_W = 256, CELL_H = 40, COLS = 8, MAX_NAMES = 800;
 const MAX_WALL_DISTANCE = 25, MIN_WALL_LENGTH = 3, SIGN_Y = 3.4, MIN_SPACING = 2.5;
@@ -32,7 +33,7 @@ function nearestWall(rings, x, z) {
       if (len < MIN_WALL_LENGTH) continue;
       const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (len * len)));
       const d = Math.hypot(x - (ax + dx * t), z - (az + dz * t));
-      if (d < MAX_WALL_DISTANCE && (!best || d < best.d)) best = { d, ax, az, dx, dz, len, t, dir: r.dir };
+      if (d < MAX_WALL_DISTANCE && (!best || d < best.d)) best = { d, ax, az, dx, dz, len, t, dir: r.dir, ground: r.ground };
     }
   }
   return best;
@@ -67,7 +68,7 @@ function drawAtlas(names) {
   return { tex, rows };
 }
 
-export function createShopSigns(buildings) {
+export function createShopSigns(buildings, buildingGrounds) {
   const rings = [];
   for (const b of buildings) {
     if (!b.ring || b.ring.length < 6 || b.part) continue;
@@ -79,7 +80,7 @@ export function createShopSigns(buildings) {
       minX = Math.min(minX, r[i]); maxX = Math.max(maxX, r[i]);
       minZ = Math.min(minZ, r[i + 1]); maxZ = Math.max(maxZ, r[i + 1]);
     }
-    rings.push({ pts: r, minX, maxX, minZ, maxZ, dir: Math.sign(area) || 1 });
+    rings.push({ pts: r, minX, maxX, minZ, maxZ, dir: Math.sign(area) || 1, ground: buildingGrounds?.get(b) });
   }
 
   // Names that occur most often get atlas cells first.
@@ -105,12 +106,13 @@ export function createShopSigns(buildings) {
     if (placed.some((p) => Math.hypot(p[0] - cx, p[1] - cz) < MIN_SPACING)) continue;
     if (waterAt(cx, cz) || waterAt(cx + nx * 1.5, cz + nz * 1.5)) continue;
     placed.push([cx, cz]);
+    const y = (wall.ground ?? terrainHeightAt(cx, cz)) + SIGN_Y;
     const tx = nz, tz = -nx; // along the wall, so that tangent x up = outward normal
     const u0 = (cell % COLS) / COLS, u1 = u0 + 1 / COLS;
     const v1 = 1 - Math.floor(cell / COLS) / rows, v0 = v1 - 1 / rows;
     const base = positions.length / 3;
     for (const [s, up] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      positions.push(cx + tx * s * w / 2, SIGN_Y + up * h / 2, cz + tz * s * w / 2);
+      positions.push(cx + tx * s * w / 2, y + up * h / 2, cz + tz * s * w / 2);
     }
     uvs.push(u0, v0, u1, v0, u1, v1, u0, v1);
     indices.push(base, base + 1, base + 2, base, base + 2, base + 3);

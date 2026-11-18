@@ -20,7 +20,7 @@ function eventTarget() {
   };
 }
 
-function keyboardHarness(nyc = {}) {
+function keyboardHarness(nyc = {}, terrainHeightAt = () => 0) {
   const window = eventTarget();
   const document = { ...eventTarget(), hidden: false };
   const config = {
@@ -39,7 +39,8 @@ function keyboardHarness(nyc = {}) {
       './pedestrians.js': {},
       './vehicle-lights.js': {},
       './landmarks.js': {},
-      './building-collision.js': polygonCollision
+      './building-collision.js': polygonCollision,
+      './terrain.js': { terrainHeightAt }
     }
   });
   // Exercise the production event handlers without constructing the scene's 3D models.
@@ -450,13 +451,13 @@ test('car turning, handbraking and impact recovery agree across display rates', 
   }
 });
 
-function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eastX: 500 })) {
+function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eastX: 500 }), terrainHeightAt) {
   const harness = keyboardHarness({
     ISLAND_BOUNDS: { minX: -500, maxX: 500, minZ: -500, maxZ: 500, sidewalkHeight: 0.22 },
     CENTRAL_PARK_BOUNDS: { minX: 1000, maxX: 1100, minZ: 1000, maxZ: 1100 },
     getIslandBoundsAtZ: shore,
     blockAt: () => null
-  });
+  }, terrainHeightAt);
   const { controller } = harness;
   const position = (x = 0, y = 0, z = 0) => ({ x, y, z, copy(p) { this.x = p.x; this.y = p.y; this.z = p.z; } });
   const pivot = () => ({ position: position(), rotation: { x: 0.1, y: 0, z: -0.2 } });
@@ -480,9 +481,76 @@ function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eas
   controller.entities = { [mode]: ent };
   controller.colliders = colliders;
   controller._colliderCells = null;
-  controller.getGroundHeight = (x, z, mode) => mode === 'person' ? (x < 0 ? 1.24 : 0.22) : 0;
+  const getGroundHeight = controller.getGroundHeight.bind(controller);
+  controller.getGroundHeight = (x, z, mode = 'person') => getGroundHeight(x, z, mode) + (mode === 'person' ? (x < 0 ? 1.24 : 0.22) : 0);
   return { ...harness, ent };
 }
+
+for (const mode of ['person', 'car', 'cyclist', 'cargobike']) {
+  test(`${mode} follows the terrain downhill after teleporting`, () => {
+    const terrainHeightAt = (x, z) => 30 - z * 0.5;
+    const { controller, ent } = teleportHarness(mode, [], undefined, terrainHeightAt);
+    const offset = mode === 'person' ? 0.22 : 0;
+    assert.deepEqual({ ...controller.teleportActiveTo(30, 20, 0) }, { x: 30, z: 20 });
+    assert.equal(ent.position.y, terrainHeightAt(30, 20) + offset);
+    ent.speed = 4;
+    controller.keys.forward = true;
+    if (mode === 'car') controller.updateCar(0.1);
+    else if (mode === 'person') controller.updatePerson(0.1);
+    else controller.updateCyclist(0.1, ent, mode);
+    assert.equal(ent.position.x, 30);
+    assert.equal(ent.heading, 0);
+    assert.ok(ent.position.z > 20);
+    assert.equal(ent.position.y, terrainHeightAt(ent.position.x, ent.position.z) + offset);
+  });
+}
+
+test('pedestrian jumps keep the same height above uphill and downhill terrain', () => {
+  function jump(slope) {
+    const terrainHeightAt = (x, z) => 20 + (z - 20) * slope;
+    const { controller, ent } = teleportHarness('person', [], undefined, terrainHeightAt);
+    controller.teleportActiveTo(30, 20, 0);
+    ent.speed = 5;
+    controller.keys.forward = true;
+    controller.keys.up = true;
+    const trail = [];
+    for (let i = 0; i < 12; i++) {
+      controller.updatePerson(0.1);
+      controller.keys.up = false;
+      const air = ent.position.y - controller.getGroundHeight(ent.position.x, ent.position.z);
+      trail.push(Math.round(air * 1000));
+    }
+    return trail;
+  }
+  const flat = jump(0);
+  assert.ok(flat.some(y => y > 500));
+  assert.equal(flat.at(-1), 0);
+  assert.deepEqual(jump(-0.5), flat);
+  assert.deepEqual(jump(0.5), flat);
+});
+
+test('helicopter uses local ground for landing and preserves saved world altitude in flight', () => {
+  const terrainHeightAt = (x) => x < 0 ? -8 : 25;
+  const { controller, ent } = teleportHarness('helicopter', [
+    { minX: 0, maxX: 20, minZ: 0, maxZ: 20, minY: 25, maxY: 30 }
+  ], undefined, terrainHeightAt);
+  controller.teleportActiveTo(-30, 35, 0, -3);
+  assert.equal(ent.position.y, -3);
+  const arrival = controller.teleportActiveTo(10, 10, 0, 10);
+  assert.notDeepEqual({ ...arrival }, { x: 10, z: 10 }, 'the terrain floor lifts the helicopter into the collider');
+  assert.equal(ent.position.y, Math.max(10, terrainHeightAt(arrival.x) + 0.25));
+
+  controller.teleportActiveTo(30, 35, 0, 25.5);
+  ent.verticalSpeed = -5;
+  const impacts = [];
+  controller.setCollisionListener(hit => impacts.push({ ...hit }));
+  controller.updateHelicopter(0.1, 0);
+  assert.equal(ent.position.y, 25.25);
+  assert.equal(impacts[0]?.kind, 'ground');
+  assert.equal(impacts[0]?.y, 25.25);
+  controller.teleportActiveTo(30, 35, 0, 500);
+  assert.equal(ent.position.y, 380);
+});
 
 test('cargo bike teleport clearance includes its forward cargo deck and small front wheel', () => {
   const obstacle = { minX: -0.12, maxX: 0.12, minZ: 0.84, maxZ: 1.04, maxY: 20 };

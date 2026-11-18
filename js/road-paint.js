@@ -17,7 +17,7 @@ const WIDEN_SPHERE_PAD = 16; // createRoadPaintMaterial widens thin distant stri
 
 // Spatial chunk builder shared by Manhattan street markings and perimeter highway markings (js/city-grid.js), so
 // off-screen and distant (> 1.65 km) road paint is culled instead of transforming all 12.5 km of vertices every frame.
-function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDistance = PAINT_CULL_DISTANCE } = {}) {
+function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDistance = PAINT_CULL_DISTANCE, heightAt } = {}) {
   const cells = new Map();
 
   function pushQuad(ax, ay, az, bx, by, bz, sx, sz, col, period, duty, u0, u1) {
@@ -28,7 +28,8 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
     if (!cell) cells.set(key, (cell = { position: [], side: [], paint: [], colors: [], index: [] }));
     const i = cell.position.length / 3;
     for (const [x, y, z, s, u] of [[ax, ay, az, -1, u0], [ax, ay, az, 1, u0], [bx, by, bz, 1, u1], [bx, by, bz, -1, u1]]) {
-      cell.position.push(x + sx * s, y, z + sz * s);
+      const edgeX = x + sx * s, edgeZ = z + sz * s;
+      cell.position.push(edgeX, y + (heightAt?.(edgeX, edgeZ) ?? 0), edgeZ);
       cell.side.push(sx * s, sz * s);
       cell.paint.push(u, period, duty);
       cell.colors.push(col.r, col.g, col.b);
@@ -41,7 +42,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
     if (len < 0.05) return;
     const sx = ((az - bz) / len) * w * 0.5;
     const sz = ((bx - ax) / len) * w * 0.5;
-    const parts = Math.max(1, Math.ceil(len / PAINT_MAX_SEGMENT));
+    const parts = Math.max(1, Math.ceil(len / (heightAt ? 6 : PAINT_MAX_SEGMENT)));
     for (let k = 0; k < parts; k++) {
       const t0 = k / parts;
       const t1 = (k + 1) / parts;
@@ -104,8 +105,8 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
   return { strip3D, build };
 }
 
-function buildRoadPaint(scene, network, sharedBuilder = null) {
-  const builder = sharedBuilder || createRoadPaintChunkBuilder('RoadMarkings');
+function buildRoadPaint(scene, network, sharedBuilder = null, heightAt) {
+  const builder = sharedBuilder || createRoadPaintChunkBuilder('RoadMarkings', { heightAt });
   const lines = [];
   const bends = new Map();
 

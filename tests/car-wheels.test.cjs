@@ -319,12 +319,14 @@ test('renderCar writes per-car wheel styles to both front and rear wheel slots w
       updateMatrix() {},
       matrix: {}
     },
+    fitVehicleGrade(c) { c.roadPitch = c.roadRoll = 0; },
+    terrainHeightAt: () => 0,
     placeWheels(c, idx) { placed.push(idx); }
   };
   const renderCar = vm.runInNewContext(`(${match[0].trim()})`, ctx);
   const policeStyle = carStyleCode({ livery: 1, trim: 2, wheel: 3 });
   const sportStyle = carStyleCode({ livery: 4, metallic: 1, trim: 2, wheel: 2 });
-  const c0 = { x: 10, z: 10, prevX: 10, prevZ: 10, yaw: 0, yawOffset: 0, pitch: 0, roll: 0, wheelSpin: 0,
+  const c0 = { x: 10, y: 0, z: 10, prevX: 10, prevZ: 10, yaw: 0, yawOffset: 0, pitch: 0, roll: 0, wheelSpin: 0,
     bodyType: 'sedan', isPolice: false, paint: [1, 1, 1], style: policeStyle, blink: 0, blinkPhase: 0, acc: 0, speed: 5 };
   const c1 = { ...c0, x: 20, style: sportStyle };
   const c2 = { ...c0, x: 120, style: 99 }; // > 90 m -> far proxy, no separate wheels

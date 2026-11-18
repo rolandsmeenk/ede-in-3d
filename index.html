@@ -22,6 +22,7 @@
   <link rel="modulepreload" href="./js/ede-geodata.js" />
   <link rel="modulepreload" href="./js/nyc-geodata.js" />
   <link rel="modulepreload" href="./js/ede-geometry.js" />
+  <link rel="modulepreload" href="./js/terrain.js" />
   <link rel="modulepreload" href="./js/city-config.js" />
   <link rel="modulepreload" href="./js/tsl-materials.js" />
   <link rel="modulepreload" href="./js/trees.js" />
@@ -115,6 +116,7 @@
   <div class="map-attribution">
     <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
     <a href="https://docs.3dbag.nl/en/copyright/" target="_blank" rel="noopener noreferrer">© 3DBAG by tudelft3d and 3DGI</a>
+    <a href="https://www.ahn.nl/dataroom" target="_blank" rel="noopener noreferrer">Terrain © AHN via PDOK</a>
   </div>
 
   <!-- Top-Left: Brand & Renderer Telemetry -->
@@ -217,7 +219,7 @@
       <div class="gauge">
         <div class="gauge-top">
           <span id="hud-active-mode" class="gauge-label">Ede Taxi</span>
-          <span class="gauge-alt"><span class="gauge-alt-label">Alt</span> <span id="hud-altitude">0</span> m</span>
+          <span class="gauge-alt"><span class="gauge-alt-label" title="Height above local ground">Alt</span> <span id="hud-altitude">0</span> m</span>
         </div>
         <div class="gauge-speed"><span id="hud-speed">0</span><span class="gauge-unit">km/u</span></div>
         <div class="gauge-meter" aria-hidden="true"><span id="hud-speed-meter"></span></div>

@@ -19,6 +19,7 @@ import { LightingSystem } from './lighting.js';
 import { NYCMapSystem } from './nyc-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
+import { loadTerrain, terrainHeightAt } from './terrain.js';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
@@ -85,6 +86,16 @@ async function initApp() {
   const lightingSystem = new LightingSystem(scene, renderer);
   markInit('lighting');
 
+  await showLoadingStage('Loading PDOK AHN terrain…');
+  try {
+    const terrain = await loadTerrain();
+    container.dataset.terrain = 'PDOK AHN';
+    container.dataset.napOrigin = String(terrain.napOrigin);
+  } catch (error) {
+    console.warn('[terrain] falling back to level ground:', error);
+  }
+  markInit('terrain');
+
   // 3. Build the city, buildings, street details and traffic
   await showLoadingStage('Building streets, parks and waterfronts...');
   const cityGrid = buildCityGrid(scene);
@@ -123,21 +134,21 @@ async function initApp() {
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
   await showLoadingStage('Adding road markings...');
-  buildRoadPaint(scene, trafficSystem.network, cityGrid.roadPaint);
+  buildRoadPaint(scene, trafficSystem.network, cityGrid.roadPaint, terrainHeightAt);
   markInit('roadPaint');
 
   // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Cargo Bike, Helicopter) & Multi-Camera System
   await showLoadingStage('Preparing player, vehicles and controls...');
   const controllerManager = new ThirdPersonControllerManager(scene, allColliders);
-  // Reuse teleport placement so saved players return at rest, close to their last positions.
+  // The old flat-world Y and current saved Y both measure height above local ground.
   try {
     const saved = JSON.parse(localStorage.getItem('slop-ede-player-state'));
-    if (saved?.version === 1) {
+    if (saved?.version === 1 || saved?.version === 2) {
       for (const mode of Object.keys(controllerManager.entities)) {
         const p = saved.entities?.[mode];
         if (!p || ![p.x, p.y, p.z, p.heading].every(Number.isFinite)) continue;
         controllerManager.setMode(mode);
-        controllerManager.teleportActiveTo(p.x, p.z, p.heading, p.y);
+        controllerManager.teleportActiveTo(p.x, p.z, p.heading, terrainHeightAt(p.x, p.z) + p.y);
       }
       controllerManager.setMode(Object.hasOwn(controllerManager.entities, saved.activeMode) ? saved.activeMode : 'car');
     }
@@ -146,9 +157,10 @@ async function initApp() {
   function savePlayerState() {
     try {
       const entities = Object.fromEntries(Object.entries(controllerManager.entities).map(([mode, entity]) => [mode, {
-        x: entity.position.x, y: entity.position.y, z: entity.position.z, heading: entity.heading
+        x: entity.position.x, z: entity.position.z, heading: entity.heading,
+        y: entity.position.y - terrainHeightAt(entity.position.x, entity.position.z)
       }]));
-      localStorage.setItem('slop-ede-player-state', JSON.stringify({ version: 1, activeMode: controllerManager.activeMode, entities }));
+      localStorage.setItem('slop-ede-player-state', JSON.stringify({ version: 2, activeMode: controllerManager.activeMode, entities }));
     } catch { /* Storage may be disabled or full. */ }
   }
 
@@ -791,7 +803,7 @@ async function initApp() {
       const activeEnt = controllerManager.getActiveEntity();
       const mode = controllerManager.activeMode;
       const kmh = Math.round(Math.abs(activeEnt.speed) * 3.6);
-      const altitudeM = Math.max(0, Math.round(activeEnt.position.y));
+      const altitudeM = Math.max(0, Math.round(activeEnt.position.y - terrainHeightAt(activeEnt.position.x, activeEnt.position.z)));
 
       if (elFps) {
         elFps.textContent = String(currentFps);

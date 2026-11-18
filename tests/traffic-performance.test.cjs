@@ -3,6 +3,7 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
+const { loadModule } = require('./helpers/module.cjs');
 
 const source = ['traffic.js', 'pedestrian-system.js']
   .map((file) => readFileSync(join(__dirname, '../js', file), 'utf8')).join('\n');
@@ -53,7 +54,7 @@ test('hidden pedestrians finish their dive without drawing or changing the escap
   assert.equal(args[8], -1);
 });
 
-function sparkHarness(updates = 3) {
+function sparkHarness(updates = 3, terrainHeightAt = () => 0) {
   const sparks = Array.from({ length: 120 }, () => ({ life: 0 }));
   const writes = [];
   const zero = { zero: true };
@@ -71,7 +72,7 @@ function sparkHarness(updates = 3) {
     instanceMatrix: attr,
     setMatrixAt(index, matrix) { writes.push({ index, matrix: JSON.parse(JSON.stringify(matrix)) }); }
   };
-  const context = { MAX_SPARKS: 120, sparks, sparkInst, dummy, zero, updates };
+  const context = { MAX_SPARKS: 120, sparks, sparkInst, dummy, zero, updates, terrainHeightAt };
   const flag = productionFunction('flagRange', {});
   context.flagRange = flag;
   return {
@@ -131,4 +132,61 @@ test('live sparks preserve motion, bounce and fade while packing only live matri
   assert.equal(h.sparkInst.count, 0);
   assert.equal(h.sparkInst.visible, false);
   assert.equal(h.uploads(), uploads);
+});
+
+
+test('NPC walking and crosswalk ground adapt to the terrain under each foot', () => {
+  const pedGround = productionFunction('pedGround', {
+    terrainHeightAt: (x, z) => 12 + x * 0.25 + z * 0.5, SIDEWALK_Y: 0.22, CROSSWALK_Y: 0.012
+  });
+  const ped = { ax: 0, az: 0, ux: 0, uz: 1, len: 12 };
+  assert.equal(pedGround(ped, 2, 4), 14.72);
+  ped.node = {};
+  assert.equal(pedGround(ped, 2, 4), 14.512);
+  assert.equal(pedGround(ped, 3, 1), 13.47);
+});
+
+test('NPC vehicle grade and wheels follow a sloped road', () => {
+  const terrainHeightAt = (x, z) => 25 + x * 0.2 + z * 0.1;
+  const v = { x: 10, z: 20, y: 29, axle: 1.4, halfWidth: 0.85, steer: 0, wheelSpin: 0 };
+  productionFunction('fitVehicleGrade', { terrainHeightAt })(v, 0, 1);
+  assert.ok(Math.abs(v.roadPitch + Math.atan(0.1)) < 1e-12);
+  assert.ok(Math.abs(v.roadRoll - Math.atan(0.2)) < 1e-12);
+
+  const wheels = [];
+  const dummy = {
+    matrix: {}, scale: { set() {} }, rotation: { set() {} }, updateMatrix() {},
+    position: { set(x, y, z) { dummy.matrix.position = [x, y, z]; } }
+  };
+  const inst = { setMatrixAt(i, matrix) { wheels.push(matrix.position); } };
+  const radius = 0.35;
+  productionFunction('placeWheels', { dummy, terrainHeightAt })(v, 0, 0, v.roadRoll, radius, 0.8, 1.4, inst, inst);
+  assert.equal(wheels.length, 4);
+  for (const [x, y, z] of wheels) assert.equal(y, terrainHeightAt(x, z) + radius);
+});
+
+test('collision sparks bounce at elevated ground', () => {
+  const h = sparkHarness(3, () => 42);
+  h.sparks[13] = { x: 2, y: 42.04, z: 3, vx: 1, vy: -2, vz: 4, life: 0.1, maxLife: 0.4 };
+  h.update(0.05);
+  assert.equal(h.sparks[13].y, 42.03);
+  assert.equal(h.writes[0].matrix.position[1], 42.03);
+});
+
+test('street audio uses the simulated elevations of vehicles and walkers below scene zero', () => {
+  const { CityAudioSources } = loadModule(readFileSync(join(__dirname, '../js/audio-sources.js'), 'utf8'), {
+    imports: { './city-config.js': {}, './terrain.js': { terrainHeightAt: () => -40 } }
+  });
+  const rig = { speed: 1, feet: [{ py: -39.78 }, { py: -39.78 }] };
+  const player = { type: 'person', position: { x: 0, y: -40, z: 0 }, mesh: {}, rig, verticalVel: 0 };
+  const car = { x: 5, y: -39, z: 12, speed: 3, driver: { a: 2 }, engine: 'sedan', edge: { to: {} } };
+  const ped = { x: 1, y: -39.78, z: 2, rig, placed: true };
+  const audio = new CityAudioSources({
+    controllerManager: { entities: { player }, keys: {}, getActiveEntity: () => player, getGroundHeight: () => -40 },
+    trafficSystem: { cars: [car], buses: [], peds: [ped] }, highwayTraffic: { cars: [] }, streetDetails: { audioSignals: [] }
+  });
+  const snapshot = audio.collect({ x: 0, y: -39, z: 0 }, 0);
+  assert.equal(snapshot.motors[0].y, -38.3);
+  assert.equal(snapshot.people.find(source => source.id === player).grounded, true);
+  assert.equal(snapshot.people.find(source => source.id === ped).y, -39.78);
 });

@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { LANDMARK_SITES } from './city-config.js';
+import { terrainHeightAt } from './terrain.js';
 
 // js/cameras.js
 // Multi-camera system supporting Third-Person Chase (with mouse/touch orbit + zoom),
@@ -209,7 +210,7 @@ class CameraSystem {
 
         desiredPos.set(
           entity.position.x - Math.sin(totalYaw) * horizDist,
-          Math.max(0.65, entity.position.y + height),
+          entity.position.y + height,
           entity.position.z - Math.cos(totalYaw) * horizDist
         );
 
@@ -230,7 +231,7 @@ class CameraSystem {
 
         desiredPos.set(
           entity.position.x - Math.sin(entity.heading) * backDist + Math.cos(entity.heading) * sideOffset,
-          Math.max(0.55, lowY),
+          lowY,
           entity.position.z - Math.cos(entity.heading) * backDist - Math.sin(entity.heading) * sideOffset
         );
         desiredLook.set(
@@ -282,12 +283,9 @@ class CameraSystem {
         const angle = elapsed * 0.07 + 0.65;
         const radius = 720.0 + Math.sin(elapsed * 0.23) * 140.0;
         const alt = 330.0 + Math.cos(elapsed * 0.19) * 90.0;
-        desiredPos.set(
-          Math.cos(angle) * radius,
-          alt,
-          Math.sin(angle) * radius
-        );
-        desiredLook.set(0.0, 25.0, 0.0);
+        const x = Math.cos(angle) * radius, z = Math.sin(angle) * radius;
+        desiredPos.set(x, alt + terrainHeightAt(x, z), z);
+        desiredLook.set(0, 25 + terrainHeightAt(0, 0), 0);
         break;
       }
 
@@ -295,17 +293,23 @@ class CameraSystem {
         const [name, dx, y, dz, targetY] = SCENIC_VIEWS[this.activePresetId];
         const { x, z } = LANDMARK_SITES[name];
         const sway = Math.sin(elapsed * 0.22) * 1.5;
-        desiredPos.set(x + dx + sway, y, z + dz);
-        desiredLook.set(x, targetY, z);
+        const px = x + dx + sway, pz = z + dz;
+        desiredPos.set(px, y + terrainHeightAt(px, pz), pz);
+        desiredLook.set(x, targetY + terrainHeightAt(x, z), z);
       }
     }
 
+    const orbitFollow = this.activePresetId === 'chase' || this.activePresetId === 'action';
+    if (orbitFollow) {
+      const clearance = this.activePresetId === 'chase' ? 0.65 : 0.55;
+      desiredPos.y = Math.max(desiredPos.y, terrainHeightAt(desiredPos.x, desiredPos.z) + clearance);
+    }
     if (!this.initialized || this.activePresetId === 'pov') {
       this.currentPos.copy(desiredPos);
       this.currentLookAt.copy(desiredLook);
       this.initialized = true;
       this.followEntity = null; // the follow cameras re-anchor from here
-    } else if (this.activePresetId === 'chase' || this.activePresetId === 'action') {
+    } else if (orbitFollow) {
       // Smoothed in the followed entity's frame rather than in world space. A world-space follower trails a moving
       // target by a distance that depends on the frame time (about speed x dt), so with uneven frame times the camera
       // surged back and forth behind an accelerating or fast car. Relative to the entity a steady drive keeps the
@@ -324,7 +328,6 @@ class CameraSystem {
       this.followLookOffset.lerp(desiredLook.sub(entity.position), k);
       this.currentPos.set(entity.position.x, this.followBaseY, entity.position.z).add(this.followOffset);
       this.currentLookAt.set(entity.position.x, this.followBaseY, entity.position.z).add(this.followLookOffset);
-      this.currentPos.y = Math.max(0.55, this.currentPos.y);
     } else {
       this.followEntity = null;
       const k = 1 - Math.exp(-dt * 8.5);
@@ -332,6 +335,10 @@ class CameraSystem {
       this.currentLookAt.lerp(desiredLook, k);
     }
 
+    if (this.activePresetId !== 'fixed') {
+      const { x, y, z } = this.currentPos;
+      this.currentPos.y = Math.max(y, terrainHeightAt(x, z) + 0.55);
+    }
     this.camera.position.copy(this.currentPos);
     this.camera.lookAt(this.currentLookAt);
   }
