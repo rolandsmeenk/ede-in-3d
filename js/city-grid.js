@@ -354,6 +354,51 @@ function buildEdeCityGrid(scene, treeInventory) {
       }
     }
   }
+  const ballastMat = new THREE.MeshStandardNodeMaterial({ roughness: 0.94 });
+  const sleeperPhase = abs(fract(uv().y.div(0.65).add(0.5)).sub(0.5));
+  const sleeper = float(1).sub(smoothstep(0.12, 0.23, sleeperPhase))
+    .mul(float(1).sub(smoothstep(1.18, 1.28, abs(uv().x))));
+  ballastMat.colorNode = mix(color(0x6c6054), color(0x3f3730), sleeper);
+  const railMat = new THREE.MeshStandardNodeMaterial({ color: 0xb5ada0, metalness: 0.35, roughness: 0.47 });
+  let railWays = 0;
+  for (const railway of EDE_DATA.railways || []) {
+    if (railway.tunnel || railway.pts.length < 4) continue;
+    const points = edePoints(railway.pts);
+    let distance = 0;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      const length = Math.hypot(b.x - a.x, b.z - a.z);
+      if (length < 0.1) continue;
+      const ux = (b.x - a.x) / length, uz = (b.z - a.z) / length;
+      // shortcut: bridge approach heights define an estimated profile until surveyed decks are available.
+      const startY = railway.bridge ? terrainHeightAt(a.x, a.z) : 0;
+      const rise = railway.bridge ? terrainHeightAt(b.x, b.z) - startY : 0;
+      const trackStrip = (halfWidth, y, offset = 0) => {
+        if (!railway.bridge) return strip(a, b, halfWidth, y, offset);
+        const geometry = edeStrip(a, b, halfWidth, y, offset);
+        const position = geometry.getAttribute('position');
+        for (let j = 0; j < position.count; j++) {
+          const along = (position.getX(j) - a.x) * ux + (position.getZ(j) - a.z) * uz;
+          position.setY(j, y + startY + rise * along / length);
+        }
+        geometry.computeVertexNormals();
+        return geometry;
+      };
+
+      // The ballast sits below the road surface at level crossings.
+      const bed = trackStrip(1.45, 0.035);
+      const positions = bed.getAttribute('position'), coordinates = bed.getAttribute('uv');
+      for (let j = 0; j < positions.count; j++) {
+        const dx = positions.getX(j) - a.x, dz = positions.getZ(j) - a.z;
+        coordinates.setXY(j, -dx * uz + dz * ux, distance + dx * ux + dz * uz);
+      }
+      collect(bed, ballastMat);
+      for (const side of [-1, 1]) collect(trackStrip(0.045, 0.13, side * 1.435 / 2), railMat);
+      distance += length;
+    }
+    if (distance > 0) railWays++;
+  }
+
   if (treeInventory) {
     for (const tree of treeInventory) {
       const { x, z } = tree;
@@ -424,12 +469,14 @@ function buildEdeCityGrid(scene, treeInventory) {
       const mesh = new THREE.Mesh(merged, material);
       mesh.receiveShadow = material !== waterMat; mesh.castShadow = material === curbMat;
       if (material === paintMat) mesh.renderOrder = 1;
+      if (material === railMat) mesh.name = 'Ede rails';
+      if (material === ballastMat) mesh.name = 'Ede rail ballast';
       if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
       else firstMesh = mesh;
       group.add(mesh);
     }
   }
-  group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
+  group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, railways: railWays, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
     clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, junctionClippedCurbs: true, junctionClippedSidewalks: true };
   scene.add(group);
   return { group, sidewalks, footprints, highwayLanes: [], colliders };

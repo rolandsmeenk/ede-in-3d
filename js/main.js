@@ -23,6 +23,8 @@ import { loadTerrain, terrainHeightAt } from './terrain.js';
 import { loadAerialColors } from './aerial-colors.js';
 import { loadEdeTrees } from './ede-tree-data.js';
 import { loadEdeLamps } from './ede-lamp-data.js';
+import { loadEdeBusSchedule } from './ede-bus-schedule.js';
+import { buildEdeBusStops } from './ede-bus-stops.js';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
@@ -89,9 +91,9 @@ async function initApp() {
   const lightingSystem = new LightingSystem(scene, renderer);
   markInit('lighting');
 
-  await showLoadingStage('Loading terrain, aerial colors, trees and lamp posts…');
-  const [terrainResult, aerialResult, treeResult, lampResult] = await Promise.allSettled([
-    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps()
+  await showLoadingStage('Loading Ede’s map and bus timetable…');
+  const [terrainResult, aerialResult, treeResult, lampResult, busResult] = await Promise.allSettled([
+    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule()
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -102,7 +104,10 @@ async function initApp() {
   if (treeResult.status === 'rejected') console.warn('[trees] using OpenStreetMap trees:', treeResult.reason);
   if (lampResult.status === 'fulfilled') container.dataset.lampPosts = String(lampResult.value.length);
   else console.warn('[lamps] using generated street lights:', lampResult.reason);
-  markInit('terrain, aerial colors, trees and lamps');
+  let busSchedule = null;
+  if (busResult.status === 'fulfilled') busSchedule = busResult.value;
+  else console.warn('[buses] timetable unavailable:', busResult.reason);
+  markInit('map assets and bus timetable');
 
   // 3. Build the city, buildings, street details and traffic
   await showLoadingStage('Building streets, parks and waterfronts...');
@@ -129,6 +134,7 @@ async function initApp() {
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');
   const streetDetails = buildStreetDetails(scene, allColliders, lampResult.status === 'fulfilled' ? lampResult.value : null);
+  if (busSchedule) buildEdeBusStops(scene, busSchedule.variants);
   markInit('streetDetails');
   await showLoadingStage('Creating traffic and pedestrian routes...');
   // Buildings turned along non-grid streets have oriented colliders whose world bounds reach past their lots: they stay
@@ -138,7 +144,7 @@ async function initApp() {
     ...cityGrid.footprints,
     ...streetDetails.footprints,
     ...allColliders.filter((c) => !c.obb && (c.minY ?? 0) < 3.5)
-  ], streetDetails.signalIntersections);
+  ], streetDetails.signalIntersections, busSchedule);
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
   await showLoadingStage('Adding road markings...');

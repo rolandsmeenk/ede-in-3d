@@ -25,6 +25,7 @@ node tools/build-ede-shops.mjs
 ```
 
 Rebuild the aerial palettes after refreshing the map so their records follow the updated geometry.
+Rebuild the bus routes after changing the road graph.
 
 The roughly 7.4 × 5.4 km extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the town-wide view. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain.
 
@@ -79,6 +80,21 @@ python3 tools/build-ede-lamps.py
 
 The checked-in asset contains active PDOK BGT lamp posts within the game map. Pole bases follow AHN terrain, and the lamp models use a standard height and face the nearest road where possible.
 
+## Refresh the bus routes
+
+The game loads a local timetable and lane matches for both directions of Ede lines 1–4, 103 and 303. Stop signs use the GTFS boarding coordinates and platform letters. Buses depart using Amsterdam service dates, display the trip headsign, and dwell at the stops they can reach on connected lanes. If no service is running at startup, the simulation opens at the next mapped departure.
+
+```sh
+curl -fL https://gtfs.ovapi.nl/nl/gtfs-nl.zip -o /tmp/ede-gtfs.zip
+python3 tools/import-ede-gtfs.py /tmp/ede-gtfs.zip /tmp/ede-gtfs.json
+node tools/export-ede-bus-road-graph.mjs > /tmp/ede-bus-graph.json
+node tools/build-ede-bus-routes.mjs /tmp/ede-gtfs.json /tmp/ede-bus-graph.json assets/ede-bus-routes.json /tmp/ede-bus-match-report.json
+```
+
+The match report lists gaps by variant, including coordinates and affected boarding points. Matching uses actual graph turns, with separate edges for the mapped busways and selected underpasses. Buses are hidden inside tunnels whose interiors are outside the terrain model. Sections with no reliable connected lane are omitted from the driving simulation.
+
+The November 2026 snapshot contains 79 variants, 62 of which enter the playable map. The largest unresolved section is about 558 m on line 1 toward Ede Oost between Koekeltse Boslaan and Kastelenlaan. Smaller breaks include Keesomstraat on line 1 and the hospital approach on line 4. All 125 GTFS boarding locations in the scene are marked, and 120 have a matched stop on at least one route variant.
+
 ## Make it your own
 
 Fork it, remix it, improve it, break it. Make games, animations, films, experiments, or something completely different. Use it as a starting point and take it wherever you want. Have fun!
@@ -96,3 +112,4 @@ Explore other cities and community remixes in [Slop Cities](https://github.com/z
 - Vertex colors are derived from the [2025 Beeldmateriaal.nl aerial orthophoto via PDOK](https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566) under CC BY 4.0.
 - Lamp-post locations are from [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html) (CC0).
 - Tree locations are from [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1?f=html&lang=nl) (CC0). Tree attributes are from the [municipal Ede inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) (public domain).
+- Bus timetables and stops come from the [OVapi Dutch GTFS feed](https://gtfs.ovapi.nl/nl/) (CC0 1.0, shapes ODbL 1.0). Line identities and station platforms were cross-checked against the [RRReis Ede overview](https://www.rrreis.nl/reisinformatie/haltes-dienstverlening/dienstregeling-bus/regio-ede).

@@ -119,6 +119,20 @@ for (const e of osm.elements) {
 const WIDTH = { motorway: 14, trunk: 12, primary: 10, secondary: 8, tertiary: 7, residential: 6, unclassified: 6, living_street: 5, service: 3.5, pedestrian: 5, cycleway: 2.5, footway: 2, path: 1.5, steps: 2, track: 3 };
 const LANES = { motorway: 4, trunk: 4, primary: 2, secondary: 2, tertiary: 2, residential: 2, unclassified: 2, living_street: 1, service: 1 };
 const DRIVABLE = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'residential', 'unclassified', 'living_street']);
+// OSM's road underpasses used by the selected bus lines. Keep their links
+// separate so surface traffic and road paint do not use them.
+const BUS_UNDERPASSES = new Set([6952984, 1063323754, 25546154, 25546157, 274278314, 274278316, 469675200, 1392410752]);
+// These mapped approaches continue beyond the playable bounds. The matcher
+// clips them at the actual crossing while ordinary traffic stays on its loop.
+const BUS_BOUNDARY_ROADS = new Set([
+  25999022, 25999048, 6962023, 974100768, 6960043, 44431669, 974100769,
+  6959815, 6959876, 6959877, 6959806, 6959808, 1243033918, 1243033919, 1243033923
+]);
+// Keep the short links at the station intersection and Kastelenlaan as actual turns.
+const BUS_JUNCTION_ROADS = new Set([
+  620928502, 620928503, 1193451509, 1193451510,
+  1024971617, 1024971618, 421594657, 25710948, 430622525, 25710947
+]);
 const drivable = [];
 const roads = [];
 const railways = [];
@@ -147,8 +161,10 @@ for (const e of osm.elements) {
   const width = num(t.width) ?? Math.max(WIDTH[base] ?? 3, lanes * 3);
   const oneway = t.oneway === 'yes' || t.oneway === '-1' || t.oneway === '1' || t.junction === 'roundabout';
   roads.push({ id: `w${e.id}`, pts: flat(rdp(geomPts(e.geometry), 0.5)), bridge, tunnel, layer, name: t.name || '', width: r1(width), lanes, oneway, reverse: t.oneway === '-1', kind, nodeIds: e.nodes || [] });
-  if (DRIVABLE.has(kind) && !tunnel && e.nodes && e.nodes.length === e.geometry.length) {
-    drivable.push({ name: t.name || '', width: r1(width), lanes, dir: !oneway ? 0 : t.oneway === '-1' ? -1 : 1, nodes: e.nodes, pts: geomPts(e.geometry) });
+  const busOnly = BUS_JUNCTION_ROADS.has(e.id) ? 4 : BUS_BOUNDARY_ROADS.has(e.id) ? 3 : tunnel && BUS_UNDERPASSES.has(e.id) ? 2
+    : t.highway === 'busway' || (t.highway === 'service' && t.name === 'Polar Bearsplein') ? 1 : 0;
+  if ((busOnly || (DRIVABLE.has(kind) && !tunnel)) && e.nodes && e.nodes.length === e.geometry.length) {
+    drivable.push({ name: t.name || '', width: busOnly ? Math.max(3.5, width) : r1(width), lanes, dir: !oneway ? 0 : t.oneway === '-1' ? -1 : 1, nodes: e.nodes, pts: geomPts(e.geometry), busOnly });
   }
 }
 
@@ -174,7 +190,9 @@ const roadGraph = (() => {
       if (w.nodes[i] === w.nodes[start]) { start = i; continue; }
       const seg = w.pts.slice(start, i + 1);
       const inner = rdp(seg, 0.4).slice(1, -1).flatMap(([x, z]) => [r1(x), r1(z)]);
-      links.push([nodeOf(w.nodes[start], seg[0]), nodeOf(w.nodes[i], seg[seg.length - 1]), nameOf(w.name), w.width, w.lanes, w.dir, inner]);
+      const link = [nodeOf(w.nodes[start], seg[0]), nodeOf(w.nodes[i], seg[seg.length - 1]), nameOf(w.name), w.width, w.lanes, w.dir, inner];
+      if (w.busOnly) link.push(w.busOnly);
+      links.push(link);
       start = i;
     }
   }

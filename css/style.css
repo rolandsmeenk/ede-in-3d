@@ -339,7 +339,6 @@ body.hud-minimized .toolbar > :not(#btn-toggle-hud) {
   height: 36px;
   padding: 3px;
   border-radius: 4px;
-  background: #fff;
   object-fit: contain;
   flex: none;
 }
