@@ -102,7 +102,7 @@ function createWalkSignalMaterial(clock) {
   return mat;
 }
 
-function buildStreetDetails(scene, colliders = []) {
+function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeStreetDetails' : 'ManhattanStreetDetails';
 
@@ -498,21 +498,35 @@ function buildStreetDetails(scene, colliders = []) {
       dummy.position.set(x, y, z); dummy.rotation.set(0, yaw, 0); dummy.scale.set(sx, sy, sz);
       dummy.updateMatrix(); list.push(dummy.matrix.clone());
     };
-    for (let i = 0; i < edeStreetSites.length; i++) {
-      const s = edeStreetSites[i];
-      if (waterAt(s.x, s.z) && !s.road.bridge) continue;
-      const block = blockAt(s.x, s.z);
-      if (block && !block.sidewalk && !block.id?.toString().startsWith('sidewalk') && block.source && !block.park) continue;
-      const ground = terrainHeightAt(s.x, s.z);
-      setMatrix(poleMatrices, s.x, ground + 4.1, s.z, 0.11, 8.2, 0.11);
-      const yaw = Math.atan2(-s.nz, s.nx);
-      setMatrix(armMatrices, s.x + s.nx * 1.1, ground + 8.08, s.z + s.nz * 1.1, 2.2, 0.085, 0.085, yaw);
-      setMatrix(lampHeadMatrices, s.x + s.nx * 2.1, ground + 8.1, s.z + s.nz * 2.1, 1, 1, 1, yaw);
-      cobraLampSites.push({ x: s.x + s.nx * 2.1, y: ground + 8.04, z: s.z + s.nz * 2.1, tx: s.x + s.nx * 3.5, tz: s.z + s.nz * 3.5 });
-      addPole(s.x, s.z, 0.11);
-      if (s.name && i % 4 === 0 && (edeSignMatrices.has(s.name) || edeSignMatrices.size < 70 || centreStreetSigns.has(s.name))) {
-        if (!edeSignMatrices.has(s.name)) edeSignMatrices.set(s.name, []);
-        setMatrix(edeSignMatrices.get(s.name), s.x, ground + 3.25, s.z, 1.8, 0.33, 0.055, -Math.atan2(s.uz, s.ux));
+    const lampSites = mappedLamps ?? edeStreetSites;
+    for (let i = 0; i < lampSites.length; i++) {
+      const s = lampSites[i];
+      const { x, z } = s;
+      let { nx, nz, ux, uz, name } = s;
+      if (mappedLamps) {
+        // BGT locates the pole. Use the nearest road only to orient its arm.
+        const road = nearestEdeRoad(x, z, 25);
+        ux = road?.ux ?? 0;
+        uz = road?.uz ?? 1;
+        const side = road && ((road.x - x) * -uz + (road.z - z) * ux) < 0 ? -1 : 1;
+        nx = -uz * side;
+        nz = ux * side;
+        name = road?.road.name;
+      } else {
+        if (waterAt(x, z) && !s.road.bridge) continue;
+        const block = blockAt(x, z);
+        if (block && !block.sidewalk && !block.id?.toString().startsWith('sidewalk') && block.source && !block.park) continue;
+      }
+      const ground = terrainHeightAt(x, z);
+      setMatrix(poleMatrices, x, ground + 4.1, z, 0.11, 8.2, 0.11);
+      const yaw = Math.atan2(-nz, nx);
+      setMatrix(armMatrices, x + nx * 1.1, ground + 8.08, z + nz * 1.1, 2.2, 0.085, 0.085, yaw);
+      setMatrix(lampHeadMatrices, x + nx * 2.1, ground + 8.1, z + nz * 2.1, 1, 1, 1, yaw);
+      cobraLampSites.push({ x: x + nx * 2.1, y: ground + 8.04, z: z + nz * 2.1, tx: x + nx * 3.5, tz: z + nz * 3.5 });
+      addPole(x, z, 0.11);
+      if (name && i % 4 === 0 && (edeSignMatrices.has(name) || edeSignMatrices.size < 70 || centreStreetSigns.has(name))) {
+        if (!edeSignMatrices.has(name)) edeSignMatrices.set(name, []);
+        setMatrix(edeSignMatrices.get(name), x, ground + 3.25, z, 1.8, 0.33, 0.055, -Math.atan2(uz, ux));
       }
     }
     const signalKeys = new Set();

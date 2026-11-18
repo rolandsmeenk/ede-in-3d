@@ -6,6 +6,7 @@ import {
   float,
   vec2,
   color,
+  vertexColor,
   uv,
   positionWorld,
   normalWorldGeometry,
@@ -48,6 +49,7 @@ import { edePoints, edeBounds, edePolygonGeometry, nearestEdeRoad, edeSpatialGro
 import { createShopSigns } from './shop-signs.js';
 import { solidWallSpans } from './passages.js';
 import { terrainHeightAt } from './terrain.js';
+import { sampleRoofColor } from './aerial-colors.js';
 import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js';
 
 // Building massing follows each block's lots and frontage frames. Footprints combine non-overlapping boxes.
@@ -250,6 +252,17 @@ function carve(r, holes, axis = 'x') {
     open = nextOpen;
   }
   return out.map(([u0, u1, v0, v1]) => (flip ? rect(v0, v1, u0, u1) : rect(u0, u1, v0, v1)));
+}
+
+function colorEdeRoof(roof, id, fallback, aerial) {
+  const normal = roof.attributes.normal;
+  const colors = new Float32Array(normal.count * 3);
+  const sampled = sampleRoofColor(id, aerial);
+  for (let i = 0; i < normal.count; i++) {
+    // Pitched roof geometry also includes the vertical gable ends.
+    colors.set(sampled && normal.getY(i) > 0.1 ? aerial : fallback, i * 3);
+  }
+  roof.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
 
 // `bag`: 3D BAG meshes already supply the facades and roofs, so only colliders and street-level details are built here.
@@ -1969,12 +1982,11 @@ function buildCityBlocks(scene, { bag = false } = {}) {
     // Exact OSM rings drive the original facade shaders and detail-streaming
     // pools. Thin, oriented facade boxes preserve courtyard openings and the
     // angled street walls of Ede without Manhattan's synthetic block layouts.
-    const roofBuckets = [[], [], []];
-    const roofMaterials = [0x655c51, 0x857369, 0x676b68].map(c => {
-      const m = new THREE.MeshStandardNodeMaterial({ color: c, roughness: 0.9 });
-      m.colorNode = color(c).mul(mx_noise_float(positionWorld.xz.mul(0.9)).mul(0.12).add(0.94));
-      return m;
-    });
+    const roofs = [];
+    const roofPalette = [0x655c51, 0x857369, 0x676b68].map(c => new THREE.Color(c).toArray());
+    const aerial = [0, 0, 0];
+    const roofMaterial = new THREE.MeshStandardNodeMaterial({ roughness: 0.9 });
+    roofMaterial.colorNode = vertexColor().mul(mx_noise_float(positionWorld.xz.mul(0.9)).mul(0.12).add(0.94));
     const signedArea = pts => pts.reduce((sum, a, i) => {
       const b = pts[(i + 1) % pts.length]; return sum + a.x * b.z - b.x * a.z;
     }, 0) / 2;
@@ -2073,25 +2085,26 @@ function buildCityBlocks(scene, { bag = false } = {}) {
         roof.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         roof.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); roof.computeVertexNormals();
       }
-      if (roof) roofBuckets[Math.floor(tone * 3)].push(roof);
+      if (roof) {
+        colorEdeRoof(roof, source.id, roofPalette[Math.floor(tone * 3)], aerial);
+        roofs.push(roof);
+      }
       if (!bag && !pitched && !holes.length && !source.part && height > 12 && rand() < 0.34) {
         detail.hvacUnits.push({ x: cx, z: cz, y: ground + height, w: 2.2, h: 0.85, d: 3.0, ry: 0 });
       }
       quadtree.insert(detail); allBlocks.push(detail); built++;
     }
-    for (let materialIndex = 0; materialIndex < roofBuckets.length; materialIndex++) {
-      let firstMesh;
-      for (const cell of edeGeometryGroups(roofBuckets[materialIndex])) for (let i = 0; i < cell.length; i += 250) {
-        const pieces = cell.slice(i, i + 250).map(g => {
-          if (!g.index) return g;
-          const expanded = g.toNonIndexed(); g.dispose(); return expanded;
-        });
-        const mesh = new THREE.Mesh(mergeGeometries(pieces, false), roofMaterials[materialIndex]);
-        mesh.castShadow = mesh.receiveShadow = true; group.add(mesh);
-        if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
-        else firstMesh = mesh;
-        pieces.forEach(g => g.dispose());
-      }
+    let firstMesh;
+    for (const cell of edeGeometryGroups(roofs)) for (let i = 0; i < cell.length; i += 250) {
+      const pieces = cell.slice(i, i + 250).map(g => {
+        if (!g.index) return g;
+        const expanded = g.toNonIndexed(); g.dispose(); return expanded;
+      });
+      const mesh = new THREE.Mesh(mergeGeometries(pieces, false), roofMaterial);
+      mesh.castShadow = mesh.receiveShadow = true; group.add(mesh);
+      if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
+      else firstMesh = mesh;
+      pieces.forEach(g => g.dispose());
     }
     group.userData = { city: 'Ede', buildings: built, originalFacadeShaders: true, originalDetailStreaming: true };
   }

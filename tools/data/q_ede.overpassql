@@ -13,6 +13,8 @@
   wr["natural"="wood"];
   wr["leisure"~"^(park|garden|playground|pitch)$"];
   wr["landuse"~"^(grass|recreation_ground|cemetery|village_green|forest)$"];
+  wr["place"="square"];
+  relation["highway"="pedestrian"]["area"="yes"];
   node["natural"="tree"];
   node["highway"="traffic_signals"];
 );

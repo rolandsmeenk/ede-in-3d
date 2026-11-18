@@ -67,6 +67,7 @@ import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
 import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 import { edeTreeSite } from './ede-tree-data.js';
+import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
 
 // Live construction data consumed by the building and street-detail builders after buildCityGrid().
 let centralParkClearings;
@@ -77,22 +78,46 @@ let sidewalkBlocks;
 let fdrViaduct;
 let edeStreetSites = [];
 
+function setAerialSurfaceColors(geometry, segment) {
+  const position = geometry.getAttribute('position');
+  const colors = new Uint8Array(position.count * 4);
+  const sample = [0, 0, 0];
+  const hasRoadColor = segment && sampleRoadColor(segment.road.id, segment.segmentIndex, sample);
+  if (hasRoadColor) {
+    // Suppress green reflected from trees while retaining red cycleway paving.
+    sample[1] = Math.min(sample[1], Math.max(sample[0], sample[2]) * 1.2);
+  }
+  for (let i = 0; i < position.count; i++) {
+    if (!(segment ? hasRoadColor : sampleGroundColor(position.getX(i), position.getZ(i), sample))) continue;
+    const offset = i * 4;
+    colors[offset] = Math.round(sample[0] * 255);
+    colors[offset + 1] = Math.round(sample[1] * 255);
+    colors[offset + 2] = Math.round(sample[2] * 255);
+    colors[offset + 3] = 255;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4, true));
+}
+
 function buildEdeCityGrid(scene, treeInventory) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
-  const roadMat = createRoadSurfaceMaterial();
-  const sidewalkMat = createSidewalkMaterial();
+  const terrain = getTerrain();
+  const aerial = !!getAerialColors();
+  const roadMat = createRoadSurfaceMaterial(aerial);
+  const sidewalkMat = createSidewalkMaterial(aerial ? 0.4 : 0);
+  const terrainMat = aerial && terrain ? createSidewalkMaterial(0.85) : sidewalkMat;
   const curbMat = createCurbMaterial();
   const waterMat = createWaterMaterial();
-  const lawnMat = createParkLawnMaterial(false);
-  const pavingMat = createParkPavingMaterial();
+  const lawnMat = createParkLawnMaterial(false, aerial);
+  const pavingMat = createParkPavingMaterial(aerial);
   const paintMat = createRoadPaintMaterial();
-  const terrain = getTerrain();
+  const aerialMaterials = new Set([roadMat, terrainMat, sidewalkMat, lawnMat, pavingMat]);
   const polygon = (...args) => drapeEdeSurface(edePolygonGeometry(...args));
   const strip = (...args) => drapeEdeSurface(edeStrip(...args));
   const collections = new Map();
-  const collect = (geometry, material) => {
+  const collect = (geometry, material, segment) => {
     if (!geometry) return;
+    if (aerial && aerialMaterials.has(material)) setAerialSurfaceColors(geometry, segment);
     if (!collections.has(material)) collections.set(material, []);
     collections.get(material).push(geometry);
   };
@@ -102,7 +127,7 @@ function buildEdeCityGrid(scene, treeInventory) {
 
   const water = (EDE_DATA.water || []).filter(w => w.ring?.length >= 6);
   if (terrain) {
-    for (const geometry of edeTerrainGeometries(-0.025)) collect(geometry, sidewalkMat);
+    for (const geometry of edeTerrainGeometries(-0.025)) collect(geometry, terrainMat);
     for (const feature of water) {
       collect(polygon(edePoints(feature.ring), (feature.holes || []).map(edePoints), 0.005), waterMat);
     }
@@ -126,11 +151,11 @@ function buildEdeCityGrid(scene, treeInventory) {
       }
     }
   }
-  for (const park of EDE_DATA.parks || []) {
+  for (const park of [...(EDE_DATA.parks || []), ...(EDE_DATA.squares || [])]) {
     if (!park.ring || park.ring.length < 6) continue;
     const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints);
     const paved = ['square', 'pedestrian', 'plaza'].includes(park.kind);
-    const geometry = polygon(ring, holes, paved ? 0.055 : 0.045);
+    const geometry = polygon(ring, holes, paved ? 0.05 : 0.045);
     if (paved) setPavingStyle(geometry, 2);
     collect(geometry, paved ? pavingMat : lawnMat);
     if (paved) pavedPlazaRects.push(edeBounds(ring));
@@ -275,9 +300,10 @@ function buildEdeCityGrid(scene, treeInventory) {
       const half = Math.max(0.75, width * 0.5);
       const pieces = outsideRoads(stripPoints(s, half), nearbyCarriageways(s.a, s.b, half), s);
       for (const piece of pieces) {
+        const cycleway = s.road.kind === 'cycleway';
         const geometry = polygon(piece, [], 0.055);
-        setPavingStyle(geometry, s.road.kind === 'cycleway' ? 0 : 2);
-        collect(geometry, pavingMat);
+        setPavingStyle(geometry, cycleway ? 0 : 2);
+        collect(geometry, pavingMat, cycleway ? s : null);
         clippedPedestrianPieces++;
       }
       continue;
@@ -295,7 +321,7 @@ function buildEdeCityGrid(scene, treeInventory) {
         }
       }
     }
-    collect(strip(s.a, s.b, width / 2, y), roadMat);
+    collect(strip(s.a, s.b, width / 2, y), roadMat, s);
     const nx = -s.uz, nz = s.ux;
     if (width >= 7 && !s.road.oneway && s.road.kind !== 'service') paintStrip(s, 0, 0.075, 0.45);
     if (width >= 12) {

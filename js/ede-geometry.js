@@ -73,7 +73,7 @@ export function edeRoadSegments() {
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1], b = points[i], len = Math.hypot(b.x - a.x, b.z - a.z);
       if (len < 0.8) continue;
-      const s = { a, b, len, road, width: road.width || 6, ux: (b.x - a.x) / len, uz: (b.z - a.z) / len,
+      const s = { a, b, len, road, segmentIndex: i - 1, width: road.width || 6, ux: (b.x - a.x) / len, uz: (b.z - a.z) / len,
         pedestrian: EDE_PEDESTRIAN_WAYS.has(road.kind), bridge: !!road.bridge };
       segments.push(s);
       if (s.pedestrian) continue;

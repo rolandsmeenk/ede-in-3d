@@ -67,6 +67,12 @@ import {
 
 // Procedural city materials: facades and interiors, vegetation, roads, water and lighting effects.
 
+function blendAerialSurfaceColor(base, amount) {
+  // The normalized color attribute holds premultiplied linear RGB and coverage.
+  const aerial = attribute('color', 'vec4');
+  return base.mul(aerial.a.mul(amount).oneMinus()).add(aerial.rgb.mul(amount));
+}
+
 // Shared live uniforms controlled by lighting / time-of-day presets
 const cityUniforms = {
   uSunColor: uniform(new THREE.Color(0xffca92)),
@@ -1385,7 +1391,7 @@ const pavingJoints = Fn(([style, wx, wz]) => {
  * - 1: Light-grey granite plaza pavers in running bond with scattered dark pavers (Times Sq, Herald Sq, Flatiron)
  * - 2: Bluestone & granite square slabs (fountain & monument plazas)
  */
-function createParkPavingMaterial() {
+function createParkPavingMaterial(aerial = false) {
   const mat = new THREE.MeshStandardNodeMaterial({
     metalness: 0.0,
     roughness: 0.86
@@ -1421,7 +1427,8 @@ function createParkPavingMaterial() {
 
     const isGranite = step(0.5, style).mul(float(1.0).sub(step(1.5, style)));
     const base = mix(mix(hexCol, granCol, isGranite), blueCol, step(1.5, style));
-    return base.mul(grime.mul(0.18).add(0.91)).add(grit).mul(float(1.0).sub(joints.mul(0.42)));
+    const paving = aerial ? blendAerialSurfaceColor(base, mix(0.7, 0.52, step(0.5, style))) : base;
+    return paving.mul(grime.mul(0.18).add(0.91)).add(grit).mul(float(1.0).sub(joints.mul(0.42)));
   })();
 
   mat.roughnessNode = Fn(() => {
@@ -1764,7 +1771,7 @@ const roadTarSnakes = Fn(([wxz, px]) => {
  * from above.
  * Lane markings are separate geometry built from the road network (js/road-paint.js).
  */
-function createRoadSurfaceMaterial() {
+function createRoadSurfaceMaterial(aerial = false) {
   const mat = new THREE.MeshStandardNodeMaterial({
     metalness: 0.24,
     roughness: 0.48
@@ -1834,11 +1841,12 @@ function createRoadSurfaceMaterial() {
     // Binder-rich (dark) & ravelled, aggregate-exposed (pale) mottling a stride or so across
     const mottle = noise2D(vec2(wx.mul(0.9), wz.mul(0.9)).add(41.0)).mul(0.65).add(noise2D(vec2(wx.mul(2.3), wz.mul(2.3)).add(7.0)).mul(0.35));
 
-    const baseAsphalt = mix(
+    const asphalt = mix(
       cAsphaltDark,
       cAsphaltLight,
       fineGrain.mul(0.3).add(microAggregate.mul(0.22)).add(patchNoise.mul(0.22)).add(smoothstep(0.3, 0.7, mottle).mul(0.26)).sub(0.04)
-    )
+    );
+    const baseAsphalt = (aerial ? blendAerialSurfaceColor(asphalt, 0.52) : asphalt)
       .mul(float(1.0).sub(oilyStain.mul(0.32)))
       .mul(float(1.0).sub(tarSeam));
 
@@ -2010,7 +2018,7 @@ function createRoadPaintMaterial() {
  * that follow cityUniforms.uRoadWetness like the roadway (better drained: fewer, smaller pools)
  * (Ported from SidewalkGenerator.js)
  */
-function createSidewalkMaterial() {
+function createSidewalkMaterial(aerialMix = 0) {
   const mat = new THREE.MeshStandardNodeMaterial({
     metalness: 0.0,
     roughness: 0.88
@@ -2088,7 +2096,8 @@ function createSidewalkMaterial() {
     const aggregate = noise2D(vec2(wx.mul(55.0), wz.mul(55.0))).sub(0.5).mul(0.08).mul(smoothstep(0.02, 0.006, pixelSize));
 
     const flagTone = flagHash.sub(0.5).mul(0.2).add(1.0).mul(mix(float(1.0), float(1.1), replaced));
-    const concrete = mix(cConcreteB, cConcreteA, tone)
+    const base = mix(cConcreteB, cConcreteA, tone);
+    const concrete = (aerialMix ? blendAerialSurfaceColor(base, aerialMix) : base)
       .mul(flagTone)
       .mul(float(1.0).sub(stain))
       .mul(mottle.add(1.0))
@@ -2937,7 +2946,7 @@ function createWaterMaterial() {
 /**
  * Central Park & Manhattan Park Lush Multi-Octave Turf, Clover & Mowing Stripes TSL Material
  */
-function createParkLawnMaterial(isMeadow = false) {
+function createParkLawnMaterial(isMeadow = false, aerial = false) {
   const mat = new THREE.MeshStandardNodeMaterial({
     metalness: 0.0,
     roughness: 0.86
@@ -2959,7 +2968,8 @@ function createParkLawnMaterial(isMeadow = false) {
       cGrassMid,
       macroPatch.mul(0.45).add(midClover.mul(0.35)).add(mowStripe.mul(0.20))
     );
-    return mix(baseLawn, cGrassSun, microBlade.mul(0.38));
+    const lawn = aerial ? blendAerialSurfaceColor(baseLawn, 0.65) : baseLawn;
+    return mix(lawn, cGrassSun, microBlade.mul(0.38));
   })();
 
   mat.normalNode = Fn(() => {

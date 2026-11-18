@@ -24,6 +24,8 @@ node tools/build-ede-geodata.mjs
 node tools/build-ede-shops.mjs
 ```
 
+Rebuild the aerial palettes after refreshing the map so their records follow the updated geometry.
+
 The roughly 7.4 × 5.4 km extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the town-wide view. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain.
 
 ## Refresh the AHN terrain
@@ -45,6 +47,19 @@ python3 tools/build-ede-terrain.py /tmp/ede-ahn-rd.tif
 
 Existing OSM street, cycleway, park and water outlines follow the terrain. AHN is a ground model, so bridge decks and tunnels still use the existing map treatment. The browser loads the local terrain asset and can fall back to level ground if the file is unavailable.
 
+## Refresh the aerial colors
+
+The 2025 PDOK orthophoto is downloaded in 1 km RD New tiles and sampled at 0.5 m. Inset building footprints use the median of brighter interior pixels to limit shadows and edge bleed. Roads and mapped cycle paths sample along their centerlines. A 3 m color grid supplies terrain, parks, pavement and squares, including Markt and Oude Kerkplein.
+
+The browser uses the baked samples as vertex colors and keeps the procedural surface detail and road markings. It reads local assets at startup and uses procedural colors if the assets are unavailable.
+
+With Python 3 and GDAL on your PATH:
+
+```sh
+python3 tools/fetch-ede-aerial.py /tmp/ede-aerial
+python3 tools/build-ede-aerial.py /tmp/ede-aerial/ede-aerial-2025.vrt
+```
+
 ## Refresh the tree inventory
 
 PDOK BGT supplies individual tree locations. Ede’s municipal inventory enriches nearby points with species groups and height and trunk-diameter ranges. OpenStreetMap contributes additional tree locations. The build joins the sources in RD New, then writes one compact asset for the current scene grid. Missing sizes and species receive deterministic estimates, and woodland outside mapped clusters still gets procedural trees.
@@ -55,6 +70,14 @@ python3 tools/build-ede-trees.py /tmp/ede-tree-sources/pdok.geojson /tmp/ede-tre
 ```
 
 The builder requires GDAL on your PATH. The optional OpenStreetMap snapshot is produced by the map refresh command. The browser samples AHN at each planted location and renders the trees with shared, instanced geometry in 200 m × 200 m tiles. Detail and visibility update with camera distance.
+
+## Refresh the lamp-post inventory
+
+```sh
+python3 tools/build-ede-lamps.py
+```
+
+The checked-in asset contains active PDOK BGT lamp posts within the game map. Pole bases follow AHN terrain, and the lamp models use a standard height and face the nearest road where possible.
 
 ## Make it your own
 
@@ -68,6 +91,8 @@ Explore other cities and community remixes in [Slop Cities](https://github.com/z
 - Streets, parks, water, trees, shops, and fallback building footprints are © OpenStreetMap contributors under [ODbL](https://www.openstreetmap.org/copyright).
 - Building geometry is © 3DBAG by tudelft3d and 3DGI under [CC BY 4.0](https://docs.3dbag.nl/en/copyright/).
 - District labels are based on the [CBS Wijk- en Buurtkaart 2025](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025).
-- The logo is from the [official Gemeente Ede website](https://www.ede.nl/).
+- Ede’s coat of arms is from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_Ede.svg) (public domain).
 - Terrain uses the [AHN ground model via PDOK](https://www.pdok.nl/introductie/-/article/actueel-hoogtebestand-nederland-ahn).
+- Vertex colors are derived from the [2025 Beeldmateriaal.nl aerial orthophoto via PDOK](https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566) under CC BY 4.0.
+- Lamp-post locations are from [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html) (CC0).
 - Tree locations are from [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1?f=html&lang=nl) (CC0). Tree attributes are from the [municipal Ede inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) (public domain).

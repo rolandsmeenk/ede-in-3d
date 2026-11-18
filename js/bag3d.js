@@ -3,7 +3,10 @@ import { attribute, mx_noise_float, positionWorld, normalWorld, float, smoothste
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GEO } from './nyc-geodata.js';
+import { BLOCKS } from './city-config.js';
+import { polygonContains } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
+import { getAerialColors, sampleGroundColor, sampleRoofColor } from './aerial-colors.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
 // https://3dbag.nl — tiles are glTF with node matrices in ECEF (glTF axes: x = X, y = Z, z = -Y).
@@ -95,9 +98,135 @@ function hash(n) {
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
 }
 
+const ROOF_CELL = 64;
+let mappedRoofs;
+
+function mappedRoofIndex() {
+  const cells = new Map();
+  for (const block of BLOCKS) {
+    if (block.park || !block.osmId) continue;
+    const footprint = { ...block, outer: block.poly };
+    for (let x = Math.floor(block.minX / ROOF_CELL); x <= Math.floor(block.maxX / ROOF_CELL); x++) {
+      for (let z = Math.floor(block.minZ / ROOF_CELL); z <= Math.floor(block.maxZ / ROOF_CELL); z++) {
+        const key = `${x}/${z}`;
+        if (!cells.has(key)) cells.set(key, []);
+        cells.get(key).push(footprint);
+      }
+    }
+  }
+  return cells;
+}
+
+function mappedRoofAt(x, z) {
+  const cell = mappedRoofs.get(`${Math.floor(x / ROOF_CELL)}/${Math.floor(z / ROOF_CELL)}`);
+  let match;
+  for (const roof of cell || []) {
+    if (x < roof.minX || x > roof.maxX || z < roof.minZ || z > roof.maxZ) continue;
+    if ((!match || roof.area < match.area) && polygonContains(roof, x, z)) match = roof;
+  }
+  return match?.osmId;
+}
+
+const ROOF_WEIGHTS = [[1 / 3, 1 / 3, 1 / 3], [0.5, 0.25, 0.25], [0.25, 0.5, 0.25], [0.25, 0.25, 0.5]];
+const roofLuminance = ([r, g, b]) => r * 0.2126 + g * 0.7152 + b * 0.0722;
+
+function estimateRoofColor(triangles, positions) {
+  const votes = new Map(), points = [];
+  let total = 0;
+  // Larger projected triangles give cleaner interior samples than thin roof details.
+  for (const { a, b, c, area } of [...triangles].sort((p, q) => q.area - p.area).slice(0, 8)) {
+    const x0 = positions[a], z0 = positions[a + 2];
+    const x1 = positions[b], z1 = positions[b + 2];
+    const x2 = positions[c], z2 = positions[c + 2];
+    total += area;
+    const widestEdge = Math.max(Math.hypot(x1 - x0, z1 - z0), Math.hypot(x2 - x1, z2 - z1), Math.hypot(x0 - x2, z0 - z2));
+    for (const [u, v, w] of ROOF_WEIGHTS) {
+      const x = u * x0 + v * x1 + w * x2, z = u * z0 + v * z1 + w * z2;
+      const id = mappedRoofAt(x, z);
+      if (id !== undefined) votes.set(id, (votes.get(id) || 0) + area / ROOF_WEIGHTS.length);
+      if (area / widestEdge >= 1.5) points.push([x, z]);
+    }
+  }
+  const tint = [0, 0, 0];
+  for (const [id, vote] of votes) {
+    if (vote > total * 0.5 && sampleRoofColor(id, tint)) return tint;
+  }
+  const samples = [];
+  for (const [x, z] of points) {
+    if (sampleGroundColor(x, z, tint)) samples.push([...tint]);
+  }
+  if (samples.length < 3) return null;
+  samples.sort((p, q) => roofLuminance(p) - roofLuminance(q));
+  return samples[Math.floor((samples.length - 1) * 0.65)];
+}
+
+function colorBagRoofs(geometry, featureIds) {
+  const { position, buildingHeight } = geometry.attributes;
+  const positions = position.array, heights = buildingHeight.array;
+  const index = geometry.index;
+  const count = index?.count ?? position.count;
+  const uses = index && new Uint8Array(position.count);
+  const roofs = new Map();
+  for (let i = 0; i + 2 < count; i += 3) {
+    const ia = index ? index.getX(i) : i, ib = index ? index.getX(i + 1) : i + 1, ic = index ? index.getX(i + 2) : i + 2;
+    const a = ia * 3, b = ib * 3, c = ic * 3;
+    const ux = positions[b] - positions[a], uy = heights[ib] - heights[ia], uz = positions[b + 2] - positions[a + 2];
+    const vx = positions[c] - positions[a], vy = heights[ic] - heights[ia], vz = positions[c + 2] - positions[a + 2];
+    const area = uz * vx - ux * vz;
+    const id = Math.round(featureIds.getX(ia));
+    const roof = area > 0.35 * Math.hypot(uy * vz - uz * vy, area, ux * vy - uy * vx)
+      && Math.max(heights[ia], heights[ib], heights[ic]) > 0.25
+      && id === Math.round(featureIds.getX(ib)) && id === Math.round(featureIds.getX(ic));
+    if (uses) {
+      const kind = roof ? 1 : 2;
+      uses[ia] |= kind; uses[ib] |= kind; uses[ic] |= kind;
+    }
+    if (!roof) continue;
+    if (!roofs.has(id)) roofs.set(id, []);
+    roofs.get(id).push({ i, a, b, c, area });
+  }
+  const colors = geometry.attributes.color.array;
+  const splits = new Map();
+  let roofIndices;
+  for (const triangles of roofs.values()) {
+    const tint = estimateRoofColor(triangles, positions);
+    if (!tint) continue;
+    for (const { i, a, b, c } of triangles) {
+      const vertices = [a / 3, b / 3, c / 3];
+      for (let corner = 0; corner < 3; corner++) {
+        const vertex = vertices[corner];
+        if (uses?.[vertex] !== 3) {
+          colors.set(tint, vertex * 3);
+          continue;
+        }
+        // Keep the tile indexed and duplicate only vertices shared by tinted roofs and walls.
+        roofIndices ??= Uint32Array.from(index.array);
+        if (!splits.has(vertex)) splits.set(vertex, { vertex: position.count + splits.size, tint });
+        roofIndices[i + corner] = splits.get(vertex).vertex;
+      }
+    }
+  }
+  if (roofIndices) {
+    const vertexCount = position.count + splits.size;
+    for (const [name, { array, itemSize, normalized }] of Object.entries(geometry.attributes)) {
+      const expanded = new array.constructor(vertexCount * itemSize);
+      expanded.set(array);
+      for (const [source, { vertex, tint }] of splits) {
+        const values = name === 'color' ? tint : array.subarray(source * itemSize, (source + 1) * itemSize);
+        expanded.set(values, vertex * itemSize);
+      }
+      geometry.setAttribute(name, new THREE.BufferAttribute(expanded, itemSize, normalized));
+    }
+    geometry.setIndex(new THREE.BufferAttribute(vertexCount > 65536 ? roofIndices : Uint16Array.from(roofIndices), 1));
+  }
+  return geometry;
+}
+
 // Bakes a loaded tile into one engine-space mesh geometry with per-building colour variation.
 export function bakeTile(gltf, matrix) {
   const geometries = [];
+  const useAerial = getAerialColors();
+  if (useAerial) mappedRoofs ??= mappedRoofIndex();
   gltf.scene.updateMatrixWorld(true);
   gltf.scene.traverse((o) => {
     if (!o.isMesh) return;
@@ -140,12 +269,13 @@ export function bakeTile(gltf, matrix) {
       const seed = fid ? Math.round(fid.getX(i)) : 0;
       positions[i * 3 + 1] = relativeHeights[i] + groundByBuilding.get(seed);
     }
-    const g = new THREE.BufferGeometry();
+    let g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     g.setAttribute('buildingHeight', new THREE.BufferAttribute(relativeHeights, 1));
     if (src.index) g.setIndex(src.index.array instanceof Uint32Array || count > 65535 ? new THREE.BufferAttribute(Uint32Array.from(src.index.array), 1) : new THREE.BufferAttribute(Uint16Array.from(src.index.array), 1));
+    if (useAerial && fid) g = colorBagRoofs(g, fid);
     g.computeBoundingSphere(); g.computeBoundingBox();
     geometries.push(g);
   });
