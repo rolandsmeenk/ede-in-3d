@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { buildRoadNetwork } from './road-network.js';
 import { busEntryAt, prepareEdeBusPaths } from './ede-bus-traffic.js';
 import { terrainHeightAt } from './terrain.js';
+import { getEdeGrade, gradeHeightAt, gradeWayAt } from './ede-grade.js';
 import { createPedestrianSystem } from './pedestrian-system.js';
 import { vehicleContact, resolveVehicleContact, sweptVehicleContact } from './vehicle-physics.js';
 import { signalPhase, walkSignal } from './city-config.js';
@@ -123,7 +124,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // =========================================================================
   // 0. ROAD NETWORK
   // =========================================================================
-  const network = buildRoadNetwork(sidewalks, obstacles, signalIntersections);
+  const network = buildRoadNetwork(sidewalks, obstacles, signalIntersections, getEdeGrade());
   const { nodes, edges, connector, curvePoint } = network;
   const busPaths = prepareEdeBusPaths(busSchedule, edges);
 
@@ -429,7 +430,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   busHeaderInst.name = 'EdeBusDestinations';
   group.add(busBodyInst, busHeaderInst, busWheelLeftInst, busWheelRightInst);
 
-  // Bicycles: upright Dutch bikes with a seated rider that share the traffic lanes at 16-23 km/h. The bike frame and
+  // Bicycles: upright Dutch bikes following the mapped cycle network. The bike frame and
   // the rider's clothes are tinted per instance (their vertex colour is white), the wheels, legs and head are not.
   const BIKE_DRIVER = { a: 1.0, b: 2.0, T: 1.0, s0: 1.5, aLat: 2.0, bMax: 5, grip: 5, lock: 0.5, steerRate: 0.3 };
   const paintGeo = (g, r, gr, b) => {
@@ -513,8 +514,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     halfW: 0.86, halfL: 2.18 };
   const nearEdges = [];
   const nearSignals = [];
+  const nearFoot = [], nearBikes = [], nearCycleways = [];
+  const activeTravel = network.activeTravel;
   const pedestrianSystem = createPedestrianSystem(network, {
-    player, nearEdges, nearSignals, mayCross, walkOn, visible, nearView
+    player, nearEdges, nearSignals, nearFoot,
+    mappedGround: (track, x, z) => gradeWayAt(track.wayId, x, z, 1.2)?.y
+      ?? gradeHeightAt(x, z, terrainHeightAt(x, z), 'foot'),
+    mayCross, walkOn, visible, nearView
   });
   group.add(...pedestrianSystem.meshes);
 
@@ -651,7 +657,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     for (const v of vehicles) v.claimed = false;
     for (const v of vehicles) {
       const e = v.edge;
-      if (!e) continue;
+      if (!e || e.mapped) continue;
       if (!v.conn) {
         occupy(e.occ[v.lane], v, v.s);
         const side = straddle(v);
@@ -698,9 +704,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     return true;
   }
 
-  function nearView(x, z, radius, distance) {
+  function nearView(x, z, radius, distance, y = terrainHeightAt(x, z)) {
     if (!hasView || Math.hypot(x - camX, z - camZ) >= distance) return false;
-    const y = terrainHeightAt(x, z);
     return Math.hypot(x - camX, y - camY, z - camZ) < distance && visible(x, z, radius, y);
   }
 
@@ -713,6 +718,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     nearZ = focusZ;
     nearEdges.length = 0;
     nearSignals.length = 0;
+    activeTravel?.foot(focusX, focusZ, NEAR_RADIUS, nearFoot);
+    activeTravel?.bikes(focusX, focusZ, NEAR_RADIUS, nearBikes);
+    nearCycleways.length = 0;
+    for (const track of nearBikes) if (track.exclusive) nearCycleways.push(track);
     for (const e of edges) {
       if (e.busExclusive) continue;
       const s = clamp((focusX - e.sx) * e.dx + (focusZ - e.sz) * e.dz, 0, e.len);
@@ -728,7 +737,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // Where the player is relative to v: metres ahead, metres to the right, and how fast it moves v's way
   function relateToPlayer(v) {
     v.pAhead = Infinity;
-    if (!player.active) return;
+    if (!player.active || Math.abs(player.y - v.y) > 1.8) return;
     const dx = player.x - v.x;
     const dz = player.z - v.z;
     if (Math.abs(dx) > LOOKAHEAD + 10 || Math.abs(dz) > LOOKAHEAD + 10) return;
@@ -816,7 +825,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       const next = v.busPath.legs[v.busLeg + 1];
       return next ? e.moves.find((m) => m.to === next.road && m.out[v.lane] === next.lane) : null;
     }
-    const moves = e.ambientMoves || e.moves;
+    const moves = (v.bodyType === 'van' ? e.vanMoves : e.ambientMoves) || e.moves;
     let total = 0;
     for (let k = 0; k < moves.length; k++) {
       const m = moves[k];
@@ -1085,12 +1094,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // pulling out of an intersection or dodging the player, nor in the last 12 m before the next.
   function changeLanes(v) {
     const e = v.edge;
+    const allowed = v.bodyType === 'van' ? e.vanLanes : e.ambientLanes;
     if (v.conn || v.commit || v.off || clock < v.panicUntil) return;
     if (Math.abs(v.dl) > 0.5 || v.s < v.half || e.len - v.s - v.half < 12) return;
     let target = -1;
     if (v.move.out[v.lane] < 0) {
       const t = v.lane + Math.sign(nearestLane(v.move, v.lane) - v.lane);
-      if (laneSafe(v, t, -4)) target = t;
+      if ((!allowed || allowed.includes(t)) && laneSafe(v, t, -4)) target = t;
     } else if (v.bike || v.speed > 2) {
       // bikes never sit in a queue: they take any adjacent lane with room that lets them keep going
       let best = laneAcc(v, v.lane) + (v.bike ? 0.05 : 0.6);
@@ -1243,6 +1253,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         cap = Math.min(cap, Math.sqrt(4 * Math.max(0, distance)));
       }
     }
+    cap = Math.min(cap, (e.limits?.speed ?? Infinity) / 3.6);
     const pg = playerGap(v, 0);
     if (pg > 0 && pg < LOOKAHEAD) { // (a player alongside, not yet clear ahead, isn't one to follow)
       worst = Math.min(worst, brake(v, pg, v.pSpeed));
@@ -1270,7 +1281,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // unless there is more room the other way.
   // It keeps that up for AVOID_HOLD seconds at least, and for as long as the player is still about to hit it.
   function react(v, dt) {
-    const t = player.active && v.impactTime === 0 ? threatTime(v) : Infinity;
+    const t = player.active && Math.abs(player.y - v.y) < 1.8 && v.impactTime === 0 ? threatTime(v) : Infinity;
     if (v.impactTime > 0 || (v.panicUntil && clock >= v.panicUntil)) {
       v.evade = v.panicUntil = v.panicAcc = v.alarm = 0; // hit after all, or over
     }
@@ -1528,6 +1539,11 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // Move v along and across its path by (dx, dz), as far as the road allows
   function shove(v, dx, dz) {
     const along = dx * v.tx + dz * v.tz;
+    if (v.edge.mapped) {
+      v.s = clamp(v.s + along, 0, v.edge.len);
+      locateBike(v);
+      return;
+    }
     if (v.conn) v.cs = clamp(v.cs + along, -v.half, v.conn.len - 0.01);
     else v.s = clamp(v.s + along, 0, v.edge.len - v.half);
     v.dl = clamp(v.dl + dz * v.tx - dx * v.tz, -2.5, 2.5);
@@ -1602,6 +1618,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
 
   function collideWithPlayer(v) {
     const pe = player.entity;
+    if (v.edge.unmodeledTunnel || Math.abs(pe.position.y - v.y) > 1.8) return;
     const reach = v.half + player.halfL + player.halfW;
     const prevX = pe.prevX ?? pe.position.x, prevZ = pe.prevZ ?? pe.position.z;
     const dx = pe.position.x - prevX - v.x + v.prevX;
@@ -1644,7 +1661,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       pe.heaveVel += Math.min(0.7, kick * 0.06);
     }
     impactSuspension(v, -hit.nx, -hit.nz, hit.impulse / b.mass);
-    const y = terrainHeightAt(hit.x, hit.z) + 0.58;
+    const y = v.y + 0.58;
     if (pe.type !== 'person') reportCollision(pe, v, hit.x, y, hit.z, hit.nx, hit.nz, speed);
     if (speed > 2.2) spawnCollisionSparks(hit.x, y, hit.z, hit.nx, hit.nz, speed);
   }
@@ -1663,7 +1680,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     for (let i = 0; i < impacted.length; i++) {
       const v = impacted[i];
       for (const o of vehicles) {
-        if (o === v || !o.edge || o.contactDone === collisionStep || !!o.edge.underpass !== !!v.edge.underpass) continue;
+        if (o === v || !o.edge || o.edge.unmodeledTunnel || v.edge.unmodeledTunnel || o.contactDone === collisionStep || Math.abs(o.y - v.y) > 1.8) continue;
         const reach = v.half + o.half + 0.5;
         const dx = v.x - o.x, dz = v.z - o.z;
         if (Math.abs(dx) > reach + Math.abs(dx - v.prevX + o.prevX)
@@ -1681,7 +1698,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         writeTrafficVelocity(o, contactB);
         impactSuspension(v, hit.nx, hit.nz, hit.impulse / contactA.mass);
         impactSuspension(o, -hit.nx, -hit.nz, hit.impulse / contactB.mass);
-        const y = terrainHeightAt(hit.x, hit.z) + 0.56;
+        const y = v.y + 0.56;
         reportCollision(v, o, hit.x, y, hit.z, hit.nx, hit.nz, speed);
         if (speed > 2.2) spawnCollisionSparks(hit.x, y, hit.z, hit.nx, hit.nz, speed);
         if (o.contactStep !== collisionStep) {
@@ -1731,8 +1748,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     for (let attempt = 0; attempt < 12; attempt++) {
       const e = nearEdges[Math.floor(Math.random() * nearEdges.length)];
       if (!e || e.len < 2 * v.half + 10) continue;
-      const lane = e.ambientLanes ? e.ambientLanes[Math.floor(Math.random() * e.ambientLanes.length)]
-        : Math.floor(Math.random() * e.lanes.length);
+      const allowed = v.bodyType === 'van' ? e.vanLanes : e.ambientLanes;
+      if (allowed && !allowed.length) continue;
+      const lane = allowed ? allowed[Math.floor(Math.random() * allowed.length)] : Math.floor(Math.random() * e.lanes.length);
       const along = (focusX - e.sx) * e.dx + (focusZ - e.sz) * e.dz;
       const minS = Math.max(v.half + 5, along - rMax);
       const maxS = Math.min(e.len - v.half - 5, along + rMax);
@@ -1741,13 +1759,71 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       const x = e.sx + e.dx * s + e.rx * e.lanes[lane];
       const z = e.sz + e.dz * s + e.rz * e.lanes[lane];
       const d = Math.hypot(x - focusX, z - focusZ);
-      if (d < rMin || d > rMax || (protectView && nearView(x, z, v.half + 4, VEHICLE_SPAWN_DISTANCE))) continue;
+      if (d < rMin || d > rMax || (protectView && nearView(x, z, v.half + 4, VEHICLE_SPAWN_DISTANCE, roadGround(e, x, z)))) continue;
       if (player.active && Math.hypot(x - player.x, z - player.z) < 25) continue;
       if (!laneClear(e.occ[lane], s, v.half + 8)) continue;
       place(v, e, lane, s);
       return true;
     }
     return false;
+  }
+
+  function bikePoint(track, s, dir) {
+    const offset = Math.min(track.exclusive ? track.width * 0.24 : track.width * 0.38, s * 0.6, (track.len - s) * 0.6);
+    return { x: track.ax + track.ux * s - track.uz * dir * offset, z: track.az + track.uz * s + track.ux * dir * offset };
+  }
+
+  function locateBike(b) {
+    const { x, z } = bikePoint(b.edge, b.s, b.dir);
+    b.x = x; b.z = z;
+    b.tx = b.edge.ux * b.dir;
+    b.tz = b.edge.uz * b.dir;
+    b.yaw = Math.atan2(b.tx, b.tz);
+  }
+
+  function spawnBike(b, rMin, rMax, protectView) {
+    const candidates = nearCycleways.length && b.slot % 4 !== 0 ? nearCycleways : nearBikes;
+    for (let i = 0; i < 12; i++) {
+      const t = candidates[Math.floor(Math.random() * candidates.length)];
+      if (!t || t.len < 2) continue;
+      const dir = t.allowed.every(Boolean) ? (Math.random() < 0.5 ? -1 : 1) : t.allowed[0] ? 1 : -1;
+      const s = Math.random() * t.len;
+      const { x, z } = bikePoint(t, s, dir);
+      const d = Math.hypot(x - focusX, z - focusZ), y = roadGround(t, x, z);
+      if (d < rMin || d > rMax || protectView && nearView(x, z, 5, VEHICLE_SPAWN_DISTANCE, y)) continue;
+      if (player.active && Math.hypot(x - player.x, z - player.z) < 12) continue;
+      if (bikes.some(v => v !== b && v.edge && Math.abs(v.x - x) < 5 && Math.abs(v.z - z) < 5 && Math.abs(v.y - y) < 1.8)) continue;
+      Object.assign(b, { edge: t, s, dir, speed: b.v0 * 0.8, y, vx: 0, vz: 0, yawOffset: 0, yawVel: 0, impactTime: 0 });
+      locateBike(b);
+      b.prevX = x; b.prevZ = z;
+      return true;
+    }
+    return false;
+  }
+
+  function driveBike(b, dt) {
+    b.impactTime = Math.max(0, b.impactTime - dt);
+    if (!b.impactTime) b.speed = Math.min(b.v0, b.speed + dt);
+    b.s += b.dir * b.speed * dt;
+    for (let i = 0; i < 8 && (b.s < 0 || b.s > b.edge.len); i++) {
+      const e = b.edge, end = b.dir > 0 ? 1 : 0;
+      const remaining = end ? b.s - e.len : -b.s;
+      let next = null, best = -Infinity;
+      for (const [leg] of e.links[end]) {
+        const alignment = (e.ux * leg.track.ux + e.uz * leg.track.uz) * b.dir * leg.dir;
+        const score = alignment + (leg.track.exclusive ? 0.6 : 0) + Math.random() * 0.65;
+        if (score > best) { next = leg; best = score; }
+      }
+      if (!next && e.allowed[end]) next = { track: e, dir: -b.dir };
+      if (!next) { b.edge = null; return; }
+      b.edge = next.track;
+      b.dir = next.dir;
+      b.s = next.dir > 0 ? remaining : b.edge.len - remaining;
+    }
+    b.s = clamp(b.s, 0, b.edge.len);
+    locateBike(b);
+    knock(b, dt);
+    pose(b, dt);
   }
 
   const dispatchedTrips = new Map();
@@ -1829,9 +1905,16 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     attr.needsUpdate = true;
   }
 
+  function roadGround(edge, x, z, next = null) {
+    const a = gradeWayAt(edge.wayId, x, z, 1.2);
+    const b = next && next.wayId !== edge.wayId ? gradeWayAt(next.wayId, x, z, 1.2) : null;
+    return (b && (!a || b.distance < a.distance) ? b : a)?.y ?? terrainHeightAt(x, z);
+  }
+
   function fitVehicleGrade(v, sinY, cosY) {
-    const nose = terrainHeightAt(v.x + sinY * v.axle, v.z + cosY * v.axle);
-    const side = terrainHeightAt(v.x + cosY * v.halfWidth, v.z - sinY * v.halfWidth);
+    const ground = v.edge?.wayId ? (x, z) => roadGround(v.edge, x, z, v.conn && v.move?.to) : terrainHeightAt;
+    const nose = ground(v.x + sinY * v.axle, v.z + cosY * v.axle);
+    const side = ground(v.x + cosY * v.halfWidth, v.z - sinY * v.halfWidth);
     v.roadPitch = Math.atan2(v.y - nose, v.axle);
     v.roadRoll = Math.atan2(side - v.y, v.halfWidth);
   }
@@ -1839,6 +1922,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // 3D spinning alloy wheels & tires (left & right, front & rear), exact 1:1 ground rolling, steering front wheels.
   // The wheel geometry is modelled at baseRadius (the sedan's 0.35 m car wheel), scaled to the vehicle's radius
   function placeWheels(v, i, rotY, roll, radius, halfTrack, halfBase, leftInst, rightInst, baseRadius = 0.35) {
+    const ground = v.edge?.wayId ? (x, z) => roadGround(v.edge, x, z, v.conn && v.move?.to) : terrainHeightAt;
     const sinY = Math.sin(rotY);
     const cosY = Math.cos(rotY);
     const scale = radius / baseRadius;
@@ -1848,13 +1932,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       dummy.rotation.set(v.wheelSpin + w * 0.55, rotY + (w === 0 ? v.steer : 0), roll, 'YXZ');
       const leftX = v.x - halfTrack * cosY + wz * sinY;
       const leftZ = v.z + halfTrack * sinY + wz * cosY;
-      dummy.position.set(leftX, terrainHeightAt(leftX, leftZ) + radius, leftZ);
+      dummy.position.set(leftX, ground(leftX, leftZ) + radius, leftZ);
       dummy.updateMatrix();
       leftInst.setMatrixAt(i * 2 + w, dummy.matrix);
 
       const rightX = v.x + halfTrack * cosY + wz * sinY;
       const rightZ = v.z - halfTrack * sinY + wz * cosY;
-      dummy.position.set(rightX, terrainHeightAt(rightX, rightZ) + radius, rightZ);
+      dummy.position.set(rightX, ground(rightX, rightZ) + radius, rightZ);
       dummy.updateMatrix();
       rightInst.setMatrixAt(i * 2 + w, dummy.matrix);
     }
@@ -1922,7 +2006,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     const [shadowW, shadowL, shadowZ] = bodies[c.bodyType].shadow;
     const shadowX = c.x + sinY * shadowZ, shadowWorldZ = c.z + cosY * shadowZ;
     dummy.rotation.set(c.roadPitch, rotY, c.roadRoll, 'YXZ');
-    dummy.position.set(shadowX, terrainHeightAt(shadowX, shadowWorldZ) + 0.018, shadowWorldZ);
+    dummy.position.set(shadowX, roadGround(c.edge, shadowX, shadowWorldZ, c.conn && c.move?.to) + 0.018, shadowWorldZ);
     dummy.scale.set(shadowW, 1.0, shadowL);
     dummy.updateMatrix();
     carShadowInst.setMatrixAt(visIdx, dummy.matrix);
@@ -1973,7 +2057,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     const forwardDist = (b.x - b.prevX) * sinY + (b.z - b.prevZ) * cosY;
     const rawStep = forwardDist / BUS_SPEC.wheelRadius;
     b.wheelSpin = (b.wheelSpin + Math.sign(rawStep) * Math.min(Math.abs(rawStep), 0.48)) % (Math.PI * 2);
-    if (b.edge.underpass) return;
+    if (b.edge.unmodeledTunnel) return;
     if (hasView && !visible(b.x, b.z, 22, b.y)) return;
     fitVehicleGrade(b, sinY, cosY);
 
@@ -2157,7 +2241,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       player.entity = playerEntity;
       player.x = playerEntity.position.x;
       player.z = playerEntity.position.z;
-      player.height = playerEntity.position.y - terrainHeightAt(player.x, player.z);
+      player.y = playerEntity.position.y;
+      player.height = player.y - gradeHeightAt(player.x, player.z, player.y, activeMode);
       player.active = activeMode !== 'helicopter' && player.height < 2.6;
       player.fx = Math.sin(heading);
       player.fz = Math.cos(heading);
@@ -2178,7 +2263,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       const d = v.edge ? Math.hypot(v.x - focusX, v.z - focusZ) : Infinity;
       if (d <= (jump ? NEAR_RADIUS : VEHICLE_RADIUS)) continue;
       budget--;
-      spawnVehicle(v, jump ? 0 : 100, NEAR_RADIUS, !jump);
+      if (v.bike) spawnBike(v, jump ? 0 : 70, NEAR_RADIUS, !jump);
+      else spawnVehicle(v, jump ? 0 : 100, NEAR_RADIUS, !jump);
     }
     spawnScheduledBuses();
     buildOccupancy();
@@ -2197,6 +2283,12 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
 
       v.prevX = v.x;
       v.prevZ = v.z;
+      v.y = roadGround(v.edge, v.x, v.z, v.conn && v.move?.to);
+      if (v.edge.mapped) {
+        driveBike(v, dt);
+        if (v.edge) v.y = roadGround(v.edge, v.x, v.z);
+        continue;
+      }
       relateToPlayer(v);
       react(v, dt);
       drive(v, dt);
@@ -2204,14 +2296,14 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       locate(v);
       knock(v, dt);
       pose(v, dt);
+      v.y = roadGround(v.edge, v.x, v.z, v.conn && v.move?.to);
     }
     if (player.active) {
-      for (const v of vehicles) if (v.edge && !v.edge.underpass) collideWithPlayer(v);
+      for (const v of vehicles) if (v.edge) collideWithPlayer(v);
     }
     collideTraffic();
     for (const v of vehicles) {
       if (!v.edge) continue;
-      v.y = terrainHeightAt(v.x, v.z);
       if (v.bus) renderBus(v);
       else if (v.bike) renderBike(v);
       else renderCar(v);

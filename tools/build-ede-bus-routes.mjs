@@ -123,7 +123,7 @@ function directedLanes(graph) {
       const ex = x + span * dx, ez = z + span * dz;
       const range = clip([x, z], [ex, ez], bounds);
       return { edge: e, index, x, z, x0, z0, dx, dz, rx, rz, span, clearStart, clearEnd: clearStart + len,
-        sideCost: (e.lanes.length - index - 1) * 0.9, turns: [], range: range?.map(t => t * span) };
+        sideCost: (e.lanes.length - index - 1) * 0.9, turns: [], range: e.laneMask?.[index] === false ? null : range?.map(t => t * span) };
     });
     byId.set(id, lanes);
     if (lanes.some(lane => lane.range)) {

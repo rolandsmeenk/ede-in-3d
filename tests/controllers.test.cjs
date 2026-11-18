@@ -40,7 +40,8 @@ function keyboardHarness(nyc = {}, terrainHeightAt = () => 0) {
       './vehicle-lights.js': {},
       './landmarks.js': {},
       './building-collision.js': polygonCollision,
-      './terrain.js': { terrainHeightAt }
+      './terrain.js': { terrainHeightAt },
+      './ede-grade.js': { gradeHeightAt: terrainHeightAt, gradeDeckAt: () => undefined, gradeProfileAt: () => null }
     }
   });
   // Exercise the production event handlers without constructing the scene's 3D models.

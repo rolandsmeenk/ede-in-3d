@@ -46,7 +46,8 @@ test('draped faces keep their offset across terrain cells and both sides of the 
     imports: {
       'three/webgpu': { BufferGeometry: Geometry, BufferAttribute: Attribute, Float32BufferAttribute: Attribute },
       './city-config.js': {},
-      './terrain.js': { getTerrain: () => terrain, terrainHeightAt: heightAt }
+      './terrain.js': { getTerrain: () => terrain, terrainHeightAt: heightAt },
+      './ede-grade.js': {}
     }
   });
   const surface = new Geometry();

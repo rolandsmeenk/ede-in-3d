@@ -10,6 +10,8 @@ import {
 } from './city-config.js';
 import { GEO } from './nyc-geodata.js';
 import { polygonBoxOverlaps } from './building-collision.js';
+import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad } from './road-access.js';
+import { buildEdeActiveTravel } from './ede-active-travel.js';
 
 // Drivable road graph derived from the ground layout that city-grid.js actually builds: avenue corridors
 // between the raised curbs, cross-street gaps between curb rows, lanes that keep clear of medians, plazas
@@ -27,7 +29,7 @@ const CROSSWALK = 2.5; // depth between an intersection box and its stop lines
 const SHORE_MARGIN = 6;
 const roadEdgeKey = ({ from, to }) => [from.x, from.z, to.x, to.z].map((v) => v.toFixed(2)).join(',');
 
-function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
+function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade) {
   // 1. Spatial hash of ground footprints: curbs bound the roads, everything else also blocks pedestrians
   const hash = new Map();
   const cellKey = (ix, iz) => (ix + 512) * 1024 + iz + 512;
@@ -326,7 +328,9 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
     }
     // Links the grid already carries: most of their length runs along an avenue (north-south) or a cross street
     const links = [];
-    for (const [a, b, ni, w, lanes, dir, inner, busOnly] of RG.links) {
+    for (const [a, b, ni, w, lanes, dir, inner, roadIndex, flags] of RG.links) {
+      const road = GEO.ede?.roads[roadIndex];
+      const modes = road?.modes || [MOTOR, MOTOR];
       const pts = [pos[a]];
       for (let k = 0; k < inner.length; k += 2) pts.push({ x: inner[k], z: inner[k + 1] });
       pts.push(pos[b]);
@@ -337,12 +341,17 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
         if ((Math.abs(dz) > 0.94 && aveAt(x, z, 1.5)) || (Math.abs(dx) > 0.94 && pieceAt(x, z, 1.5, false))) hit++;
       });
       if (n && hit > n * 0.5) continue;
-      links.push({ a, b, name: RG.names[ni], w, lanes, dir, pts, len, busOnly });
+      links.push({ a, b, name: RG.names[ni], w, lanes, dir, pts, len, road, modes, ...flags,
+        busOnly: ((modes[0] | modes[1]) & MOTOR) === BUS });
     }
     // Junctions a few metres apart (divided roads, offset corners) are one: collapse links under 14 m
     const parent = pos.map((_, i) => i);
     const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-    for (const l of links) if (!l.busOnly && l.len < 14) parent[find(l.a)] = find(l.b);
+    const portals = new Set(links.filter((l) => l.road?.bridge || l.road?.tunnel).flatMap((l) => [l.a, l.b]));
+    for (const l of links) {
+      if (portals.has(l.a) || portals.has(l.b)) l.keepShape = true;
+      if (!l.keepShape && l.len < 14) parent[find(l.a)] = find(l.b);
+    }
     const sum = new Map();
     const counted = new Set();
     for (const l of links) {
@@ -417,11 +426,18 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
       const half = w / 2;
       const axis = w >= 14.5 || l.lanes >= 3 || MAJOR.test(l.name) ? 'ave' : 'st';
       if (l.dir !== 0) {
-        const lanes = l.busOnly === 1 ? [0] : laneOffsets(half) || [0];
+        const tagged = l.road?.laneModes?.[l.dir < 0 ? 1 : 0];
+        const lanes = tagged
+          ? tagged.map((_, i) => (i - (tagged.length - 1) / 2) * Math.min(3.6, w / tagged.length))
+          : l.busOnly ? [0] : laneOffsets(half) || [0];
         return { half, axis, fwd: l.dir > 0 ? lanes : [], back: l.dir < 0 ? lanes : [] };
       }
-      const each = half >= 8.5 ? [1.8, 5.4] : [1.8];
-      return { half, axis, fwd: each, back: each };
+      const offsets = (d) => {
+        const tagged = l.road?.laneModes?.[d];
+        if (tagged) return tagged.map((_, i) => (i + 0.5) * Math.min(3.6, half / tagged.length));
+        return half >= 8.5 ? [1.8, 5.4] : [1.8];
+      };
+      return { half, axis, fwd: offsets(0), back: offsets(1) };
     }
     const DEG = Math.PI / 180;
     for (const l of links) {
@@ -440,7 +456,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
         rest -= Math.hypot(p1.x - pts[k - 1].x, p1.z - pts[k - 1].z);
         let turn = Math.abs(Math.atan2(p2.z - p1.z, p2.x - p1.x) - Math.atan2(p1.z - last.z, p1.x - last.x));
         if (turn > Math.PI) turn = 2 * Math.PI - turn;
-        const minSpan = l.busOnly ? 5 : 15;
+        const minSpan = l.keepShape ? 5 : 15;
         if (turn < 12 * DEG || d0 < minSpan || rest < minSpan) continue;
         const s = { x: p1.x, z: p1.z, hx: 0, hz: 0, signal: false, in: [], out: [], general: true, shape: true };
         nodes.push(s);
@@ -449,7 +465,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
       }
       stations.push(B);
       const lanes = lanesOf(l);
-      for (let k = 0; k + 1 < stations.length; k++) runs.push({ from: stations[k], to: stations[k + 1], ...lanes, busOnly: l.busOnly });
+      for (let k = 0; k + 1 < stations.length; k++) runs.push({ ...l, ...lanes, from: stations[k], to: stations[k + 1] });
     }
     console.info(`[roads] centreline streets: ${links.length} links not on the grid, ${runs.length} straight runs`);
     return runs;
@@ -505,17 +521,23 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
     }
     return true;
   };
-  function addEdgeGeneral(from, to, axis, lanes, half, divided, busOnly) {
+  function addEdgeGeneral(from, to, lanes, run, direction) {
+    const { axis, half, divided, keepShape, road, boundary } = run;
     const x0 = from.x;
     const z0 = from.z;
     const span = Math.hypot(to.x - x0, to.z - z0);
-    if (span < (busOnly ? 2 : 8)) return;
+    if (span < (keepShape ? 2 : 8)) return;
     const dx = (to.x - x0) / span;
     const dz = (to.z - z0) / span;
-    const boundary = busOnly === 3;
-    const open = lanes.filter((o) => laneOpen(x0, z0, dx, dz, span, o, boundary));
+    const modes = run.modes[direction] & MOTOR;
+    const tagged = road?.laneModes?.[direction];
+    const underpass = !!road?.tunnel, bridge = !!road?.bridge;
+    const open = lanes.filter((o, i) => (!tagged || tagged[i] & modes) && (underpass || bridge || laneOpen(x0, z0, dx, dz, span, o, boundary)));
     if (!open.length) return;
-    edges.push({ from, to, axis, x0, z0, dx, dz, rx: -dz, rz: dx, span, half, lanes: open.sort((p, q) => p - q), moves: [], general: true, cand: lanes, divided: !!divided, busOnly: busOnly > 0 && busOnly < 4, underpass: busOnly === 2, boundary });
+    edges.push({ from, to, axis, x0, z0, dx, dz, rx: -dz, rz: dx, span, half, lanes: open, moves: [],
+      general: true, cand: lanes, divided: !!divided, busOnly: modes === BUS, modes,
+      ...(tagged ? { laneModes: open.map(o => tagged[lanes.indexOf(o)]) } : {}),
+      underpass, tunnelType: road?.tunnelType, bridge, boundary, keepShape, wayId: road?.id, layer: road?.layer || 0, limits: road?.limits });
   }
   // A divided road drawn as two one-way roadways between the same two junctions (most of the Bowery) runs both ways
   // along one centreline here: each way keeps to the right of it, as on a two-way street, and the road is as wide as
@@ -532,7 +554,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
     if (!r.fwd.length === !r.back.length || r.divided) continue;
     const [a, b] = travel(r);
     const o = oneWays.has(b) && oneWays.get(b).get(a);
-    if (!o || o.divided) continue;
+    if (!o || o.divided || r.road?.laneModes || o.road?.laneModes || r.road?.layer !== o.road?.layer) continue;
     for (const q of [r, o]) {
       const lanes = q.fwd.length ? q.fwd : q.back;
       const right = lanes.map((x) => x - lanes[0] + 1.8); // as on a two-way street, from 1.8 m right of the centreline
@@ -544,8 +566,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
     if (r.half >= 7.25) r.axis = o.axis = 'ave'; // as wide as a major road (see lanesOf)
   }
   for (const r of genRuns) {
-    if (r.fwd.length) addEdgeGeneral(r.from, r.to, r.axis, r.fwd, r.half, r.divided, r.busOnly);
-    if (r.back.length) addEdgeGeneral(r.to, r.from, r.axis, r.back, r.half, r.divided, r.busOnly);
+    if (r.fwd.length) addEdgeGeneral(r.from, r.to, r.fwd, r, 0);
+    if (r.back.length) addEdgeGeneral(r.to, r.from, r.back, r, 1);
   }
   // Two edges from one node to the same next one (a service road whose ends were drawn onto its main road's junctions)
   // would drive through each other: keep the grid's, else the one with the most lanes
@@ -561,7 +583,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
   // ...and where only some of the junctions on both sides of its median became one (Pike St), the stretches of its two
   // roadways that run on top of each other the same way
   {
-    const oneWay = edges.filter((e) => e.general && !e.busOnly && !e.divided && e.cand[0] <= 0); // lanes about its centreline
+    const oneWay = edges.filter((e) => e.general && !e.busOnly && !e.boundary && !e.underpass && !e.bridge && !e.laneModes && !e.divided && e.cand[0] <= 0); // lanes about its centreline
     const cells = new Map(); // 16 m cells -> the one-way edges passing within 4 m
     oneWay.forEach((e, i) => {
       e.oneWay = i;
@@ -598,6 +620,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
         for (let j = i + 1; j < list.length; j++) {
           const e = list[i];
           const f = list[j];
+          if (e.layer !== f.layer) continue;
           if (e.dx * f.dx + e.dz * f.dz > -0.94) continue; // the other way, within 20°
           const key = Math.min(e.oneWay, f.oneWay) * 65536 + Math.max(e.oneWay, f.oneWay);
           if (tested.has(key)) continue;
@@ -616,8 +639,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
     }
     edges = edges.filter((e) => e.lanes.length);
   }
-  const canTurn = (e, f) => f.to !== e.from && e.dx * f.dx + e.dz * f.dz >=
-    (e.busOnly && f.busOnly && !e.boundary && !f.boundary ? -0.93 : -0.5);
+  const canTurn = (e, f) => f.to !== e.from && ((e.modes ?? MOTOR) & (f.modes ?? MOTOR)) && e.dx * f.dx + e.dz * f.dz >=
+    (e.keepShape && f.keepShape && !e.boundary && !f.boundary ? -0.93 : -0.5);
   // Edges no vehicle could both reach and leave (dead ends, and roads reached only from them) are dropped once the
   // moves are known (7.); know them already, so that no road keeps clear of a dead one merging with it or forking off it
   {
@@ -772,6 +795,11 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
     };
     let b0 = back(e.from, e.outArm);
     let b1 = back(e.to, e.inArm);
+    // GTFS Stadspoort boards on Willy Brandtlaan before the closely parallel bus spur joins it.
+    if (e.wayId === 'w25558851') {
+      b0 = Math.min(b0, 8);
+      b1 = Math.min(b1, 8);
+    }
     const keep = Math.min(10, e.span * 0.5);
     e.squeezed = false;
     if (e.general && e.span - b0 - b1 < keep) {
@@ -787,13 +815,13 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
   for (const e of edges) place(e);
   const placed = edges; // (see 7.)
   const genCreated = edges.filter((e) => e.general).length;
-  edges = edges.filter((e) => e.len > (e.busOnly ? 0.8 : e.general ? 4 : 6));
+  edges = edges.filter((e) => e.len > (e.keepShape ? 0.8 : e.general ? 4 : 6));
 
   // Paint describes the physical streets, including dead ends and roads AI traffic cannot circulate through.
   // Snapshot their geometry before routing moves stop lines, drops edges and renumbers the surviving junctions.
   const paintNodes = new Map(nodes.map((n, id) => [n, { id, x: n.x, z: n.z, shape: n.shape }]));
-  const paintEdges = edges.filter((e) => !e.busOnly).map(({ from, to, axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes }) => ({
-    from: paintNodes.get(from), to: paintNodes.get(to), axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes
+  const paintEdges = edges.filter((e) => !e.busOnly && !e.underpass && !e.boundary).map(({ from, to, axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes, wayId, layer, bridge }) => ({
+    from: paintNodes.get(from), to: paintNodes.get(to), axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes, wayId, layer, bridge
   }));
 
   // 6. Movements at each intersection (no U-turns) and the lane each lane leads to, along obstacle-free curves:
@@ -804,6 +832,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
   const lateral = (e, i) => e.x0 * e.rx + e.z0 * e.rz + e.lanes[i];
   const ORDER = { L: 0, S: 1, R: 2 };
   function pathClear(e, i, f, j) {
+    if (!((e.laneModes?.[i] ?? e.modes ?? MOTOR) & (f.laneModes?.[j] ?? f.modes ?? MOTOR))) return false;
+    if (e.underpass || f.underpass || e.bridge || f.bridge) return true;
     const c = makeCurve(e, i, f, j);
     const p = { x: 0, z: 0, dx: 0, dz: 0 };
     const street = e.general || f.general; // through a centreline junction: tested like its lanes
@@ -1000,7 +1030,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
   }
   const inTheWayOut = new Set();
   for (const e of edges) {
-    if (e.busOnly || !e.squeezed || !e.from.shape || !inTheWay(e)) continue;
+    if (e.keepShape || !e.squeezed || !e.from.shape || !inTheWay(e)) continue;
     while (e.len > 6 && inTheWay(e)) e.len = Math.max(5.5, e.len - 1);
     if (inTheWay(e)) inTheWayOut.add(e); // even so
   }
@@ -1011,7 +1041,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
 
   // 7. Keep the largest strongly connected set of edges so no vehicle can ever reach a dead end
   const kept = largestComponent(edges, (e) => e.moves.map((m) => m.to));
-  for (const e of edges) if (e.boundary) kept.add(e);
+  for (const e of edges) if (e.boundary || ((e.modes ?? MOTOR) & BUS) && e.moves.some(m => (m.to.modes ?? MOTOR) & BUS)) kept.add(e);
   const genShortKept = edges.filter((e) => e.general).length;
   const genLost = edges.filter((e) => e.general && !kept.has(e));
   edges = edges.filter((e) => kept.has(e));
@@ -1041,28 +1071,34 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
     }
   }
   edges.forEach((e, i) => (e.id = i));
-  if (edges.some((e) => e.busOnly)) {
-    const publicRoads = largestComponent(edges.filter((e) => !e.busOnly), (e) => e.moves.map((m) => m.to));
-    for (const e of edges) e.ambientLanes = publicRoads.has(e) ? e.lanes.map((_, i) => i) : [];
-    // A lane feeding only a busway cannot carry ordinary traffic, even when
-    // another lane on that same edge continues onto the public network.
+  const gradeWays = grade && new Set(grade.sites.flatMap(site => site.profiles.flatMap(profile => profile.wayIds || [])));
+  for (const e of edges) e.unmodeledTunnel = !!gradeWays && e.underpass && e.tunnelType !== 'building_passage' && !gradeWays.has(e.wayId);
+  for (const [mode, vehicle, lanes, moves] of [
+    [CAR, VEHICLE_CLEARANCE.car, 'ambientLanes', 'ambientMoves'],
+    [VAN, VEHICLE_CLEARANCE.van, 'vanLanes', 'vanMoves']
+  ]) {
+    const eligible = edges.filter(e => !e.boundary && !e.unmodeledTunnel && ((e.modes ?? MOTOR) & mode) && fitsRoad(vehicle, e.limits, mode));
+    for (const e of edges) e[lanes] = [];
+    for (const e of eligible) e[lanes] = e.lanes.flatMap((_, i) => (e.laneModes?.[i] ?? mode) & mode ? [i] : []);
+    const live = largestComponent(eligible, (e) => e.moves.filter(m => e[lanes].some(i => m.to[lanes].includes(m.out[i]))).map(m => m.to));
+    for (const e of eligible) if (!live.has(e)) e[lanes] = [];
     let changed;
     do {
       changed = false;
       for (const e of edges) {
-        const open = e.ambientLanes.filter((i) => e.moves.some((m) => m.to.ambientLanes.includes(m.out[i])));
-        if (open.length === e.ambientLanes.length) continue;
-        e.ambientLanes = open;
+        const open = e[lanes].filter((i) => e.moves.some((m) => m.to[lanes].includes(m.out[i])));
+        if (open.length === e[lanes].length) continue;
+        e[lanes] = open;
         changed = true;
       }
     } while (changed);
     for (const e of edges) {
-      e.busExclusive = !e.ambientLanes.length;
-      e.ambientMoves = e.moves.map((move) => ({
-        ...move, out: move.out.map((j) => move.to.ambientLanes.includes(j) ? j : -1)
+      e[moves] = e.moves.map((move) => ({
+        ...move, out: move.out.map((j, i) => e[lanes].includes(i) && move.to[lanes].includes(j) ? j : -1)
       })).filter((move) => move.out.some((j) => j >= 0));
     }
   }
+  for (const e of edges) e.busExclusive = !e.ambientLanes.length && !e.vanLanes.length;
 
   for (const n of nodes) n.in = n.out = null;
   for (const e of edges) {
@@ -1122,7 +1158,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = []) {
   }
 
   const isRoadClear = (x, z, clear = 0.15) => !blockedOnStreet(x, z, clear);
-  return { nodes, edges, paintEdges, connector, curvePoint, walkable, onSidewalk, isRoadClear };
+  return { nodes, edges, paintEdges, connector, curvePoint, walkable, onSidewalk, isRoadClear,
+    activeTravel: grade ? buildEdeActiveTravel(GEO.ede, grade) : null };
 }
 
 // The largest strongly connected set of `list` (a Set), going on from item e to the items next(e)

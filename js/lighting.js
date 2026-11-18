@@ -21,6 +21,7 @@ import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 import { cityUniforms } from './tsl-materials.js';
+import { directSunFactor, edeSun, livePresetBlend } from './live-sky.js';
 
 // Atmospheric sky, environment lighting, sunlight and time-of-day presets.
 
@@ -127,10 +128,21 @@ const TIME_PRESETS = {
   }
 };
 
+const COLOR_KEYS = ['sunColor', 'hemiSky', 'hemiGround', 'skyTop', 'skyHorizon', 'fogColor'];
+const NUMBER_KEYS = ['sunIntensity', 'hemiIntensity', 'fogDensity', 'interiorGlow', 'roadWetness', 'envIntensity',
+  'canyonBounce', 'turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG', 'cloudCoverage', 'cloudDensity',
+  'skyExposure', 'nightFactor'];
+
+function lerpHex(a, b, weight) {
+  const channel = (shift) => Math.round(THREE.MathUtils.lerp((a >> shift) & 255, (b >> shift) & 255, weight));
+  return (channel(16) << 16) | (channel(8) << 8) | channel(0);
+}
+
 class LightingSystem {
   constructor(scene, renderer = null) {
     this.scene = scene;
     this.activePresetId = 'golden';
+    this.live = false;
 
     // Register SunLight with either supported Three.js light-node API.
     if (SunLight.registerNode) {
@@ -254,9 +266,30 @@ class LightingSystem {
 
   applyPreset(presetId, force = false) {
     const p = TIME_PRESETS[presetId] || TIME_PRESETS.golden;
-    if (!force && this.activePresetId === p.id && this.envRenderTarget !== null) {
+    if (!force && !this.live && this.activePresetId === p.id && this.envRenderTarget !== null) {
       return;
     }
+    this.live = false;
+    this.applyValues(p);
+  }
+
+  applyLive(date) {
+    const { elevation, direction } = edeSun(date);
+    const blend = livePresetBlend(elevation);
+    const { from, to, weight } = blend;
+    const a = TIME_PRESETS[from];
+    const b = TIME_PRESETS[to];
+    const p = { id: weight < 0.5 ? from : to, sunDir: new THREE.Vector3(...direction) };
+    for (const key of NUMBER_KEYS) p[key] = THREE.MathUtils.lerp(a[key], b[key], weight);
+    for (const key of COLOR_KEYS) p[key] = lerpHex(a[key], b[key], weight);
+    // Retain night fill and window glow without lighting the ground from below.
+    p.sunIntensity *= directSunFactor(elevation);
+    this.live = true;
+    this.applyValues(p);
+    return blend;
+  }
+
+  applyValues(p) {
     this.activePresetId = p.id;
 
     this.sunLight.color.setHex(p.sunColor);

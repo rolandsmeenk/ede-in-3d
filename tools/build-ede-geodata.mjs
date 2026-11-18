@@ -1,15 +1,18 @@
 // tools/build-ede-geodata.mjs — writes js/ede-geodata.js from tools/data/osm_ede.json (Overpass, query q_ede.overpassql)
 // Frame: 1 unit = 1 m, x = east, z = south, origin at the Oude Kerk (true north up, no grid rotation).
-// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.js]
+// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.js] [wkd-geojson-directory]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CAR, VAN, BUS, BICYCLE, FOOT, MOTOR } from '../js/road-access.js';
+import { readWkd, roadAccess } from './ede-road-access.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const INPUT = process.argv[2] || path.join(DIR, 'data', 'osm_ede.json');
 const OUT = process.argv[3] || path.join(DIR, '..', 'js', 'ede-geodata.js');
 const osm = JSON.parse(fs.readFileSync(INPUT, 'utf8'));
 if (!Array.isArray(osm.elements) || !osm.elements.length || osm.remark) throw new Error('Expected a complete Ede OpenStreetMap response');
+const bgt = JSON.parse(fs.readFileSync(path.join(DIR, 'data', 'ede-bgt-road-evidence.json'), 'utf8'));
 const log = (...a) => console.log('[ede-geodata]', ...a);
 
 const BBOX = [52.012, 5.5925, 52.0605, 5.7005]; // S, W, N, E: must match q_ede.overpassql
@@ -20,6 +23,7 @@ const KY = (Math.PI / 180) * R;
 const KX = KY * Math.cos((LAT0 * Math.PI) / 180);
 const r1 = (v) => Math.round(v * 10) / 10;
 const toWorld = (lon, lat) => [(lon - LON0) * KX, -(lat - LAT0) * KY];
+const wkd = readWkd(process.argv[4], toWorld);
 const flat = (pts) => pts.flatMap(([x, z]) => [r1(x), r1(z)]);
 const geomPts = (g) => (g || []).map((p) => toWorld(p.lon, p.lat));
 
@@ -116,24 +120,22 @@ for (const e of osm.elements) {
 }
 
 // --- Roads & railways ---------------------------------------------------------------------------------------------------
-const WIDTH = { motorway: 14, trunk: 12, primary: 10, secondary: 8, tertiary: 7, residential: 6, unclassified: 6, living_street: 5, service: 3.5, pedestrian: 5, cycleway: 2.5, footway: 2, path: 1.5, steps: 2, track: 3 };
+const WIDTH = { motorway: 14, trunk: 12, primary: 10, secondary: 8, tertiary: 7, residential: 6, unclassified: 6, living_street: 5, service: 3.5, busway: 3.5, pedestrian: 5, cycleway: 2.5, footway: 2, path: 1.5, steps: 2, track: 3, bridleway: 2 };
 const LANES = { motorway: 4, trunk: 4, primary: 2, secondary: 2, tertiary: 2, residential: 2, unclassified: 2, living_street: 1, service: 1 };
 const DRIVABLE = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'residential', 'unclassified', 'living_street']);
-// OSM's road underpasses used by the selected bus lines. Keep their links
-// separate so surface traffic and road paint do not use them.
-const BUS_UNDERPASSES = new Set([6952984, 1063323754, 25546154, 25546157, 274278314, 274278316, 469675200, 1392410752]);
 // These mapped approaches continue beyond the playable bounds. The matcher
 // clips them at the actual crossing while ordinary traffic stays on its loop.
-const BUS_BOUNDARY_ROADS = new Set([
+const BOUNDARY_APPROACHES = new Set([
   25999022, 25999048, 6962023, 974100768, 6960043, 44431669, 974100769,
   6959815, 6959876, 6959877, 6959806, 6959808, 1243033918, 1243033919, 1243033923
 ]);
 // Keep the short links at the station intersection and Kastelenlaan as actual turns.
-const BUS_JUNCTION_ROADS = new Set([
+const SHORT_JUNCTION_LINKS = new Set([
   620928502, 620928503, 1193451509, 1193451510,
   1024971617, 1024971618, 421594657, 25710948, 430622525, 25710947
 ]);
 const drivable = [];
+const activeTravel = [];
 const roads = [];
 const railways = [];
 const signals = [];
@@ -159,12 +161,40 @@ for (const e of osm.elements) {
   const base = kind.replace(/_link$/, '');
   const lanes = num(t.lanes) ?? LANES[base] ?? 1;
   const width = num(t.width) ?? Math.max(WIDTH[base] ?? 3, lanes * 3);
-  const oneway = t.oneway === 'yes' || t.oneway === '-1' || t.oneway === '1' || t.junction === 'roundabout';
-  roads.push({ id: `w${e.id}`, pts: flat(rdp(geomPts(e.geometry), 0.5)), bridge, tunnel, layer, name: t.name || '', width: r1(width), lanes, oneway, reverse: t.oneway === '-1', kind, nodeIds: e.nodes || [] });
-  const busOnly = BUS_JUNCTION_ROADS.has(e.id) ? 4 : BUS_BOUNDARY_ROADS.has(e.id) ? 3 : tunnel && BUS_UNDERPASSES.has(e.id) ? 2
-    : t.highway === 'busway' || (t.highway === 'service' && t.name === 'Polar Bearsplein') ? 1 : 0;
-  if ((busOnly || (DRIVABLE.has(kind) && !tunnel)) && e.nodes && e.nodes.length === e.geometry.length) {
-    drivable.push({ name: t.name || '', width: busOnly ? Math.max(3.5, width) : r1(width), lanes, dir: !oneway ? 0 : t.oneway === '-1' ? -1 : 1, nodes: e.nodes, pts: geomPts(e.geometry), busOnly });
+  const oneway = /^(yes|1|true|-1)$/.test(t.oneway) || !t.oneway && (t.junction === 'roundabout' || kind === 'motorway');
+  const points = geomPts(e.geometry);
+  const { modes, limits, laneModes, sidewalk, sidewalkSides } = roadAccess(e.id, t, wkd(points, tunnel || t.maxheight));
+  const available = modes[0] | modes[1];
+  const boundary = BOUNDARY_APPROACHES.has(e.id), junction = SHORT_JUNCTION_LINKS.has(e.id);
+  const stationForecourt = kind === 'service' && t.name === 'Polar Bearsplein';
+  const keepShape = boundary || bridge || tunnel || junction || kind === 'busway' || stationForecourt;
+  const evidence = bgt.ways[`w${e.id}`];
+  const road = { id: `w${e.id}`, pts: flat(rdp(points, 0.5)), bridge, tunnel, layer, name: t.name || '', width: r1(width),
+    lanes, oneway, reverse: t.oneway === '-1', kind, nodeIds: e.nodes || [], modes,
+    ...(evidence ? { bgt: { kind: evidence.kind, ...(num(t.width) == null && evidence.width ? { width: evidence.width } : {}) } } : {}),
+    ...(tunnel ? { tunnelType: t.tunnel || 'covered' } : {}),
+    ...(Object.keys(limits).length ? { limits } : {}), ...(laneModes.some(Boolean) ? { laneModes } : {}) };
+  roads.push(road);
+  if (t.area === 'yes' || !e.nodes || e.nodes.length !== points.length) continue;
+  const way = { road: roads.length - 1, name: road.name, width: road.width, lanes, nodes: e.nodes, pts: points, boundary, junction, keepShape };
+  const motor = available & MOTOR;
+  if (motor && (DRIVABLE.has(kind) || kind === 'busway' || stationForecourt || !!(motor & BUS) && !(motor & (CAR | VAN)))) {
+    const motorModes = modes.map((mask) => mask & MOTOR);
+    const dir = motorModes.every(Boolean) ? 0 : motorModes[0] ? 1 : -1;
+    drivable.push({ ...way, dir });
+  }
+  const mappedFoot = /^(footway|pedestrian|steps|cycleway|path|bridleway|track)$/.test(kind)
+    || !!sidewalk && !['no', 'none', 'separate'].includes(sidewalk) || sidewalkSides.some((s) => s === 'yes');
+  if ((available & BICYCLE) || (available & FOOT) && mappedFoot) {
+    const footOffset = [];
+    if (mappedFoot && (available & FOOT)) {
+      if (/^(footway|pedestrian|steps|cycleway|path|bridleway|track)$/.test(kind)) footOffset.push(0);
+      else {
+        if (sidewalkSides[0] === 'yes' || ['yes', 'both', 'left'].includes(sidewalk) && !sidewalkSides[0]) footOffset.push(-road.width / 2 - 1);
+        if (sidewalkSides[1] === 'yes' || ['yes', 'both', 'right'].includes(sidewalk) && !sidewalkSides[1]) footOffset.push(road.width / 2 + 1);
+      }
+    }
+    activeTravel.push({ ...way, dir: 0, footOffset });
   }
 }
 
@@ -172,9 +202,9 @@ for (const e of osm.elements) {
 // links: [node a, node b, name index, width, lanes, direction (1: a -> b, -1: b -> a, 0: both), inner shape points [x, z, ...]]
 if (!drivable.length || !buildings.length) throw new Error('Ede snapshot is missing roads or buildings');
 
-const roadGraph = (() => {
+function buildGraph(ways, active = false) {
   const uses = new Map();
-  for (const w of drivable) for (const id of new Set(w.nodes)) uses.set(id, (uses.get(id) || 0) + 1);
+  for (const w of ways) for (const id of new Set(w.nodes)) uses.set(id, (uses.get(id) || 0) + 1);
   const ids = new Map();
   const nodes = [];
   const names = [];
@@ -182,7 +212,7 @@ const roadGraph = (() => {
   const nodeOf = (id, p) => { if (!ids.has(id)) { ids.set(id, nodes.length / 2); nodes.push(r1(p[0]), r1(p[1])); } return ids.get(id); };
   const nameOf = (n) => { if (!nameIds.has(n)) { nameIds.set(n, names.length); names.push(n); } return nameIds.get(n); };
   const links = [];
-  for (const w of drivable) {
+  for (const w of ways) {
     let start = 0;
     for (let i = 1; i < w.nodes.length; i++) {
       const last = i === w.nodes.length - 1;
@@ -191,13 +221,17 @@ const roadGraph = (() => {
       const seg = w.pts.slice(start, i + 1);
       const inner = rdp(seg, 0.4).slice(1, -1).flatMap(([x, z]) => [r1(x), r1(z)]);
       const link = [nodeOf(w.nodes[start], seg[0]), nodeOf(w.nodes[i], seg[seg.length - 1]), nameOf(w.name), w.width, w.lanes, w.dir, inner];
-      if (w.busOnly) link.push(w.busOnly);
+      link.push(w.road);
+      if (active) link.push(w.footOffset);
+      else if (w.keepShape) link.push({ ...(w.boundary ? { boundary: true } : {}), ...(w.junction ? { junction: true } : {}), keepShape: true });
       links.push(link);
       start = i;
     }
   }
   return { nodes, links, names };
-})();
+}
+const roadGraph = buildGraph(drivable);
+const activeGraph = buildGraph(activeTravel, true);
 
 // --- Water & parks -------------------------------------------------------------------------------------------------------
 const water = [];
@@ -257,12 +291,15 @@ const data = {
     lonLatAffine: { lon0: LON0, lat0: LAT0, x: [0, r1(KX * 1e3) / 1e3, 0], z: [0, 0, -r1(KY * 1e3) / 1e3], maxErrorM: 0.5 },
     sources: [
       { name: 'OpenStreetMap contributors', license: 'ODbL 1.0', attribution: '© OpenStreetMap contributors' },
-      { name: 'CBS Wijk- en Buurtkaart 2025', url: 'https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025' }
+      { name: 'CBS Wijk- en Buurtkaart 2025', url: 'https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025' },
+      { name: 'Gemeente Ede traffic decision 2024-120844', url: 'https://zoek.officielebekendmakingen.nl/gmb-2024-120844.html' },
+      { name: 'Kadaster BGT road areas', license: 'CC0', url: 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections' },
+      ...(process.argv[4] ? [{ name: 'Rijkswaterstaat WKD Verkeerstypen and Hoogtebeperkingen', license: 'CC0', url: 'https://geo.rijkswaterstaat.nl/services/ogc/gdr/wkd_wegkenmerkendatabase/ows' }] : [])
     ],
     areas: AREAS,
     counts: { buildings: buildings.length, roads: roads.length, water: water.length, parks: parks.length, squares: squares.length, railways: railways.length, trees: trees.length, signals: signals.length }
   },
-  buildings, roads, water, parks, squares, railways, trees, signals, landmarks, roadGraph
+  buildings, roads, water, parks, squares, railways, trees, signals, landmarks, roadGraph, activeGraph
 };
 fs.writeFileSync(OUT, `// js/ede-geodata.js — GENERATED by tools/build-ede-geodata.mjs, do not edit by hand.\n// Ede, 1 unit = 1 m, x east, z south, origin at the Oude Kerk. © OpenStreetMap contributors (ODbL).\nexport const EDE_DATA = ${JSON.stringify(data)};\n`);
 log(`wrote ${OUT} (${(fs.statSync(OUT).size / 1048576).toFixed(1)} MB)`, JSON.stringify(data.meta.counts));

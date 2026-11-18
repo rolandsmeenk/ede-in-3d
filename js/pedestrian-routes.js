@@ -154,6 +154,7 @@ function createPedestrianRoutes({ walkable, onSidewalk }, blockAt) {
   }
 
   function links(track, dir) {
+    if (track.mapped) return track.links[dir > 0 ? 1 : 0];
     let ends = connections.get(track);
     if (!ends) connections.set(track, ends = []);
     const end = dir > 0 ? 1 : 0;
@@ -208,6 +209,7 @@ function createPedestrianRoutes({ walkable, onSidewalk }, blockAt) {
   }
 
   function canDodge(p, offset) {
+    if (p.route?.mapped && Math.abs(offset) > p.route.width * 0.4) return false;
     const block = blockAt(p.x, p.z);
     const target = { x: p.ax + p.ux * p.t + p.uz * offset, z: p.az + p.uz * p.t - p.ux * offset };
     return !!block && onSidewalk(target.x, target.z) && cornerClear(p, target, block);

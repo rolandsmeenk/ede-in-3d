@@ -20,7 +20,7 @@ const WIDEN_SPHERE_PAD = 16; // createRoadPaintMaterial widens thin distant stri
 function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDistance = PAINT_CULL_DISTANCE, heightAt } = {}) {
   const cells = new Map();
 
-  function pushQuad(ax, ay, az, bx, by, bz, sx, sz, col, period, duty, u0, u1) {
+  function pushQuad(ax, ay, az, bx, by, bz, sx, sz, col, period, duty, u0, u1, edge) {
     const mx = (ax + bx) * 0.5;
     const mz = (az + bz) * 0.5;
     const key = (Math.floor(mx / cellSize) << 16) ^ (Math.floor(mz / cellSize) & 0xffff);
@@ -29,7 +29,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
     const i = cell.position.length / 3;
     for (const [x, y, z, s, u] of [[ax, ay, az, -1, u0], [ax, ay, az, 1, u0], [bx, by, bz, 1, u1], [bx, by, bz, -1, u1]]) {
       const edgeX = x + sx * s, edgeZ = z + sz * s;
-      cell.position.push(edgeX, y + (heightAt?.(edgeX, edgeZ) ?? 0), edgeZ);
+      cell.position.push(edgeX, y + (heightAt?.(edgeX, edgeZ, edge) ?? 0), edgeZ);
       cell.side.push(sx * s, sz * s);
       cell.paint.push(u, period, duty);
       cell.colors.push(col.r, col.g, col.b);
@@ -37,7 +37,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
     cell.index.push(i, i + 1, i + 2, i, i + 2, i + 3);
   }
 
-  function strip3D(ax, ay, az, bx, by, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1) {
+  function strip3D(ax, ay, az, bx, by, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1, edge) {
     const len = Math.hypot(bx - ax, bz - az);
     if (len < 0.05) return;
     const sx = ((az - bz) / len) * w * 0.5;
@@ -59,7 +59,8 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
         period,
         duty,
         phase + len * t0 * flow,
-        phase + len * t1 * flow
+        phase + len * t1 * flow,
+        edge
       );
     }
   }
@@ -111,8 +112,8 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt) {
   const bends = new Map();
 
   // Flat strip w wide from a to b, with a dash pattern (period, duty cycle) running along it
-  function strip(ax, az, bx, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1) {
-    builder.strip3D(ax, HEIGHT, az, bx, HEIGHT, bz, w, col, period, duty, phase, flow);
+  function strip(ax, az, bx, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1, edge) {
+    builder.strip3D(ax, HEIGHT, az, bx, HEIGHT, bz, w, col, period, duty, phase, flow, edge);
   }
 
   // Edges run between stop lines; s is measured from the start one and o to the right of the centre line
@@ -122,7 +123,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt) {
     const ends = [at(e, e.from.shape ? -start : 0.9, o), at(e, e.to.shape ? e.span - start : e.len - 0.9, o)];
     lines.push({ e, o, w, col, period, duty, ends, joins: [] });
   };
-  const across = (e, s, o0, o1, w, col, period, duty) => strip(...at(e, s, o0), ...at(e, s, o1), w, col, period, duty);
+  const across = (e, s, o0, o1, w, col, period, duty) => strip(...at(e, s, o0), ...at(e, s, o1), w, col, period, duty, 0, 1, e);
   const clearCentre = (e, o) => {
     if (!network.isRoadClear) return false;
     const steps = Math.max(1, Math.ceil((e.len - 1.8) / 2.5));
@@ -164,7 +165,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt) {
     }
 
     // Wide one-way avenues: edge line, then a buffer and a green bike lane along the curb on the side left free
-    if (!back && e.axis === 'ave' && lanes.length >= 4) {
+    if (!e.wayId && !back && e.axis === 'ave' && lanes.length >= 4) {
       for (const [edge, sign] of [[lanes[lanes.length - 1].o + 1.8, 1], [lanes[0].o - 1.8, -1]]) {
         const curb = sign * e.half;
         if ((curb - edge) * sign < 3.5) continue;
@@ -257,7 +258,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt) {
         next.phase = ((next.phase % next.period) + next.period) % next.period;
         stack.push(next);
       }
-      strip(...line.ends[0], ...line.ends[1], line.w, line.col, line.period, line.duty, line.phase, line.flow);
+      strip(...line.ends[0], ...line.ends[1], line.w, line.col, line.period, line.duty, line.phase, line.flow, line.e);
     }
   }
 

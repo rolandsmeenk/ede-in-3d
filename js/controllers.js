@@ -31,6 +31,7 @@ import { HEADLIGHTS, createVehicleHeadlight, placeVehicleHeadlight } from './veh
 import { bryantParkLawn } from './landmarks.js';
 import { polygonContact } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
+import { gradeDeckAt, gradeHeightAt, gradeProfileAt } from './ede-grade.js';
 
 // js/controllers.js
 // Sculpted, non-blocky GTA 6-style 3D models, animations, and physics controllers
@@ -52,7 +53,7 @@ function spawnPosition(lateral, forward, y) {
 const groundCollider = { type: 'ground' };
 
 function helicopterAltitude(x, z, y, clearance = 0.25) {
-  return Math.max(terrainHeightAt(x, z) + clearance, Math.min(380, y));
+  return Math.max(terrainHeightAt(x, z) + clearance, (gradeDeckAt(x, z) ?? -Infinity) + clearance, Math.min(380, y));
 }
 
 function placeEntityMesh(entity) {
@@ -63,10 +64,11 @@ function placeEntityMesh(entity) {
   const sin = Math.sin(heading), cos = Math.cos(heading);
   const halfLength = type === 'car' ? 1.38 : 0.72;
   const halfWidth = type === 'car' ? 0.85 : 0.3;
-  const front = terrainHeightAt(x + sin * halfLength, z + cos * halfLength);
-  const back = terrainHeightAt(x - sin * halfLength, z - cos * halfLength);
-  const right = terrainHeightAt(x + cos * halfWidth, z - sin * halfWidth);
-  const left = terrainHeightAt(x - cos * halfWidth, z + sin * halfWidth);
+  const sample = (dx, dz) => gradeHeightAt(x + dx, z + dz, entity.position.y, type);
+  const front = sample(sin * halfLength, cos * halfLength);
+  const back = sample(-sin * halfLength, -cos * halfLength);
+  const right = sample(cos * halfWidth, -sin * halfWidth);
+  const left = sample(-cos * halfWidth, sin * halfWidth);
   mesh.rotation.order = 'YXZ';
   mesh.rotation.x = -Math.atan2(front - back, 2 * halfLength);
   mesh.rotation.z = Math.atan2(right - left, 2 * halfWidth);
@@ -323,6 +325,8 @@ function collisionBody(mode, radius, heading, margin = 0) {
 function buildingContact(c, x, y, z, body, contact) {
   if (y + body.bottom >= c.maxY || y + body.top <= (c.minY ?? 0)) return false;
   if (x + body.extX <= c.minX || x - body.extX >= c.maxX || z + body.extZ <= c.minZ || z - body.extZ >= c.maxZ) return false;
+  if (c.maxYAt && y + body.bottom >= c.maxYAt(x, z)) return false;
+  if (c.minYAt && y + body.top <= c.minYAt(x, z)) return false;
   if (c.polygon) return polygonContact(c.polygon, x, z, body, contact);
   const o = c.obb;
   const cs = o ? o.cs : 1, sn = o ? o.sn : 0;
@@ -591,7 +595,7 @@ class ThirdPersonControllerManager {
     this.resetInput();
     if (!Number.isFinite(heading)) heading = ent.heading;
     const heli = this.activeMode === 'helicopter';
-    const altitude = savedAltitude ?? ent.position.y;
+    const altitude = savedAltitude ?? (heli ? ent.position.y : null);
     const clearance = savedAltitude == null ? 92 : 0.25;
     const destination = this.findTeleportPosition(x, z, heading, altitude, clearance);
     if (destination) {
@@ -600,7 +604,7 @@ class ThirdPersonControllerManager {
       ent.heading = heading;
       ent.position.y = heli
         ? helicopterAltitude(destination.x, destination.z, altitude, clearance)
-        : this.getGroundHeight(destination.x, destination.z, this.activeMode);
+        : this.getGroundHeight(destination.x, destination.z, this.activeMode, savedAltitude ?? terrainHeightAt(destination.x, destination.z));
     }
     ent.speed = 0;
     if (this.activeMode === 'person') {
@@ -671,7 +675,8 @@ class ThirdPersonControllerManager {
     const clear = (p) => {
       if (!p) return false;
       if (!heli && this.isUnbridgedWater(p.x, p.z)) return false;
-      const baseY = heli ? helicopterAltitude(p.x, p.z, altitude, clearance) : this.getGroundHeight(p.x, p.z, this.activeMode);
+      const baseY = heli ? helicopterAltitude(p.x, p.z, altitude, clearance)
+        : this.getGroundHeight(p.x, p.z, this.activeMode, altitude ?? terrainHeightAt(p.x, p.z));
       // Keep other player models out of both the arrival and its default chase view. A corridor also prevents a
       // parked car between camera and character from hiding the character even when the camera itself is outside it.
       const viewTop = baseY + Math.max(body[entity.type][1], cameraUp);
@@ -1684,7 +1689,9 @@ class ThirdPersonControllerManager {
     return typeof waterAt === 'function' && waterAt(x, z) && !roadCrossesWater(x, z, this.activeMode !== 'helicopter');
   }
 
-  getGroundHeight(x, z, mode = 'person') {
+  getGroundHeight(x, z, mode = 'person', referenceY = this.entities?.[mode]?.position.y) {
+    const surface = gradeProfileAt(x, z, mode, this.entities?.[mode]?.heading, referenceY ?? terrainHeightAt(x, z));
+    if (surface) return surface.y;
     const y = terrainHeightAt(x, z);
     // Inside Central Park (5th Ave to Central Park West, 59th St to 110th St)
     const cp = CENTRAL_PARK_BOUNDS;
@@ -2005,7 +2012,10 @@ class ThirdPersonControllerManager {
       air = 0;
       p.verticalVel = 0;
     }
-    p.position.y = this.getGroundHeight(p.position.x, p.position.z, 'person') + air;
+    const floor = this.getGroundHeight(p.position.x, p.position.z, 'person');
+    const roof = gradeProfileAt(p.position.x, p.position.z, 'foot', p.heading, floor)?.roof ?? Infinity;
+    p.position.y = Math.max(floor, Math.min(floor + air, roof - 1.85));
+    if (p.position.y < floor + air && p.verticalVel > 0) p.verticalVel = 0;
   }
 
   updateCar(dt) {

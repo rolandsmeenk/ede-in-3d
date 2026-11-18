@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { EDE_DATA } from './city-config.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
+import { clipEdeGround, gradeCuts } from './ede-grade.js';
 
 // Geometry adapters only: rendering stays in the upstream WebGPU/TSL systems.
 export const EDE_RENDER_CELL = 750;
@@ -133,7 +134,22 @@ export function* edeTerrainGeometries(y) {
       positions[offset + 2] = minZ + (row + j) * step;
       if (i + 1 < width && j + 1 < height) indices.push(a, a + width, a + 1, a + 1, a + width, a + width + 1);
     }
-    yield surfaceGeometry(positions, indices);
+    const cuts = gradeCuts({
+      minX: minX + col * step, maxX: minX + (col + width - 1) * step,
+      minZ: minZ + row * step, maxZ: minZ + (row + height - 1) * step
+    });
+    if (!cuts.length) {
+      yield surfaceGeometry(positions, indices);
+      continue;
+    }
+    const clipped = [];
+    for (let i = 0; i < indices.length; i += 3) {
+      const triangle = indices.slice(i, i + 3).map(v => ({
+        x: positions[v * 3], y: positions[v * 3 + 1], z: positions[v * 3 + 2]
+      }));
+      for (const part of clipEdeGround(triangle, cuts)) emitSurface(part, clipped);
+    }
+    yield surfaceGeometry(clipped);
   }
 
   // Continue the measured edges into coarse distant scenery.
@@ -172,19 +188,34 @@ function clipSurface(points, signedDistance) {
 
 // Split planar overlays across both the grid lines and the cell diagonal, so
 // their offsets stay above the same triangles used by rendering and physics.
-export function drapeEdeSurface(geometry) {
+function emitSurface(polygon, positions, lift = 0) {
+  for (let i = 1; i + 1 < polygon.length; i++) {
+    const a = polygon[0], b = polygon[i], c = polygon[i + 1];
+    if (Math.abs((b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)) < 1e-8) continue;
+    for (const p of [a, b, c]) positions.push(p.x, p.y ?? terrainHeightAt(p.x, p.z) + lift, p.z);
+  }
+}
+
+export function drapeEdeSurface(geometry, cutGrade = false, wayId) {
   const field = getTerrain();
   if (!field || !geometry) return geometry;
   const { step, minX, minZ, columns, rows } = field;
   const position = geometry.getAttribute('position'), index = geometry.index;
   if (!position.count) return geometry;
   const lift = position.getY(0), positions = [];
+  let cuts = [];
+  if (cutGrade) {
+    geometry.computeBoundingBox();
+    const { min, max } = geometry.boundingBox;
+    cuts = gradeCuts({ minX: min.x, maxX: max.x, minZ: min.z, maxZ: max.z }, wayId);
+  }
   const emit = polygon => {
-    for (let i = 1; i + 1 < polygon.length; i++) {
-      const a = polygon[0], b = polygon[i], c = polygon[i + 1];
-      if (Math.abs((b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)) < 1e-8) continue;
-      for (const p of [a, b, c]) positions.push(p.x, terrainHeightAt(p.x, p.z) + lift, p.z);
+    if (!cuts.length) {
+      emitSurface(polygon, positions, lift);
+      return;
     }
+    const surface = polygon.map(p => ({ ...p, y: terrainHeightAt(p.x, p.z) + lift }));
+    for (const part of clipEdeGround(surface, cuts)) emitSurface(part, positions);
   };
   const visit = polygon => {
     if (polygon.length < 3) return;

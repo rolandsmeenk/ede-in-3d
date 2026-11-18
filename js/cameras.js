@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { LANDMARK_SITES } from './city-config.js';
 import { terrainHeightAt } from './terrain.js';
+import { constrainEdeCamera } from './ede-grade.js';
 
 // js/cameras.js
 // Multi-camera system supporting Third-Person Chase (with mouse/touch orbit + zoom),
@@ -302,7 +303,7 @@ class CameraSystem {
     const orbitFollow = this.activePresetId === 'chase' || this.activePresetId === 'action';
     if (orbitFollow) {
       const clearance = this.activePresetId === 'chase' ? 0.65 : 0.55;
-      desiredPos.y = Math.max(desiredPos.y, terrainHeightAt(desiredPos.x, desiredPos.z) + clearance);
+      constrainEdeCamera(entity, desiredPos, clearance);
     }
     if (!this.initialized || this.activePresetId === 'pov') {
       this.currentPos.copy(desiredPos);
@@ -336,8 +337,7 @@ class CameraSystem {
     }
 
     if (this.activePresetId !== 'fixed') {
-      const { x, y, z } = this.currentPos;
-      this.currentPos.y = Math.max(y, terrainHeightAt(x, z) + 0.55);
+      constrainEdeCamera(entity, this.currentPos);
     }
     this.camera.position.copy(this.currentPos);
     this.camera.lookAt(this.currentLookAt);

@@ -72,18 +72,24 @@ function createPostProcessing(renderer, sceneColor, reflections) {
     return vec4(color.mul(vignette), 1.0);
   })();
 
+  function applyBlend(from, to, weight) {
+    const a = LOOKS[from] || LOOKS.golden;
+    const b = LOOKS[to] || LOOKS.golden;
+    const lerp = (key) => THREE.MathUtils.lerp(a[key], b[key], weight);
+    exposure.value = lerp('exposure');
+    contrast.value = lerp('contrast');
+    saturation.value = lerp('saturation');
+    balance.value.set(...a.balance.map((value, i) => THREE.MathUtils.lerp(value, b.balance[i], weight)));
+    bloomPass.strength.value = lerp('bloom');
+    bloomPass.threshold.value = lerp('threshold');
+  }
+
   function applyPreset(id) {
-    const look = LOOKS[id] || LOOKS.golden;
-    exposure.value = look.exposure;
-    contrast.value = look.contrast;
-    saturation.value = look.saturation;
-    balance.value.set(...look.balance);
-    bloomPass.strength.value = look.bloom;
-    bloomPass.threshold.value = look.threshold;
+    applyBlend(id, id, 0);
   }
 
   applyPreset('golden');
-  return { outputNode, applyPreset };
+  return { outputNode, applyPreset, applyBlend };
 }
 
 export { createPostProcessing };

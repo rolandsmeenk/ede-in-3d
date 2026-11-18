@@ -136,7 +136,8 @@ test('road queries preserve the open area inside concave and courtyard bounds', 
       ALL_AVENUES: [], ALL_STREETS: [], BLOCKS: [], ISLAND_BOUNDS: { minZ: -100, maxZ: 100 },
       getIslandBoundsAtZ: () => ({ westX: -200, eastX: 200 })
     },
-    './nyc-geodata.js': { GEO: {} }, './building-collision.js': { polygonBoxOverlaps }
+    './nyc-geodata.js': { GEO: {} }, './building-collision.js': { polygonBoxOverlaps },
+    './road-access.js': { VEHICLE_CLEARANCE: {} }, './ede-active-travel.js': {}
   } });
   for (const polygon of [concave, courtyard]) {
     const network = buildRoadNetwork([], [{ minX: 0, maxX: 12, minZ: 0, maxZ: 12, polygon }]);

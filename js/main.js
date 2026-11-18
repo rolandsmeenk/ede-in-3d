@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2, smoothstep } from 'three/tsl';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
-import { createPostProcessing } from './post-processing.js';
+import { createPostProcessing } from './post-processing.js?v=20261118-lighting-menu';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
 import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
@@ -15,7 +15,8 @@ import { ThirdPersonControllerManager } from './controllers.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
-import { LightingSystem } from './lighting.js';
+import { LightingSystem } from './lighting.js?v=20261118-lighting-menu';
+import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
@@ -23,6 +24,9 @@ import { loadTerrain, terrainHeightAt } from './terrain.js';
 import { loadAerialColors } from './aerial-colors.js';
 import { loadEdeTrees } from './ede-tree-data.js';
 import { loadEdeLamps } from './ede-lamp-data.js';
+import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdePlatforms } from './ede-grade.js';
+import { buildEdeGradeWorld } from './ede-grade-world.js';
+import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
 import { buildEdeBusStops } from './ede-bus-stops.js';
 
@@ -92,8 +96,8 @@ async function initApp() {
   markInit('lighting');
 
   await showLoadingStage('Loading Ede’s map and bus timetable…');
-  const [terrainResult, aerialResult, treeResult, lampResult, busResult] = await Promise.allSettled([
-    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule()
+  const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult] = await Promise.allSettled([
+    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade()
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -107,12 +111,35 @@ async function initApp() {
   let busSchedule = null;
   if (busResult.status === 'fulfilled') busSchedule = busResult.value;
   else console.warn('[buses] timetable unavailable:', busResult.reason);
+  if (gradeResult.status === 'rejected') console.warn('[grade] using AHN surface heights:', gradeResult.reason);
   markInit('map assets and bus timetable');
 
   // 3. Build the city, buildings, street details and traffic
   await showLoadingStage('Building streets, parks and waterfronts...');
   const cityGrid = buildCityGrid(scene, treeResult.status === 'fulfilled' ? treeResult.value : undefined);
   markInit('cityGrid');
+  await showLoadingStage('Building bridges, tunnels and railway platforms…');
+  const gradeWorld = buildEdeGradeWorld(scene);
+  let bgtWorld;
+  try {
+    bgtWorld = await buildEdeBgtWorld(scene, (x, z, kind) => {
+      if (kind === 'rail-under-road') {
+        const deck = gradeDeckAt(x, z), rail = nearbyRailHeightAt(x, z, 28);
+        return deck !== undefined && rail !== undefined && deck - rail > 3 ? deck - 0.45 : undefined;
+      }
+      if (kind === 'tunnel') {
+        const surface = gradeProfileAt(x, z);
+        return surface?.kind === 'underpass' ? surface.y : undefined;
+      }
+      const rail = nearbyRailHeightAt(x, z, kind === 'deck' ? 3.5 : 7);
+      if (kind === 'deck' || kind === 'raised-wall') return gradeDeckAt(x, z) ?? rail;
+      return rail === undefined ? undefined : rail + 0.89;
+    });
+    setEdePlatforms(bgtWorld.platforms);
+  } catch (error) {
+    console.warn('[bgt] structure layer unavailable:', error);
+  }
+  markInit('grade and BGT structures');
   await showLoadingStage('Building landmarks...');
   const { colliders: landmarkColliders } = buildLandmarks(scene);
   markInit('landmarks');
@@ -130,7 +157,8 @@ async function initApp() {
   await showLoadingStage('Generating building facades...');
   const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings });
   markInit('blocks');
-  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...(cityGrid.colliders || [])];
+  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
+    ...gradeWorld.colliders, ...(bgtWorld?.colliders || [])];
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');
   const streetDetails = buildStreetDetails(scene, allColliders, lampResult.status === 'fulfilled' ? lampResult.value : null);
@@ -143,12 +171,13 @@ async function initApp() {
   const trafficSystem = createTrafficSystem(scene, cityGrid.sidewalks, [
     ...cityGrid.footprints,
     ...streetDetails.footprints,
-    ...allColliders.filter((c) => !c.obb && (c.minY ?? 0) < 3.5)
+    ...allColliders.filter((c) => !c.obb && !c.kind && (c.minY ?? 0) < 3.5)
   ], streetDetails.signalIntersections, busSchedule);
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
   await showLoadingStage('Adding road markings...');
-  buildRoadPaint(scene, trafficSystem.network, cityGrid.roadPaint, terrainHeightAt);
+  buildRoadPaint(scene, trafficSystem.network, cityGrid.roadPaint,
+    (x, z, edge) => gradeWayAt(edge?.wayId, x, z, 1.2)?.y ?? terrainHeightAt(x, z));
   markInit('roadPaint');
 
   // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Cargo Bike, Helicopter) & Multi-Camera System
@@ -205,7 +234,8 @@ async function initApp() {
   // Island-wide static geometry: chunk & distance-cull the small props, shadow stand-ins for the big casters
   // (scene-culling.js)
   await showLoadingStage('Preparing scene visibility and shadows...');
-  const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'ManhattanLandmarks', 'EdeBoundaryContext', 'RoadMarkings']
+  const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'EdeGradeWorld', 'Ede BGT structures',
+    'ManhattanLandmarks', 'EdeBoundaryContext', 'RoadMarkings']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
   setupSceneCulling(scene, cullingRoots, lightingSystem.sunLight.shadow);
@@ -284,6 +314,8 @@ async function initApp() {
   const modeButtons = document.querySelectorAll('[data-mode]');
   const cameraButtons = document.querySelectorAll('[data-camera]');
   const timeButtons = document.querySelectorAll('[data-time]');
+  const liveClock = document.getElementById('time-live-clock');
+  let liveTimeTimer;
   const teleportButtons = document.querySelectorAll('[data-teleport]');
   const hudToggleBtn = document.getElementById('btn-toggle-hud');
   const modeSwitch = document.getElementById('mode-switch');
@@ -381,13 +413,40 @@ async function initApp() {
     selectCamera(CAMERA_PRESETS[(idx + step + n) % n].id, true);
   }
 
+  function refreshLiveTime() {
+    const now = new Date();
+    const { from, to, weight } = lightingSystem.applyLive(now);
+    colorGrade.applyBlend(from, to, weight);
+    liveClock.textContent = formatEdeTime(now);
+    liveClock.dateTime = now.toISOString();
+    if (!document.hidden) {
+      liveTimeTimer = setTimeout(refreshLiveTime, 60000 - Date.now() % 60000);
+    }
+  }
+
   function selectTime(timeId) {
-    lightingSystem.applyPreset(timeId);
-    colorGrade.applyPreset(lightingSystem.activePresetId);
+    clearTimeout(liveTimeTimer);
+    const live = timeId === 'live';
+    liveClock.hidden = !live;
+    if (live) {
+      refreshLiveTime();
+    } else {
+      liveClock.textContent = '';
+      lightingSystem.applyPreset(timeId);
+      colorGrade.applyPreset(lightingSystem.activePresetId);
+    }
     timeButtons.forEach((btn) => {
-      btn.classList.toggle('active', btn.getAttribute('data-time') === timeId);
+      const active = btn.getAttribute('data-time') === timeId;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
     });
   }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!lightingSystem.live) return;
+    clearTimeout(liveTimeTimer);
+    if (!document.hidden) refreshLiveTime();
+  });
 
   // Popovers (native [popover]: light dismiss & Esc for free) open against the control that toggles them: data-anchor
   // names the element they sit above / below, data-align the one whose right edge they line up with
@@ -448,6 +507,7 @@ async function initApp() {
   timeButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       selectTime(btn.getAttribute('data-time'));
+      closePopovers();
     });
   });
 

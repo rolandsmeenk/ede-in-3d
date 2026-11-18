@@ -66,6 +66,7 @@ import { GEO } from './nyc-geodata.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
 import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
+import { gradeCuts, gradeWayAt, railHeightAt } from './ede-grade.js';
 import { edeTreeSite } from './ede-tree-data.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
 
@@ -112,11 +113,11 @@ function buildEdeCityGrid(scene, treeInventory) {
   const pavingMat = createParkPavingMaterial(aerial);
   const paintMat = createRoadPaintMaterial();
   const aerialMaterials = new Set([roadMat, terrainMat, sidewalkMat, lawnMat, pavingMat]);
-  const polygon = (...args) => drapeEdeSurface(edePolygonGeometry(...args));
-  const strip = (...args) => drapeEdeSurface(edeStrip(...args));
+  const polygon = (ring, holes, y, wayId) => drapeEdeSurface(edePolygonGeometry(ring, holes, y), true, wayId);
+  const strip = (a, b, half, y, offset, wayId) => drapeEdeSurface(edeStrip(a, b, half, y, offset), true, wayId);
   const collections = new Map();
   const collect = (geometry, material, segment) => {
-    if (!geometry) return;
+    if (!geometry?.getAttribute('position')?.count) return;
     if (aerial && aerialMaterials.has(material)) setAerialSurfaceColors(geometry, segment);
     if (!collections.has(material)) collections.set(material, []);
     collections.get(material).push(geometry);
@@ -278,7 +279,7 @@ function buildEdeCityGrid(scene, treeInventory) {
   };
   let clippedPedestrianPieces = 0, clippedSidewalkPieces = 0, curbRuns = 0;
   const paintStrip = (s, offset, halfWidth = 0.075, duty = 0.5, period = 8) => {
-    const g = strip(s.a, s.b, halfWidth, s.bridge ? 0.081 : 0.071, offset);
+    const g = strip(s.a, s.b, halfWidth, s.bridge ? 0.081 : 0.071, offset, s.road.id);
     if (!g) return;
     const p = g.getAttribute('position'), paints = [], sides = [], colors = [];
     for (let i = 0; i < p.count; i++) {
@@ -301,7 +302,7 @@ function buildEdeCityGrid(scene, treeInventory) {
       const pieces = outsideRoads(stripPoints(s, half), nearbyCarriageways(s.a, s.b, half), s);
       for (const piece of pieces) {
         const cycleway = s.road.kind === 'cycleway';
-        const geometry = polygon(piece, [], 0.055);
+        const geometry = polygon(piece, [], 0.055, s.road.id);
         setPavingStyle(geometry, cycleway ? 0 : 2);
         collect(geometry, pavingMat, cycleway ? s : null);
         clippedPedestrianPieces++;
@@ -316,12 +317,12 @@ function buildEdeCityGrid(scene, treeInventory) {
       for (const side of [-1, 1]) {
         const shoulder = stripPoints(s, 1.4, side * (width / 2 + 1.4));
         for (const piece of outsideRoads(shoulder, neighbors, s)) {
-          collect(polygon(piece, [], 0.025), sidewalkMat);
+          collect(polygon(piece, [], 0.025, s.road.id), sidewalkMat);
           clippedSidewalkPieces++;
         }
       }
     }
-    collect(strip(s.a, s.b, width / 2, y), roadMat, s);
+    collect(strip(s.a, s.b, width / 2, y, 0, s.road.id), roadMat, s);
     const nx = -s.uz, nz = s.ux;
     if (width >= 7 && !s.road.oneway && s.road.kind !== 'service') paintStrip(s, 0, 0.075, 0.45);
     if (width >= 12) {
@@ -335,9 +336,11 @@ function buildEdeCityGrid(scene, treeInventory) {
         const length = s.len * (end - start);
         if (length < 2.5) continue;
         const mid = (start + end) / 2;
+        const x = a.x + (b.x - a.x) * mid, z = a.z + (b.z - a.z) * mid;
+        if (gradeWayAt(s.road.id, x, z, 2) || gradeCuts({ minX: x - 0.12, maxX: x + 0.12, minZ: z - 0.12, maxZ: z + 0.12 }).length) continue;
         const geometry = new THREE.BoxGeometry(length, 0.18, 0.16, terrain ? Math.ceil(length / terrain.step) : 1);
         geometry.rotateY(-Math.atan2(s.uz, s.ux));
-        geometry.translate(a.x + (b.x - a.x) * mid, 0.08, a.z + (b.z - a.z) * mid);
+        geometry.translate(x, 0.08, z);
         collect(drapeEdeVertices(geometry), curbMat);
         curbRuns++;
       }
@@ -374,14 +377,19 @@ function buildEdeCityGrid(scene, treeInventory) {
       const startY = railway.bridge ? terrainHeightAt(a.x, a.z) : 0;
       const rise = railway.bridge ? terrainHeightAt(b.x, b.z) - startY : 0;
       const trackStrip = (halfWidth, y, offset = 0) => {
-        if (!railway.bridge) return strip(a, b, halfWidth, y, offset);
-        const geometry = edeStrip(a, b, halfWidth, y, offset);
+        const geometry = railway.bridge
+          ? edeStrip(a, b, halfWidth, y, offset) : drapeEdeSurface(edeStrip(a, b, halfWidth, y, offset));
         const position = geometry.getAttribute('position');
+        let changed = false;
         for (let j = 0; j < position.count; j++) {
-          const along = (position.getX(j) - a.x) * ux + (position.getZ(j) - a.z) * uz;
-          position.setY(j, y + startY + rise * along / length);
+          const x = position.getX(j), z = position.getZ(j);
+          const along = (x - a.x) * ux + (z - a.z) * uz;
+          const fitted = railHeightAt(railway.id, a.x + ux * along, a.z + uz * along);
+          if (fitted === undefined && !railway.bridge) continue;
+          position.setY(j, y + (fitted ?? startY + rise * along / length));
+          changed = true;
         }
-        geometry.computeVertexNormals();
+        if (changed) geometry.computeVertexNormals();
         return geometry;
       };
 

@@ -62,7 +62,8 @@ function cameraHarness(entity = {
     imports: {
       'three/webgpu': { Vector3, PerspectiveCamera },
       './city-config.js': { LANDMARK_SITES: { 'Station Ede Centrum': { x: -230, z: 305 } } },
-      './terrain.js': { terrainHeightAt }
+      './terrain.js': { terrainHeightAt },
+      './ede-grade.js': { constrainEdeCamera: (_, p, clearance = 0.55) => { p.y = Math.max(p.y, terrainHeightAt(p.x, p.z) + clearance); } }
     }
   });
   const camera = new CameraSystem(canvas, { getActiveEntity: () => entity });

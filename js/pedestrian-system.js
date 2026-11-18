@@ -12,7 +12,7 @@ const PED_SPAWN_DISTANCE = 150;
 const PED_AVOID_INTERVAL = 0.12;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCross, walkOn, visible, nearView }) {
+function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearFoot, mappedGround, mayCross, walkOn, visible, nearView }) {
   let clock = 0;
   let focusX = 0, focusZ = 140;
   let hasView = false;
@@ -158,8 +158,10 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
     const rMinSq = rMin * rMin, rMaxSq = rMax * rMax, gapSq = QUEUE_GAP * QUEUE_GAP;
     for (let attempt = 0; attempt < 10; attempt++) {
       const crosswalk = p.crossesStreets && nearSignals.length > 0 && attempt < 5;
+      const mapped = !crosswalk && nearFoot?.[Math.floor(Math.random() * nearFoot.length)];
       const ok = crosswalk
         ? crosswalkTrack(nearSignals[Math.floor(Math.random() * nearSignals.length)])
+        : nearFoot ? mapped && Object.assign(track, mapped, { route: mapped })
         : nearEdges.length > 0 && sidewalkTrack(nearEdges[Math.floor(Math.random() * nearEdges.length)]);
       if (!ok) continue;
       const along = (focusX - track.ax) * track.ux + (focusZ - track.az) * track.uz;
@@ -170,7 +172,8 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
       const z = track.az + track.uz * t;
       const dx = x - focusX, dz = z - focusZ;
       const d2 = dx * dx + dz * dz;
-      if (d2 < rMinSq || d2 > rMaxSq || (protectView && nearView(x, z, 2, PED_SPAWN_DISTANCE))) continue;
+      const y = mapped ? mappedGround(mapped, x, z) : undefined;
+      if (d2 < rMinSq || d2 > rMaxSq || (protectView && nearView(x, z, 2, PED_SPAWN_DISTANCE, y))) continue;
       if (player.active && (x - player.x) * (x - player.x) + (z - player.z) * (z - player.z) < 100) continue;
       if (crosswalk) {
         let crowded = false;
@@ -185,7 +188,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
       if (p.conversation) endConversation(p.conversation);
       Object.assign(p, track);
       p.t = t;
-      p.dir = t < track.len * 0.5 ? 1 : -1;
+      p.dir = mapped && !mapped.allowed.every(Boolean) ? mapped.allowed[0] ? 1 : -1 : t < track.len * 0.5 ? 1 : -1;
       p.x = x;
       p.z = z;
       p.v = crosswalk ? 0 : p.speed;
@@ -327,7 +330,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
       p.resumeDir = 0;
       p.avoidCheck = 0;
     }
-    if (!pedRange) { if (!p.dodgeTarget) p.avoidUntil = 0; return; }
+    if (!pedRange || Math.abs(player.y - p.y) > 1.8) { if (!p.dodgeTarget) p.avoidUntil = 0; return; }
     const dx = p.x - player.x, dz = p.z - player.z;
     if (dx * dx + dz * dz > pedRange * pedRange || clock < p.avoidCheck) return;
     p.avoidCheck = clock + PED_AVOID_INTERVAL;
@@ -597,6 +600,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
   const SIDEWALK_Y = 0.22;
   const CROSSWALK_Y = 0.012;
   function pedGround(p, x, z) {
+    if (p.route?.mapped) return mappedGround(p.route, x, z) + (p.route.sidewalk ? SIDEWALK_Y : CROSSWALK_Y);
     const ground = terrainHeightAt(x, z);
     if (!p.node) return ground + SIDEWALK_Y;
     const t = (x - p.ax) * p.ux + (z - p.az) * p.uz;

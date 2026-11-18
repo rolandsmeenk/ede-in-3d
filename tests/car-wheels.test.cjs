@@ -320,7 +320,7 @@ test('renderCar writes per-car wheel styles to both front and rear wheel slots w
       matrix: {}
     },
     fitVehicleGrade(c) { c.roadPitch = c.roadRoll = 0; },
-    terrainHeightAt: () => 0,
+    roadGround: () => 0,
     placeWheels(c, idx) { placed.push(idx); }
   };
   const renderCar = vm.runInNewContext(`(${match[0].trim()})`, ctx);

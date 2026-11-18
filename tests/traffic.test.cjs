@@ -202,11 +202,11 @@ function populationContext() {
     Math: Object.assign(Object.create(Math), { random: () => 0.5 }),
     clamp: (x, lo, hi) => Math.max(lo, Math.min(hi, x)),
     hasView: true, camX: 0, camY: 10, camZ: 0, visible: () => true,
-    terrainHeightAt: () => 0,
+    terrainHeightAt: () => 0, roadGround: () => 0,
     focusX: 0, focusZ: 0, player: { active: false },
     clock: 0,
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
-    nearEdges: [], nearSignals: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
+    nearEdges: [], nearSignals: [], activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
     place: (v, e, lane, s) => Object.assign(v, { edge: e, lane, s })
   };
@@ -296,12 +296,12 @@ function dodgeHarness({ isRoadClear = (x) => Math.abs(x) <= 6.65 } = {}) {
   const context = {
     AVOID_NOTICE: 1.8, AVOID_HOLD: 1.2, clock: 0,
     threat: { ahead: 0, aside: 0, across: 0 },
-    player: { active: true, x: 0, z: 0, vx: 0, vz: 0, fx: 0, fz: 1, halfW: 0.86, halfL: 2.18 },
+    player: { active: true, x: 0, y: 0, z: 0, vx: 0, vz: 0, fx: 0, fz: 1, halfW: 0.86, halfL: 2.18 },
     network: { isRoadClear }
   };
   for (const name of ['threatTime', 'swerveRoom', 'react']) context[name] = trafficFunction(name, context);
   // a car heading +z (its right is -x) in the middle of the road
-  const car = { x: 0, z: 0, tx: 0, tz: 1, yaw: 0, speed: 12, half: 2.25, halfL: 2.18, halfWidth: 0.86, dl: 0,
+  const car = { x: 0, y: 0, z: 0, tx: 0, tz: 1, yaw: 0, speed: 12, half: 2.25, halfL: 2.18, halfWidth: 0.86, dl: 0,
     impactTime: 0,
     evade: 0, alarm: 0, panicUntil: 0, panicAcc: 0, reaction: 0.8 };
   // the player at (x, z) heading `heading` at `speed`, the car on at its speed, for `seconds` at 60 Hz

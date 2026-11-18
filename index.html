@@ -18,11 +18,14 @@
       }
     }
   </script>
-  <!-- Fetch the city modules in parallel before stylesheets; the module graph controls evaluation order. -->
+  <!-- Fetch the city modules in parallel before stylesheets. Keep the lighting versions in sync with the entry and imports. -->
   <link rel="modulepreload" href="./js/ede-geodata.js" />
   <link rel="modulepreload" href="./js/nyc-geodata.js" />
   <link rel="modulepreload" href="./js/ede-geometry.js" />
   <link rel="modulepreload" href="./js/terrain.js" />
+  <link rel="modulepreload" href="./js/ede-grade.js" />
+  <link rel="modulepreload" href="./js/ede-grade-world.js" />
+  <link rel="modulepreload" href="./js/ede-bgt-world.js" />
   <link rel="modulepreload" href="./js/aerial-colors.js" />
   <link rel="modulepreload" href="./js/city-config.js" />
   <link rel="modulepreload" href="./js/tsl-materials.js" />
@@ -40,7 +43,8 @@
   <link rel="modulepreload" href="./js/vehicle-lights.js" />
   <link rel="modulepreload" href="./js/vehicle-physics.js" />
   <link rel="modulepreload" href="./js/pedestrians.js" />
-  <link rel="modulepreload" href="./js/lighting.js" />
+  <link rel="modulepreload" href="./js/lighting.js?v=20261118-lighting-menu" />
+  <link rel="modulepreload" href="./js/live-sky.js" />
   <link rel="modulepreload" href="./js/city-grid.js" />
   <link rel="modulepreload" href="./js/buildings.js" />
   <link rel="modulepreload" href="./js/shop-signs.js" />
@@ -51,6 +55,8 @@
   <link rel="modulepreload" href="./js/street-details.js" />
   <link rel="modulepreload" href="./js/street-props.js" />
   <link rel="modulepreload" href="./js/road-network.js" />
+  <link rel="modulepreload" href="./js/road-access.js" />
+  <link rel="modulepreload" href="./js/ede-active-travel.js" />
   <link rel="modulepreload" href="./js/road-paint.js" />
   <link rel="modulepreload" href="./js/traffic.js" />
   <link rel="modulepreload" href="./js/pedestrian-system.js" />
@@ -61,20 +67,20 @@
   <link rel="modulepreload" href="./js/cameras.js" />
   <link rel="modulepreload" href="./js/nyc-map.js" />
   <link rel="modulepreload" href="./js/scene-culling.js" />
-  <link rel="modulepreload" href="./js/post-processing.js" />
+  <link rel="modulepreload" href="./js/post-processing.js?v=20261118-lighting-menu" />
   <link rel="modulepreload" href="./js/audio-synthesis.js" />
   <link rel="modulepreload" href="./js/audio-events.js" />
   <link rel="modulepreload" href="./js/audio-sources.js" />
   <link rel="modulepreload" href="./js/audio-acoustics.js" />
   <link rel="modulepreload" href="./js/audio-system.js" />
   <link rel="modulepreload" href="./js/bag3d.js" />
-  <link rel="modulepreload" href="./js/main.js" />
-  <script type="module" src="./js/main.js"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261118-lighting-menu" />
+  <script type="module" src="./js/main.js?v=20261118-lighting-menu"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261022-repo-link" />
+  <link rel="stylesheet" href="./css/style.css?v=20261118-tod-menu" />
 </head>
 <body>
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
@@ -85,6 +91,7 @@
       <symbol id="i-bike" viewBox="0 0 24 24"><circle cx="5.5" cy="16.5" r="3.6"/><circle cx="18.5" cy="16.5" r="3.6"/><path d="M5.5 16.5 9.3 9.6h6.3M11.6 16.5 9.3 9.6M11.6 16.5l4-6.9M5.5 16.5h6.1M15.6 9.6l2.9 6.9M15.6 9.6 14.8 7h2.4M8 8.4h2.8"/></symbol>
       <symbol id="i-heli" viewBox="0 0 24 24"><path d="M3.5 4h15M11 4v3.2"/><path d="M6 12.2a5 5 0 0 1 5-5h1.6a4.4 4.4 0 0 1 4.4 4.4V15H8.8A2.8 2.8 0 0 1 6 12.2z"/><path d="M17 11h4.2M21.2 8.8v4.4M7 19h10.5M9.5 15v4M15 15v4"/></symbol>
       <symbol id="i-golden" viewBox="0 0 24 24"><path d="M3 17.5h18M7 17.5a5 5 0 0 1 10 0M12 5v3M5.6 9.6l2 1.6M18.4 9.6l-2 1.6M7.5 21h9"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M5.5 18.5 7 17M17 7l1.5-1.5"/></symbol>
       <symbol id="i-twilight" viewBox="0 0 24 24"><path d="M3 15.5h18M7.5 19h9M8 15.5a4 4 0 0 1 8 0M17.5 4v3.2M15.9 5.6h3.2M7 7.4v1.8M6.1 8.3h1.8"/></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.6A7.8 7.8 0 0 1 9.4 4.5a7.8 7.8 0 1 0 10.1 10.1z"/></symbol>
@@ -120,6 +127,7 @@
   <!-- 3D WebGPU Viewport Container -->
   <main id="canvas-container" aria-label="3D Interactive Slop Ede Viewport"></main>
   <div class="map-attribution">
+    <a href="https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html" target="_blank" rel="noopener noreferrer">Structures via PDOK BGT</a>
     <a href="https://gtfs.ovapi.nl/nl/" target="_blank" rel="noopener noreferrer">Bus data via OVapi</a>
     <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
     <a href="https://docs.3dbag.nl/en/copyright/" target="_blank" rel="noopener noreferrer">© 3DBAG by tudelft3d and 3DGI</a>
@@ -147,20 +155,11 @@
   <!-- Top-Right Toolbar: Time of Day, Teleport, Map & Clean View -->
   <div class="hud hud-top-right">
     <div id="hud-toolbar" class="panel toolbar">
-      <div class="time-switch" role="group" aria-label="Atmosphere &amp; time of day">
-        <button id="time-golden" class="time-btn active" data-time="golden" type="button" title="Golden Hour">
-          <svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span class="seg-label">Golden Hour</span>
-        </button>
-        <button id="time-midday" class="time-btn" data-time="midday" type="button" title="Sunny Midday">
-          <svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span class="seg-label">Midday</span>
-        </button>
-        <button id="time-twilight" class="time-btn" data-time="twilight" type="button" title="Blue Hour">
-          <svg class="icon" aria-hidden="true"><use href="#i-twilight"/></svg><span class="seg-label">Blue Hour</span>
-        </button>
-        <button id="time-midnight" class="time-btn" data-time="midnight" type="button" title="Night 23:00">
-          <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg><span class="seg-label">Night</span>
-        </button>
-      </div>
+      <button id="btn-time-presets" class="tool-btn" type="button" popovertarget="time-presets-popover" aria-label="Time of day" aria-describedby="time-live-clock" title="Time of day">
+        <svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span class="tool-label">Time of day</span>
+        <time id="time-live-clock" title="Ede local time" hidden></time>
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+      </button>
       <span class="toolbar-divider" aria-hidden="true"></span>
       <button id="btn-teleport" class="tool-btn" type="button" popovertarget="teleport-popover" title="Teleport the active player">
         <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><span class="tool-label">Teleport</span><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
@@ -176,6 +175,15 @@
         <svg class="icon icon-hide" aria-hidden="true"><use href="#i-eye"/></svg><svg class="icon icon-show" aria-hidden="true"><use href="#i-eye-off"/></svg>
       </button>
     </div>
+  </div>
+
+  <div id="time-presets-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Time of day">
+    <div class="pop-title">Time of day</div>
+    <button id="time-golden" class="pop-item active" data-time="golden" aria-pressed="true" type="button"><span class="pop-name">Golden Hour</span></button>
+    <button id="time-midday" class="pop-item" data-time="midday" aria-pressed="false" type="button"><span class="pop-name">Midday</span></button>
+    <button id="time-twilight" class="pop-item" data-time="twilight" aria-pressed="false" type="button"><span class="pop-name">Blue Hour</span></button>
+    <button id="time-midnight" class="pop-item" data-time="midnight" aria-pressed="false" type="button"><span class="pop-name">Night</span></button>
+    <button id="time-live" class="pop-item" data-time="live" aria-pressed="false" type="button"><span class="pop-name">Live Time</span></button>
   </div>
 
   <!-- Teleport Destinations (native popover: light-dismiss & Esc) -->
