@@ -148,8 +148,8 @@ const sandbox = {
     }
   },
   ISLAND_BOUNDS: { minX: -1100, maxX: 1100, minZ: -5600, maxZ: 6400, waterLevel: -2.2 },
-  UTRECHT_DATA: null,
-  getUtrechtReflectionBanks: () => [[-950, -6000, -950, 6000, 70], [950, 6000, 950, -6000, 70]],
+  EDE_DATA: null,
+  getEdeReflectionBanks: () => [[-950, -6000, -950, 6000, 70], [950, 6000, 950, -6000, 70]],
   CENTRAL_PARK_BOUNDS: { minX: -420, maxX: 420, minZ: -3800, maxZ: -600 },
   getIslandBoundsAtZ: () => ({ westX: -950, eastX: 950 }),
   NJ_SHORELINE_POLYGON: [{ x: -2100, z: -7000 }, { x: -2100, z: 8000 }, { x: -4000, z: 8000 }, { x: -4000, z: -7000 }],

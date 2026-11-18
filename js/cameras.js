@@ -1,21 +1,32 @@
 import * as THREE from 'three/webgpu';
-import { bryantParkLawn } from './landmarks.js';
+import { LANDMARK_SITES } from './city-config.js';
 
 // js/cameras.js
 // Multi-camera system supporting Third-Person Chase (with mouse/touch orbit + zoom),
-// Low-Angle Action Cam, POV/Cockpit Cam, 7 Utrecht Architectural Cameras, and Auto-Director Drone.
+// Low-Angle Action Cam, POV/Cockpit Cam, 7 Ede Architectural Cameras, and Auto-Director Drone.
+
+// Landmark name, camera offset (east, height, south) and target height in metres.
+const SCENIC_VIEWS = {
+  centralPark: ['Proosdijpark', 105, 38, 115, 5],
+  fifthAve: ['Oude Kerk', 78, 32, 68, 14],
+  timesSquare: ['Marktplein', -49, 36, 74, 4],
+  chryslerGCT: ['Station Ede-Wageningen', 125, 40, -115, 10],
+  observatory: ['Station Ede Centrum', 225, 145, 185, 15],
+  bryantPark: ['Raadhuis Ede', -105, 36, 85, 7],
+  waterfront: ['Huis Kernhem', -115, 31, 45, 6]
+};
 
 const CAMERA_PRESETS = [
   { id: 'chase',       name: '3rd-Person Chase',         short: 'Chase',       category: 'follow', fov: 56 },
   { id: 'action',      name: 'Low-Angle Action',         short: 'Action',      category: 'follow', fov: 60 },
   { id: 'pov',         name: 'First-Person / Cockpit',   short: 'POV / Dash',  category: 'follow', fov: 68 },
-  { id: 'centralPark', name: 'Wilhelminapark', short: 'Wilhelmina',  category: 'scenic', fov: 52 },
-  { id: 'fifthAve',    name: 'Oudegracht & Domtoren', short: 'Oudegracht',     category: 'scenic', fov: 48 },
-  { id: 'timesSquare', name: 'Neude', short: 'Neude',    category: 'scenic', fov: 58 },
-  { id: 'chryslerGCT', name: 'Utrecht Centraal & Hoog Catharijne', short: 'Centraal',    category: 'scenic', fov: 50 },
-  { id: 'observatory', name: 'Domtoren Uitzicht', short: 'Domtoren',   category: 'scenic', fov: 52 },
-  { id: 'bryantPark',  name: 'Domplein & Dom', short: 'Domplein',   category: 'scenic', fov: 52 },
-  { id: 'waterfront',  name: 'Rijn & Skyline', short: 'Skyline',     category: 'scenic', fov: 46 },
+  { id: 'centralPark', name: 'Proosdijpark', short: 'Proosdijpark',  category: 'scenic', fov: 52 },
+  { id: 'fifthAve',    name: 'Oude Kerk', short: 'Oude Kerk',     category: 'scenic', fov: 48 },
+  { id: 'timesSquare', name: 'Marktplein', short: 'Marktplein',    category: 'scenic', fov: 58 },
+  { id: 'chryslerGCT', name: 'Station Ede-Wageningen', short: 'Ede-Wageningen',    category: 'scenic', fov: 50 },
+  { id: 'observatory', name: 'Ede Centrum from Above', short: 'Ede Centrum',   category: 'scenic', fov: 52 },
+  { id: 'bryantPark',  name: 'Raadhuis Ede', short: 'Raadhuis',   category: 'scenic', fov: 52 },
+  { id: 'waterfront',  name: 'Huis Kernhem', short: 'Huis Kernhem',     category: 'scenic', fov: 46 },
   { id: 'fixed',       name: 'Test camera',              short: 'Test',        category: 'scenic', fov: 55 },
   { id: 'drone',       name: 'Auto-Director Aerial',     short: 'Director',    category: 'scenic', fov: 50 }
 ];
@@ -260,55 +271,6 @@ class CameraSystem {
         break;
       }
 
-      case 'centralPark': {
-        const sway = Math.sin(elapsed * 0.22) * 1.5;
-        desiredPos.set(712 + sway, 25, 492);
-        desiredLook.set(808, 8, 381);
-        break;
-      }
-
-      case 'fifthAve': {
-        const sway = Math.sin(elapsed * 0.22) * 1.5;
-        desiredPos.set(-191 + sway, 12, -131);
-        desiredLook.set(0, 60, 0);
-        break;
-      }
-
-      case 'timesSquare': {
-        const sway = Math.sin(elapsed * 0.22) * 1.5;
-        desiredPos.set(-287 + sway, 20, -421);
-        desiredLook.set(-348, 8, -521);
-        break;
-      }
-
-      case 'chryslerGCT': {
-        const sway = Math.sin(elapsed * 0.22) * 1.5;
-        desiredPos.set(-588 + sway, 18, 247);
-        desiredLook.set(-745, 20, 136);
-        break;
-      }
-
-      case 'observatory': {
-        const sway = Math.sin(elapsed * 0.22) * 1.5;
-        desiredPos.set(0 + sway, 100, 0);
-        desiredLook.set(-745, 10, 136);
-        break;
-      }
-
-      case 'bryantPark': {
-        const sway = Math.sin(elapsed * 0.22) * 1.5;
-        desiredPos.set(110 + sway, 4, -65);
-        desiredLook.set(0, 40, 0);
-        break;
-      }
-
-      case 'waterfront': {
-        const sway = Math.sin(elapsed * 0.22) * 1.5;
-        desiredPos.set(-882 + sway, 45, 626);
-        desiredLook.set(0, 60, 0);
-        break;
-      }
-
       case 'fixed': {
         // Spike test camera: window.__slopwaw.setCamera(px, py, pz, tx, ty, tz)
         desiredPos.copy(this.fixedPos || desiredPos);
@@ -325,8 +287,16 @@ class CameraSystem {
           alt,
           Math.sin(angle) * radius
         );
-        desiredLook.set(0.0, 35.0, 0.0);
+        desiredLook.set(0.0, 25.0, 0.0);
         break;
+      }
+
+      default: {
+        const [name, dx, y, dz, targetY] = SCENIC_VIEWS[this.activePresetId];
+        const { x, z } = LANDMARK_SITES[name];
+        const sway = Math.sin(elapsed * 0.22) * 1.5;
+        desiredPos.set(x + dx + sway, y, z + dz);
+        desiredLook.set(x, targetY, z);
       }
     }
 

@@ -59,7 +59,7 @@ function cameraHarness(entity = {
   window.innerHeight = 900;
   const { CameraSystem } = loadModule(source, {
     globals: { window, document },
-    imports: { 'three/webgpu': { Vector3, PerspectiveCamera }, './landmarks.js': {} }
+    imports: { 'three/webgpu': { Vector3, PerspectiveCamera }, './city-config.js': { LANDMARK_SITES: { 'Station Ede Centrum': { x: -230, z: 305 } } } }
   });
   const camera = new CameraSystem(canvas, { getActiveEntity: () => entity });
   return {

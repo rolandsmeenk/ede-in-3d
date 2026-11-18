@@ -22,20 +22,10 @@ function loadTrees(bytes = compressed, status = 200) {
 }
 const trees = loadTrees();
 
-test('survey tree locations are unique, quantized and inside the detailed map', async () => {
+test('legacy survey tree locations are unique and quantized', async () => {
   const REAL_TREES = await trees;
   assert.ok(REAL_TREES instanceof Float32Array);
   assert.equal(REAL_TREES.length, 70680 * 2);
-  const geo = readFileSync(join(__dirname, '../js/nyc-geodata.js'), 'utf8');
-  const ring = new Script(`${geo.replace('export const GEO', 'const GEO')}\nGEO.manhattan`).runInNewContext();
-  function inside(x, z) {
-    let hit = false;
-    for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
-      if ((ring[i + 1] > z) !== (ring[j + 1] > z) &&
-        x < (ring[j] - ring[i]) * (z - ring[i + 1]) / (ring[j + 1] - ring[i + 1]) + ring[i]) hit = !hit;
-    }
-    return hit;
-  }
   const seen = new Set();
   for (let i = 0; i < REAL_TREES.length; i += 2) {
     const x = REAL_TREES[i], z = REAL_TREES[i + 1];
@@ -43,8 +33,6 @@ test('survey tree locations are unique, quantized and inside the detailed map', 
     const key = `${x},${z}`;
     assert.ok(!seen.has(key), 'Quantized locations must not create duplicate trees.');
     seen.add(key);
-    // Boundary locations may move up to 0.25 m on each axis when rounded.
-    assert.ok(inside(x, z) || [-0.25, 0.25].some(dx => [-0.25, 0.25].some(dz => inside(x + dx, z + dz))));
   }
   for (const key of ['-35.5,57.5', '549.5,5512', '459,-4232.5']) {
     assert.ok(seen.has(key), 'Sampled Midtown, Lower Manhattan and Upper East Side trees retain their positions.');
@@ -84,5 +72,15 @@ test('tree data rejects damaged headers, truncated streams and trailing bytes', 
   for (const invalid of [data.subarray(0, 8), badVersion, badOffset, badCount, overlong,
     data.subarray(0, data.length - 1), Buffer.concat([data, Buffer.from([0])])]) {
     await assert.rejects(loadTrees(gzipSync(invalid)), /Invalid tree data/);
+  }
+});
+
+test('mapped Ede trees are inside the Ede map bounds', async () => {
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const [minX, minZ, maxX, maxZ] = EDE_DATA.meta.bounds;
+  assert.equal(EDE_DATA.meta.city, 'Ede');
+  assert.ok(EDE_DATA.trees.length > 100);
+  for (const { x, z } of EDE_DATA.trees) {
+    assert.ok(x >= minX && x <= maxX && z >= minZ && z <= maxZ);
   }
 });

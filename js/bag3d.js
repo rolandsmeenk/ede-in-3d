@@ -7,11 +7,8 @@ import { GEO } from './nyc-geodata.js';
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
 // https://3dbag.nl — tiles are glTF with node matrices in ECEF (glTF axes: x = X, y = Z, z = -Y).
 const BAG_BASE = 'https://3dbag.fsn1.your-objectstorage.com/v20250903/cesium3dtiles/lod22/';
-const AFF = GEO.utrecht.meta.lonLatAffine;
-const [MIN_X, MIN_Z, MAX_X, MAX_Z] = GEO.utrecht.meta.bounds;
-
-// Ellipsoidal height of street level at the Domtoren (NAP + geoid undulation), so that street level is y = 0.
-const GROUND_ELLIPSOID_HEIGHT = 47.8;
+const AFF = GEO.ede.meta.lonLatAffine;
+const [MIN_X, MIN_Z, MAX_X, MAX_Z] = GEO.ede.meta.bounds;
 
 const WGS84_A = 6378137, WGS84_E2 = 0.00669437999014;
 const rad = (d) => d * Math.PI / 180;
@@ -33,7 +30,7 @@ export function ecefToLocalMatrix(lon0 = AFF.lon0, lat0 = AFF.lat0) {
   // Match the OSM data's equirectangular affine so that BAG and OSM layers coincide.
   const sx = AFF.x[1] / (rad(1) * prime * Math.cos(lat));
   const sz = -AFF.z[2] / (rad(1) * meridian);
-  const origin = ecefFromLonLat(lon0, lat0, GROUND_ELLIPSOID_HEIGHT);
+  const origin = ecefFromLonLat(lon0, lat0);
   // ECEF -> engine: x = sx * E, y = U, z = -sz * N
   const ecefToLocal = new THREE.Matrix4().set(
     sx * e.x, sx * e.y, sx * e.z, 0,
@@ -110,18 +107,25 @@ export function bakeTile(gltf, matrix) {
     const count = pos.count;
     const positions = new Float32Array(count * 3), normals = new Float32Array(count * 3), colors = new Float32Array(count * 3);
     const v = new THREE.Vector3(), c = new THREE.Color();
+    const baseByBuilding = new Map();
     for (let i = 0; i < count; i++) {
       v.fromBufferAttribute(pos, i).applyMatrix4(full);
       positions[i * 3] = v.x; positions[i * 3 + 1] = v.y; positions[i * 3 + 2] = v.z;
       v.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
       normals[i * 3] = v.x; normals[i * 3 + 1] = v.y; normals[i * 3 + 2] = v.z;
       const seed = fid ? Math.round(fid.getX(i)) : 0;
+      baseByBuilding.set(seed, Math.min(baseByBuilding.get(seed) ?? Infinity, positions[i * 3 + 1]));
       const r = hash(seed + 1), s = hash(seed * 7 + 3);
       if (v.y > 0.35) c.setHSL(0.03 + s * 0.04, 0.12 + r * 0.12, 0.17 + r * 0.1); // roofs: dark tile / slate
       else if (r < 0.62) c.setHSL(0.045 + s * 0.03, 0.34 + r * 0.2, 0.30 + s * 0.12); // brick
       else if (r < 0.85) c.setHSL(0.11 + s * 0.04, 0.12 + s * 0.12, 0.52 + r * 0.14); // plaster / stone
       else c.setHSL(0.08 + s * 0.05, 0.08, 0.40 + s * 0.15);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+    }
+    // Keep BAG roof heights while seating every building on the simulator's flat ground.
+    for (let i = 0; i < count; i++) {
+      const seed = fid ? Math.round(fid.getX(i)) : 0;
+      positions[i * 3 + 1] -= baseByBuilding.get(seed);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -172,6 +176,6 @@ export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fet
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, urls.length) }, worker));
   scene.add(group);
-  group.userData = { city: 'Utrecht', source: '3D BAG LoD 2.2', tiles: urls.length };
+  group.userData = { city: 'Ede', source: '3D BAG LoD 2.2', tiles: urls.length };
   return group;
 }

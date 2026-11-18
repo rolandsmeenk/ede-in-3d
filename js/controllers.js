@@ -370,11 +370,11 @@ function createTaxiDoorDecalTexture() {
   ctx.fillStyle = '#111317';
   ctx.textAlign = 'left';
   ctx.font = '900 26px Inter, Arial, sans-serif';
-  ctx.fillText('UTRECHT TAXI', 112, 42);
+  ctx.fillText('EDE TAXI', 112, 42);
   ctx.font = '700 15px JetBrains Mono, monospace';
-  ctx.fillText('UTRECHT · TAXI', 112, 68);
+  ctx.fillText('EDE · TAXI', 112, 68);
   ctx.font = '600 13px Inter, Arial, sans-serif';
-  ctx.fillText('TAXI UTRECHT', 112, 90);
+  ctx.fillText('TAXI EDE', 112, 90);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   // The decals are mostly seen at grazing angles from the chase camera
@@ -803,7 +803,7 @@ class ThirdPersonControllerManager {
 
     return {
       type: 'car',
-      label: 'Utrecht Taxi',
+      label: 'Ede Taxi',
       mesh: root,
       chassisPivot,
       carState,
@@ -964,7 +964,7 @@ class ThirdPersonControllerManager {
 
     return {
       type: 'cyclist',
-      label: 'Utrecht Cyclist',
+      label: 'Ede Cyclist',
       mesh: root,
       leanPivot,
       frontWheel,

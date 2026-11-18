@@ -1,7 +1,7 @@
-// Shop fascia signs at the real locations of Utrecht's named shops, cafés and restaurants (OpenStreetMap, see
-// tools/build-utrecht-shops.mjs). Each sign is a quad on the nearest building wall, all sharing one name atlas.
+// Shop fascia signs at the real locations of Ede's named shops, cafés and restaurants (OpenStreetMap, see
+// tools/build-ede-shops.mjs). Each sign is a quad on the nearest building wall, all sharing one name atlas.
 import * as THREE from 'three/webgpu';
-import { UTRECHT_SHOPS } from './utrecht-shops.js';
+import { EDE_SHOPS } from './ede-shops.js';
 import { waterAt } from './city-config.js';
 
 const CELL_W = 256, CELL_H = 40, COLS = 8, MAX_NAMES = 800;
@@ -84,13 +84,13 @@ export function createShopSigns(buildings) {
 
   // Names that occur most often get atlas cells first.
   const counts = new Map();
-  for (const s of UTRECHT_SHOPS) counts.set(s[0], (counts.get(s[0]) || 0) + 1);
+  for (const s of EDE_SHOPS) counts.set(s[0], (counts.get(s[0]) || 0) + 1);
   const names = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a)).slice(0, MAX_NAMES);
   const cellOf = new Map(names.map((n, i) => [n, i]));
   const { tex, rows } = drawAtlas(names);
 
   const positions = [], uvs = [], indices = [], placed = [];
-  for (const [name, sx, sz] of UTRECHT_SHOPS) {
+  for (const [name, sx, sz] of EDE_SHOPS) {
     const cell = cellOf.get(name);
     if (cell === undefined) continue;
     const wall = nearestWall(rings, sx, sz);
@@ -123,7 +123,7 @@ export function createShopSigns(buildings) {
   geometry.setIndex(indices);
   geometry.computeBoundingSphere();
   const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicNodeMaterial({ map: tex }));
-  mesh.name = 'UtrechtShopSigns';
+  mesh.name = 'EdeShopSigns';
   mesh.userData.signCount = placed.length;
   return mesh;
 }

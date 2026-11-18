@@ -1,35 +1,35 @@
 import * as THREE from 'three/webgpu';
-import { UTRECHT_DATA } from './city-config.js';
+import { EDE_DATA } from './city-config.js';
 
 // Geometry adapters only: rendering stays in the upstream WebGPU/TSL systems.
-export const UTRECHT_RENDER_CELL = 750;
+export const EDE_RENDER_CELL = 750;
 
-export function utrechtSpatialGroups(items, position = item => item) {
+export function edeSpatialGroups(items, position = item => item) {
   const cells = new Map();
   for (const item of items) {
     const { x, z } = position(item);
-    const key = `${Math.floor(x / UTRECHT_RENDER_CELL)}/${Math.floor(z / UTRECHT_RENDER_CELL)}`;
+    const key = `${Math.floor(x / EDE_RENDER_CELL)}/${Math.floor(z / EDE_RENDER_CELL)}`;
     if (!cells.has(key)) cells.set(key, []);
     cells.get(key).push(item);
   }
   return cells.values();
 }
 
-export function utrechtGeometryGroups(geometries) {
-  return utrechtSpatialGroups(geometries, geometry => {
+export function edeGeometryGroups(geometries) {
+  return edeSpatialGroups(geometries, geometry => {
     if (!geometry.boundingBox) geometry.computeBoundingBox();
     const { min, max } = geometry.boundingBox;
     return { x: (min.x + max.x) / 2, z: (min.z + max.z) / 2 };
   });
 }
 
-export function utrechtPoints(flat) {
+export function edePoints(flat) {
   const points = [];
   for (let i = 0; i < flat.length; i += 2) points.push({ x: flat[i], z: flat[i + 1] });
   return points;
 }
 
-export function utrechtBounds(points) {
+export function edeBounds(points) {
   const b = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
   for (const p of points) {
     b.minX = Math.min(b.minX, p.x); b.maxX = Math.max(b.maxX, p.x);
@@ -38,7 +38,7 @@ export function utrechtBounds(points) {
   return b;
 }
 
-export function utrechtPolygonGeometry(ring, holes = [], y = 0) {
+export function edePolygonGeometry(ring, holes = [], y = 0) {
   const shape = new THREE.Shape(ring.map(p => new THREE.Vector2(p.x, -p.z)));
   for (const hole of holes) if (hole.length >= 3) shape.holes.push(new THREE.Path(hole.map(p => new THREE.Vector2(p.x, -p.z))));
   const geometry = new THREE.ShapeGeometry(shape, 1);
@@ -47,11 +47,11 @@ export function utrechtPolygonGeometry(ring, holes = [], y = 0) {
   return geometry;
 }
 
-export function utrechtStrip(a, b, halfWidth, y, offset = 0) {
+export function edeStrip(a, b, halfWidth, y, offset = 0) {
   const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz);
   if (len < 0.1) return null;
   const nx = -dz / len, nz = dx / len;
-  return utrechtPolygonGeometry([
+  return edePolygonGeometry([
     { x: a.x + nx * (offset - halfWidth), z: a.z + nz * (offset - halfWidth) },
     { x: b.x + nx * (offset - halfWidth), z: b.z + nz * (offset - halfWidth) },
     { x: b.x + nx * (offset + halfWidth), z: b.z + nz * (offset + halfWidth) },
@@ -59,21 +59,21 @@ export function utrechtStrip(a, b, halfWidth, y, offset = 0) {
   ], [], y);
 }
 
-export const UTRECHT_PEDESTRIAN_WAYS = new Set(['footway', 'pedestrian', 'path', 'steps', 'cycleway', 'bridleway']);
+export const EDE_PEDESTRIAN_WAYS = new Set(['footway', 'pedestrian', 'path', 'steps', 'cycleway', 'bridleway']);
 let segments;
 let roadIndex;
-export function utrechtRoadSegments() {
+export function edeRoadSegments() {
   if (segments) return segments;
   segments = [];
   roadIndex = new Map();
-  for (const road of UTRECHT_DATA.roads || []) {
+  for (const road of EDE_DATA.roads || []) {
     if (road.tunnel || !road.pts) continue;
-    const points = utrechtPoints(road.pts);
+    const points = edePoints(road.pts);
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1], b = points[i], len = Math.hypot(b.x - a.x, b.z - a.z);
       if (len < 0.8) continue;
       const s = { a, b, len, road, width: road.width || 6, ux: (b.x - a.x) / len, uz: (b.z - a.z) / len,
-        pedestrian: UTRECHT_PEDESTRIAN_WAYS.has(road.kind), bridge: !!road.bridge };
+        pedestrian: EDE_PEDESTRIAN_WAYS.has(road.kind), bridge: !!road.bridge };
       segments.push(s);
       if (s.pedestrian) continue;
       for (let x = Math.floor(Math.min(a.x, b.x) / 64); x <= Math.floor(Math.max(a.x, b.x) / 64); x++) {
@@ -88,8 +88,8 @@ export function utrechtRoadSegments() {
   return segments;
 }
 
-export function nearestUtrechtRoad(x, z, reach = 40) {
-  utrechtRoadSegments();
+export function nearestEdeRoad(x, z, reach = 40) {
+  edeRoadSegments();
   let best = null, bestD = reach * reach;
   for (let gx = Math.floor((x - reach) / 64); gx <= Math.floor((x + reach) / 64); gx++) {
     for (let gz = Math.floor((z - reach) / 64); gz <= Math.floor((z + reach) / 64); gz++) {

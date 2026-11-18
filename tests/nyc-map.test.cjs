@@ -5,6 +5,8 @@ const test = require('node:test');
 const { loadModule } = require('./helpers/module.cjs');
 
 const source = readFileSync(join(__dirname, '../js/nyc-map.js'), 'utf8');
+const ISLAND_BOUNDS = { minX: -10000, maxX: 10000, minZ: -10000, maxZ: 10000 };
+const mapImports = { './nyc-geodata.js': { GEO: {} }, './city-config.js': { ROADS: [], ISLAND_BOUNDS } };
 
 test('surveyed building courtyards remain holes in the map footprint layer', () => {
   class Path2D {
@@ -15,7 +17,7 @@ test('surveyed building courtyards remain holes in the map footprint layer', () 
   }
   const { footprintLayers } = loadModule(source + '\nexport { footprintLayers };', {
     globals: { Path2D },
-    imports: { './nyc-geodata.js': { GEO: {} }, './city-config.js': { ROADS: [] } }
+    imports: mapImports
   });
   const ring = (x0, z0, x1, z1) => [{ x: x0, z: z0 }, { x: x1, z: z0 }, { x: x1, z: z1 }, { x: x0, z: z1 }];
   const layers = footprintLayers([{ footprints: [{ h: 120, pts: ring(0, 0, 20, 20), holes: [ring(5, 5, 15, 15)] }] }]);
@@ -32,7 +34,7 @@ for (const [width, height, dpr] of [[500, 300, 1], [320, 180, 1.5], [1920, 1080,
     const window = { innerWidth: width, innerHeight: height, devicePixelRatio: dpr };
     const { NYCMapSystem } = loadModule(source, {
       globals: { window, performance: { now: () => 0 } },
-      imports: { './nyc-geodata.js': { GEO: {} }, './city-config.js': { ROADS: [] } }
+      imports: mapImports
     });
     const map = Object.create(NYCMapSystem.prototype);
     // Capture the production render viewport; drawing primitives are irrelevant to coordinate conversion.
@@ -41,6 +43,7 @@ for (const [width, height, dpr] of [[500, 300, 1], [320, 180, 1.5], [1920, 1080,
     Object.assign(map, {
       fullCanvas: { clientWidth: width, clientHeight: height },
       fullCtx: context,
+      allBlocks: [],
       fullStatic: { getContext: () => context },
       isFullMapOpen: true,
       viewCenterX: 200,
@@ -97,12 +100,12 @@ function mapHarness() {
   };
   const controls = eventTarget();
   const wrapper = { classList: classList() };
-  const zoomIn = eventTarget(), zoomOut = eventTarget();
+  const zoomIn = eventTarget(), zoomOut = eventTarget(), viewAll = eventTarget();
   const hoverInfo = { textContent: '' };
   const elements = {
     'fullmap-canvas': canvas, 'fullmap-canvas-wrap': wrapper,
     'fullmap-modal': { classList: classList() },
-    'map-zoom-in': zoomIn, 'map-zoom-out': zoomOut, 'fullmap-hover-info': hoverInfo
+    'map-zoom-in': zoomIn, 'map-zoom-out': zoomOut, 'map-view-all': viewAll, 'fullmap-hover-info': hoverInfo
   };
   const document = {
     ...eventTarget(), hidden: false,
@@ -118,7 +121,7 @@ function mapHarness() {
   };
   const config = {
     ROADS: [], BLOCKS: [], NYC_LANDMARKS: [],
-    ISLAND_BOUNDS: { minX: -10000, maxX: 10000, minZ: -10000, maxZ: 10000 },
+    ISLAND_BOUNDS,
     getIslandBoundsAtZ: () => ({ westX: -10000, eastX: 10000 }),
     getLocationLabel: (x, z) => `${x}, ${z}`,
     isTypingInField: () => false
@@ -138,7 +141,7 @@ function mapHarness() {
   map.viewZoom = 1;
   map.toggleFullMap(true);
   return {
-    map, canvas, controls, wrapper, window, document, captured, teleports, toggles, zoomIn, zoomOut, hoverInfo,
+    map, canvas, controls, wrapper, window, document, captured, teleports, toggles, zoomIn, zoomOut, viewAll, hoverInfo,
     pointer(target, type, id, x = 110, y = 120, pointerType = 'touch', button = 0) {
       const event = { pointerId: id, clientX: x, clientY: y, pointerType, button, preventDefault() {} };
       (captured.has(id) ? canvas : target).dispatch(type, event);
@@ -224,4 +227,43 @@ test('mouse hover and zoom buttons remain available without a pan', () => {
   assert.equal(h.map.viewZoom, 1.45);
   h.zoomOut.dispatch('click');
   assert.equal(h.map.viewZoom, 1);
+});
+
+test('the Ede road graph connects both railway stations', async () => {
+  const { TELEPORT_LOCATIONS } = await import('../js/city-config.js');
+  const { GEO } = await import('../js/nyc-geodata.js');
+  const { getEdeMapRoute } = loadModule(source, { imports: { ...mapImports, './nyc-geodata.js': { GEO } } });
+  const { edecentrum: start, edewageningen: end } = TELEPORT_LOCATIONS;
+  const route = getEdeMapRoute(start.x, start.z, end.x, end.z);
+  assert.ok(route.length > 10, 'route follows mapped roads between the stations');
+  assert.equal(route[0].x, start.x);
+  assert.equal(route.at(-1).z, end.z);
+});
+
+test('the city overview fits the whole map on a small canvas', () => {
+  const { map, canvas, viewAll, zoomOut } = mapHarness();
+  viewAll.dispatch('click');
+  const { minX, maxX, minZ, maxZ } = ISLAND_BOUNDS;
+  assert.equal(map.viewCenterX, (minX + maxX) / 2);
+  assert.equal(map.viewCenterZ, (minZ + maxZ) / 2);
+  assert.ok((maxX - minX) * map.viewZoom < canvas.clientWidth);
+  assert.ok((maxZ - minZ) * map.viewZoom < canvas.clientHeight);
+  const fit = map.viewZoom;
+  zoomOut.dispatch('click');
+  assert.ok(map.viewZoom <= fit);
+});
+
+test('the map includes mapped roads in the outer Ede districts', async () => {
+  const { EDE_DATA, nearestRoads } = await import('../js/city-config.js');
+  for (const [district, road] of [
+    ['Kernhem', 'Heuvingerzand'],
+    ['Veldhuizen', 'Hofbeeklaan'],
+    ['Rietkampen', 'Trumandreef'],
+    ['Maandereng', 'Judith Leysterstraat'],
+    ['Bedrijventerrein', 'Archimedesstraat'],
+    ['Veluwse Poort', 'Renkumseweg']
+  ]) {
+    const { labelPoint: [x, z] } = EDE_DATA.meta.areas.find(area => area.name === district);
+    assert.ok(nearestRoads(x, z, 200).some(q => q.road.name === road), `${district} includes ${road}`);
+  }
 });

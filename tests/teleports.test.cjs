@@ -5,29 +5,33 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const read = (path) => readFileSync(join(__dirname, '..', path), 'utf8');
-let TELEPORT_LOCATIONS, LANDMARK_SITES, blockAt, nearestRoads, getIslandBoundsAtZ;
+let TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, ISLAND_BOUNDS;
 test.before(async () => {
-  ({ TELEPORT_LOCATIONS, LANDMARK_SITES, blockAt, nearestRoads, getIslandBoundsAtZ } = await import('../js/city-config.js'));
+  ({ TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, ISLAND_BOUNDS } = await import('../js/city-config.js'));
 });
 
-test('every teleport button has a destination on a real roadway in Utrecht', () => {
+test('every teleport button has a destination on a real roadway in Ede', () => {
   const buttons = [...read('index.html').matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(Object.keys(TELEPORT_LOCATIONS).sort(), buttons.sort());
   for (const [name, point] of Object.entries(TELEPORT_LOCATIONS)) {
     assert.ok(Number.isFinite(point.heading), `${name} has a heading`);
-    assert.equal(blockAt(point.x, point.z), null, `${name} lands outside building blocks`);
+    const block = blockAt(point.x, point.z);
+    assert.ok(!block || block.sidewalk, `${name} lands outside building blocks`);
+    assert.ok(point.x > ISLAND_BOUNDS.minX && point.x < ISLAND_BOUNDS.maxX);
+    assert.ok(point.z > ISLAND_BOUNDS.minZ && point.z < ISLAND_BOUNDS.maxZ);
     const nearby = nearestRoads(point.x, point.z, 20);
     assert.ok(nearby.some(({ road, dist }) => dist < road.w / 2), `${name} lands within a street's width`);
   }
 });
 
-test('Domtoren arrival faces the tower', () => {
-  const point = TELEPORT_LOCATIONS.dom;
-  const tower = LANDMARK_SITES['Domtoren'];
-  const distance = Math.hypot(tower.x - point.x, tower.z - point.z);
-  assert.ok(distance > 10 && distance < 400, 'leave space for the tower view');
-  const alignment = ((tower.x - point.x) * Math.sin(point.heading) + (tower.z - point.z) * Math.cos(point.heading)) / distance;
-  assert.ok(alignment > 0.999, 'face the tower');
+test('the player starts on Driehoek and the Oude Kerk teleport faces the church', () => {
+  assert.equal(defaultSpawn.name, 'Driehoek');
+  const point = TELEPORT_LOCATIONS.oudekerk;
+  const church = LANDMARK_SITES['Oude Kerk'];
+  const distance = Math.hypot(church.x - point.x, church.z - point.z);
+  assert.ok(distance > 10 && distance < 400, 'leave space for the church view');
+  const alignment = ((church.x - point.x) * Math.sin(point.heading) + (church.z - point.z) * Math.cos(point.heading)) / distance;
+  assert.ok(alignment > 0.999, 'face the church');
 });
 
 test('preset and map teleports share arrival resets and mark the resolved landing point', () => {

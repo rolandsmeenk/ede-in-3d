@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Slop Utrecht</title>
+  <title>Slop Ede</title>
   <link rel="icon" href="data:," />
-  <meta name="description" content="Photorealistic GTA-style 3D Slop Utrecht simulation built with Three.js WebGPURenderer and TSL shaders featuring complete Utrecht city street map, third-person navigation (Person, Car, Cyclist, Cargo bike, Helicopter), and 11 cinematic cameras at 60 FPS." />
+  <meta name="description" content="Explore Ede in 3D on foot, by car, bicycle, cargo bike, or helicopter." />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <!-- three.js dev branch pinned to a commit (builds committed to mrdoob/three.js@dev, served by jsDelivr) -->
   <script type="importmap">
@@ -19,9 +19,9 @@
     }
   </script>
   <!-- Fetch the city modules in parallel before stylesheets; the module graph controls evaluation order. -->
-  <link rel="modulepreload" href="./js/utrecht-geodata.js" />
+  <link rel="modulepreload" href="./js/ede-geodata.js" />
   <link rel="modulepreload" href="./js/nyc-geodata.js" />
-  <link rel="modulepreload" href="./js/utrecht-geometry.js" />
+  <link rel="modulepreload" href="./js/ede-geometry.js" />
   <link rel="modulepreload" href="./js/city-config.js" />
   <link rel="modulepreload" href="./js/tsl-materials.js" />
   <link rel="modulepreload" href="./js/trees.js" />
@@ -38,7 +38,7 @@
   <link rel="modulepreload" href="./js/buildings.js" />
   <link rel="modulepreload" href="./js/shop-signs.js" />
   <link rel="modulepreload" href="./js/passages.js" />
-  <link rel="modulepreload" href="./js/utrecht-shops.js" />
+  <link rel="modulepreload" href="./js/ede-shops.js" />
   <link rel="modulepreload" href="./js/fire-escapes.js" />
   <link rel="modulepreload" href="./js/landmarks.js" />
   <link rel="modulepreload" href="./js/street-details.js" />
@@ -103,24 +103,28 @@
   <!-- Loading Screen -->
   <div id="loading-overlay" role="status" aria-live="polite">
     <div class="loader">
-      <img class="loader-logo" src="./assets/logo-gemeente-utrecht.svg" alt="Gemeente Utrecht" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'mta-bullet loader-bullet',textContent:'U'}))" />
-      <div class="loader-title">Slop Utrecht</div>
+      <img class="ede-logo loader-logo" src="./assets/logo-gemeente-ede.svg" alt="Gemeente Ede" />
+      <div class="loader-title">Slop Ede</div>
       <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
       <div id="loading-status">Loading city code and data...</div>
     </div>
   </div>
 
   <!-- 3D WebGPU Viewport Container -->
-  <main id="canvas-container" aria-label="3D Interactive Slop Utrecht Viewport"></main>
+  <main id="canvas-container" aria-label="3D Interactive Slop Ede Viewport"></main>
+  <div class="map-attribution">
+    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
+    <a href="https://docs.3dbag.nl/en/copyright/" target="_blank" rel="noopener noreferrer">© 3DBAG by tudelft3d and 3DGI</a>
+  </div>
 
   <!-- Top-Left: Brand & Renderer Telemetry -->
   <header class="hud hud-top-left">
     <div class="panel brand">
-      <img class="brand-logo" src="./assets/logo-gemeente-utrecht.svg" alt="Gemeente Utrecht" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'mta-bullet',textContent:'U'}))" />
+      <img class="ede-logo" src="./assets/logo-gemeente-ede.svg" alt="Gemeente Ede" />
       <div class="brand-titles">
         <div class="brand-heading">
-          <h1>Slop Utrecht</h1>
-          <a class="repo-link" href="https://github.com/bertt/slop-utrecht/" target="_blank" rel="noopener noreferrer" aria-label="Slop Utrecht on GitHub (opens in a new tab)">GitHub <span aria-hidden="true">↗</span></a>
+          <h1>Slop Ede</h1>
+          <a class="repo-link" href="https://github.com/rolandsmeenk/slop-ede/" target="_blank" rel="noopener noreferrer" aria-label="Slop Ede on GitHub (opens in a new tab)">GitHub <span aria-hidden="true">↗</span></a>
         </div>
         <div class="brand-subtitle">three.js · WebGPU · TSL · <span id="hud-fps" class="fps-ok">60</span> fps</div>
       </div>
@@ -148,7 +152,7 @@
       <button id="btn-teleport" class="tool-btn" type="button" popovertarget="teleport-popover" title="Teleport the active player">
         <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><span class="tool-label">Teleport</span><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
       </button>
-      <button id="btn-open-map" class="tool-btn" type="button" title="Full Utrecht city street map [M]">
+      <button id="btn-open-map" class="tool-btn" type="button" title="Ede street map [M]">
         <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label">Map</span><kbd>M</kbd>
       </button>
       <span class="toolbar-divider" aria-hidden="true"></span>
@@ -164,21 +168,20 @@
   <!-- Teleport Destinations (native popover: light-dismiss & Esc) -->
   <div id="teleport-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" aria-label="Teleport the active player">
     <div class="pop-title">Teleport to</div>
-    <button id="tp-dom" class="pop-item tp-btn" data-teleport="dom" type="button"><span class="pop-name">Domtoren</span><span class="pop-sub">Korte Nieuwstraat · Binnenstad</span></button>
-    <button id="tp-centraal" class="pop-item tp-btn" data-teleport="centraal" type="button"><span class="pop-name">Utrecht Centraal</span><span class="pop-sub">Stationsplein · Stationsgebied</span></button>
-    <button id="tp-hoogcatharijne" class="pop-item tp-btn" data-teleport="hoogcatharijne" type="button"><span class="pop-name">Hoog Catharijne</span><span class="pop-sub">Catharijnesingel · Stationsgebied</span></button>
-    <button id="tp-stadhuis" class="pop-item tp-btn" data-teleport="stadhuis" type="button"><span class="pop-name">Stadhuis</span><span class="pop-sub">Stadhuisbrug · Binnenstad</span></button>
-    <button id="tp-vredenburg" class="pop-item tp-btn" data-teleport="vredenburg" type="button"><span class="pop-name">TivoliVredenburg</span><span class="pop-sub">Vredenburg · Binnenstad</span></button>
-    <button id="tp-neude" class="pop-item tp-btn" data-teleport="neude" type="button"><span class="pop-name">Neude</span><span class="pop-sub">Neude · Binnenstad</span></button>
-    <button id="tp-janskerkhof" class="pop-item tp-btn" data-teleport="janskerkhof" type="button"><span class="pop-name">Janskerkhof</span><span class="pop-sub">Janskerkhof · Binnenstad</span></button>
-    <button id="tp-oudegracht" class="pop-item tp-btn" data-teleport="oudegracht" type="button"><span class="pop-name">Oudegracht · Werven</span><span class="pop-sub">Oudegracht · Binnenstad</span></button>
-    <button id="tp-centraalmuseum" class="pop-item tp-btn" data-teleport="centraalmuseum" type="button"><span class="pop-name">Centraal Museum</span><span class="pop-sub">Agnietenstraat · Museumkwartier</span></button>
+    <button id="tp-oudekerk" class="pop-item tp-btn" data-teleport="oudekerk" type="button"><span class="pop-name">Oude Kerk</span><span class="pop-sub">Driehoek · Centrum</span></button>
+    <button id="tp-edecentrum" class="pop-item tp-btn" data-teleport="edecentrum" type="button"><span class="pop-name">Station Ede Centrum</span><span class="pop-sub">Telefoonweg · Centrum</span></button>
+    <button id="tp-edewageningen" class="pop-item tp-btn" data-teleport="edewageningen" type="button"><span class="pop-name">Station Ede-Wageningen</span><span class="pop-sub">Frisopark · Stationsgebied</span></button>
+    <button id="tp-raadhuis" class="pop-item tp-btn" data-teleport="raadhuis" type="button"><span class="pop-name">Raadhuis Ede</span><span class="pop-sub">Bergstraat · Centrum</span></button>
+    <button id="tp-cultura" class="pop-item tp-btn" data-teleport="cultura" type="button"><span class="pop-name">Cultura</span><span class="pop-sub">Molenstraat · Centrum</span></button>
+    <button id="tp-marktplein" class="pop-item tp-btn" data-teleport="marktplein" type="button"><span class="pop-name">Marktplein</span><span class="pop-sub">Marktstraat · Centrum</span></button>
+    <button id="tp-huis-kernhem" class="pop-item tp-btn" data-teleport="huis-kernhem" type="button"><span class="pop-name">Huis Kernhem</span><span class="pop-sub">Kernhemseweg · Kernhem</span></button>
+    <button id="tp-proosdijpark" class="pop-item tp-btn" data-teleport="proosdijpark" type="button"><span class="pop-name">Proosdijpark</span><span class="pop-sub">Veenderweg · Veldhuizen</span></button>
   </div>
 
   <!-- Bottom-Left: Street-Name Signs & Live GPS Radar Minimap -->
   <div class="hud hud-bottom-left">
     <div id="hud-location" class="location" aria-live="off"></div>
-    <aside id="minimap-card" class="panel radar" aria-label="Live Utrecht Street Radar Minimap" title="Open the full Utrecht city street map [M]">
+    <aside id="minimap-card" class="panel radar" aria-label="Live Ede Street Radar Minimap" title="Open the Ede street map [M]">
       <canvas id="minimap-canvas"></canvas>
       <span class="radar-north" aria-hidden="true">N</span>
       <kbd class="radar-key">M</kbd>
@@ -213,8 +216,8 @@
     <section id="hud-cluster" class="panel cluster" aria-label="Vehicle telemetry and camera">
       <div class="gauge">
         <div class="gauge-top">
-          <span id="hud-active-mode" class="gauge-label">Utrecht Taxi</span>
-          <span class="gauge-alt"><span class="gauge-alt-label">Alt</span> <span id="hud-altitude">0</span> ft</span>
+          <span id="hud-active-mode" class="gauge-label">Ede Taxi</span>
+          <span class="gauge-alt"><span class="gauge-alt-label">Alt</span> <span id="hud-altitude">0</span> m</span>
         </div>
         <div class="gauge-speed"><span id="hud-speed">0</span><span class="gauge-unit">km/u</span></div>
         <div class="gauge-meter" aria-hidden="true"><span id="hud-speed-meter"></span></div>
@@ -253,40 +256,40 @@
     </div>
   </section>
 
-  <!-- All Cameras: 3 Follow Cameras + 7 Iconic Utrecht Vantage Cameras + Auto-Director Drone -->
+  <!-- All Cameras: 3 Follow Cameras + 7 Iconic Ede Vantage Cameras + Auto-Director Drone -->
   <div id="camera-popover" class="popover" popover data-side="above" data-anchor="hud-cluster" data-align="hud-cluster" aria-label="Multiple Camera Angles">
     <div class="pop-title">Follow</div>
     <button id="cam-chase" class="pop-item cam-btn active" data-camera="chase" type="button"><span class="pop-name">3rd-Person Chase</span></button>
     <button id="cam-action" class="pop-item cam-btn" data-camera="action" type="button"><span class="pop-name">Low-Angle Action</span><kbd>6</kbd></button>
     <button id="cam-pov" class="pop-item cam-btn" data-camera="pov" type="button"><span class="pop-name">First-Person / Cockpit</span><kbd>7</kbd></button>
     <div class="pop-title">Scenic</div>
-    <button id="cam-centralPark" class="pop-item cam-btn" data-camera="centralPark" type="button"><span class="pop-name">Wilhelminapark</span></button>
-    <button id="cam-fifthAve" class="pop-item cam-btn" data-camera="fifthAve" type="button"><span class="pop-name">Oudegracht &amp; Domtoren</span><kbd>8</kbd></button>
-    <button id="cam-timesSquare" class="pop-item cam-btn" data-camera="timesSquare" type="button"><span class="pop-name">Neude</span><kbd>9</kbd></button>
-    <button id="cam-chryslerGCT" class="pop-item cam-btn" data-camera="chryslerGCT" type="button"><span class="pop-name">Utrecht Centraal &amp; Hoog Catharijne</span><kbd>0</kbd></button>
-    <button id="cam-observatory" class="pop-item cam-btn" data-camera="observatory" type="button"><span class="pop-name">Domtoren Uitzicht</span></button>
-    <button id="cam-bryantPark" class="pop-item cam-btn" data-camera="bryantPark" type="button"><span class="pop-name">Domplein &amp; Dom</span></button>
-    <button id="cam-waterfront" class="pop-item cam-btn" data-camera="waterfront" type="button"><span class="pop-name">Rijn &amp; Skyline</span></button>
+    <button id="cam-centralPark" class="pop-item cam-btn" data-camera="centralPark" type="button"><span class="pop-name">Proosdijpark</span></button>
+    <button id="cam-fifthAve" class="pop-item cam-btn" data-camera="fifthAve" type="button"><span class="pop-name">Oude Kerk</span><kbd>8</kbd></button>
+    <button id="cam-timesSquare" class="pop-item cam-btn" data-camera="timesSquare" type="button"><span class="pop-name">Marktplein</span><kbd>9</kbd></button>
+    <button id="cam-chryslerGCT" class="pop-item cam-btn" data-camera="chryslerGCT" type="button"><span class="pop-name">Station Ede-Wageningen</span><kbd>0</kbd></button>
+    <button id="cam-observatory" class="pop-item cam-btn" data-camera="observatory" type="button"><span class="pop-name">Ede Centrum from Above</span></button>
+    <button id="cam-bryantPark" class="pop-item cam-btn" data-camera="bryantPark" type="button"><span class="pop-name">Raadhuis Ede</span></button>
+    <button id="cam-waterfront" class="pop-item cam-btn" data-camera="waterfront" type="button"><span class="pop-name">Huis Kernhem</span></button>
     <button id="cam-drone" class="pop-item cam-btn" data-camera="drone" type="button"><span class="pop-name">Auto-Director Aerial</span></button>
   </div>
 
-  <!-- Full-Screen Interactive Utrecht Street Map ([M]) -->
-  <section id="fullmap-modal" class="fullmap-modal hidden" role="dialog" aria-modal="true" aria-label="Full Utrecht Interactive Street Map">
+  <!-- Full-Screen Interactive Ede Street Map ([M]) -->
+  <section id="fullmap-modal" class="fullmap-modal hidden" role="dialog" aria-modal="true" aria-label="Full Ede Interactive Street Map">
     <div id="fullmap-canvas-wrap" class="fullmap-canvas-wrap">
       <canvas id="fullmap-canvas"></canvas>
     </div>
 
     <div class="fullmap-header">
       <div class="panel fullmap-title">
-        <img class="brand-logo" src="./assets/logo-gemeente-utrecht.svg" alt="Gemeente Utrecht" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'mta-bullet',textContent:'U'}))" />
+        <img class="ede-logo" src="./assets/logo-gemeente-ede.svg" alt="Gemeente Ede" />
         <div>
-          <h2>Utrecht Stadsatlas</h2>
-          <p id="fullmap-player-info" class="fullmap-subtitle">Je bent bij de Domtoren</p>
+          <h2>Ede Stadsatlas</h2>
+          <p id="fullmap-player-info" class="fullmap-subtitle">Je bent in Ede</p>
         </div>
       </div>
       <label class="panel fullmap-search-wrap">
         <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
-        <input id="fullmap-search" class="fullmap-search" type="text" placeholder="Search streets &amp; landmarks — Oudegracht, Neude, Domtoren…" aria-label="Search street or landmark" autocomplete="off" spellcheck="false" />
+        <input id="fullmap-search" class="fullmap-search" type="text" placeholder="Search streets &amp; landmarks — Oude Kerk, Marktplein, Cultura…" aria-label="Search street or landmark" autocomplete="off" spellcheck="false" />
       </label>
       <button id="close-fullmap-btn" class="panel tool-btn fullmap-close" type="button" title="Close map [M / Esc]">
         <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg><span class="tool-label">Close</span><kbd>Esc</kbd>
@@ -309,7 +312,7 @@
       </div>
       <div class="panel map-zoom">
         <button id="map-center-player" class="icon-btn" type="button" title="Street view around you" aria-label="Center on player"><svg class="icon" aria-hidden="true"><use href="#i-locate"/></svg></button>
-        <button id="map-view-all" class="icon-btn" type="button" title="All of Utrecht" aria-label="Fit all of Utrecht"><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg></button>
+        <button id="map-view-all" class="icon-btn" type="button" title="Show all of Ede" aria-label="Fit all of Ede"><svg class="icon" aria-hidden="true"><use href="#i-fit"/></svg></button>
       </div>
     </div>
 

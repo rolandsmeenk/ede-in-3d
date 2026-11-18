@@ -21,7 +21,7 @@ import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
 
 // js/main.js
-// Main entry point for Utrecht in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
+// Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
 
 async function initApp() {
   const container = document.getElementById('canvas-container');
@@ -85,7 +85,7 @@ async function initApp() {
   const lightingSystem = new LightingSystem(scene, renderer);
   markInit('lighting');
 
-  // 3. Build Manhattan Geography, Iconic Landmarks, Blocks, Street Details & Traffic
+  // 3. Build the city, buildings, street details and traffic
   await showLoadingStage('Building streets, parks and waterfronts...');
   const cityGrid = buildCityGrid(scene);
   markInit('cityGrid');
@@ -131,7 +131,7 @@ async function initApp() {
   const controllerManager = new ThirdPersonControllerManager(scene, allColliders);
   // Reuse teleport placement so saved players return at rest, close to their last positions.
   try {
-    const saved = JSON.parse(localStorage.getItem('slopwaw-player-state'));
+    const saved = JSON.parse(localStorage.getItem('slop-ede-player-state'));
     if (saved?.version === 1) {
       for (const mode of Object.keys(controllerManager.entities)) {
         const p = saved.entities?.[mode];
@@ -148,7 +148,7 @@ async function initApp() {
       const entities = Object.fromEntries(Object.entries(controllerManager.entities).map(([mode, entity]) => [mode, {
         x: entity.position.x, y: entity.position.y, z: entity.position.z, heading: entity.heading
       }]));
-      localStorage.setItem('slopwaw-player-state', JSON.stringify({ version: 1, activeMode: controllerManager.activeMode, entities }));
+      localStorage.setItem('slop-ede-player-state', JSON.stringify({ version: 1, activeMode: controllerManager.activeMode, entities }));
     } catch { /* Storage may be disabled or full. */ }
   }
 
@@ -179,7 +179,7 @@ async function initApp() {
   // Island-wide static geometry: chunk & distance-cull the small props, shadow stand-ins for the big casters
   // (scene-culling.js)
   await showLoadingStage('Preparing scene visibility and shadows...');
-  const cullingRoots = ['UtrechtCityGrid', 'UtrechtCityBlocks', 'UtrechtStreetDetails', 'ManhattanLandmarks', 'UtrechtBoundaryContext', 'RoadMarkings']
+  const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'ManhattanLandmarks', 'EdeBoundaryContext', 'RoadMarkings']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
   setupSceneCulling(scene, cullingRoots, lightingSystem.sunLight.shadow);
@@ -800,7 +800,7 @@ async function initApp() {
       if (elSpeed) elSpeed.textContent = String(kmh);
       if (elSpeedMeter) elSpeedMeter.style.transform = `scaleX(${Math.min(1, kmh / (topSpeedKmh[mode] || 80))})`;
       document.body.classList.toggle('is-boosting', controllerManager.keys.boost && kmh > 0);
-      if (elAltitude) elAltitude.textContent = altitudeM.toLocaleString('de-DE');
+      if (elAltitude) elAltitude.textContent = altitudeM.toLocaleString('nl-NL');
       // The street corner of the player on the follow cameras, of the camera itself on the scenic ones
       const where = cameraSystem.getActivePreset().category === 'follow' ? activeEnt.position : cameraSystem.currentPos;
       renderLocation(getLocationLabel(where.x, where.z));
@@ -811,7 +811,7 @@ async function initApp() {
 initApp().catch((error) => {
   console.error(error);
   const status = document.getElementById('loading-status');
-  if (status) status.textContent = 'Utrecht couldn’t open this time. Please try again.';
+  if (status) status.textContent = 'Ede couldn’t open this time. Please try again.';
   document.getElementById('loading-overlay')?.classList.add('has-error');
   const retry = document.getElementById('loading-retry');
   if (retry) {

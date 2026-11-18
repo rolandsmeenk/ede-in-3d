@@ -39,7 +39,7 @@ import {
   blockAt,
   EAST_RIVER_BRIDGES,
   CUT_Z,
-  UTRECHT_DATA,
+  EDE_DATA,
   nearestRoads,
   pointInPoly,
   waterAt
@@ -64,7 +64,7 @@ import {
 import { createRoadPaintChunkBuilder } from './road-paint.js';
 import { GEO } from './nyc-geodata.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
-import { utrechtPoints, utrechtBounds, utrechtPolygonGeometry, utrechtStrip, utrechtRoadSegments, utrechtGeometryGroups } from './utrecht-geometry.js';
+import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRoadSegments, edeGeometryGroups } from './ede-geometry.js';
 
 // Live construction data consumed by the building and street-detail builders after buildCityGrid().
 let centralParkClearings;
@@ -73,11 +73,11 @@ let parkLampSites;
 let pavedPlazaRects;
 let sidewalkBlocks;
 let fdrViaduct;
-let utrechtStreetSites = [];
+let edeStreetSites = [];
 
-function buildUtrechtCityGrid(scene) {
+function buildEdeCityGrid(scene) {
   const group = new THREE.Group();
-  group.name = 'UtrechtCityGrid';
+  group.name = 'EdeCityGrid';
   const roadMat = createRoadSurfaceMaterial();
   const sidewalkMat = createSidewalkMaterial();
   const curbMat = createCurbMaterial();
@@ -93,19 +93,19 @@ function buildUtrechtCityGrid(scene) {
   };
   const footprints = [], sidewalks = [], colliders = [];
   parkTreeSites = []; parkLampSites = []; pavedPlazaRects = []; sidewalkBlocks = [];
-  centralParkClearings = null; fdrViaduct = null; utrechtStreetSites = [];
+  centralParkClearings = null; fdrViaduct = null; edeStreetSites = [];
 
-  // Utrecht is a continuous inland city: subtract the actual canal and river outlines
+  // Ede is a continuous inland city: subtract the mapped water outlines
   // from the land. Islands inside water polygons are restored as land polygons.
-  const water = (UTRECHT_DATA.water || []).filter(w => w.ring?.length >= 6);
+  const water = (EDE_DATA.water || []).filter(w => w.ring?.length >= 6);
   const waterY = ISLAND_BOUNDS.waterLevel;
   const bankTop = 0.19, bankBottom = waterY - 0.03;
   const land = [{ x: -16000, z: -16000 }, { x: 16000, z: -16000 }, { x: 16000, z: 16000 }, { x: -16000, z: 16000 }];
-  collect(utrechtPolygonGeometry(land, water.map(w => utrechtPoints(w.ring)), -0.025), sidewalkMat);
+  collect(edePolygonGeometry(land, water.map(w => edePoints(w.ring)), -0.025), sidewalkMat);
   for (const feature of water) {
-    const ring = utrechtPoints(feature.ring), holes = (feature.holes || []).map(utrechtPoints);
-    collect(utrechtPolygonGeometry(ring, holes, waterY), waterMat);
-    for (const hole of holes) collect(utrechtPolygonGeometry(hole, [], -0.025), sidewalkMat);
+    const ring = edePoints(feature.ring), holes = (feature.holes || []).map(edePoints);
+    collect(edePolygonGeometry(ring, holes, waterY), waterMat);
+    for (const hole of holes) collect(edePolygonGeometry(hole, [], -0.025), sidewalkMat);
     for (const edge of [ring, ...holes]) for (let i = 0; i < edge.length; i++) {
       const a = edge[i], b = edge[(i + 1) % edge.length];
       const len = Math.hypot(b.x - a.x, b.z - a.z);
@@ -116,29 +116,29 @@ function buildUtrechtCityGrid(scene) {
       collect(wall, curbMat);
     }
   }
-  for (const park of UTRECHT_DATA.parks || []) {
+  for (const park of EDE_DATA.parks || []) {
     if (!park.ring || park.ring.length < 6) continue;
-    const ring = utrechtPoints(park.ring), holes = (park.holes || []).map(utrechtPoints);
+    const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints);
     const paved = ['square', 'pedestrian', 'plaza'].includes(park.kind);
-    const geometry = utrechtPolygonGeometry(ring, holes, paved ? 0.055 : 0.045);
+    const geometry = edePolygonGeometry(ring, holes, paved ? 0.055 : 0.045);
     if (paved) setPavingStyle(geometry, 2);
     collect(geometry, paved ? pavingMat : lawnMat);
-    if (paved) pavedPlazaRects.push(utrechtBounds(ring));
+    if (paved) pavedPlazaRects.push(edeBounds(ring));
   }
 
   // Tempelhofer Feld retains the former airport's mapped runway and apron
   // surfaces. These are park ground geometry, not new traffic corridors.
-  for (const feature of UTRECHT_DATA.aeroways || []) {
+  for (const feature of EDE_DATA.aeroways || []) {
     if (feature.ring?.length >= 6) {
-      collect(utrechtPolygonGeometry(utrechtPoints(feature.ring), (feature.holes || []).map(utrechtPoints), 0.065), roadMat);
+      collect(edePolygonGeometry(edePoints(feature.ring), (feature.holes || []).map(edePoints), 0.065), roadMat);
     } else if (feature.pts?.length >= 4) {
-      const points = utrechtPoints(feature.pts);
+      const points = edePoints(feature.pts);
       const halfWidth = Math.max(2, feature.width || (feature.kind === 'runway' ? 45 : 15)) / 2;
-      for (let i = 1; i < points.length; i++) collect(utrechtStrip(points[i - 1], points[i], halfWidth, 0.065), roadMat);
+      for (let i = 1; i < points.length; i++) collect(edeStrip(points[i - 1], points[i], halfWidth, 0.065), roadMat);
     }
   }
 
-  const roadSegments = utrechtRoadSegments();
+  const roadSegments = edeRoadSegments();
   const carriagewayKinds = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link',
     'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'residential', 'unclassified', 'service', 'living_street']);
   const curbedKinds = new Set(['trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link',
@@ -243,7 +243,7 @@ function buildUtrechtCityGrid(scene) {
   };
   let clippedPedestrianPieces = 0, clippedSidewalkPieces = 0, curbRuns = 0;
   const paintStrip = (s, offset, halfWidth = 0.075, duty = 0.5, period = 8) => {
-    const g = utrechtStrip(s.a, s.b, halfWidth, s.bridge ? 0.081 : 0.071, offset);
+    const g = edeStrip(s.a, s.b, halfWidth, s.bridge ? 0.081 : 0.071, offset);
     if (!g) return;
     const p = g.getAttribute('position'), paints = [], sides = [], colors = [];
     for (let i = 0; i < p.count; i++) {
@@ -265,7 +265,7 @@ function buildUtrechtCityGrid(scene) {
       const half = Math.max(0.75, width * 0.5);
       const pieces = outsideRoads(stripPoints(s, half), nearbyCarriageways(s.a, s.b, half), s);
       for (const piece of pieces) {
-        const geometry = utrechtPolygonGeometry(piece, [], 0.055);
+        const geometry = edePolygonGeometry(piece, [], 0.055);
         setPavingStyle(geometry, s.road.kind === 'cycleway' ? 0 : 2);
         collect(geometry, pavingMat);
         clippedPedestrianPieces++;
@@ -280,12 +280,12 @@ function buildUtrechtCityGrid(scene) {
       for (const side of [-1, 1]) {
         const shoulder = stripPoints(s, 1.4, side * (width / 2 + 1.4));
         for (const piece of outsideRoads(shoulder, neighbors, s)) {
-          collect(utrechtPolygonGeometry(piece, [], 0.025), sidewalkMat);
+          collect(edePolygonGeometry(piece, [], 0.025), sidewalkMat);
           clippedSidewalkPieces++;
         }
       }
     }
-    collect(utrechtStrip(s.a, s.b, width / 2, y), roadMat);
+    collect(edeStrip(s.a, s.b, width / 2, y), roadMat);
     const nx = -s.uz, nz = s.ux;
     if (width >= 7 && !s.road.oneway && s.road.kind !== 'service') paintStrip(s, 0, 0.075, 0.45);
     if (width >= 12) {
@@ -314,11 +314,11 @@ function buildUtrechtCityGrid(scene) {
         const key = `${Math.round(x / 14)}/${Math.round(z / 14)}`;
         if (streetSiteKeys.has(key)) continue;
         streetSiteKeys.add(key);
-        utrechtStreetSites.push({ x, z, nx: -nx * side, nz: -nz * side, ux: s.ux, uz: s.uz, name: s.road.name || '', road: s.road });
+        edeStreetSites.push({ x, z, nx: -nx * side, nz: -nz * side, ux: s.ux, uz: s.uz, name: s.road.name || '', road: s.road });
       }
     }
   }
-  for (const tree of UTRECHT_DATA.trees || []) {
+  for (const tree of EDE_DATA.trees || []) {
     const h = Math.abs(Math.sin(tree.x * 1.9 + tree.z * 8.1));
     parkTreeSites.push({ x: tree.x, z: tree.z, y: 0.09, scale: tree.h ? Math.max(0.45, Math.min(1.8, tree.h / 13)) : 0.66 + h * 0.62,
       species: h < 0.42 ? 0 : h < 0.65 ? 1 : 2, yaw: h * Math.PI * 2 });
@@ -348,11 +348,11 @@ function buildUtrechtCityGrid(scene) {
   }
   const landmarkTrees = parkTreeSites.length - mappedTreeCount;
   const hash = (x, z, seed) => { const n = Math.sin(x * 12.9898 + z * 78.233 + seed) * 43758.5453; return n - Math.floor(n); };
-  for (const park of UTRECHT_DATA.parks || []) {
-    if (!['wood', 'forest'].includes(park.kind) && park.name !== 'Viktoriapark') continue;
-    const ring = utrechtPoints(park.ring), holes = (park.holes || []).map(utrechtPoints), bounds = utrechtBounds(ring);
-    for (let gx = Math.ceil(bounds.minX / 14); gx <= Math.floor(bounds.maxX / 14); gx++) {
-      for (let gz = Math.ceil(bounds.minZ / 14); gz <= Math.floor(bounds.maxZ / 14); gz++) {
+  for (const park of EDE_DATA.parks || []) {
+    if (!['wood', 'forest'].includes(park.kind)) continue;
+    const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints), bounds = edeBounds(ring);
+    for (let gx = Math.ceil(Math.max(bounds.minX, ISLAND_BOUNDS.minX) / 14); gx <= Math.floor(Math.min(bounds.maxX, ISLAND_BOUNDS.maxX) / 14); gx++) {
+      for (let gz = Math.ceil(Math.max(bounds.minZ, ISLAND_BOUNDS.minZ) / 14); gz <= Math.floor(Math.min(bounds.maxZ, ISLAND_BOUNDS.maxZ) / 14); gz++) {
         const x = gx * 14 + (hash(gx, gz, 1) - 0.5) * 10, z = gz * 14 + (hash(gx, gz, 2) - 0.5) * 10;
         if (!pointInPoly(ring, x, z) || holes.some(h => pointInPoly(h, x, z)) || nearbyTree(x, z) || waterAt(x, z)) continue;
         if (LANDMARK_EXCLUSIONS.some(b => x > b.minX - 4 && x < b.maxX + 4 && z > b.minZ - 4 && z < b.maxZ + 4)) continue;
@@ -367,7 +367,7 @@ function buildUtrechtCityGrid(scene) {
   // including wet asphalt, animated water and anti-aliased dash paint.
   for (const [material, geometries] of collections) {
     let firstMesh;
-    for (const cell of utrechtGeometryGroups(geometries)) for (let i = 0; i < cell.length; i += 300) {
+    for (const cell of edeGeometryGroups(geometries)) for (let i = 0; i < cell.length; i += 300) {
       const chunk = cell.slice(i, i + 300).map(g => {
         if (!g.index) return g;
         const expanded = g.toNonIndexed(); g.dispose(); return expanded;
@@ -383,7 +383,7 @@ function buildUtrechtCityGrid(scene) {
       group.add(mesh);
     }
   }
-  group.userData = { city: 'Utrecht', source: 'OpenStreetMap', roads: roadSegments.length, mappedTrees: mappedTreeCount, landmarkTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
+  group.userData = { city: 'Ede', source: 'OpenStreetMap', roads: roadSegments.length, mappedTrees: mappedTreeCount, landmarkTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
     clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, junctionClippedCurbs: true, junctionClippedSidewalks: true };
   scene.add(group);
   return { group, sidewalks, footprints, highwayLanes: [], colliders };
@@ -1811,7 +1811,7 @@ function buildWaterfrontPiers(group) {
 }
 
 function buildCityGrid(scene) {
-  if (UTRECHT_DATA) return buildUtrechtCityGrid(scene);
+  if (EDE_DATA) return buildEdeCityGrid(scene);
   streetGroundSurfaces = [];
   const group = new THREE.Group();
   group.name = 'ManhattanCityGrid';
@@ -3863,5 +3863,5 @@ export {
   pavedPlazaRects,
   sidewalkBlocks,
   fdrViaduct,
-  utrechtStreetSites
+  edeStreetSites
 };

@@ -36,6 +36,15 @@ const source = readFileSync(join(__dirname, '../js/tsl-materials.js'), 'utf8');
 const frame = source.match(/const facadeNormalVertex =[\s\S]*?const facadeAlongZ =[\s\S]*?\.setInterpolation\([\s\S]*?\);/);
 assert.ok(frame, 'the shared camera-independent facade frame must exist');
 const projectionStart = source.indexOf('function facadeCell(');
+test('every facade wall kind has a finite shader value', () => {
+  const [definition] = source.match(/^const WALL_KINDS = .*;$/m);
+  const kinds = vm.runInNewContext(`${definition}\nWALL_KINDS`);
+  const shader = source.slice(projectionStart, source.indexOf('/**', projectionStart));
+  for (const [, name] of shader.matchAll(/\bWALL_KINDS\.(\w+)\b/g)) {
+    assert.ok(Number.isFinite(kinds[name]), name);
+  }
+});
+
 const projection = source.slice(source.indexOf('{', projectionStart) + 1, source.indexOf('let bayWidth', projectionStart));
 const interiorStart = source.indexOf('const rayWorld =', source.indexOf('const evaluateApartmentInterior'));
 const interior = source.slice(interiorStart, source.indexOf('// Slab intersection', interiorStart));

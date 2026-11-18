@@ -61,7 +61,7 @@ import {
 import {
   CENTRAL_PARK_BOUNDS,
   ISLAND_BOUNDS,
-  UTRECHT_DATA,
+  EDE_DATA,
   waterAt
 } from './city-config.js';
 
@@ -383,7 +383,7 @@ const evaluateApartmentInterior = Fn(([uCoord, vCoord, winUV, cellId, winWNode, 
 });
 
 // Street fronts have shops, courtyard walls have windows, and shared lot-line walls are solid masonry.
-const WALL_KINDS = { shop: 0, rear: 2, lotLine: 3 };
+const WALL_KINDS = { shop: 0, entry: 1, front: 1, rear: 2, lotLine: 3, blankStone: 4 };
 
 /**
  * Shared facade coordinates and masks. World-space by default; createFacadeBoxes and createBuildingFootprints
@@ -2691,13 +2691,13 @@ function getWaterWaveTexture() {
   return tex;
 }
 
-// Analytic night-reflection proxies follow the actual Utrecht canal banks.
+// Analytic night-reflection proxies follow the actual Ede canal banks.
 // Simplification is CPU-only and cached; 64 segments bound fragment-shader cost.
 // Adjacent OSM water polygons often share internal edges, so test both sides and
-// retain only real land/water boundaries. Nearby OSM roofs supply Utrecht heights.
-let _utrechtReflectionBanks = null;
-function getUtrechtReflectionBanks() {
-  if (_utrechtReflectionBanks) return _utrechtReflectionBanks;
+// retain only real land/water boundaries. Nearby OSM roofs supply Ede heights.
+let _edeReflectionBanks = null;
+function getEdeReflectionBanks() {
+  if (_edeReflectionBanks) return _edeReflectionBanks;
   const simplify = (points, tolerance) => {
     if (points.length < 3) return points;
     const a = points[0], b = points[points.length - 1];
@@ -2712,7 +2712,7 @@ function getUtrechtReflectionBanks() {
     return farthest < 0 ? [a, b] : [...simplify(points.slice(0, farthest + 1), tolerance).slice(0, -1), ...simplify(points.slice(farthest), tolerance)];
   };
   const banks = [];
-  for (const water of UTRECHT_DATA.water) for (const outline of [water.ring, ...(water.holes || [])]) {
+  for (const water of EDE_DATA.water) for (const outline of [water.ring, ...(water.holes || [])]) {
     const points = [];
     for (let i = 0; i < outline.length; i += 2) points.push([outline[i], outline[i + 1]]);
     if (points.length < 3) continue;
@@ -2728,13 +2728,13 @@ function getUtrechtReflectionBanks() {
     }
   }
   banks.sort((a, b) => b.length - a.length);
-  const buildings = UTRECHT_DATA.buildings.filter(b => !b.part && b.h > 5 && b.h < 160).map(b => {
+  const buildings = EDE_DATA.buildings.filter(b => !b.part && b.h > 5 && b.h < 160).map(b => {
     let x = 0, z = 0;
     for (let i = 0; i < b.ring.length; i += 2) { x += b.ring[i]; z += b.ring[i + 1]; }
     const points = b.ring.length / 2;
     return { x: x / points, z: z / points, h: b.h + (b.roofHeight || 0) };
   });
-  _utrechtReflectionBanks = banks.slice(0, 64).map(bank => {
+  _edeReflectionBanks = banks.slice(0, 64).map(bank => {
     let total = 0, weight = 0;
     for (const building of buildings) {
       const distance = Math.hypot(building.x - bank.x, building.z - bank.z);
@@ -2747,11 +2747,11 @@ function getUtrechtReflectionBanks() {
     const skyline = Math.min(145, Math.max(15, (weight ? total / weight : 22) / 0.63));
     return [...bank.a, ...bank.b, Math.round(skyline * 10) / 10];
   });
-  return _utrechtReflectionBanks;
+  return _edeReflectionBanks;
 }
 
 /**
- * Utrecht canals & park ponds: Physically Based Water TSL Material
+ * Ede canals & park ponds: Physically Based Water TSL Material
  * - Wave normals (normalNode) from 4 rotated, scaled & drifting samples of the LEAN wave texture whose energy follows
  *   slowly drifting wind patches; the slope variance below each pixel footprint (plus always-unresolved capillary
  *   ripples) becomes GGX roughness, so crisp chop near the piers turns into a soft glitter path towards the horizon
@@ -2760,7 +2760,7 @@ function getUtrechtReflectionBanks() {
  *   (F0 = 0.02): it hands the transmitted share to the body colour and weights the pipeline's SSR, so reflections come
  *   only from the sky IBL, the sun's GGX specular and SSR (no painted-in glint).
  * - Night: the lit skyline & far shores sit beyond SSR's reach, so an analytic city (lots, lit windows, storefronts &
- *   riverside lamps on the real Utrecht canal banks, with nearby OSM building heights) is reflected
+ *   riverside lamps on the real Ede canal banks, with nearby OSM building heights) is reflected
  *   through the same wave normals & Fresnel, blurred by the unresolved slopes into the familiar vertical light streaks.
  * - Park lakes, the Reservoir & fountains (well above the harbour) get finer, calmer ripples and a greener, duller body.
  */
@@ -2772,8 +2772,8 @@ function createWaterMaterial() {
 
   const waveTex = getWaterWaveTexture();
   const harbourY = ISLAND_BOUNDS ? ISLAND_BOUNDS.waterLevel : -2.2;
-  // Keep Utrecht's existing water colour and wave mix when lowering its surface.
-  const pond = smoothstep(harbourY + 1.0, harbourY + 2.0, UTRECHT_DATA ? float(-0.65) : positionWorld.y);
+  // Keep Ede's existing water colour and wave mix when lowering its surface.
+  const pond = smoothstep(harbourY + 1.0, harbourY + 2.0, EDE_DATA ? float(-0.65) : positionWorld.y);
 
   // [tile size (m), rotation (rad), RMS slope]: incommensurate scales & angles so no pattern repeats
   const LAYERS = [
@@ -2836,19 +2836,19 @@ function createWaterMaterial() {
     return mix(body, lake, pond).mul(crestTint);
   })();
 
-  // Night: nearby Utrecht facades and quay lamps, reflected along the same wave
+  // Night: nearby Ede facades and quay lamps, reflected along the same wave
   // ray and filtered by the unresolved slopes. The bank geometry and roof scale
-  // come from Utrecht OSM data; no numbered-street or opposite-borough proxies.
+  // come from Ede OSM data; no numbered-street or opposite-borough proxies.
   const IB = ISLAND_BOUNDS;
-  const reflectionBanks = getUtrechtReflectionBanks();
-  mat.userData.utrechtReflectionBankCount = reflectionBanks.length;
+  const reflectionBanks = getEdeReflectionBanks();
+  mat.userData.edeReflectionBankCount = reflectionBanks.length;
   mat.emissiveNode = Fn(() => {
     const emit = vec3(0.0).toVar();
     const night = smoothstep(0.55, 1.35, cityUniforms.uInteriorGlow);
     // Uniform time-of-day gate: skips reflection vector, derivatives & bank raycast completely in daytime presets
     If(night.greaterThan(0.0001), () => {
       const P = positionWorld.xz;
-      // Fade the analytic proxy outside the detailed Utrecht data boundary.
+      // Fade the analytic proxy outside the detailed Ede data boundary.
       const region = smoothstep(IB.minZ - 400.0, IB.minZ - 100.0, P.y)
         .mul(float(1.0).sub(smoothstep(IB.maxZ + 200.0, IB.maxZ + 600.0, P.y)));
       const weight = night.mul(region);

@@ -1,18 +1,20 @@
-// tools/build-utrecht-geodata.mjs — writes js/utrecht-geodata.js from tools/data/osm_utrecht.json (Overpass, query q_utrecht.overpassql)
-// Frame: 1 unit = 1 m, x = east, z = south, origin at the Domtoren (true north up, no grid rotation).
-// usage: node tools/build-utrecht-geodata.mjs [out.js]
+// tools/build-ede-geodata.mjs — writes js/ede-geodata.js from tools/data/osm_ede.json (Overpass, query q_ede.overpassql)
+// Frame: 1 unit = 1 m, x = east, z = south, origin at the Oude Kerk (true north up, no grid rotation).
+// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.js]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
-const OUT = process.argv[2] || path.join(DIR, '..', 'js', 'utrecht-geodata.js');
-const osm = JSON.parse(fs.readFileSync(path.join(DIR, 'data', 'osm_utrecht.json'), 'utf8'));
-const log = (...a) => console.log('[utrecht-geodata]', ...a);
+const INPUT = process.argv[2] || path.join(DIR, 'data', 'osm_ede.json');
+const OUT = process.argv[3] || path.join(DIR, '..', 'js', 'ede-geodata.js');
+const osm = JSON.parse(fs.readFileSync(INPUT, 'utf8'));
+if (!Array.isArray(osm.elements) || !osm.elements.length || osm.remark) throw new Error('Expected a complete Ede OpenStreetMap response');
+const log = (...a) => console.log('[ede-geodata]', ...a);
 
-const BBOX = [52.08, 5.1, 52.1, 5.14]; // S, W, N, E: must match q_utrecht.overpassql
-const LAT0 = 52.09062; // Domtoren
-const LON0 = 5.12139;
+const BBOX = [52.012, 5.5925, 52.0605, 5.7005]; // S, W, N, E: must match q_ede.overpassql
+const LAT0 = 52.0460029; // Oude Kerk
+const LON0 = 5.671553;
 const R = 6378137;
 const KY = (Math.PI / 180) * R;
 const KX = KY * Math.cos((LAT0 * Math.PI) / 180);
@@ -152,6 +154,8 @@ for (const e of osm.elements) {
 
 // --- Street centreline graph: ways cut at every node shared by two ways (and at their ends) ----------------------------
 // links: [node a, node b, name index, width, lanes, direction (1: a -> b, -1: b -> a, 0: both), inner shape points [x, z, ...]]
+if (!drivable.length || !buildings.length) throw new Error('Ede snapshot is missing roads or buildings');
+
 const roadGraph = (() => {
   const uses = new Map();
   for (const w of drivable) for (const id of new Set(w.nodes)) uses.set(id, (uses.get(id) || 0) + 1);
@@ -184,18 +188,18 @@ for (const e of osm.elements) {
   const t = e.tags || {};
   if (e.type === 'node') continue;
   const isWater = t.natural === 'water' || /^(riverbank|dock)$/.test(t.waterway || '');
-  const isPark = /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green)$/.test(t.landuse || '');
+  const isPark = t.natural === 'wood' || /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green|forest)$/.test(t.landuse || '');
   if (!isWater && !isPark) continue;
   for (const p of polygons(e)) {
     const ring = cleanRing(p.ring);
     if (ring.length < 3 || Math.abs(ringArea(ring)) < 20) continue;
     if (isWater) water.push({ id: `water${water.length}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: t.water || t.waterway || 'water' });
-    else parks.push({ id: `${e.type[0]}${e.id}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: t.leisure || t.landuse });
+    else parks.push({ id: `${e.type[0]}${e.id}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: t.leisure || t.landuse || t.natural });
   }
 }
 
 // --- Landmarks: footprints for named buildings ----------------------------------------------------------------------------
-const LANDMARKS = ['Domtoren', 'Utrecht Centraal', 'Stadhuis', 'Winkel van Sinkel', 'Hoog Catharijne', 'Dom', 'Domkerk', 'Centraal Museum', 'Catharijneconvent', 'Academiegebouw', 'Paushuize', 'Stadsschouwburg', 'TivoliVredenburg', 'Rabobank', 'Stadskantoor'];
+const LANDMARKS = ['Oude Kerk', 'Cultura', 'Gemeentehuis Ede', 'Raadhuis', 'Station Ede Centrum', 'Ede Centrum', 'Ede-Wageningen', 'Huis Kernhem'];
 const landmarks = {};
 for (const b of buildings) {
   if (b.part || !LANDMARKS.includes(b.name)) continue;
@@ -204,40 +208,42 @@ for (const b of buildings) {
   const bb = bbox(pts);
   const area = Math.abs(ringArea(pts));
   if (landmarks[b.name] && landmarks[b.name].area >= area) continue;
-  landmarks[b.name] = { x: r1((bb.x0 + bb.x1) / 2), z: r1((bb.z0 + bb.z1) / 2), w: r1(bb.x1 - bb.x0), d: r1(bb.z1 - bb.z0), h: b.name === 'Domtoren' ? 112 : b.h, area: Math.round(area), ring: b.ring };
+  landmarks[b.name] = { x: r1((bb.x0 + bb.x1) / 2), z: r1((bb.z0 + bb.z1) / 2), w: r1(bb.x1 - bb.x0), d: r1(bb.z1 - bb.z0), h: b.h, area: Math.round(area), ring: b.ring };
 }
 
-// --- Municipal trees (tools/fetch-bomen.py) replace the sparser OSM trees; height estimated from planting year ---------
-const BOMEN = path.join(DIR, 'data', 'bomen_centrum.json');
-if (fs.existsSync(BOMEN)) {
-  const year = new Date().getFullYear();
-  const { trees: gem } = JSON.parse(fs.readFileSync(BOMEN, 'utf8'));
-  trees.length = 0;
-  for (const g of gem) {
-    const [x, z] = toWorld(g.lon, g.lat);
-    const h = g.planted ? Math.min(22, 4 + (year - g.planted) * 0.4) : 9;
-    trees.push({ x: r1(x), z: r1(z), h: r1(h) });
-  }
-  log(`using ${trees.length} municipal trees`);
-}
+// Representative label points from the CBS Wijk- en Buurtkaart 2025 urban districts.
+const AREAS = [
+  ['Ede-Oost', 5.67497, 52.04331],
+  ['Ede-West', 5.65861, 52.04039],
+  ['Veldhuizen', 5.63687, 52.04190],
+  ['Kernhem', 5.63201, 52.05039],
+  ['Veluwse Poort', 5.68302, 52.03443],
+  ['Ede-Zuid', 5.66903, 52.02332],
+  ['Maandereng', 5.65562, 52.01943],
+  ['Rietkampen', 5.63984, 52.02103],
+  ['Bedrijventerrein', 5.61885, 52.03292]
+].map(([name, lon, lat]) => ({ name, labelPoint: toWorld(lon, lat).map(r1) }));
 
 const [s, w, n, eLon] = BBOX;
 const [minX, maxZ0] = toWorld(w, s);
 const [maxX, minZ] = toWorld(eLon, n);
 const data = {
   meta: {
-    name: 'Utrecht · binnenstad', city: 'Utrecht',
+    name: 'Ede', city: 'Ede',
     bounds: [r1(minX), r1(minZ), r1(maxX), r1(maxZ0)],
     geographicBounds: [s, w, n, eLon],
-    frame: 'x = east, z = south, metres; origin at the Domtoren',
+    frame: 'x = east, z = south, metres; origin at the Oude Kerk',
     coordinateSystem: 'x east, z south, metres',
     lonLatAffine: { lon0: LON0, lat0: LAT0, x: [0, r1(KX * 1e3) / 1e3, 0], z: [0, 0, -r1(KY * 1e3) / 1e3], maxErrorM: 0.5 },
-    sources: [{ name: 'OpenStreetMap contributors', license: 'ODbL 1.0', attribution: '© OpenStreetMap contributors' }, ...(fs.existsSync(BOMEN) ? [{ name: 'Gemeente Utrecht, bomenkaart 2026 (park- en straatbomen)', url: 'https://utrecht.blob.core.windows.net/catalog/bomenkaart_2026/park_en_straatbomen/park_en_straatbomen.parquet' }] : [])],
-    areas: [],
+    sources: [
+      { name: 'OpenStreetMap contributors', license: 'ODbL 1.0', attribution: '© OpenStreetMap contributors' },
+      { name: 'CBS Wijk- en Buurtkaart 2025', url: 'https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025' }
+    ],
+    areas: AREAS,
     counts: { buildings: buildings.length, roads: roads.length, water: water.length, parks: parks.length, railways: railways.length, trees: trees.length, signals: signals.length }
   },
   buildings, roads, water, parks, railways, trees, signals, landmarks, roadGraph
 };
-fs.writeFileSync(OUT, `// js/utrecht-geodata.js — GENERATED by tools/build-utrecht-geodata.mjs, do not edit by hand.\n// Utrecht inner city, 1 unit = 1 m, x east, z south, origin at the Domtoren. © OpenStreetMap contributors (ODbL).\nexport const UTRECHT_DATA = ${JSON.stringify(data)};\n`);
+fs.writeFileSync(OUT, `// js/ede-geodata.js — GENERATED by tools/build-ede-geodata.mjs, do not edit by hand.\n// Ede, 1 unit = 1 m, x east, z south, origin at the Oude Kerk. © OpenStreetMap contributors (ODbL).\nexport const EDE_DATA = ${JSON.stringify(data)};\n`);
 log(`wrote ${OUT} (${(fs.statSync(OUT).size / 1048576).toFixed(1)} MB)`, JSON.stringify(data.meta.counts));
 log('landmarks:', Object.keys(landmarks).join(', '));
