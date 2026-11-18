@@ -536,3 +536,108 @@ test('createTreeField leaves scene.onBeforeRender untouched and matches per-tree
     `expected exactly 1 Math.sqrt per cell (${cellCount}, 0 per-tree Math.sqrt), got ${sqrtCalls}`
   );
 });
+
+test('measured trees preserve ground, height, and crown width across LODs', () => {
+  const sites = [
+    { x: 0, y: 6, z: 140, species: 0, yaw: 0, height: 20, scale: 0.5 },
+    { x: 2, y: 4, z: 140, species: 0, yaw: 0, height: 20, trunkDiameter: 0.18 },
+    { x: 4, y: 3, z: 140, species: 0, yaw: 0, height: 20, trunkDiameter: 1.4 },
+    { x: 6, y: 9, z: 140, species: 3, yaw: 0, height: 25, trunkDiameter: 0 }
+  ];
+  const field = createTreeField({}, sites);
+  const widths = new Map();
+  for (const [level, cameraZ] of [[0, 140], [1, -50], [2, -450]]) {
+    field.update(new Vector3(0, 10, cameraZ));
+    const visible = field.meshes.filter((m) => m.visible);
+    assert.equal(visible.filter((m) => m.name.startsWith('Trees_plane')).length, level === 2 ? 1 : 2);
+    let count = 0;
+    for (const mesh of visible) {
+      assert.match(mesh.name, new RegExp(`_lod${level}_`));
+      for (let i = 0; i < mesh.count; i++) {
+        const matrix = new Matrix4();
+        matrix.elements.set(mesh.instanceMatrix.array.subarray(16 * i, 16 * (i + 1)));
+        const site = sites.find((t) => t.x === matrix.elements[12]);
+        const box = new Box3().copy(mesh.geometry.boundingBox).applyMatrix4(matrix);
+        const size = box.getSize(new Vector3());
+        const width = Math.max(size.x, size.z);
+        assert.ok(Math.abs(box.min.y - site.y) < 1e-5, 'tree is seated at the mapped elevation');
+        assert.ok(Math.abs(size.y - site.height) < 1e-5, 'tree uses its mapped height at each level');
+        if (level === 0) widths.set(site, width);
+        else assert.ok(Math.abs(width - widths.get(site)) < 1e-5, 'crown width stays stable');
+        count++;
+      }
+    }
+    assert.equal(count, sites.length);
+  }
+  assert.ok(widths.get(sites[1]) < widths.get(sites[0]), 'a thin trunk narrows the estimated crown');
+  assert.ok(widths.get(sites[2]) > widths.get(sites[0]), 'a thick trunk broadens the estimated crown');
+  assert.ok(widths.get(sites[3]) < widths.get(sites[0]), 'conifers retain a narrower form');
+});
+
+test('measured sites check stem clearance while legacy sites also check crowns', () => {
+  const adjacent = { x: -1, z: 145, height: 20, species: 0, trunkDiameter: 0.5 };
+  const legacy = { x: -1, z: 145, scale: 1, species: 0, yaw: 0 };
+  const indoors = { x: 2, z: 145, height: 20, species: 0 };
+  const underDeck = { x: 11, z: 145, height: 5, species: 0 };
+  const hitsDeck = { x: 12, z: 145, height: 12, species: 0 };
+  const colliders = [
+    { minX: 0, maxX: 8, minZ: 140, maxZ: 150, maxY: 16 },
+    { minX: 10, maxX: 14, minZ: 140, maxZ: 150, minY: 8, maxY: 10 }
+  ];
+  const field = createTreeField({}, [adjacent, legacy, indoors, underDeck, hitsDeck], colliders);
+  assert.deepEqual([...field.sites], [adjacent, underDeck]);
+});
+
+test('measured medium LOD uses dense clumps with fewer triangles than legacy medium LOD', () => {
+  const field = createTreeField({}, [
+    { x: 2, z: 140, species: 0, height: 20 },
+    { x: 4, z: 140, species: 0, scale: 1 }
+  ]);
+  field.update(new Vector3(0, 10, -50));
+  const [measured, legacy] = field.meshes.filter((m) => m.visible);
+  assert.match(measured.name, /_v0_measured_lod1_/);
+  assert.match(legacy.name, /_v0_lod1_/);
+  const clumpCards = ({ attributes: { aTree, uv } }) => {
+    let vertices = 0;
+    for (let i = 0; i < aTree.count; i++) {
+      if (aTree.array[i * 4] && uv.array[i * 2] > 0.5 && uv.array[i * 2 + 1] > 0.5) vertices++;
+    }
+    return vertices / 4;
+  };
+  assert.equal(clumpCards(measured.geometry), 18);
+  assert.equal(clumpCards(legacy.geometry), 0);
+  assert.ok(measured.geometry.index.count < legacy.geometry.index.count);
+});
+
+test('conifer geometry stays tapered and uses separately culled 200 m cells', () => {
+  const field = createTreeField({}, [
+    { x: 0, z: 140, height: 20, species: 3 },
+    { x: 240, z: 140, height: 20, species: 3 },
+    { x: 1800, z: 140, height: 20, species: 3 }
+  ]);
+  const [near, next, distant] = field.group.children;
+  assert.match(near.name, /TreeCell_0,0/);
+  assert.match(next.name, /TreeCell_1,0/);
+  assert.match(distant.name, /TreeCell_9,0/);
+  assert.ok(near.visible && next.visible && !distant.visible);
+  for (const mesh of near.children) {
+    const { geometry } = mesh;
+    const { position, aTree } = geometry.attributes;
+    const { min, max } = geometry.boundingBox;
+    let lower = 0;
+    let upper = 0;
+    for (let i = 0; i < position.count; i++) {
+      if (!aTree.array[i * 4]) continue;
+      const [x, y, z] = position.array.subarray(i * 3, i * 3 + 3);
+      const h = (y - min.y) / (max.y - min.y);
+      const radius = Math.hypot(x, z);
+      if (h < 0.55) lower = Math.max(lower, radius);
+      if (h > 0.75) upper = Math.max(upper, radius);
+    }
+    assert.ok(upper > 0 && upper < lower * 0.65, 'the upper foliage is narrower at every level');
+    if (mesh.name.includes('_lod2_')) assert.ok(geometry.index.count / 3 <= 60, 'the far silhouette uses few triangles');
+  }
+  field.update(new Vector3(1800, 10, 140));
+  assert.ok(!near.visible && !next.visible && distant.visible);
+  assert.equal(distant.children.find((m) => m.visible).count, 1);
+});

@@ -66,6 +66,7 @@ import { GEO } from './nyc-geodata.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
 import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
+import { edeTreeSite } from './ede-tree-data.js';
 
 // Live construction data consumed by the building and street-detail builders after buildCityGrid().
 let centralParkClearings;
@@ -76,7 +77,7 @@ let sidewalkBlocks;
 let fdrViaduct;
 let edeStreetSites = [];
 
-function buildEdeCityGrid(scene) {
+function buildEdeCityGrid(scene, treeInventory) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const roadMat = createRoadSurfaceMaterial();
@@ -327,10 +328,20 @@ function buildEdeCityGrid(scene) {
       }
     }
   }
-  for (const tree of EDE_DATA.trees || []) {
-    const h = Math.abs(Math.sin(tree.x * 1.9 + tree.z * 8.1));
-    parkTreeSites.push({ x: tree.x, z: tree.z, y: terrainHeightAt(tree.x, tree.z) + 0.09, scale: tree.h ? Math.max(0.45, Math.min(1.8, tree.h / 13)) : 0.66 + h * 0.62,
-      species: h < 0.42 ? 0 : h < 0.65 ? 1 : 2, yaw: h * Math.PI * 2 });
+  if (treeInventory) {
+    for (const tree of treeInventory) {
+      const { x, z } = tree;
+      if (waterAt(x, z)) continue;
+      const block = blockAt(x, z);
+      if (block && !block.park && !block.sidewalk) continue;
+      parkTreeSites.push(edeTreeSite(tree, terrainHeightAt(x, z)));
+    }
+  } else {
+    for (const tree of EDE_DATA.trees || []) {
+      const h = Math.abs(Math.sin(tree.x * 1.9 + tree.z * 8.1));
+      parkTreeSites.push({ x: tree.x, z: tree.z, y: terrainHeightAt(tree.x, tree.z) + 0.09, scale: tree.h ? Math.max(0.45, Math.min(1.8, tree.h / 13)) : 0.66 + h * 0.62,
+        species: h < 0.42 ? 0 : h < 0.65 ? 1 : 2, yaw: h * Math.PI * 2 });
+    }
   }
   // OSM often maps a wooded area without mapping each individual tree. Fill
   // those patches procedurally, preserving mapped trees and clear paths.
@@ -392,7 +403,7 @@ function buildEdeCityGrid(scene) {
       group.add(mesh);
     }
   }
-  group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, mappedTrees: mappedTreeCount, landmarkTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
+  group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
     clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, junctionClippedCurbs: true, junctionClippedSidewalks: true };
   scene.add(group);
   return { group, sidewalks, footprints, highwayLanes: [], colliders };
@@ -1819,8 +1830,8 @@ function buildWaterfrontPiers(group) {
   B.build(group, new Set([BL, PA]));
 }
 
-function buildCityGrid(scene) {
-  if (EDE_DATA) return buildEdeCityGrid(scene);
+function buildCityGrid(scene, treeInventory) {
+  if (EDE_DATA) return buildEdeCityGrid(scene, treeInventory);
   streetGroundSurfaces = [];
   const group = new THREE.Group();
   group.name = 'ManhattanCityGrid';

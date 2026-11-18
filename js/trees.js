@@ -389,7 +389,7 @@ function coverageMips(level0, size, tiles, cutoff = 128) {
 // =====================================================================================================================
 const SPECIES = [
   { // 0: London plane: tall clear trunk and leader with heavy ascending limbs, a broad rounded crown of big leaves
-    name: 'plane', tile: 0,
+    name: 'plane', tile: 0, crownRatio: 0.7,
     trunk: { r: 0.3, top: 8.6, lean: 0.04, segs: 8 },
     limbs: { n: 6, y: [3.4, 7.4], tilt: [1.0, 0.36], len: [4.6, 2.8], r: 0.62, up: 0.07, out: 0, droop: 0, jitter: 0.07, segs: 6 },
     branches: { n: 4, t: [0.3, 0.98], angle: [0.55, 0.95], len: [0.62, 0.42], up: 0.06, out: 0.02, droop: 0, jitter: 0.1, segs: 4 },
@@ -398,7 +398,7 @@ const SPECIES = [
     tints: [0x4b6a29, 0x5a7a2f, 0x3f5e25]
   },
   { // 1: Honey locust: slim trunk forking into spreading, zigzag limbs, an open layered crown of feathery fronds
-    name: 'locust', tile: 1,
+    name: 'locust', tile: 1, crownRatio: 0.75,
     trunk: { r: 0.19, top: 5.4, lean: 0.07, segs: 7 },
     limbs: { n: 5, y: [2.6, 5.0], tilt: [1.12, 0.55], len: [4.2, 2.8], r: 0.68, up: 0.04, out: 0, droop: 0, jitter: 0.16, segs: 6 },
     branches: { n: 4, t: [0.3, 0.98], angle: [0.6, 1.05], len: [0.6, 0.42], up: 0.03, out: 0.03, droop: 0.02, jitter: 0.16, segs: 4 },
@@ -407,13 +407,22 @@ const SPECIES = [
     tints: [0x7b8c33, 0x8d9b3d, 0x6c7f2d]
   },
   { // 2: American elm: trunk forking low into upright limbs that arch outward, a tall vase with drooping twigs
-    name: 'elm', tile: 2,
+    name: 'elm', tile: 2, crownRatio: 0.57,
     trunk: { r: 0.28, top: 4.3, lean: 0.03, segs: 6 },
     limbs: { n: 5, y: [3.3, 4.1], tilt: [0.36, 0.22], len: [7.4, 7.0], r: 0.6, up: 0, out: 0.075, droop: 0, jitter: 0.06, segs: 7 },
     branches: { n: 5, t: [0.35, 1.0], angle: [0.5, 0.85], len: [0.44, 0.3], up: 0, out: 0.05, droop: 0.07, jitter: 0.1, segs: 4 },
     twigs: { n: 3, t: [0.3, 1.0], angle: [0.5, 0.95], len: [1.3, 0.85], up: 0, out: 0, droop: 0.16, jitter: 0.12, segs: 2 },
     cards: { perTwig: 2, scale: [0.85, 1.1], droop: 0.4 },
     tints: [0x44622a, 0x53702e, 0x3a5724]
+  },
+  { // 3: Conifer: single slender leader with progressively shorter, nearly horizontal boughs
+    name: 'conifer', tile: 1, crownRatio: 0.38,
+    trunk: { r: 0.24, top: 11.4, tip: 0.04, lean: 0.012, segs: 10 },
+    limbs: { n: 14, y: [2.45, 10.7], tilt: [1.43, 1.1], len: [1.95, 0.28], r: 0.35, up: 0.08, out: 0, droop: 0, jitter: 0.08, segs: 4 },
+    branches: { n: 2, t: [0.25, 0.98], angle: [0.4, 0.68], len: [0.4, 0.27], up: 0.04, out: 0.02, droop: 0.025, jitter: 0.08, segs: 2 },
+    twigs: { n: 1, t: [0.4, 1.0], angle: [0.35, 0.8], len: [0.35, 0.17], up: 0.02, out: 0, droop: 0.08, jitter: 0.12, segs: 2 },
+    cards: { perTwig: 2, scale: [0.75, 0.95], droop: 0.15, tipScale: 0.27 },
+    tints: [0x354e33, 0x3e5739, 0x315049]
   }
 ];
 
@@ -482,7 +491,7 @@ function growTree(sp, seed) {
   const trunkDir = new V3(Math.cos(lean) * T.lean, 1, Math.sin(lean) * T.lean).normalize();
   const schedule = [0, 0.03, 0.08];
   for (let i = 1; i <= T.segs; i++) schedule.push(0.08 + (0.92 * i) / T.segs);
-  const trunk = growBranch(new V3(0, 0, 0), trunkDir, T.top, T.r, T.r * 0.3, T.segs, still, rng, 0, schedule);
+  const trunk = growBranch(new V3(0, 0, 0), trunkDir, T.top, T.r, T.r * (T.tip ?? 0.3), T.segs, still, rng, 0, schedule);
   trunk.rad = trunk.rad.map((r, i) => r * (1 + 0.75 * Math.exp(-(trunk.ts[i] * T.top) / 0.28)));
   branches.push(trunk);
 
@@ -616,7 +625,7 @@ function addTube(gb, b, radial, stride, aoAt, swayAt) {
 }
 
 // Leaf card: bottom edge centred on `at`, rising along `up`, facing `face`; uv over atlas tile `tile` (mirrored or not)
-function addCard(gb, at, up, face, size, tile, mirror, rnd, crown) {
+function addCard(gb, at, up, face, size, tile, mirror, rnd, crown, height = size) {
   const side = new V3().crossVectors(up, face).normalize();
   const nrm = new V3().crossVectors(side, up).normalize();
   const [ox, oy] = tileOrigin(tile);
@@ -634,7 +643,7 @@ function addCard(gb, at, up, face, size, tile, mirror, rnd, crown) {
   const base = gb.pos.length / 3;
   const p = new V3();
   for (const [sx, sy, u, v] of corners) {
-    p.copy(at).addScaledVector(side, sx * size).addScaledVector(up, sy * size);
+    p.copy(at).addScaledVector(side, sx * size).addScaledVector(up, sy * height);
     const { n, ao } = crown.shade(p, nrm);
     gb.vertex(p, n, u, v, 1, ao, lerp(0.8, 1.0, sy), rnd);
   }
@@ -685,7 +694,7 @@ function swayWeight(b, t) {
 }
 
 // Fine twig cards (lod 0), larger branch cards (lod 1), and a canopy shell shared by all levels (lod 2).
-function placeCards(sp, branches, lod, tileMeters, rng, crown) {
+function placeCards(sp, branches, lod, tileMeters, rng, crown, compact = false) {
   const R = (a, b) => a + (b - a) * rng();
   const cards = [];
   const outward = (p) => new V3(p.x - crown.C.x, (p.y - crown.C.y) * 0.6, p.z - crown.C.z).normalize();
@@ -701,6 +710,9 @@ function placeCards(sp, branches, lod, tileMeters, rng, crown) {
     return { up, face: face.normalize() };
   };
   const size = tileMeters[sp.tile];
+  const sizeAt = (p) => sp.cards.tipScale
+    ? size * lerp(1, sp.cards.tipScale, smooth(sp.limbs.y[0], sp.limbs.y[1], p.y))
+    : size;
   if (lod === 0) {
     for (const b of branches) {
       if (b.level !== 3) continue;
@@ -709,7 +721,7 @@ function placeCards(sp, branches, lod, tileMeters, rng, crown) {
         const t = lerp(0.4, 1.0, (k + R(0.3, 0.9)) / n);
         const a = along(b, t);
         const { up, face } = orient(a.p, a.d, sp.cards.droop);
-        cards.push({ at: a.p, up, face, size: size * R(sp.cards.scale[0], sp.cards.scale[1]), tile: sp.tile });
+        cards.push({ at: a.p, up, face, size: sizeAt(a.p) * R(sp.cards.scale[0], sp.cards.scale[1]), tile: sp.tile });
       }
     }
     // a card at the end of every branch fills the gap between its twigs
@@ -717,16 +729,33 @@ function placeCards(sp, branches, lod, tileMeters, rng, crown) {
       if (b.level !== 2) continue;
       const a = along(b, 1);
       const { up, face } = orient(a.p, a.d, sp.cards.droop);
-      cards.push({ at: a.p, up, face, size: size * R(0.9, 1.1), tile: sp.tile });
+      cards.push({ at: a.p, up, face, size: sizeAt(a.p) * R(0.9, 1.1), tile: sp.tile });
     }
   } else if (lod === 1) {
+    const samples = compact ? [0.85] : [0.42, 0.72, 1.0];
     for (const b of branches) {
       if (b.level !== 2) continue;
-      for (const t of [0.42, 0.72, 1.0]) {
+      for (const t of samples) {
         const a = along(b, Math.min(1, t + R(-0.06, 0.04)));
         const { up, face } = orient(a.p, a.d, sp.cards.droop);
         const at = a.p.clone().addScaledVector(outward(a.p), 0.35);
-        cards.push({ at, up, face, size: size * R(1.35, 1.6), tile: sp.tile });
+        cards.push({ at, up, face, size: sizeAt(a.p) * R(1.35, 1.6), tile: sp.tile });
+      }
+    }
+  } else if (sp.name === 'conifer') {
+    // Crossed foliage cards in overlapping tiers keep the tapered silhouette from every azimuth.
+    const yaw = R(0, Math.PI);
+    for (let i = 0; i < 6; i++) {
+      const f = i / 5;
+      const center = along(branches[0], lerp(0.23, 0.94, f)).p;
+      const size = lerp(5.1, 0.83, f);
+      const height = lerp(3.65, 1.75, f);
+      for (let j = 0; j < 3; j++) {
+        const angle = yaw + i * 0.37 + j * Math.PI / 3;
+        const face = new V3(Math.cos(angle), R(-0.45, 0.45), Math.sin(angle)).normalize();
+        const up = new V3(0, 1, 0).addScaledVector(face, -face.y).normalize();
+        const at = center.clone().addScaledVector(up, -height * 0.5);
+        cards.push({ at, up, face, size, height, tile: TILE_FAR });
       }
     }
   } else {
@@ -752,7 +781,7 @@ function placeCards(sp, branches, lod, tileMeters, rng, crown) {
 }
 
 // One species / variant: [lod0, lod1, lod2] geometries.
-function buildTreeGeometries(speciesIndex, variant, tileMeters) {
+function buildTreeGeometries(speciesIndex, variant, tileMeters, includeMeasuredMiddle = false) {
   const sp = SPECIES[speciesIndex];
   const seed = 7919 * (speciesIndex + 1) + 104729 * (variant + 1);
   const branches = growTree(sp, seed);
@@ -770,13 +799,7 @@ function buildTreeGeometries(speciesIndex, variant, tileMeters) {
   }
   const crown = makeCrown(pts);
 
-  // Keep the canopy's shape, texture orientation and wind phase identical across levels.
-  const canopyRng = mulberry32(seed + 2 * 31337);
-  const canopyCards = placeCards(sp, branches, 2, tileMeters, canopyRng, crown)
-    .map((c) => ({ ...c, mirror: canopyRng() < 0.5, random: canopyRng() }));
-
-  const geos = [];
-  for (let lod = 0; lod < 3; lod++) {
+  const buildLevel = (lod, measuredMiddle = false) => {
     const gb = new TreeGeometryBuilder();
     const rng = mulberry32(seed + lod * 31337);
     const aoAt = (p) => crown.barkAO(p);
@@ -786,21 +809,26 @@ function buildTreeGeometries(speciesIndex, variant, tileMeters) {
         addTube(gb, b, [5, 3, 3][b.level], [2, 3, 4][b.level], aoAt, swayWeight);
       } else if (lod === 1 && b.level <= 1) {
         addTube(gb, b, 3, b.level === 0 ? 4 : 8, aoAt, swayWeight);
-      } else if (lod === 2 && b.level <= 1) {
-        addTube(gb, b, 3, b.pts.length - 1, aoAt, swayWeight);
+      } else if (lod === 2 && (b.level === 0 || (b.level === 1 && sp.name !== 'conifer'))) {
+        const stride = sp.name === 'conifer' ? 5 : b.pts.length - 1;
+        addTube(gb, b, 3, stride, aoAt, swayWeight);
       }
     }
     // Close trees add the coarse branch cards and the whole-crown shell on top of the twig cards, so a crown seen
     // from above (helicopter) stays as full as the distant levels
-    const cards = lod === 0
-      ? [...cards0, ...placeCards(sp, branches, 1, tileMeters, rng, crown), ...placeCards(sp, branches, 2, tileMeters, rng, crown)]
-      : placeCards(sp, branches, lod, tileMeters, rng, crown);
-    for (const c of cards) addCard(gb, c.at, c.up, c.face, c.size, c.tile, rng() < 0.5, rng(), crown);
+    const cards = [];
+    if (lod === 0) cards.push(...cards0);
+    if (lod < 2) cards.push(...placeCards(sp, branches, 1, tileMeters, rng, crown, measuredMiddle));
+    // Dense clumps preserve medium crowns when individual leaf sprays get small on screen.
+    if (lod !== 1 || measuredMiddle) cards.push(...placeCards(sp, branches, 2, tileMeters, rng, crown));
+    for (const c of cards) addCard(gb, c.at, c.up, c.face, c.size, c.tile, rng() < 0.5, rng(), crown, c.height);
     const g = gb.build();
-    g.userData = { species: sp.name, variant, lod, cards: cards.length + canopyCards.length, triangles: gb.idx.length / 3 };
-    geos[lod] = g;
-  }
-  return geos;
+    g.userData = { species: sp.name, variant, lod, cards: cards.length, triangles: gb.idx.length / 3 };
+    return g;
+  };
+  const levels = [0, 1, 2].map((lod) => buildLevel(lod));
+  if (includeMeasuredMiddle) levels.measuredMiddle = buildLevel(1, true);
+  return levels;
 }
 
 // =====================================================================================================================
@@ -819,6 +847,8 @@ function hashPos(x, y, z) {
   const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
   return s - Math.floor(s);
 }
+
+const hasMeasuredHeight = (t) => Number.isFinite(t.height) && t.height > 0;
 
 // Placement checks run once, against nearby buildings and bridge structures.
 function createTreeClearance(colliders) {
@@ -859,9 +889,9 @@ function createTreeClearance(colliders) {
 }
 
 /**
- * Builds the instanced tree field for `sites` ({ x, y, z, scale, species, yaw?, sx?, sz?, tier? }). Call
- * `update(cameraPosition)` from the frame loop to keep each tree's level of detail up to date. Returns
- * { group, material, atlas, sites (accepted placements), update(cameraPosition) }.
+ * Builds the instanced tree field for sites with x, y, z, species, and either height (metres) or scale.
+ * Sites may also have trunkDiameter (metres, when known), yaw, sx, sz, and tier.
+ * Call update(cameraPosition) from the frame loop to keep each tree's level of detail up to date.
  */
 function createTreeField(_scene, sites, colliders = []) {
   const group = new THREE.Group();
@@ -870,7 +900,8 @@ function createTreeField(_scene, sites, colliders = []) {
   const material = createTreeMaterial(atlas.texture);
 
   // Geometries: [species][variant][lod]
-  const geos = SPECIES.map((_, s) => [0, 1].map((v) => buildTreeGeometries(s, v, atlas.tileMeters)));
+  const includeMeasuredMiddle = sites.some(hasMeasuredHeight);
+  const geos = SPECIES.map((_, s) => [0, 1].map((v) => buildTreeGeometries(s, v, atlas.tileMeters, includeMeasuredMiddle)));
   const clearOfBuildings = createTreeClearance(colliders);
   const treeBounds = geos.map((variants) => variants.map((levels) => {
     const bounds = new THREE.Box3();
@@ -891,6 +922,7 @@ function createTreeField(_scene, sites, colliders = []) {
   const px = new Float32Array(capacity);
   const py = new Float32Array(capacity);
   const pz = new Float32Array(capacity);
+  const hasHeight = new Uint8Array(capacity);
   const meshOf = new Int32Array(capacity * 3); // mesh index per level
   const tier = new Uint8Array(capacity);
   const lod = new Uint8Array(capacity).fill(255);
@@ -898,16 +930,24 @@ function createTreeField(_scene, sites, colliders = []) {
   // Shared geometry types per species, variant and level.
   const types = [];
   const makeType = (geo, name) => {
-    const height = Math.max(Math.abs(geo.boundingBox.min.y), Math.abs(geo.boundingBox.max.y));
+    const { min, max } = geo.boundingBox;
+    const height = Math.max(Math.abs(min.y), Math.abs(max.y));
     // The material adds wind after the instance transform: height-squared lean/rock, plus bob and flutter.
     const windPadding = Math.hypot(0.2, 0.06) * Math.hypot(0.86, 0.51) * (height / 11) ** 2 + 2;
-    const type = { geo, name, windPadding, meshes: [] };
+    const type = {
+      geo, name, windPadding, meshes: [],
+      inverseHeight: 1 / (max.y - min.y),
+      inverseWidth: 1 / Math.max(max.x - min.x, max.z - min.z)
+    };
     types.push(type);
     return type;
   };
   const meshIndex = SPECIES.map((sp, s) => ({
     l0: [0, 1].map((v) => makeType(geos[s][v][0], `Trees_${sp.name}_v${v}_lod0`)),
     l1: [0, 1].map((v) => makeType(geos[s][v][1], `Trees_${sp.name}_v${v}_lod1`)),
+    measuredMiddle: includeMeasuredMiddle
+      ? [0, 1].map((v) => makeType(geos[s][v].measuredMiddle, `Trees_${sp.name}_v${v}_measured_lod1`))
+      : [],
     l2: [0, 1].map((v) => makeType(geos[s][v][2], `Trees_${sp.name}_v${v}_lod2`))
   }));
   const cells = new Map();
@@ -922,13 +962,28 @@ function createTreeField(_scene, sites, colliders = []) {
     const r2 = hashPos(t.z, 7.1, t.x);
     const r3 = hashPos(t.x + t.z, 3.3, 0.7);
     const variant = hashPos(t.x, 5.9, t.z) < 0.5 ? 0 : 1;
-    const s = t.scale * (0.9 + r1 * 0.2);
-    dummy.position.set(t.x, t.y || 0, t.z);
+    const groundY = t.y || 0;
+    const sized = hasMeasuredHeight(t);
+    const s = (t.scale ?? 1) * (0.9 + r1 * 0.2);
+    dummy.position.set(t.x, groundY, t.z);
     dummy.rotation.set(0, t.yaw ?? r2 * Math.PI * 2, 0);
-    dummy.scale.set(s * (0.9 + r3 * 0.2) * (t.sx || 1), s * (0.88 + r1 * 0.24), s * (0.9 + r2 * 0.2) * (t.sz || 1));
-    dummy.updateMatrix();
-    const tree = treeBounds[sp][variant];
-    worldBounds.copy(tree.bounds).applyMatrix4(dummy.matrix).expandByScalar(tree.margin);
+    if (sized) {
+      const diameter = Number.isFinite(t.trunkDiameter) && t.trunkDiameter > 0 ? t.trunkDiameter : 0;
+      const expectedDiameter = 2 * SPECIES[sp].trunk.r * t.height * meshIndex[sp].l0[variant].inverseHeight;
+      const breadth = diameter ? Math.max(0.72, Math.min(1.25, (diameter / expectedDiameter) ** 0.25)) : 1;
+      const width = t.height * SPECIES[sp].crownRatio * breadth;
+      dummy.scale.set(width * (t.sx || 1), t.height, width * (t.sz || 1));
+      dummy.updateMatrix();
+      // The crown is estimated. Check the mapped stem against the footprint, including elevated obstacles.
+      const radius = Math.min(2, Math.max(0.05, (diameter || expectedDiameter) * 0.5));
+      worldBounds.min.set(t.x - radius, groundY, t.z - radius);
+      worldBounds.max.set(t.x + radius, groundY + t.height, t.z + radius);
+    } else {
+      dummy.scale.set(s * (0.9 + r3 * 0.2) * (t.sx || 1), s * (0.88 + r1 * 0.24), s * (0.9 + r2 * 0.2) * (t.sz || 1));
+      dummy.updateMatrix();
+      const tree = treeBounds[sp][variant];
+      worldBounds.copy(tree.bounds).applyMatrix4(dummy.matrix).expandByScalar(tree.margin);
+    }
     if (!clearOfBuildings(worldBounds)) return;
     const i = N++;
     plantedSites.add(t);
@@ -936,8 +991,9 @@ function createTreeField(_scene, sites, colliders = []) {
     tint.setHex(SPECIES[sp].tints[Math.floor(r3 * 2.999)]).multiplyScalar(0.82 + r1 * 0.36);
     data.set([tint.r, tint.g, tint.b, sp + r2 * 0.999], i * 4);
     px[i] = t.x;
-    py[i] = (t.y || 0) + 6 * s;
+    py[i] = groundY + (sized ? t.height * 0.5 : 6 * s);
     pz[i] = t.z;
+    hasHeight[i] = sized;
     tier[i] = Math.min(2, t.tier || 0);
     const cellX = Math.floor(t.x / TREE_CELL_SIZE);
     const cellZ = Math.floor(t.z / TREE_CELL_SIZE);
@@ -954,7 +1010,10 @@ function createTreeField(_scene, sites, colliders = []) {
     }
     cell.trees.push(i);
     const mi = meshIndex[sp];
-    const treeTypes = [mi.l0[variant], mi.l1[variant], mi.l2[variant]];
+    // Measured trees retain their dimensions with either variant, so distant stands can share a batch per species.
+    const treeTypes = sized
+      ? [mi.l0[variant], mi.measuredMiddle[variant], mi.l2[0]]
+      : [mi.l0[variant], mi.l1[variant], mi.l2[variant]];
     for (let l = 0; l < 3; l++) {
       const type = treeTypes[l];
       let index = cell.meshes.get(type);
@@ -1065,6 +1124,16 @@ function createTreeField(_scene, sites, colliders = []) {
         const srcM = i * 16;
         const dstMOff = c * 16;
         for (let j = 0; j < 16; j++) dstM[dstMOff + j] = mats[srcM + j];
+        if (hasHeight[i]) {
+          // Each mesh has a different local envelope. Keep the same ground, height and spread when levels change.
+          const type = meshes[mi].type;
+          dstM[dstMOff] *= type.inverseWidth;
+          dstM[dstMOff + 2] *= type.inverseWidth;
+          dstM[dstMOff + 5] *= type.inverseHeight;
+          dstM[dstMOff + 8] *= type.inverseWidth;
+          dstM[dstMOff + 10] *= type.inverseWidth;
+          dstM[dstMOff + 13] -= type.geo.boundingBox.min.y * dstM[dstMOff + 5];
+        }
         const dstD = mesh.geometry.attributes.aTreeData.array;
         const srcD = i * 4;
         const dstDOff = c * 4;

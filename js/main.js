@@ -20,6 +20,7 @@ import { NYCMapSystem } from './nyc-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
 import { loadTerrain, terrainHeightAt } from './terrain.js';
+import { loadEdeTrees } from './ede-tree-data.js';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
@@ -86,19 +87,18 @@ async function initApp() {
   const lightingSystem = new LightingSystem(scene, renderer);
   markInit('lighting');
 
-  await showLoadingStage('Loading PDOK AHN terrain…');
-  try {
-    const terrain = await loadTerrain();
+  await showLoadingStage('Loading terrain and tree data…');
+  const [terrainResult, treeResult] = await Promise.allSettled([loadTerrain(), loadEdeTrees()]);
+  if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
-    container.dataset.napOrigin = String(terrain.napOrigin);
-  } catch (error) {
-    console.warn('[terrain] falling back to level ground:', error);
-  }
-  markInit('terrain');
+    container.dataset.napOrigin = String(terrainResult.value.napOrigin);
+  } else console.warn('[terrain] falling back to level ground:', terrainResult.reason);
+  if (treeResult.status === 'rejected') console.warn('[trees] using OpenStreetMap trees:', treeResult.reason);
+  markInit('terrain and trees');
 
   // 3. Build the city, buildings, street details and traffic
   await showLoadingStage('Building streets, parks and waterfronts...');
-  const cityGrid = buildCityGrid(scene);
+  const cityGrid = buildCityGrid(scene, treeResult.status === 'fulfilled' ? treeResult.value : undefined);
   markInit('cityGrid');
   await showLoadingStage('Building landmarks...');
   const { colliders: landmarkColliders } = buildLandmarks(scene);
