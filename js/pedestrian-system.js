@@ -5,19 +5,23 @@ import { PersonCrowd, PersonRig, PEDESTRIAN_DIVE_DURATION } from './pedestrians.
 
 // Local pedestrian population: connected walks, curb queues, conversations and player avoidance.
 // Traffic supplies crossing permissions and view checks; this system owns the crowd and its animation.
-const NUM_PEDS = 1000;
+const NUM_PEDS = 128;
 const PED_RADIUS = 320;
 const NEAR_RADIUS = 350;
 const PED_SPAWN_DISTANCE = 150;
 const PED_AVOID_INTERVAL = 0.12;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearFoot, mappedGround, mayCross, walkOn, visible, nearView }) {
+function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearFoot, pickFoot, mappedGround, mayCross, mayCrossMapped, walkOn, visible, nearView }) {
   let clock = 0;
   let focusX = 0, focusZ = 140;
   let hasView = false;
   let pedRange = 0;
   let pedCursor = 0;
+  let nextRetirement = 0;
+  let destinationX = Infinity, destinationZ = Infinity;
+  let nearDestinations = [];
+  const destinations = network.activeTravel?.destinations || [];
 
   for (const n of network.nodes) {
     n.walkers = []; // pedestrians on its crosswalks
@@ -64,6 +68,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
       goalX: 0,
       goalZ: 0,
       goalTime: 0,
+      towardPlace: false,
       restTime: 0,
       socialTime: 0,
       conversation: null,
@@ -90,6 +95,9 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
   }
 
   const KERB = 1.6; // how far along a crosswalk track pedestrians wait to cross (the curb is 2 m along)
+  const kerb = p => p.route?.crossing ? 0 : KERB;
+  const walkSignal = p => p.route?.crossing ? mayCrossMapped(p.route, p) : walkOn(p.side);
+  const crossingClear = p => p.route?.crossing ? mayCrossMapped(p.route, p) : mayCross(p);
   const pedRoutes = createPedestrianRoutes(network, blockAt);
   const track = { ax: 0, az: 0, ux: 0, uz: 1, len: 1, node: null, side: 0, line: 0, route: null };
 
@@ -124,7 +132,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
   function atCurb(p) {
     const crossing = p.node ? null : nextCrossingLeg(p);
     const n = p.node || crossing?.track.node;
-    if (!n || (p.node && curbProgress(p) > KERB + 0.5) || p._curbNode === n) return;
+    if (!n || (p.node && curbProgress(p) > kerb(p) + 0.5) || p._curbNode === n) return;
     if (!n.curb.length) curbNodes.push(n);
     n.curb.push(p);
     p._curbNode = n;
@@ -157,11 +165,11 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
   function spawnPed(p, rMin, rMax, protectView) {
     const rMinSq = rMin * rMin, rMaxSq = rMax * rMax, gapSq = QUEUE_GAP * QUEUE_GAP;
     for (let attempt = 0; attempt < 10; attempt++) {
-      const crosswalk = p.crossesStreets && nearSignals.length > 0 && attempt < 5;
-      const mapped = !crosswalk && nearFoot?.[Math.floor(Math.random() * nearFoot.length)];
+      const crosswalk = !nearFoot && p.crossesStreets && nearSignals.length > 0 && attempt < 5;
+      const mapped = !crosswalk && (typeof pickFoot === 'function' ? pickFoot() : nearFoot?.[Math.floor(Math.random() * nearFoot.length)]);
       const ok = crosswalk
         ? crosswalkTrack(nearSignals[Math.floor(Math.random() * nearSignals.length)])
-        : nearFoot ? mapped && Object.assign(track, mapped, { route: mapped })
+        : nearFoot ? mapped && !mapped.noSpawn && Object.assign(track, mapped, { route: mapped })
         : nearEdges.length > 0 && sidewalkTrack(nearEdges[Math.floor(Math.random() * nearEdges.length)]);
       if (!ok) continue;
       const along = (focusX - track.ax) * track.ux + (focusZ - track.az) * track.uz;
@@ -203,6 +211,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
       p.nextRoute = null;
       p.nextLeg = 0;
       p.goalTime = 0;
+      p.towardPlace = false;
       p.restTime = clock + 25 + Math.random() * 45;
       p.socialTime = clock + 5 + Math.random() * 15;
       p._curbNode = null;
@@ -231,7 +240,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
   function escapeRoom(p, dir) {
     let room = dir > 0 ? p.len - p.t : p.t;
     const s = dir > 0 ? p.t : p.len - p.t;
-    if (p.node && s <= KERB + 1e-6 && !mayCross(p)) room = Math.min(room, Math.max(0, KERB - s));
+    if (p.node && s <= kerb(p) + 1e-6 && !crossingClear(p)) room = Math.min(room, Math.max(0, kerb(p) - s));
     for (const q of peds) {
       if (q === p || !q.placed) continue;
       const dx = q.x - p.x, dz = q.z - p.z;
@@ -337,7 +346,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     const ahead = p.dir > 0 ? p.len - p.t : p.t;
     const dodging = p.dodge !== 0 || p.dodgeTarget !== 0;
     const normalSpeed = dodging || p.pause > 0 || p.conversation || p.waiting ? 0 : p.speed;
-    const normalRoom = p.node && curbProgress(p) <= KERB + 1e-6 && !mayCross(p) ? Math.max(0, KERB - curbProgress(p)) : ahead;
+    const normalRoom = p.node && curbProgress(p) <= kerb(p) + 1e-6 && !crossingClear(p) ? Math.max(0, kerb(p) - curbProgress(p)) : ahead;
     const avoiding = clock < p.avoidUntil;
     const escapeAhead = Math.max(0, Math.min(ahead, (p.avoidT - p.t) * p.dir));
     const contact = playerContactTime(p, p.dir * normalSpeed, normalRoom, false);
@@ -407,10 +416,15 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     if (p.pause > 0) p.pause = Math.max(0, p.pause - dt);
     const ahead = p.dir > 0 ? p.len - p.t : p.t;
     const gdx = p.x - p.goalX, gdz = p.z - p.goalZ;
-    if (clock >= p.goalTime || gdx * gdx + gdz * gdz < 625) {
-      const destination = nearEdges[Math.floor(Math.random() * nearEdges.length)];
-      p.goalX = destination ? destination.sx + destination.dx * destination.len * 0.5 : p.x;
-      p.goalZ = destination ? destination.sz + destination.dz * destination.len * 0.5 : p.z;
+    const goalDistanceSq = gdx * gdx + gdz * gdz;
+    if (clock >= p.goalTime || goalDistanceSq < (p.towardPlace ? 9 : 625)) {
+      if (p.towardPlace && goalDistanceSq < 9 && p.route?.socialPlace && !p.node) p.pause = 1 + Math.random() * 2;
+      const place = Math.random() < 0.65 ? nearDestinations[Math.floor(Math.random() * nearDestinations.length)] : null;
+      const destination = nearFoot?.[Math.floor(Math.random() * nearFoot.length)];
+      const edge = destination ? null : nearEdges[Math.floor(Math.random() * nearEdges.length)];
+      p.goalX = place?.x ?? (destination ? destination.ax + destination.ux * destination.len * 0.5 : edge ? edge.sx + edge.dx * edge.len * 0.5 : p.x);
+      p.goalZ = place?.z ?? (destination ? destination.az + destination.uz * destination.len * 0.5 : edge ? edge.sz + edge.dz * edge.len * 0.5 : p.z);
+      p.towardPlace = !!place;
       p.goalTime = clock + 120 + Math.random() * 180;
     }
     if (!p.nextRoute && p.route && ahead < 4) {
@@ -418,7 +432,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
       p.nextLeg = 0;
       if (!p.node && p.nextRoute) atCurb(p);
     }
-    if (!p.node && p.route?.edge && p.t > 6 && p.t < p.len - 6 && clock >= p.restTime) {
+    if (!p.node && (p.route?.socialPlace || p.route?.edge) && p.t > 2 && p.t < p.len - 2 && clock >= p.restTime) {
       p.pause = 1.5 + Math.random() * 3;
       p.restTime = clock + 35 + Math.random() * 55;
     }
@@ -469,14 +483,14 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     if (p.node) {
       // room to walk before standing: up to the curb unless p may cross, and up to the back of whoever is ahead
       const s = curbProgress(p);
-      if (s <= KERB + 1e-6) {
-        const walk = walkOn(p.side);
+      if (s <= kerb(p) + 1e-6) {
+        const walk = walkSignal(p);
         if (!walk) p.walkAt = -1;
         else if (p.walkAt < 0) p.walkAt = clock + p.walkDelay;
         // React to WALK independently of the queue or vehicles still clearing the crossing.
-        canCross = walk && (avoiding || clock >= p.walkAt) && mayCross(p);
+        canCross = walk && (avoiding || clock >= p.walkAt) && (p.route?.crossing || crossingClear(p));
       }
-      room = s <= KERB + 1e-6 && !canCross ? Math.max(0, KERB - s) : Infinity;
+      room = s <= kerb(p) + 1e-6 && !canCross ? Math.max(0, kerb(p) - s) : Infinity;
       for (const q of p.node.curb) {
         if (q === p || q.node !== p.node || q.side !== p.side || q.dir !== p.dir || Math.abs(q.line - p.line) > 0.55) continue;
         const gap = curbProgress(q) - s;
@@ -489,10 +503,10 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     const movement = diving ? Math.min(Math.abs(p.diveT - p.t), PED_DODGE_SPEED * dt) : Math.min(p.v * dt, room);
     if (p.v * dt > room) p.v = 0;
     let t = p.t + p.dir * movement;
-    const reachesCurb = !!p.node && curbProgress(p) <= KERB + 1e-6 && (p.dir > 0 ? t : p.len - t) >= KERB - 1e-6;
+    const reachesCurb = !!p.node && curbProgress(p) <= kerb(p) + 1e-6 && (p.dir > 0 ? t : p.len - t) >= kerb(p) - 1e-6;
     p.waiting = !diving && reachesCurb && !canCross;
     if (p.waiting) {
-      t = p.dir > 0 ? Math.min(t, KERB) : Math.max(t, p.len - KERB);
+      t = p.dir > 0 ? Math.min(t, kerb(p)) : Math.max(t, p.len - kerb(p));
       p.v = 0;
     }
     if (!dodging && !diving && (p.dir > 0 ? t >= p.len : t <= 0)) {
@@ -522,7 +536,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     p.dodge += clamp(p.dodgeTarget - p.dodge, -dodgeStep, dodgeStep);
     p.x = p.ax + p.ux * t + p.uz * p.dodge;
     p.z = p.az + p.uz * t - p.ux * p.dodge;
-    if (p.node && ((t > KERB && t < p.len - KERB) || (p.waiting && walkOn(p.side)))) {
+    if (p.node && ((t > kerb(p) && t < p.len - kerb(p)) || (p.waiting && walkSignal(p)))) {
       p.coord = p.side >= 2 ? p.x : p.z;
       if (!p.node.walkers.length) walkedNodes.push(p.node);
       p.node.walkers.push(p);
@@ -561,7 +575,9 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     meetingCells.clear();
     for (let i = 0; i < peds.length; i++) {
       const p = peds[i];
-      if (!p.placed || p.node || !p.route?.edge || p.conversation || clock < p.socialTime || p.t < 6 || p.t > p.len - 6) continue;
+      const place = p.route?.socialPlace ?? p.route?.block;
+      const gap = Math.min(6, p.len * 0.24);
+      if (!p.placed || p.node || !place || p.conversation || clock < p.socialTime || p.t < gap || p.t > p.len - gap) continue;
       const ix = Math.floor(p.x * 0.5), iz = Math.floor(p.z * 0.5);
       let partner = null;
       for (let dx = -1; dx <= 1 && !partner; dx++) {
@@ -570,7 +586,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
           if (!list) continue;
           for (let k = 0; k < list.length; k++) {
             const q = list[k];
-            if (q.conversation || p.route.block !== q.route.block) continue;
+            if (q.conversation || place !== (q.route.socialPlace ?? q.route.block)) continue;
             const mdx = p.x - q.x, mdz = p.z - q.z;
             const distSq = mdx * mdx + mdz * mdz;
             if (distSq < 0.5625 || distSq > 4 || Math.random() > 0.15) continue;
@@ -600,7 +616,10 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
   const SIDEWALK_Y = 0.22;
   const CROSSWALK_Y = 0.012;
   function pedGround(p, x, z) {
-    if (p.route?.mapped) return mappedGround(p.route, x, z) + (p.route.sidewalk ? SIDEWALK_Y : CROSSWALK_Y);
+    if (p.route?.mapped) {
+      const surface = p.route.structure ? 0 : p.route.sidewalk ? 0.025 : p.route.crossing ? 0.06 : 0.055;
+      return mappedGround(p.route, x, z) + surface;
+    }
     const ground = terrainHeightAt(x, z);
     if (!p.node) return ground + SIDEWALK_Y;
     const t = (x - p.ax) * p.ux + (z - p.az) * p.uz;
@@ -641,28 +660,51 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     pedCrowd.add(p.rig, Math.sqrt(distSq));
   }
 
-  function update(dt, elapsed, x, z, jump, view, activeMode) {
+  function update(dt, elapsed, x, z, jump, view, activeMode, pedTarget = NUM_PEDS) {
     clock = elapsed;
     focusX = x;
     focusZ = z;
     hasView = view;
+    if (jump || Math.hypot(x - destinationX, z - destinationZ) > 60) {
+      destinationX = x;
+      destinationZ = z;
+      nearDestinations = destinations.filter(place => Math.hypot(place.x - x, place.z - z) < PED_RADIUS);
+    }
     pedRange = player.active && (activeMode === 'car' || activeMode === 'cyclist' || activeMode === 'cargobike') && player.height > -1
       ? Math.sqrt(player.vx * player.vx + player.vz * player.vz) * PED_LOOKAHEAD + player.halfL + 6 : 0;
 
     for (const n of walkedNodes) n.walkers.length = 0;
     walkedNodes.length = 0;
-    let pedBudget = jump ? NUM_PEDS : 6;
     const keepRadius = jump ? NEAR_RADIUS : PED_RADIUS;
-    const keepRadiusSq = keepRadius * keepRadius;
-    for (let scanned = 0; scanned < NUM_PEDS && pedBudget > 0; scanned++) {
+    let placed = 0, retire = null, retireDistance = 0;
+    for (const p of peds) {
+      if (!p.placed) continue;
+      const distance = Math.hypot(p.x - x, p.z - z);
+      if (distance > keepRadius) {
+        if (p.conversation) endConversation(p.conversation);
+        p.placed = false;
+        continue;
+      }
+      placed++;
+      if (distance > retireDistance && (!view || !visible(p.x, p.z, 3, p.y))) {
+        retire = p;
+        retireDistance = distance;
+      }
+    }
+    if (placed > pedTarget && retire && clock >= nextRetirement) {
+      if (retire.conversation) endConversation(retire.conversation);
+      retire.placed = false;
+      placed--;
+      nextRetirement = clock + 0.5;
+    }
+
+    let pedBudget = jump ? 12 : 3;
+    for (let scanned = 0; scanned < NUM_PEDS && pedBudget > 0 && placed < pedTarget; scanned++) {
       const p = peds[pedCursor];
       pedCursor = (pedCursor + 1) % NUM_PEDS;
-      if (p.placed) {
-        const dx = p.x - focusX, dz = p.z - focusZ;
-        if (dx * dx + dz * dz <= keepRadiusSq) continue;
-      }
+      if (p.placed) continue;
       pedBudget--;
-      spawnPed(p, jump ? 0 : 60, jump ? NEAR_RADIUS : 280, !jump);
+      if (spawnPed(p, jump ? 0 : 60, jump ? NEAR_RADIUS : 280, !jump)) placed++;
     }
     for (let i = 0; i < NUM_PEDS; i++) {
       const p = peds[i];

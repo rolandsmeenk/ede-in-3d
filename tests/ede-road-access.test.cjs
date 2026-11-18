@@ -28,7 +28,12 @@ test('active-travel routes connect at shared endpoints and preserve crossings on
     nodes: [-6, 0, 6, 0, 0, -6, 0, 6, 18, 0],
     links: [[0, 1, 0, 3, 1, 0, [], 0, [0]], [2, 3, 0, 3, 1, 0, [], 1, [0]], [1, 4, 0, 3, 1, 0, [], 2, [0]]]
   };
-  const path = (id, modes, layer) => ({ id, modes, layer, width: 3 });
+  const path = (id, modes, layer) => ({
+    id, modes, layer, width: 3,
+    cycle: modes.some(mask => mask & BICYCLE) ? [{
+      offset: 0, width: 3, kind: 'path', allowed: modes.map(mask => !!(mask & BICYCLE))
+    }] : []
+  });
   const roads = [path('cycleway', [BICYCLE, BICYCLE], 0), path('footbridge', [FOOT, FOOT], 1), path('one-way', [BICYCLE, 0], 0)];
   const router = buildEdeActiveTravel({ activeGraph, roads });
   const bikes = [], people = [];

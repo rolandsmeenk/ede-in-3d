@@ -1159,7 +1159,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
 
   const isRoadClear = (x, z, clear = 0.15) => !blockedOnStreet(x, z, clear);
   return { nodes, edges, paintEdges, connector, curvePoint, walkable, onSidewalk, isRoadClear,
-    activeTravel: grade ? buildEdeActiveTravel(GEO.ede, grade) : null };
+    activeTravel: GEO.city === 'Ede' ? buildEdeActiveTravel(GEO.ede, grade, { walkable, sidewalkAt, motorNodes: nodes }) : null };
 }
 
 // The largest strongly connected set of `list` (a Set), going on from item e to the items next(e)

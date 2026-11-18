@@ -6,13 +6,15 @@ Forked from [Slop Utrecht](https://github.com/bertt/slop-utrecht), based on [Slo
 
 ## Run locally
 
-Serve the repository over HTTP and open [localhost:8000](http://localhost:8000).
+Run the local server and open [localhost:8000](http://localhost:8000). Live road data matching uses Node.js 22 or later.
 
 ```sh
-python3 -m http.server 8000
+python3 tools/serve-ede.py
 ```
 
-The checked-in OpenStreetMap data works without an Overpass request at startup. The simulator streams LoD 2.2 buildings from the nationwide 3DBAG tileset and uses OpenStreetMap footprints if the tiles are unavailable.
+Add `--offline` to skip upstream traffic feeds. A plain static server such as `python3 -m http.server 8000` also runs the offline traffic model. Three.js, OpenStreetMap geometry, posted limits, and the timetable are local. The simulator streams LoD 2.2 buildings when 3DBAG is reachable and uses OpenStreetMap footprints otherwise.
+
+The live server caches the national NDW DATEX II v3 and OVapi GTFS-Realtime feeds and serves only matches within the Ede map. NDW readings change demand and cruising speed on their matched direction. Posted or applicable temporary limits cap speed. Valid closures block new entry. The camera-local simulation uses Amsterdam time-of-day demand and the timetable when live data expires. See the [traffic data notes](tools/data/ede-traffic-sources.md) for coverage, fallbacks, and the frame-time measurements.
 
 ## Refresh the Ede map
 
@@ -73,6 +75,37 @@ python3 tools/fetch-ede-aerial.py /tmp/ede-aerial
 python3 tools/build-ede-aerial.py /tmp/ede-aerial/ede-aerial-2025.vrt
 ```
 
+## Refresh the Mapillary façade pilot
+
+The pilot uses individual LoD 2.2 wall segments at Kolkakkerweg, on Torenstraat, and at the Oude Kerk west entrance. Reviewed Mapillary views supply measured masonry and openings. The builder groups observations by CBS neighbourhood, building type, and wall type, with one statistical vote per BAG building and Ede-wide profiles for groups with enough coverage. The game fits the layouts to the original BAG meshes and keeps the procedural texture on unsupported walls.
+
+A shared mask atlas supplies opaque glazing, doors, frames, and sills in the original building batches. The Oude Kerk entrance has a fitted recess and projecting surround. The church and storefront share a photo atlas that loads when the camera approaches. Valid PDOK roof samples take priority over street-image or learned roof colours.
+
+Set `MAPILLARY_TOKEN` to a Mapillary client access token for the imagery refresh. The image cache and reviewed crops stay local. With `uv` on your PATH:
+
+```sh
+uv run --with 'shapely>=2.1' --with pyproj python tools/catalogue-ede-facade-walls.py \
+  /tmp/ede-facade-bag /tmp/ede-facade-walls.json --fetch
+python3 tools/fetch-ede-facade-views.py tools/data/ede-facade-reviews.json /tmp/ede-facade-images
+uv run --with numpy --with opencv-python python tools/extract-ede-facades.py /tmp/ede-facade-walls.json \
+  --metadata /tmp/ede-facade-images/metadata.json --images /tmp/ede-facade-images \
+  --review tools/data/ede-facade-reviews.json --crops /tmp/ede-facade-crops \
+  --output tools/data/ede-facade-observations.json
+uv run --with pillow python tools/bake-ede-facade-photos.py tools/data/ede-facade-photo-crops.json \
+  /tmp/ede-facade-crops assets/ede-facade-pilot.webp /tmp/ede-facade-photos.json
+python3 tools/build-ede-facades.py /tmp/ede-facade-walls.json tools/data/ede-facade-observations.json \
+  --photos /tmp/ede-facade-photos.json --report /tmp/ede-facade-report.json \
+  --hold-out NL.IMBAG.Pand.0228100000073648
+```
+
+Omit `--fetch` to reuse the BAG and CBS cache. The extractor also reads candidate walls from [orthofacade](https://github.com/louis-e/orthofacade) with `--orthofacade /path/to/orthofacade/out/RUN --metadata /path/to/orthofacade/cache/panos.json`. Review new views and opening bounds before expanding the pilot. The bake report shows coverage and compares inferred layouts against photos of complete held-out BAG buildings. [Photo credits and licence](assets/ede-facade-pilot.LICENSE.md)
+
+The pilot ships 10 observed walls, 178 inferred terraced street façades, and 10 blank shared walls. Three distinct terraced houses train the neighbourhood and Ede-wide street profiles. Apartment, detached-house and shop observations remain specific to the measured buildings while those groups collect coverage. The modelled Oude Kerk entrance depth is estimated at 0.28 m from the visible surround.
+
+Separate holdout runs withheld BAG buildings `0228100000073648` and `0228100000073646`. Each inferred the three measured windows and one door. Window-spacing errors were 0.126 m and 0.031 m, and door-position errors were 0.311 m and 0.339 m. Wall-colour distances were 8.37 and 3.0 in sRGB. A third split, `0228100000073661`, had a 0.459 m spacing error and a 72.23 sRGB colour distance. Its photo did not provide a usable door measurement. To repeat the other splits, replace the `--hold-out` ID and set `--output` to a temporary path.
+
+A paired WebGPU run used the same walking-height frontal and oblique cameras with the façade asset enabled and blocked. The 198 wall records matched four BAG batches. The first local frame took 8.90 s without the pilot and 9.05 s with it. The mask atlas and the camera-local photo atlas used 10.5 MB and 2.8 MB of texture memory, respectively. The visible photo tile added one batched draw, and the first shopping approach peaked at 33.3 ms in both runs.
+
 ## Refresh the tree inventory
 
 PDOK BGT supplies individual tree locations. Ede’s municipal inventory enriches nearby points with species groups and height and trunk-diameter ranges. OpenStreetMap contributes additional tree locations. The build joins the sources in RD New, then writes one compact asset for the current scene grid. Missing sizes and species receive deterministic estimates, and woodland outside mapped clusters still gets procedural trees.
@@ -94,7 +127,7 @@ The checked-in asset contains active PDOK BGT lamp posts within the game map. Po
 
 ## Refresh the bus routes
 
-The game loads a local timetable and lane matches for both directions of Ede lines 1–4, 103 and 303. Stop signs use the GTFS boarding coordinates and platform letters. Buses depart using Amsterdam service dates, display the trip headsign, and dwell at the stops they can reach on connected lanes. If no service is running at startup, the simulation opens at the next mapped departure.
+The game loads a local timetable and lane matches for both directions of Ede lines 1–4, 103 and 303. Stop signs use the GTFS boarding coordinates and platform letters. Buses display the GTFS trip headsign, and dwell at stops they can reach on connected lanes. Fresh OVapi positions guide the same scheduled actor along its route. Buses approach and leave the camera area at their current route positions. If no service is running at startup, the simulation opens at the next mapped departure.
 
 ```sh
 curl -fL https://gtfs.ovapi.nl/nl/gtfs-nl.zip -o /tmp/ede-gtfs.zip
@@ -122,6 +155,7 @@ Explore other cities and community remixes in [Slop Cities](https://github.com/z
 - Ede’s coat of arms is from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_Ede.svg) (public domain).
 - Terrain uses the [AHN ground model via PDOK](https://www.pdok.nl/introductie/-/article/actueel-hoogtebestand-nederland-ahn).
 - Vertex colors are derived from the [2025 Beeldmateriaal.nl aerial orthophoto via PDOK](https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566) under CC BY 4.0.
+- Façade observations use [Mapillary](https://www.mapillary.com/) imagery. The photo adaptations are distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). [Photo credits](assets/ede-facade-pilot.LICENSE.md)
 - Lamp-post locations are from [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html) (CC0).
 - Civil structures and road surface evidence use [PDOK BGT](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) (CC0). Rail alignment and crossing controls were checked against [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer).
 - Directional access and selected clearance limits use the [Rijkswaterstaat WKD](https://docs.ndw.nu/en/handleidingen/wkd/).

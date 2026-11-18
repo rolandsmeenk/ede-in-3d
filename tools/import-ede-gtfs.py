@@ -206,9 +206,11 @@ def import_feed(archive, project):
                 'trips': [],
             }
         departure, times = stop_times(rows, trip_id)
-        variants[key]['trips'].append({
-            'id': trip_id, 'departure': departure, 'dates': date_indices[row['service_id']], 'stops': times,
-        })
+        trip = {'id': trip_id, 'departure': departure, 'dates': date_indices[row['service_id']], 'stops': times}
+        sequences = [int(call['stop_sequence']) for call in rows]
+        if sequences != list(range(1, len(rows) + 1)):
+            trip['stopSequences'] = sequences
+        variants[key]['trips'].append(trip)
     for variant in variants.values():
         variant['trips'].sort(key=lambda trip: (trip['departure'], trip['id']))
 

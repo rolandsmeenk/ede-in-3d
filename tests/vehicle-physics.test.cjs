@@ -184,7 +184,8 @@ function trafficHarness(vehicles) {
     clamp: (value, lo, hi) => Math.max(lo, Math.min(hi, value)),
     shove(v, dx, dz) { v.x += dx; v.z += dz; },
     reportCollision() {}, spawnCollisionSparks() {}, changeLanes() {}, terrainHeightAt: () => 0,
-    accelerate(v) { v.acc = -3; }, steer() {}, enter() {}, leave() {} };
+    accelerate(v) { v.acc = -3; }, steer() {}, enter() {}, leave() {},
+    clock: 0, chooseMove: () => null, roadSpeed: () => Infinity };
   for (const name of ['readTrafficBody', 'writeTrafficVelocity', 'impactSuspension', 'collideWithPlayer', 'collideTraffic', 'drive']) {
     const source = trafficSource.match(new RegExp(`  function ${name}\\([^]*?\\n  \\}`))?.[0];
     assert.ok(source, name);

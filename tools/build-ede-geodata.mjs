@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CAR, VAN, BUS, BICYCLE, FOOT, MOTOR } from '../js/road-access.js';
-import { readWkd, roadAccess } from './ede-road-access.mjs';
+import { cycleFacilities, readWkd, roadAccess } from './ede-road-access.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const INPUT = process.argv[2] || path.join(DIR, 'data', 'osm_ede.json');
@@ -23,7 +23,9 @@ const KY = (Math.PI / 180) * R;
 const KX = KY * Math.cos((LAT0 * Math.PI) / 180);
 const r1 = (v) => Math.round(v * 10) / 10;
 const toWorld = (lon, lat) => [(lon - LON0) * KX, -(lat - LAT0) * KY];
-const wkd = readWkd(process.argv[4], toWorld);
+const cycleStripPath = path.join(DIR, 'data', 'ede-wkd-cycle-strips.json');
+const cycleStripFile = fs.existsSync(cycleStripPath) ? cycleStripPath : null;
+const wkd = readWkd(process.argv[4], toWorld, cycleStripFile);
 const flat = (pts) => pts.flatMap(([x, z]) => [r1(x), r1(z)]);
 const geomPts = (g) => (g || []).map((p) => toWorld(p.lon, p.lat));
 
@@ -139,6 +141,21 @@ const activeTravel = [];
 const roads = [];
 const railways = [];
 const signals = [];
+const crossingSurvey = JSON.parse(fs.readFileSync(path.join(DIR, 'data', 'ede-active-crossing-nodes.json'), 'utf8'));
+const crossingNodes = new Map();
+for (const e of [...crossingSurvey.elements, ...osm.elements]) {
+  if (e.type !== 'node' || !['crossing', 'give_way', 'stop', 'traffic_signals'].includes(e.tags?.highway)) continue;
+  const [x, z] = toWorld(e.lon, e.lat);
+  crossingNodes.set(e.id, { x: r1(x), z: r1(z), control: crossingControl(e.tags),
+    ...(e.tags.highway === 'crossing' ? { osmId: e.id, markings: e.tags['crossing:markings'] } : {}) });
+}
+
+function crossingControl(t) {
+  if (t['crossing:signals'] === 'yes' || t.crossing === 'traffic_signals' || t.highway === 'traffic_signals') return 'signal';
+  if (t.highway === 'crossing' || t.footway === 'crossing' || t.cycleway === 'crossing' ||
+      t.highway === 'give_way' || t.highway === 'stop') return 'yield';
+  return null;
+}
 const trees = [];
 for (const e of osm.elements) {
   const t = e.tags || {};
@@ -163,14 +180,21 @@ for (const e of osm.elements) {
   const width = num(t.width) ?? Math.max(WIDTH[base] ?? 3, lanes * 3);
   const oneway = /^(yes|1|true|-1)$/.test(t.oneway) || !t.oneway && (t.junction === 'roundabout' || kind === 'motorway');
   const points = geomPts(e.geometry);
-  const { modes, limits, laneModes, sidewalk, sidewalkSides } = roadAccess(e.id, t, wkd(points, tunnel || t.maxheight));
+  const match = wkd(points, tunnel || t.maxheight);
+  const evidence = bgt.ways[`w${e.id}`];
+  const { modes, limits, laneModes, sidewalk, sidewalkSides } = roadAccess(e.id, t, match, evidence);
   const available = modes[0] | modes[1];
   const boundary = BOUNDARY_APPROACHES.has(e.id), junction = SHORT_JUNCTION_LINKS.has(e.id);
   const stationForecourt = kind === 'service' && t.name === 'Polar Bearsplein';
   const keepShape = boundary || bridge || tunnel || junction || kind === 'busway' || stationForecourt;
-  const evidence = bgt.ways[`w${e.id}`];
+  const cycle = cycleFacilities(t, modes, width, evidence, match);
+  const laneTagged = ['cycleway', 'cycleway:both', 'cycleway:left', 'cycleway:right']
+    .some(key => ['lane', 'shared_lane'].includes(t[key]));
+  const crossing = crossingControl(t);
   const road = { id: `w${e.id}`, pts: flat(rdp(points, 0.5)), bridge, tunnel, layer, name: t.name || '', width: r1(width),
     lanes, oneway, reverse: t.oneway === '-1', kind, nodeIds: e.nodes || [], modes,
+    ...(cycle.length ? { cycle } : {}), ...(laneTagged && match.cycleStrip ? { wkdCycleStrip: match.cycleStrip } : {}),
+    ...(crossing ? { crossing } : {}),
     ...(evidence ? { bgt: { kind: evidence.kind, ...(num(t.width) == null && evidence.width ? { width: evidence.width } : {}) } } : {}),
     ...(tunnel ? { tunnelType: t.tunnel || 'covered' } : {}),
     ...(Object.keys(limits).length ? { limits } : {}), ...(laneModes.some(Boolean) ? { laneModes } : {}) };
@@ -185,7 +209,7 @@ for (const e of osm.elements) {
   }
   const mappedFoot = /^(footway|pedestrian|steps|cycleway|path|bridleway|track)$/.test(kind)
     || !!sidewalk && !['no', 'none', 'separate'].includes(sidewalk) || sidewalkSides.some((s) => s === 'yes');
-  if ((available & BICYCLE) || (available & FOOT) && mappedFoot) {
+  if (cycle.length || (available & BICYCLE) || (available & FOOT) && mappedFoot) {
     const footOffset = [];
     if (mappedFoot && (available & FOOT)) {
       if (/^(footway|pedestrian|steps|cycleway|path|bridleway|track)$/.test(kind)) footOffset.push(0);
@@ -216,7 +240,7 @@ function buildGraph(ways, active = false) {
     let start = 0;
     for (let i = 1; i < w.nodes.length; i++) {
       const last = i === w.nodes.length - 1;
-      if (!last && uses.get(w.nodes[i]) < 2 && w.nodes[i] !== w.nodes[0]) continue;
+      if (!last && uses.get(w.nodes[i]) < 2 && w.nodes[i] !== w.nodes[0] && !(active && crossingNodes.has(w.nodes[i]))) continue;
       if (w.nodes[i] === w.nodes[start]) { start = i; continue; }
       const seg = w.pts.slice(start, i + 1);
       const inner = rdp(seg, 0.4).slice(1, -1).flatMap(([x, z]) => [r1(x), r1(z)]);
@@ -228,7 +252,7 @@ function buildGraph(ways, active = false) {
       start = i;
     }
   }
-  return { nodes, links, names };
+  return { nodes, links, names, ...(active ? { controls: Object.fromEntries([...crossingNodes].filter(([id]) => ids.has(id)).map(([id, v]) => [ids.get(id), v])) } : {}) };
 }
 const roadGraph = buildGraph(drivable);
 const activeGraph = buildGraph(activeTravel, true);
@@ -244,6 +268,7 @@ for (const e of osm.elements) {
   const isPark = t.natural === 'wood' || /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green|forest)$/.test(t.landuse || '');
   const isSquare = t.place === 'square' || (t.highway === 'pedestrian' && t.area === 'yes');
   if (!isWater && !isPark && !isSquare) continue;
+  if (isSquare && ['no', 'private', 'customers', 'permit'].includes(t.foot ?? t.access)) continue;
   for (const p of polygons(e)) {
     const ring = cleanRing(p.ring);
     if (ring.length < 3 || Math.abs(ringArea(ring)) < 20) continue;
@@ -294,6 +319,7 @@ const data = {
       { name: 'CBS Wijk- en Buurtkaart 2025', url: 'https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025' },
       { name: 'Gemeente Ede traffic decision 2024-120844', url: 'https://zoek.officielebekendmakingen.nl/gmb-2024-120844.html' },
       { name: 'Kadaster BGT road areas', license: 'CC0', url: 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections' },
+      ...(cycleStripFile ? [{ name: 'Rijkswaterstaat WKD Fiets(suggestie)stroken', license: 'CC0', url: 'https://data.overheid.nl/en/dataset/73729-wegkenmerkendatabase-voor-fiets-suggestie-stroken' }] : []),
       ...(process.argv[4] ? [{ name: 'Rijkswaterstaat WKD Verkeerstypen and Hoogtebeperkingen', license: 'CC0', url: 'https://geo.rijkswaterstaat.nl/services/ogc/gdr/wkd_wegkenmerkendatabase/ows' }] : [])
     ],
     areas: AREAS,
@@ -304,3 +330,4 @@ const data = {
 fs.writeFileSync(OUT, `// js/ede-geodata.js — GENERATED by tools/build-ede-geodata.mjs, do not edit by hand.\n// Ede, 1 unit = 1 m, x east, z south, origin at the Oude Kerk. © OpenStreetMap contributors (ODbL).\nexport const EDE_DATA = ${JSON.stringify(data)};\n`);
 log(`wrote ${OUT} (${(fs.statSync(OUT).size / 1048576).toFixed(1)} MB)`, JSON.stringify(data.meta.counts));
 log('landmarks:', Object.keys(landmarks).join(', '));
+log('WKD cycle strips matched', roads.filter(road => road.wkdCycleStrip).length, 'OSM lane-tagged ways');

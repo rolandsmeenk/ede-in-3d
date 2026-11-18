@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "crops": [
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000030468",
+      "wallId": "-24.63,-13.35,-27.15,-3.66,0.00",
+      "source": "oude-kerk-portal.png",
+      "sourceRect": [2.9, 0, 4.6, 12.7],
+      "rect": [2.9, 3.42, 4.6, 9.28],
+      "imageId": "1150151592642586",
+      "capturedAt": "2024-02-27",
+      "creator": "ligfietser",
+      "exposure": 1.18
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000030468",
+      "wallId": "-24.63,-13.35,-27.15,-3.66,0.00",
+      "source": "oude-kerk-portal.png",
+      "sourceRect": [2.9, 0, 4.6, 12.7],
+      "rect": [3.35, 0.08, 3.3, 3.25],
+      "imageId": "1150151592642586",
+      "capturedAt": "2024-02-27",
+      "creator": "ligfietser",
+      "exposure": 1.2,
+      "recessed": true
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-44.66,-5.50,-55.49,-10.00,0.00",
+      "source": "torenstraat-storefront.png",
+      "sourceRect": [5.02, 0.06, 4.43, 3.21],
+      "rect": [5.02, 0.06, 4.43, 3.21],
+      "imageId": "1420589411891656",
+      "capturedAt": "2024-02-27",
+      "creator": "ligfietser"
+    }
+  ]
+}

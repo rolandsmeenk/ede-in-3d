@@ -118,9 +118,10 @@ function intersectionHarness() {
   const edge = { to: n, axisIndex: 0, occ: [[]], opposite: null, inSide: 0, len: 100 };
   const car = { edge, move: { to: exit, out: [0], turn: 'S' }, lane: 0, s: 80, speed: 4,
     driver: { b: 3 }, half: 2.25, wait: 0, commit: null, isPolice: false };
-  const state = { phase: 'red', occupied: false, pedestrians: false, space: true, conflict: false };
+  const state = { phase: 'red', occupied: false, pedestrians: false, space: true, conflict: false, closed: false };
   const context = {
     LOOKAHEAD: 70,
+    roadTraffic: { isClosed: edge => state.closed && edge === exit },
     phaseOf: () => state.phase,
     canStopBefore: () => true,
     stopAt: () => -3,
@@ -137,6 +138,17 @@ function intersectionHarness() {
   };
   return { car, state, mayEnter: trafficFunction('mayEnter', context), signalAhead: trafficFunction('signalAhead', context) };
 }
+
+test('a closure blocks entry even for a committed vehicle', () => {
+  const { car, state, mayEnter } = intersectionHarness();
+  car.commit = car.edge.to;
+  car.isPolice = true;
+  state.phase = 'green';
+  state.closed = true;
+  assert.equal(mayEnter(car, 0), false);
+  state.closed = false;
+  assert.equal(mayEnter(car, 0), true);
+});
 
 test('police pass red and amber signals while ordinary cars stop', () => {
   const { car, state, mayEnter, signalAhead } = intersectionHarness();
@@ -208,6 +220,8 @@ function populationContext() {
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
     nearEdges: [], nearSignals: [], activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
+    carSpawns: [], vanSpawns: [], bikeSpawns: [], footSpawns: [], roadTraffic: { isClosed: () => false, demand: () => 1, profile: 1 },
+    pickByArea: entries => entries[0]?.segment,
     place: (v, e, lane, s) => Object.assign(v, { edge: e, lane, s })
   };
   context.nearView = trafficFunction('nearView', context);
@@ -215,7 +229,7 @@ function populationContext() {
 }
 
 function straightEdge(z, len = 20) {
-  return { sx: 0, sz: z, dx: 0, dz: 1, rx: -1, rz: 0, len, lanes: [0], occ: [[]] };
+  return { sx: 0, sz: z, dx: 0, dz: 1, rx: -1, rz: 0, len, lanes: [0], half: 3.1, ambientLanes: [0], vanLanes: [0], occ: [[]] };
 }
 
 test('frustum and spawn protection use the elevation of the actor', () => {
@@ -234,6 +248,7 @@ test('cars replenish the road ahead while nearby visible spawning stays blocked'
   const context = populationContext();
   const edge = straightEdge(140);
   context.nearEdges.push(edge);
+  context.carSpawns.push({ segment: edge, end: 20 });
   const spawnVehicle = trafficFunction('spawnVehicle', context);
   const car = { half: 2.25 };
   assert.equal(spawnVehicle(car, 100, 350, true), false);
@@ -262,10 +277,15 @@ test('pedestrians replenish visible sidewalks ahead without appearing nearby', (
   assert.equal(ped.v, ped.speed);
 });
 
-test('long roads are available near their ends and spawn only in the local section', () => {
+test('long roads are available near their ends and spawn only in the local section', async () => {
   const context = populationContext();
+  const { indexLocalRoads, localSegmentLength } = await import('../js/traffic-area.js');
   const edge = straightEdge(100, 2000);
-  Object.assign(context, { edges: [edge, straightEdge(2000)], nodes: [], nearX: Infinity, nearZ: Infinity });
+  Object.assign(context, {
+    queryLocal: indexLocalRoads([edge, straightEdge(2000)], []), nearX: Infinity, nearZ: Infinity, nextDemandCheck: 0,
+    carTarget: 0, bikeTarget: 0, pedTarget: 0, NUM_CARS: 112, NUM_BIKES: 96,
+    nearLength: (...args) => localSegmentLength(0, 0, 350, ...args)
+  });
   trafficFunction('refreshNear', context)();
   assert.deepEqual(context.nearEdges, [edge]);
   const car = { half: 2.25 };

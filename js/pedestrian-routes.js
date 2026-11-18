@@ -209,9 +209,12 @@ function createPedestrianRoutes({ walkable, onSidewalk }, blockAt) {
   }
 
   function canDodge(p, offset) {
-    if (p.route?.mapped && Math.abs(offset) > p.route.width * 0.4) return false;
-    const block = blockAt(p.x, p.z);
     const target = { x: p.ax + p.ux * p.t + p.uz * offset, z: p.az + p.uz * p.t - p.ux * offset };
+    if (p.route?.mapped) {
+      if (p.route.crossing || p.route.structure || Math.abs(offset) > p.route.width * 0.4) return false;
+      return clear(p, target);
+    }
+    const block = blockAt(p.x, p.z);
     return !!block && onSidewalk(target.x, target.z) && cornerClear(p, target, block);
   }
 

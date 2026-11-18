@@ -34,7 +34,7 @@ with ZipFile(BytesIO(), 'w') as feed:
           [('A', 'Stop, A', 'G', 20, 1), ('B', 'Stop B', '', 40, 0)])
     table('stop_times', 'trip_id stop_sequence stop_id arrival_time departure_time shape_dist_traveled', [
         call for route, _, _ in routes for call in [
-            (route, 2, 'B', '25:04:21', '25:04:21', 200),
+            (route, 8 if route == '162158' else 2, 'B', '25:04:21', '25:04:21', 200),
             (route, 1, 'A', '25:04:04', '25:04:05', 150),
         ]
     ])
@@ -47,6 +47,7 @@ assert variant['operator'] == 'RRReis'
 assert variant['headsign'] == 'Ede Station'
 assert variant['shape'] == ((0, 0), (40, 0))
 assert variant['stops'][0] == {'id': 'A', 'name': 'Stop, A', 'platform': 'G', 'x': 20, 'z': 1, 'distance': 20}
-assert variant['trips'] == [{'id': '162158', 'departure': 90245, 'dates': [0, 1, 2, 3, 4], 'stops': [[-1, 0], [16, 16]]}]
+assert variant['trips'] == [{'id': '162158', 'departure': 90245, 'dates': [0, 1, 2, 3, 4], 'stops': [[-1, 0], [16, 16]], 'stopSequences': [1, 8]}]
+assert 'stopSequences' not in data['variants'][1]['trips'][0]
 `], { cwd: join(__dirname, '..') });
 });

@@ -70,12 +70,16 @@ export async function loadEdeBusSchedule() {
 }
 
 export function createEdeBusSchedule({ firstDate, lastDate, services, variants, edges, calendars }, now = new Date()) {
-  const runs = [];
+  const runs = [], trips = new Map(), serviceDates = new Map();
   const runsByDate = new Map(services.map((date) => [date, []]));
   let maxEnd = 0, maxDuration = 0;
   for (const variant of variants) {
     for (const trip of variant.trips) {
       let preceding;
+      const dates = Array.isArray(trip.dates) ? trip.dates : calendars[trip.dates];
+      const tripRuns = [];
+      if (!serviceDates.has(dates)) serviceDates.set(dates, new Set(dates.map(index => services[index])));
+      trips.set(trip.id, { variant, trip, dates: serviceDates.get(dates), runs: tripRuns });
       for (const [sliceIndex, slice] of variant.slices.entries()) {
         const startDistance = slice.start ?? slice.legs[0].start;
         const endDistance = slice.end ?? slice.legs.at(-1).end;
@@ -86,9 +90,9 @@ export function createEdeBusSchedule({ firstDate, lastDate, services, variants, 
         if (preceding) preceding.next = run;
         preceding = run;
         runs.push(run);
+        tripRuns.push(run);
         maxEnd = Math.max(maxEnd, trip.departure + endOffset);
         maxDuration = Math.max(maxDuration, endOffset - startOffset);
-        const dates = Array.isArray(trip.dates) ? trip.dates : calendars[trip.dates];
         for (const index of dates) runsByDate.get(services[index]).push(run);
       }
     }
@@ -158,8 +162,7 @@ export function createEdeBusSchedule({ firstDate, lastDate, services, variants, 
     }
   }
 
-  function tripsAt(elapsedSeconds, graceSeconds = 0) {
-    const at = startEpoch + elapsedSeconds;
+  function tripsAtTime(at, graceSeconds = 0) {
     return activeEntries(at, graceSeconds).map(({ run, departure, key, tripKey }) => {
       const { variant, trip, startDistance, endDistance } = run;
       const secondsSinceDeparture = at - departure;
@@ -168,5 +171,32 @@ export function createEdeBusSchedule({ firstDate, lastDate, services, variants, 
     });
   }
 
-  return { variants, edges, runs, tripsAt };
+  function tripAtTime(id, serviceDate, observedAt) {
+    const entry = trips.get(id);
+    if (!entry) return null;
+    const { variant, trip, dates } = entry;
+    const localDate = localClock(observedAt).date;
+    if (!serviceDate) {
+      const candidates = [shiftDate(localDate, -1), localDate].filter(date => dates.has(date));
+      candidates.sort((a, b) =>
+        Math.abs(observedAt - serviceEpoch(a) - trip.departure) -
+        Math.abs(observedAt - serviceEpoch(b) - trip.departure));
+      serviceDate = candidates[0];
+    }
+    if (!dates.has(serviceDate) || Math.abs(dateEpoch(serviceDate) - dateEpoch(localDate)) > DAY) return null;
+    const departure = serviceEpoch(serviceDate) + trip.departure;
+    return { ...entry, tripKey: `${serviceDate}/${variant.id}/${trip.id}`, departure };
+  }
+
+  return {
+    variants, edges, runs, tripAtTime, tripsAtTime,
+    tripsAt: (elapsedSeconds, graceSeconds) => tripsAtTime(startEpoch + elapsedSeconds, graceSeconds)
+  };
+}
+
+export function busProgressAt(trip, stops, distance, age, speed) {
+  if (!age || speed === 0) return distance;
+  if (Number.isFinite(speed)) return distance + speed * age;
+  const offset = offsetAtDistance(stops, trip.stops, distance, true);
+  return Math.min(distance + 22 * age, distanceAtOffset(stops, trip.stops, offset + age));
 }

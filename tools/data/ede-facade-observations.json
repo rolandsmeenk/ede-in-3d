@@ -1,0 +1,533 @@
+{
+  "version": 1,
+  "observations": [
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000007990",
+      "wallId": "-55.42,-24.34,-37.60,-19.43,0.00",
+      "confidence": 0.85,
+      "sources": [
+        {
+          "imageId": "1420589411891656",
+          "capturedAt": "2024-02-27",
+          "confidence": 0.85,
+          "creator": "ligfietser"
+        }
+      ],
+      "openings": [
+        {
+          "kind": "door",
+          "x": 7.4,
+          "y": 0.45,
+          "width": 1.18,
+          "height": 3.29,
+          "frame": 0.075
+        },
+        {
+          "kind": "storefront",
+          "x": 8.7,
+          "y": 0.44,
+          "width": 8.74,
+          "height": 3.74,
+          "frame": 0.075
+        },
+        {
+          "kind": "storefront",
+          "x": 1.38,
+          "y": 0.4,
+          "width": 5.19,
+          "height": 3.61,
+          "frame": 0.075
+        }
+      ]
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-44.66,-5.50,-55.49,-10.00,0.00",
+      "confidence": 0.92,
+      "sources": [
+        {
+          "imageId": "1420589411891656",
+          "capturedAt": "2024-02-27",
+          "confidence": 0.92,
+          "creator": "ligfietser"
+        },
+        {
+          "imageId": "381348451277907",
+          "capturedAt": "2024-02-27",
+          "confidence": 0.85,
+          "creator": "ligfietser"
+        }
+      ],
+      "wallColor": "#685b56",
+      "openings": [
+        {
+          "kind": "window",
+          "x": 1.57,
+          "y": 7.23,
+          "width": 1.21,
+          "height": 1.91,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 3.73,
+          "y": 7.25,
+          "width": 1.17,
+          "height": 1.87,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 5.85,
+          "y": 7.23,
+          "width": 1.13,
+          "height": 1.86,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 8.96,
+          "y": 7.24,
+          "width": 1.17,
+          "height": 1.82,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 5.82,
+          "y": 4.56,
+          "width": 1.12,
+          "height": 2.0,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 7.97,
+          "y": 4.56,
+          "width": 1.15,
+          "height": 1.98,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 10.15,
+          "y": 4.55,
+          "width": 1.13,
+          "height": 1.97,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "storefront",
+          "x": 0.02,
+          "y": 0.02,
+          "width": 4.14,
+          "height": 6.28,
+          "frame": 0.075
+        },
+        {
+          "kind": "storefront",
+          "x": 4.98,
+          "y": 0.02,
+          "width": 6.73,
+          "height": 3.5,
+          "frame": 0.075
+        },
+        {
+          "kind": "door",
+          "x": 7.53,
+          "y": 0.02,
+          "width": 1.35,
+          "height": 2.29,
+          "frame": 0.075
+        }
+      ],
+      "storeySpacing": 2.62
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-65.08,-13.99,-69.38,-15.78,0.00",
+      "confidence": 0.86,
+      "sources": [
+        {
+          "imageId": "378392234974766",
+          "capturedAt": "2024-02-27",
+          "confidence": 0.86,
+          "creator": "ligfietser"
+        }
+      ],
+      "wallColor": "#7d7c7f",
+      "openings": [
+        {
+          "kind": "window",
+          "x": 0.07,
+          "y": 6.19,
+          "width": 2.77,
+          "height": 1.87,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "storefront",
+          "x": 0.05,
+          "y": 0.04,
+          "width": 4.57,
+          "height": 4.25,
+          "frame": 0.075
+        }
+      ]
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-86.95,-23.08,-99.42,-28.27,0.00",
+      "confidence": 0.83,
+      "sources": [
+        {
+          "imageId": "453680283651747",
+          "capturedAt": "2024-02-27",
+          "confidence": 0.83,
+          "creator": "ligfietser"
+        }
+      ],
+      "wallColor": "#766b77",
+      "openings": [
+        {
+          "kind": "window",
+          "x": 1.53,
+          "y": 5.4,
+          "width": 2.58,
+          "height": 1.89,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 6.02,
+          "y": 5.49,
+          "width": 1.12,
+          "height": 1.82,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 7.85,
+          "y": 5.48,
+          "width": 1.16,
+          "height": 1.91,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "window",
+          "x": 10.21,
+          "y": 5.55,
+          "width": 1.12,
+          "height": 1.81,
+          "frame": 0.07,
+          "sill": 0.07
+        },
+        {
+          "kind": "storefront",
+          "x": 0.59,
+          "y": 0.03,
+          "width": 12.25,
+          "height": 3.87,
+          "frame": 0.075
+        }
+      ]
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000030468",
+      "wallId": "-24.63,-13.35,-27.15,-3.66,0.00",
+      "confidence": 0.93,
+      "sources": [
+        {
+          "imageId": "1150151592642586",
+          "capturedAt": "2024-02-27",
+          "confidence": 0.93,
+          "creator": "ligfietser"
+        }
+      ],
+      "detail": {
+        "opening": 0,
+        "depth": 0.28,
+        "surround": 0.15
+      },
+      "wallColor": "#707077",
+      "openings": [
+        {
+          "kind": "door",
+          "x": 3.35,
+          "y": 0.08,
+          "width": 3.3,
+          "height": 3.25,
+          "frame": 0.14
+        },
+        {
+          "kind": "window",
+          "x": 3.5,
+          "y": 3.38,
+          "width": 3.62,
+          "height": 8.78,
+          "frame": 0.16
+        }
+      ]
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000051744",
+      "wallId": "-490.55,752.00,-494.52,743.25,0.00",
+      "confidence": 0.81,
+      "sources": [
+        {
+          "imageId": "1263795098180886",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.81,
+          "creator": "thewizard"
+        },
+        {
+          "imageId": "1363159397995826",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.74,
+          "creator": "thewizard"
+        }
+      ],
+      "wallColor": "#6c6a58",
+      "openings": [
+        {
+          "kind": "window",
+          "x": 1.32,
+          "y": 2.02,
+          "width": 1.88,
+          "height": 1.48,
+          "frame": 0.14,
+          "sill": 0.105
+        },
+        {
+          "kind": "window",
+          "x": 1.64,
+          "y": 4.4,
+          "width": 1.18,
+          "height": 1.25,
+          "frame": 0.14,
+          "sill": 0.1
+        }
+      ],
+      "storeySpacing": 2.27
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000071254",
+      "wallId": "-468.49,777.45,-488.63,787.81,0.00",
+      "confidence": 0.73,
+      "sources": [
+        {
+          "imageId": "1831388380942421",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.73,
+          "creator": "thewizard"
+        },
+        {
+          "imageId": "930112602014057",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.73,
+          "creator": "thewizard"
+        }
+      ],
+      "wallColor": "#7e7367"
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000073646",
+      "wallId": "-495.26,678.68,-492.83,684.06,0.00",
+      "confidence": 0.81,
+      "sources": [
+        {
+          "imageId": "1884736658722356",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.81,
+          "creator": "thewizard"
+        }
+      ],
+      "wallColor": "#32231f",
+      "openings": [
+        {
+          "kind": "window",
+          "x": 0.772,
+          "y": 4.144,
+          "width": 1.365,
+          "height": 1.589,
+          "frame": 0.065,
+          "sill": 0.035
+        },
+        {
+          "kind": "window",
+          "x": 3.288,
+          "y": 4.118,
+          "width": 0.674,
+          "height": 1.629,
+          "frame": 0.065,
+          "sill": 0.035
+        },
+        {
+          "kind": "window",
+          "x": 0.95,
+          "y": 1.252,
+          "width": 1.142,
+          "height": 1.34,
+          "frame": 0.065,
+          "sill": 0.035
+        },
+        {
+          "kind": "door",
+          "x": 3.206,
+          "y": 0.279,
+          "width": 1.142,
+          "height": 2.275,
+          "frame": 0.065
+        }
+      ],
+      "storeySpacing": 3.01
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000073647",
+      "wallId": "-492.83,684.06,-490.72,688.79,0.00",
+      "confidence": 0.78,
+      "sources": [
+        {
+          "imageId": "950694093778945",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.78,
+          "creator": "thewizard"
+        }
+      ],
+      "wallColor": "#34231f",
+      "openings": [
+        {
+          "kind": "window",
+          "x": 0.735,
+          "y": 3.887,
+          "width": 1.213,
+          "height": 1.669,
+          "frame": 0.065,
+          "sill": 0.035
+        },
+        {
+          "kind": "window",
+          "x": 2.965,
+          "y": 3.84,
+          "width": 0.616,
+          "height": 1.634,
+          "frame": 0.065,
+          "sill": 0.035
+        }
+      ]
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000073648",
+      "wallId": "-490.72,688.79,-488.51,693.72,0.00",
+      "confidence": 0.84,
+      "sources": [
+        {
+          "imageId": "569620469017395",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.84,
+          "creator": "thewizard"
+        }
+      ],
+      "wallColor": "#33201d",
+      "openings": [
+        {
+          "kind": "window",
+          "x": 0.71,
+          "y": 3.827,
+          "width": 1.38,
+          "height": 1.632,
+          "frame": 0.065,
+          "sill": 0.035
+        },
+        {
+          "kind": "window",
+          "x": 3.178,
+          "y": 3.784,
+          "width": 0.726,
+          "height": 1.666,
+          "frame": 0.065,
+          "sill": 0.035
+        },
+        {
+          "kind": "window",
+          "x": 0.883,
+          "y": 0.774,
+          "width": 1.35,
+          "height": 1.474,
+          "frame": 0.065,
+          "sill": 0.035
+        },
+        {
+          "kind": "door",
+          "x": 3.263,
+          "y": 0.235,
+          "width": 1.003,
+          "height": 1.965,
+          "frame": 0.065
+        }
+      ],
+      "storeySpacing": 3.11
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000073661",
+      "wallId": "-440.61,745.96,-435.47,746.51,0.00",
+      "confidence": 0.84,
+      "sources": [
+        {
+          "imageId": "1132753408503199",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.84,
+          "creator": "thewizard"
+        },
+        {
+          "imageId": "959971599317208",
+          "capturedAt": "2024-12-13",
+          "confidence": 0.77,
+          "creator": "thewizard"
+        }
+      ],
+      "wallColor": "#5e4c4c",
+      "openings": [
+        {
+          "kind": "window",
+          "x": 0.55,
+          "y": 3.39,
+          "width": 0.87,
+          "height": 1.48,
+          "frame": 0.079,
+          "sill": 0.095
+        },
+        {
+          "kind": "window",
+          "x": 2.34,
+          "y": 3.29,
+          "width": 0.47,
+          "height": 1.4,
+          "frame": 0.08,
+          "sill": 0.095
+        },
+        {
+          "kind": "window",
+          "x": 0.53,
+          "y": 0.82,
+          "width": 0.82,
+          "height": 1.12,
+          "frame": 0.085,
+          "sill": 0.09
+        }
+      ],
+      "storeySpacing": 2.61
+    }
+  ]
+}

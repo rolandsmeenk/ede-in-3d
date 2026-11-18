@@ -20,7 +20,7 @@ const LIMITS = { maxheight: 'height', maxwidth: 'width', maxweight: 'weight', ma
 // Both line 3 directions use these Braamberg/Valkenberg links beyond the signed PSV section.
 const GTFS_LINE_3_ACCESS = new Set([24744178, 45514435]);
 
-export function roadAccess(id, t, match = {}) {
+export function roadAccess(id, t, match = {}, evidence) {
   const highway = t.highway;
   const busway = highway === 'busway';
   const major = /^(motorway|trunk)(?:_link)?$/.test(highway) || t.motorroad === 'yes';
@@ -29,13 +29,16 @@ export function roadAccess(id, t, match = {}) {
   if (highway === 'service') defaults = MOTOR | BICYCLE | FOOT;
   if (highway === 'track') defaults = BICYCLE | FOOT;
   if (/^(footway|pedestrian|steps|path|bridleway)$/.test(highway)) defaults = FOOT;
-  if (highway === 'cycleway') defaults = BICYCLE | (SIDEWALK.test(t.sidewalk) ? FOOT : 0);
+  if (highway === 'cycleway') defaults = BICYCLE | (SIDEWALK.test(t.sidewalk) ||
+    ['left', 'right', 'both'].some(side => t['sidewalk:' + side] === 'yes') ? FOOT : 0);
+  const confirmedCyclePath = /^(path|footway|track|bridleway)$/.test(highway) && evidence?.kind === 'cycle';
   const localBusOnly = id === 1231194487 || id === 1231194486;
   if (busway || localBusOnly) defaults = BUS;
   const motorDir = t.oneway === '-1' ? -1 : /^(yes|1|true)$/.test(t.oneway) ||
     (!t.oneway && (major && highway.startsWith('motorway') || t.junction === 'roundabout')) ? 1 : 0;
-  const bikeDir = t['oneway:bicycle'] === 'no' || Object.keys(t).some(k => k.startsWith('cycleway') && t[k].startsWith('opposite'))
-    ? 0 : t['oneway:bicycle'] === '-1' ? -1 : t['oneway:bicycle'] === 'yes' ? 1 : motorDir;
+  const bikeDir = t['oneway:bicycle'] === 'no' ? 0 : t['oneway:bicycle'] === '-1' ? -1 : t['oneway:bicycle'] === 'yes' ? 1
+    : Object.keys(t).some(k => k.startsWith('cycleway') && (t[k].startsWith('opposite') ||
+      k.endsWith(':oneway') && (t[k] === 'no' || t[k] === '-1' && motorDir === 1 || t[k] === 'yes' && motorDir === -1))) ? 0 : motorDir;
   const footDir = t['oneway:foot'] === '-1' ? -1 : t['oneway:foot'] === 'yes' ? 1 : 0;
   const busDir = t['oneway:bus'] === 'no' || t['oneway:psv'] === 'no' ? 0
     : t['oneway:bus'] === '-1' ? -1 : t['oneway:bus'] === 'yes' ? 1 : motorDir;
@@ -51,7 +54,7 @@ export function roadAccess(id, t, match = {}) {
       const roadDirection = road && field !== 'vtgngr' && field !== 'fiets'
         && (markedLanes || wkdDirection?.auto === 'N' && wkdDirection?.autobs === 'N'
           && t.highway !== 'residential' && t.highway !== 'living_street');
-      const enabled = explicit ? ALLOW.has(explicit) : (defaults & mode)
+      const enabled = explicit ? ALLOW.has(explicit) : ((defaults & mode) || mode === BICYCLE && confirmedCyclePath && wkdDirection?.fiets === 'J')
         && (busway || localBusOnly || mode === BUS && GTFS_LINE_3_ACCESS.has(id) || roadDirection || wkdDirection?.[field] !== 'N');
       if (enabled) modes[d] |= mode;
     }
@@ -91,12 +94,51 @@ export function roadAccess(id, t, match = {}) {
     sidewalkSides: [t['sidewalk:left'] ?? t['sidewalk:both'], t['sidewalk:right'] ?? t['sidewalk:both']] };
 }
 
-export function readWkd(directory, project) {
-  if (!directory) return () => ({});
-  const read = (name) => {
-    const data = JSON.parse(fs.readFileSync(path.join(directory, name + '.json'), 'utf8'));
-    if (!Array.isArray(data.features) || data.numberMatched > data.features.length) throw new Error('Incomplete WKD ' + name);
-    return data.features;
+// Offsets are measured to the right of the OSM way, independent of direction of travel.
+export function cycleFacilities(tags, modes, roadWidth, evidence, match = {}) {
+  const allowed = modes.map(mode => !!(mode & BICYCLE));
+  if (!allowed.some(Boolean)) return [];
+  const highway = tags.highway;
+  const width = Number(tags.width) || evidence?.width || 2.5;
+  if (highway === 'cycleway' || /^(path|footway|track|bridleway)$/.test(highway) &&
+      (tags.bicycle === 'designated' || /^NL:G1[123]/.test(tags.traffic_sign || '') ||
+        evidence?.kind === 'cycle' && (ALLOW.has(tags.bicycle) || [0, 1].some(d => match[d]?.fiets === 'J'))) ||
+      tags.cycleway === 'crossing' && ALLOW.has(tags.bicycle)) {
+    return [{ offset: 0, width, allowed, kind: 'path' }];
+  }
+
+  const lanes = [];
+  const motorDir = tags.oneway === '-1' ? -1 : /^(yes|1|true)$/.test(tags.oneway) ? 1 : 0;
+  for (const [side, sign] of [['left', -1], ['right', 1]]) {
+    const value = tags['cycleway:' + side] ?? tags['cycleway:both'] ?? tags.cycleway;
+    if (value !== 'lane' && value !== 'track') continue;
+    if (!tags['cycleway:' + side] && !tags['cycleway:both'] && motorDir && sign !== motorDir) continue;
+    const detail = key => tags['cycleway:' + side + ':' + key] ?? tags['cycleway:both:' + key] ?? tags['cycleway:' + key];
+    if (DENY.has(detail('bicycle')) || DENY.has(detail('access'))) continue;
+    if (value === 'lane' && detail('lane') && detail('lane') !== 'exclusive') continue;
+    const direction = detail('oneway');
+    const dir = direction === 'no' ? 0 : direction === '-1' ? -1 : /^(yes|true|1)$/.test(direction) ? 1 : motorDir || sign;
+    const atGrade = (!tags.bridge || tags.bridge === 'no') && (!tags.tunnel || tags.tunnel === 'no')
+      && tags.covered !== 'yes' && !Number(tags.layer);
+    const unspecified = atGrade && value === 'lane' && !direction && !tags.oneway && !tags['oneway:bicycle']
+      && !tags['cycleway:left'] && !tags['cycleway:right'] && !tags['cycleway:both'];
+    const strip = unspecified && !match.cycleStripStale && match.cycleStrip?.some((present, d) => present && allowed[d])
+      ? match.cycleStrip : null;
+    const laneAllowed = allowed.map((yes, d) => yes && (!dir || dir === 1 - 2 * d) && (!strip || strip[d]));
+    if (!laneAllowed.some(Boolean)) continue;
+    const laneWidth = Number(detail('width')) || (value === 'track' ? 2.5 : 1.7);
+    const offset = sign * (roadWidth / 2 + (value === 'track' ? 0.5 + laneWidth / 2 : -laneWidth / 2));
+    lanes.push({ offset, width: laneWidth, allowed: laneAllowed, kind: value });
+  }
+  return lanes;
+}
+
+export function readWkd(directory, project, cycleStripFile, asOf = new Date()) {
+  if (!directory && !cycleStripFile) return () => ({});
+  const read = (source) => {
+    const data = JSON.parse(fs.readFileSync(source, 'utf8'));
+    if (!Array.isArray(data.features) || data.numberMatched > data.features.length) throw new Error('Incomplete WKD ' + source);
+    return data;
   };
   const cell = 32, index = new Map();
   const insert = (features, type) => {
@@ -118,10 +160,16 @@ export function readWkd(directory, project) {
       }
     }
   };
-  insert(read('verkeerstypen'), 'access');
-  insert(read('hoogtebeperkingen'), 'height');
+  if (directory) {
+    insert(read(path.join(directory, 'verkeerstypen.json')).features, 'access');
+    insert(read(path.join(directory, 'hoogtebeperkingen.json')).features, 'height');
+  }
+  const stripSource = cycleStripFile && fs.existsSync(cycleStripFile) ? read(cycleStripFile) : null;
+  const age = +asOf - Date.parse(stripSource?.release);
+  const stripsStale = !(age >= 0 && age <= 366 * 86400000);
+  if (stripSource) insert(stripSource.features, 'strip');
   return (points, tagged) => {
-    const samples = [], heights = [];
+    const samples = [], heights = [], stripSamples = [];
     for (let k = 1; k < points.length; k++) {
       const [ax, az] = points[k - 1], [bx, bz] = points[k];
       const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
@@ -130,6 +178,7 @@ export function readWkd(directory, project) {
       for (let i = 0; i < num; i++) {
         const x = ax + dx * (i + 0.5) / num, z = az + dz * (i + 0.5) / num;
         let closest = null, score = 3.25, other = 4.5;
+        let strip = null, stripScore = 2.25, stripOther = 3.5;
         for (const s of index.get(Math.floor(x / cell) * 100000 + Math.floor(z / cell)) || []) {
           const dot = (dx * s.ux + dz * s.uz) / len;
           if (Math.abs(dot) < 0.86) continue;
@@ -143,6 +192,14 @@ export function readWkd(directory, project) {
             continue;
           }
           const rank = d + (1 - Math.abs(dot)) * 4;
+          if (s.type === 'strip') {
+            if (rank < stripScore) {
+              if (strip && strip.s.properties.wvk_id !== s.properties.wvk_id) stripOther = Math.min(stripOther, stripScore);
+              stripScore = rank;
+              strip = { s, dot };
+            } else if (strip?.s.properties.wvk_id !== s.properties.wvk_id) stripOther = Math.min(stripOther, rank);
+            continue;
+          }
           if (rank < score) {
             if (closest && closest.s.properties.wvk_id !== s.properties.wvk_id) other = score;
             score = rank;
@@ -150,9 +207,19 @@ export function readWkd(directory, project) {
           } else if (closest?.s.properties.wvk_id !== s.properties.wvk_id) other = Math.min(other, rank);
         }
         samples.push(closest && other - score >= 0.8 ? closest : null);
+        if (strip && stripOther - stripScore >= 0.8 && (!samples.at(-1) || closest.s.properties.wvk_id === strip.s.properties.wvk_id)) {
+          const { fts_sug_h: forward, fts_sug_t: reverse } = strip.s.properties;
+          if (['0', '1'].includes(forward) && ['0', '1'].includes(reverse)) {
+            stripSamples.push(strip.dot > 0 ? forward + reverse : reverse + forward);
+          }
+        }
       }
     }
     const result = heights.length ? { height: Math.min(...heights) } : {};
+    if (stripSamples.length >= 2 && stripSamples.length >= samples.length * 0.8 && stripSamples.every(value => value === stripSamples[0])) {
+      result.cycleStrip = [...stripSamples[0]].map(flag => flag === '1');
+      result.cycleStripStale = stripsStale;
+    }
     if (samples.length < 2 || samples.filter(Boolean).length < samples.length * 0.8) return result;
     for (let d = 0; d < 2; d++) {
       result[d] = {};

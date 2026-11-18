@@ -1,5 +1,4 @@
 import * as THREE from 'three/webgpu';
-import { attribute, mx_noise_float, positionWorld, normalWorld, float, smoothstep, fract, step, vertexColor } from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GEO } from './nyc-geodata.js';
@@ -7,6 +6,9 @@ import { BLOCKS } from './city-config.js';
 import { polygonContains } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
 import { getAerialColors, sampleGroundColor, sampleRoofColor } from './aerial-colors.js';
+import { applyBagFacades, loadEdeFacades, meshBagFacadeFeatures, readBagFacadeFeatures } from './ede-facades.js';
+import { buildFacadeMaskAtlas, createBagFacadeMaterial, projectFacadeUv } from './ede-facade-material.js';
+import { buildFacadePhotos } from './ede-facade-photos.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
 // https://3dbag.nl — tiles are glTF with node matrices in ECEF (glTF axes: x = X, y = Z, z = -Y).
@@ -160,7 +162,12 @@ function estimateRoofColor(triangles, positions) {
   return samples[Math.floor((samples.length - 1) * 0.65)];
 }
 
-function colorBagRoofs(geometry, featureIds) {
+function linearColor(hex) {
+  if (typeof hex !== 'string' || !/^#[a-f0-9]{6}$/i.test(hex)) return null;
+  return new THREE.Color(hex).toArray();
+}
+
+function colorBagRoofs(geometry, featureIds, useAerial, facadeFeatures) {
   const { position, buildingHeight } = geometry.attributes;
   const positions = position.array, heights = buildingHeight.array;
   const index = geometry.index;
@@ -188,8 +195,13 @@ function colorBagRoofs(geometry, featureIds) {
   const colors = geometry.attributes.color.array;
   const splits = new Map();
   let roofIndices;
-  for (const triangles of roofs.values()) {
-    const tint = estimateRoofColor(triangles, positions);
+  for (const [id, triangles] of roofs) {
+    const appearances = facadeFeatures?.get(id);
+    const observed = appearances?.reduce((best, wall) => (
+      wall.status === 'observed' && wall.roofColor && (!best || wall.confidence > best.confidence) ? wall : best
+    ), null);
+    const fallback = observed?.roofColor ?? appearances?.find(wall => wall.roofColor)?.roofColor;
+    const tint = (useAerial && estimateRoofColor(triangles, positions)) || linearColor(fallback);
     if (!tint) continue;
     for (const { i, a, b, c } of triangles) {
       const vertices = [a / 3, b / 3, c / 3];
@@ -223,13 +235,14 @@ function colorBagRoofs(geometry, featureIds) {
 }
 
 // Bakes a loaded tile into one engine-space mesh geometry with per-building colour variation.
-export function bakeTile(gltf, matrix) {
+export function bakeTile(gltf, matrix, tables, atlas) {
   const geometries = [];
   const useAerial = getAerialColors();
   if (useAerial) mappedRoofs ??= mappedRoofIndex();
   gltf.scene.updateMatrixWorld(true);
   gltf.scene.traverse((o) => {
     if (!o.isMesh) return;
+    const facadeFeatures = tables && meshBagFacadeFeatures(gltf, o, tables);
     const src = o.geometry;
     const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(full);
@@ -275,44 +288,54 @@ export function bakeTile(gltf, matrix) {
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     g.setAttribute('buildingHeight', new THREE.BufferAttribute(relativeHeights, 1));
     if (src.index) g.setIndex(src.index.array instanceof Uint32Array || count > 65535 ? new THREE.BufferAttribute(Uint32Array.from(src.index.array), 1) : new THREE.BufferAttribute(Uint16Array.from(src.index.array), 1));
-    if (useAerial && fid) g = colorBagRoofs(g, fid);
+    if (fid && (useAerial || facadeFeatures?.size)) g = colorBagRoofs(g, fid, useAerial, facadeFeatures);
+    if (fid && facadeFeatures?.size) {
+      const applied = applyBagFacades(g, fid, facadeFeatures, groundByBuilding, atlas, projectFacadeUv, linearColor);
+      if (applied) g.userData.facades = applied;
+    }
     g.computeBoundingSphere(); g.computeBoundingBox();
     geometries.push(g);
   });
   return geometries;
 }
 
-function createMaterial() {
-  const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.92, metalness: 0 });
-  // Vertex colour with a subtle brightness grain and a window grid on walls.
-  const grain = mx_noise_float(positionWorld.mul(0.7)).mul(0.1).add(0.95);
-  const wall = step(normalWorld.y.abs(), 0.35);
-  const along = positionWorld.x.mul(normalWorld.z.abs()).add(positionWorld.z.mul(normalWorld.x.abs()));
-  const height = attribute('buildingHeight', 'float');
-  const u = fract(along.div(3.1)), v = fract(height.div(3.2));
-  const above = step(2.6, height);
-  const win = smoothstep(0.18, 0.22, u).mul(smoothstep(0.82, 0.78, u)).mul(smoothstep(0.34, 0.38, v)).mul(smoothstep(0.82, 0.78, v));
-  const glass = win.mul(wall).mul(above).mul(0.55);
-  m.colorNode = vertexColor().mul(grain).mul(float(1).sub(glass));
-  return m;
-}
-
 export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fetchJson, loader } = {}) {
   const ecefMatrix = ecefToLocalMatrix();
   const matrix = gltfToLocalMatrix(ecefMatrix);
-  const urls = await selectTiles(ecefMatrix, { fetchJson });
+  const [urls, facades] = await Promise.all([
+    selectTiles(ecefMatrix, { fetchJson }),
+    loadEdeFacades().catch(error => {
+      console.warn('[facades] using procedural walls:', error.message);
+      return null;
+    }),
+  ]);
   if (!urls.length) throw new Error('no 3D BAG tiles overlap the city');
   const gltfLoader = loader || new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const group = new THREE.Group();
   group.name = 'bag3d-buildings';
-  const material = createMaterial();
+  const material = createBagFacadeMaterial();
+  const atlas = facades && buildFacadeMaskAtlas(facades.walls);
+  const detailedMaterial = atlas && createBagFacadeMaterial(atlas.texture);
+  const matched = new Set(), panels = [];
+  let recesses = 0;
   let next = 0, done = 0;
   const worker = async () => {
     while (next < urls.length) {
       const url = urls[next++];
       const gltf = await gltfLoader.loadAsync(url);
-      for (const g of bakeTile(gltf, matrix)) {
-        const mesh = new THREE.Mesh(g, material);
+      const features = atlas && await readBagFacadeFeatures(gltf, facades.byId).catch(error => {
+        console.warn('[facades] BAG feature IDs unavailable:', error.message);
+        return null;
+      });
+      for (const g of bakeTile(gltf, matrix, features, atlas)) {
+        const detail = g.userData.facades;
+        if (detail) {
+          for (const wall of detail.matched) matched.add(wall);
+          panels.push(...detail.panels);
+          recesses += detail.recesses;
+          delete g.userData.facades;
+        }
+        const mesh = new THREE.Mesh(g, detail ? detailedMaterial : material);
         mesh.castShadow = mesh.receiveShadow = true;
         group.add(mesh);
       }
@@ -321,6 +344,9 @@ export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fet
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, urls.length) }, worker));
   scene.add(group);
-  group.userData = { city: 'Ede', source: '3D BAG LoD 2.2', tiles: urls.length };
+  group.userData = { city: 'Ede', source: '3D BAG LoD 2.2', tiles: urls.length,
+    facades: { walls: matched.size, observed: [...matched].filter(wall => wall.status === 'observed').length,
+      recesses, maskTextureBytes: atlas?.byteLength ?? 0 },
+    facadePhotos: buildFacadePhotos(group, panels) };
   return group;
 }

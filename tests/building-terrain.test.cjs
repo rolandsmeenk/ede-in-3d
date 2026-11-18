@@ -50,6 +50,9 @@ function loadBag({ blocks = [], aerial = {} } = {}) {
       './city-config.js': { BLOCKS: blocks },
       './building-collision.js': loadModule(read('building-collision.js')),
       './terrain.js': { terrainHeightAt: (x) => 10 + x / 2 },
+      './ede-facades.js': {},
+      './ede-facade-material.js': {},
+      './ede-facade-photos.js': {},
       './aerial-colors.js': { getAerialColors: () => false, ...aerial }
     }
   });

@@ -1,4 +1,5 @@
 import { GEO } from './nyc-geodata.js';
+import { FOOT } from './road-access.js';
 
 // Ede spatial adapter for mrdoob/slop-newyork's engine, via an irregular-city data path.
 // Legacy export names are retained as API aliases; all visible geography is Ede.
@@ -110,7 +111,7 @@ function roadCrossesWater(x, z, anyRoad = false) {
 // Spatial index of the blocks (64 m cells)
 const BLOCK_CELL = 64;
 const BLOCK_GRID = new Map();
-for (const b of BLOCKS) {
+for (const b of [...BLOCKS, ...(EDE_DATA.squares || []).map((b) => ({ ...makeBlock(b, b.id), sidewalk: true }))]) {
   for (let ix = Math.floor(b.minX / BLOCK_CELL); ix <= Math.floor(b.maxX / BLOCK_CELL); ix++) {
     for (let iz = Math.floor(b.minZ / BLOCK_CELL); iz <= Math.floor(b.maxZ / BLOCK_CELL); iz++) {
       const k = ix * 100000 + iz;
@@ -136,14 +137,39 @@ function blockAt(x, z) {
   }
   return sidewalkAt(x,z);
 }
-function sidewalkAt(x,z){
-  if(waterAt(x,z)&&!nearestRoads(x,z,24).some(q=>q.road.bridge&&q.dist<q.road.w/2+3))return null;
-  for(const q of nearestRoads(x,z,24)){
-    const r=q.road, pedestrian=['footway','pedestrian','path','cycleway','steps'].includes(r.kind);
-    if((pedestrian&&q.dist<=r.w/2)||(!pedestrian&&q.dist>=r.w/2-.4&&q.dist<=r.w/2+5.5))return {id:'sidewalk:'+r.id,sidewalk:true,park:0,median:false,cx:x,cz:z,district:districtAt(x,z)};
+const SIDEWALKS = new Map();
+function sidewalkAt(x, z) {
+  if (waterAt(x, z) && !roadCrossesWater(x, z)) return null;
+  const radius = 24;
+  let best = null, bestDistance = Infinity, bestSide = 0;
+  for (let cx = Math.floor((x - radius) / ROAD_CELL); cx <= Math.floor((x + radius) / ROAD_CELL); cx++) {
+    for (let cz = Math.floor((z - radius) / ROAD_CELL); cz <= Math.floor((z + radius) / ROAD_CELL); cz++) {
+      for (const s of ROAD_GRID.get(cx * 100000 + cz) || []) {
+        const r = s.r, dx = s.bx - s.ax, dz = s.bz - s.az;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.05) continue;
+        const at = Math.min(len, Math.max(0, ((x - s.ax) * dx + (z - s.az) * dz) / len));
+        const distance = Math.hypot(x - s.ax - at * dx / len, z - s.az - at * dz / len);
+        if (r.kind === 'cycleway' && !r.modes?.some(mask => mask & FOOT)) continue;
+        const pedestrian = ['footway', 'pedestrian', 'path', 'steps', 'cycleway'].includes(r.kind);
+        const half = (r.bgt?.width ?? r.w) / 2;
+        const matches = pedestrian ? distance <= half : distance >= half - 0.4 && distance <= half + 5.5;
+        if (!matches || distance >= bestDistance) continue;
+        bestDistance = distance;
+        best = r;
+        bestSide = pedestrian ? 0 : Math.sign(dx * (z - s.az) - dz * (x - s.ax));
+      }
+    }
   }
-  return null;
+  if (!best) return null;
+  const id = 'sidewalk:' + best.id + ':' + bestSide;
+  if (!SIDEWALKS.has(id)) SIDEWALKS.set(id, {
+    id, sidewalk: true, park: 0, median: false, poly: best.pts, holes: [], rects: [], rect: false,
+    cx: best.pts[0].x, cz: best.pts[0].z, district: districtAt(x, z)
+  });
+  return SIDEWALKS.get(id);
 }
+
 
 
 const WATER_POLYGONS=EDE_DATA.water.map(w=>{const poly=toPts(w.ring);return {...w,poly,inner:(w.holes||[]).map(toPts),minX:Math.min(...poly.map(p=>p.x)),maxX:Math.max(...poly.map(p=>p.x)),minZ:Math.min(...poly.map(p=>p.z)),maxZ:Math.max(...poly.map(p=>p.z))};});

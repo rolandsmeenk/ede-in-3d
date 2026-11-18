@@ -28,6 +28,7 @@ import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeight
 import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
+import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js';
 import { buildEdeBusStops } from './ede-bus-stops.js';
 
 // js/main.js
@@ -96,8 +97,8 @@ async function initApp() {
   markInit('lighting');
 
   await showLoadingStage('Loading Ede’s map and bus timetable…');
-  const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult] = await Promise.allSettled([
-    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade()
+  const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult] = await Promise.allSettled([
+    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(), loadEdePostedSpeeds()
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -112,6 +113,7 @@ async function initApp() {
   if (busResult.status === 'fulfilled') busSchedule = busResult.value;
   else console.warn('[buses] timetable unavailable:', busResult.reason);
   if (gradeResult.status === 'rejected') console.warn('[grade] using AHN surface heights:', gradeResult.reason);
+  const roadTraffic = createEdeRoadTraffic(speedResult.status === 'fulfilled' ? speedResult.value : undefined);
   markInit('map assets and bus timetable');
 
   // 3. Build the city, buildings, street details and traffic
@@ -171,8 +173,10 @@ async function initApp() {
   const trafficSystem = createTrafficSystem(scene, cityGrid.sidewalks, [
     ...cityGrid.footprints,
     ...streetDetails.footprints,
-    ...allColliders.filter((c) => !c.obb && !c.kind && (c.minY ?? 0) < 3.5)
-  ], streetDetails.signalIntersections, busSchedule);
+    ...allColliders.filter((c) => !c.obb && !c.kind && (c.minY ?? 0) < 3.5),
+    ...allColliders.filter(c => c.obb && !c.kind && (c.minY ?? 0) < 2).map(c => ({ ...c, pedestrianOnly: true }))
+  ], streetDetails.signalIntersections, busSchedule, roadTraffic);
+  watchEdeTraffic(roadTraffic);
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
   await showLoadingStage('Adding road markings...');
@@ -787,6 +791,7 @@ async function initApp() {
     gamepadControls.update(dt);
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
     cameraSystem.update(dt, elapsed);
+    bagBuildings?.userData.facadePhotos?.update(cameraSystem.currentPos);
     streetDetails.signalClock.value = elapsed;
     trafficSystem.update(
       dt,

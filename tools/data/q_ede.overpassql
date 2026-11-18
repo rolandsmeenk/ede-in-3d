@@ -16,6 +16,6 @@
   wr["place"="square"];
   relation["highway"="pedestrian"]["area"="yes"];
   node["natural"="tree"];
-  node["highway"="traffic_signals"];
+  node["highway"~"^(traffic_signals|crossing|give_way|stop)$"];
 );
 out geom;

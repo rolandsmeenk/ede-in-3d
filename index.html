@@ -6,15 +6,14 @@
   <title>Slop Ede</title>
   <link rel="icon" href="data:," />
   <meta name="description" content="Explore Ede in 3D on foot, by car, bicycle, cargo bike, or helicopter." />
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <!-- three.js dev branch pinned to a commit (builds committed to mrdoob/three.js@dev, served by jsDelivr) -->
+  <!-- Pinned Three.js runtime is served locally for offline play. -->
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/gh/mrdoob/three.js@b3396270682287470d161658ac01084d25e8dba6/build/three.webgpu.js",
-        "three/webgpu": "https://cdn.jsdelivr.net/gh/mrdoob/three.js@b3396270682287470d161658ac01084d25e8dba6/build/three.webgpu.js",
-        "three/tsl": "https://cdn.jsdelivr.net/gh/mrdoob/three.js@b3396270682287470d161658ac01084d25e8dba6/build/three.tsl.js",
-        "three/addons/": "https://cdn.jsdelivr.net/gh/mrdoob/three.js@b3396270682287470d161658ac01084d25e8dba6/examples/jsm/"
+        "three": "./vendor/three/build/three.webgpu.js",
+        "three/webgpu": "./vendor/three/build/three.webgpu.js",
+        "three/tsl": "./vendor/three/build/three.tsl.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
       }
     }
   </script>
@@ -59,6 +58,8 @@
   <link rel="modulepreload" href="./js/ede-active-travel.js" />
   <link rel="modulepreload" href="./js/road-paint.js" />
   <link rel="modulepreload" href="./js/traffic.js" />
+  <link rel="modulepreload" href="./js/traffic-area.js" />
+  <link rel="modulepreload" href="./js/ede-road-traffic.js" />
   <link rel="modulepreload" href="./js/pedestrian-system.js" />
   <link rel="modulepreload" href="./js/pedestrian-routes.js" />
   <link rel="modulepreload" href="./js/controllers.js" />
@@ -74,8 +75,11 @@
   <link rel="modulepreload" href="./js/audio-acoustics.js" />
   <link rel="modulepreload" href="./js/audio-system.js" />
   <link rel="modulepreload" href="./js/bag3d.js" />
-  <link rel="modulepreload" href="./js/main.js?v=20261118-lighting-menu" />
-  <script type="module" src="./js/main.js?v=20261118-lighting-menu"></script>
+  <link rel="modulepreload" href="./js/ede-facades.js" />
+  <link rel="modulepreload" href="./js/ede-facade-material.js" />
+  <link rel="modulepreload" href="./js/ede-facade-photos.js" />
+  <link rel="modulepreload" href="./js/main.js?v=20261119-traffic" />
+  <script type="module" src="./js/main.js?v=20261119-traffic"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -133,6 +137,8 @@
     <a href="https://docs.3dbag.nl/en/copyright/" target="_blank" rel="noopener noreferrer">© 3DBAG by tudelft3d and 3DGI</a>
     <a href="https://www.ahn.nl/dataroom" target="_blank" rel="noopener noreferrer">Terrain © AHN via PDOK</a>
     <a href="https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566" target="_blank" rel="noopener noreferrer">2025 aerial imagery © Beeldmateriaal.nl via PDOK</a>
+    <a href="https://www.mapillary.com/" target="_blank" rel="noopener noreferrer">Façade imagery via Mapillary</a>
+    <a href="./assets/ede-facade-pilot.LICENSE.md" target="_blank" rel="noopener noreferrer">Façade photo credits</a>
     <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html" target="_blank" rel="noopener noreferrer">BGT lamp posts via PDOK</a>
     <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/vegetatieobject_punt?f=html" target="_blank" rel="noopener noreferrer">BGT trees via PDOK</a>
     <a href="https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f" target="_blank" rel="noopener noreferrer">Tree inventory by Gemeente Ede</a>

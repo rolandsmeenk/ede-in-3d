@@ -22,6 +22,7 @@ function crossing() {
   const system = createPedestrianSystem({ nodes: [node] }, {
     player: { active: false }, nearEdges: [], nearSignals: [],
     mayCross: () => state.walk && state.clear,
+    mayCrossMapped: () => state.walk && state.clear, mappedGround: () => 0,
     walkOn: () => state.walk, visible: () => false, nearView: () => false
   });
   const people = system.peds.slice(0, 2);
@@ -96,4 +97,21 @@ test('pedestrians already crossing continue when WALK ends', () => {
   for (const p of people) { p.t = 3; p.z = 3; p.v = p.speed; }
   advance(0.2);
   assert.ok(people.every((p) => p.t > 3 && !p.waiting));
+});
+
+test('walkers stop before an Ede mapped crossing and complete it after the signal changes', () => {
+  const { people, state, advance } = crossing();
+  for (const p of people) {
+    p.t = p.z = 0;
+    p.route = { mapped: true, crossing: { control: 'signal' } };
+  }
+  advance(0.2);
+  assert.ok(people.every(p => p.t === 0 && p.waiting));
+  state.walk = true;
+  advance(1.5);
+  assert.ok(people.every(p => p.t > 0 && !p.waiting));
+  const previous = people.map(p => p.t);
+  state.walk = false;
+  advance(0.5);
+  assert.ok(people.every((p, i) => p.t > previous[i]));
 });
