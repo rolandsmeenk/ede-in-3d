@@ -72,6 +72,41 @@ function blendAerialSurfaceColor(base, amount) {
   return base.mul(aerial.a.mul(amount).oneMinus()).add(aerial.rgb.mul(amount));
 }
 
+function sampleEdeLandCover({ texture: mask, palette, minX, minZ, sizeX, sizeZ }) {
+  const uv = positionWorld.xz.sub(vec2(minX, minZ)).div(vec2(sizeX, sizeZ));
+  const texels = vec2(mask.image.width, mask.image.height);
+  const cell = uv.mul(texels).sub(0.5);
+  const corner = floor(cell).add(0.5);
+  const part = smoothstep(0.08, 0.92, fract(cell));
+  const sum = part.x.add(part.y);
+  const upper = step(1, sum);
+
+  // Interpolate palette colors over the two triangles between four cell centers. Class IDs are categorical.
+  const shade = sample => {
+    const point = sample.div(texels);
+    const inBounds = step(0, point.x).mul(step(0, point.y)).mul(step(point.x, 0.999999)).mul(step(point.y, 0.999999));
+    const index = texture(mask, point).r.mul(255);
+    const entry = texture(palette, vec2(index.add(0.5).div(6), 0.5));
+    const coverage = entry.a.mul(inBounds);
+    return vec4(entry.rgb.mul(coverage), coverage);
+  };
+  return shade(corner.add(vec2(upper))).mul(sum.sub(1).abs())
+    .add(shade(corner.add(vec2(1, 0))).mul(mix(part.x, part.y.oneMinus(), upper)))
+    .add(shade(corner.add(vec2(0, 1))).mul(mix(part.y, part.x.oneMinus(), upper)));
+}
+
+function createEdeGroundMaterial(aerial, landCover) {
+  const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.93 });
+  mat.colorNode = Fn(() => {
+    const mapped = sampleEdeLandCover(landCover);
+    const base = color(0xa7a197).mul(mapped.a.oneMinus()).add(mapped.rgb);
+    const ground = aerial ? blendAerialSurfaceColor(base, mix(0.85, 0.42, mapped.a)) : base;
+    const variation = noise2D(positionWorld.xz.mul(0.7)).mul(0.14).add(0.93);
+    return ground.mul(variation).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
+  })();
+  return mat;
+}
+
 // Shared live uniforms controlled by lighting / time-of-day presets
 const cityUniforms = {
   uSunColor: uniform(new THREE.Color(0xffca92)),
@@ -2823,7 +2858,7 @@ function createWaterMaterial() {
 /**
  * Central Park & Manhattan Park Lush Multi-Octave Turf, Clover & Mowing Stripes TSL Material
  */
-function createParkLawnMaterial(isMeadow = false, aerial = false) {
+function createParkLawnMaterial(isMeadow = false, aerial = false, landCover = null) {
   const mat = new THREE.MeshStandardNodeMaterial({
     metalness: 0.0,
     roughness: 0.86
@@ -2845,8 +2880,11 @@ function createParkLawnMaterial(isMeadow = false, aerial = false) {
       cGrassMid,
       macroPatch.mul(0.45).add(midClover.mul(0.35)).add(mowStripe.mul(0.20))
     );
-    const lawn = aerial ? blendAerialSurfaceColor(baseLawn, 0.65) : baseLawn;
-    return mix(lawn, cGrassSun, microBlade.mul(0.38));
+    const mapped = landCover && sampleEdeLandCover(landCover);
+    const base = mapped ? baseLawn.mul(mapped.a.oneMinus()).add(mapped.rgb) : baseLawn;
+    const lawn = aerial ? blendAerialSurfaceColor(base, mapped ? mix(0.65, 0.42, mapped.a) : 0.65) : base;
+    const blades = mapped ? mix(0.38, 0.12, mapped.a) : 0.38;
+    return mix(lawn, cGrassSun, microBlade.mul(blades));
   })();
 
   mat.normalNode = Fn(() => {
@@ -2968,6 +3006,7 @@ function createCarFlareMaterial() {
 }
 
 export {
+  createEdeGroundMaterial,
   cityUniforms,
   WALL_KINDS,
   bumpNormal,

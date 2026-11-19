@@ -230,9 +230,12 @@ test('mouse hover and zoom buttons remain available without a pan', () => {
 });
 
 test('the Ede road graph connects both railway stations', async () => {
-  const { TELEPORT_LOCATIONS } = await import('../js/city-config.js');
+  const { TELEPORT_LOCATIONS, waterAt, roadCrossesWater } = await import('../js/city-config.js');
   const { GEO } = await import('../js/nyc-geodata.js');
-  const { getEdeMapRoute } = loadModule(source, { imports: { ...mapImports, './nyc-geodata.js': { GEO } } });
+  const { getEdeMapRoute } = loadModule(source, { imports: {
+    ...mapImports, './nyc-geodata.js': { GEO },
+    './city-config.js': { ...mapImports['./city-config.js'], waterAt, roadCrossesWater }
+  } });
   const { edecentrum: start, edewageningen: end } = TELEPORT_LOCATIONS;
   const route = getEdeMapRoute(start.x, start.z, end.x, end.z);
   assert.ok(route.length > 10, 'route follows mapped roads between the stations');
@@ -266,4 +269,22 @@ test('the map includes mapped roads in the outer Ede districts', async () => {
     const { labelPoint: [x, z] } = EDE_DATA.meta.areas.find(area => area.name === district);
     assert.ok(nearestRoads(x, z, 200).some(q => q.road.name === road), `${district} includes ${road}`);
   }
+});
+
+test('atlas GPS connections stop at open water and can reach a mapped bridge', () => {
+  const GEO = {
+    city: 'Ede',
+    roadGraph: { nodes: [2, 0, 8, 0], links: [[0, 1, '', 6, '', 1, []]] }
+  };
+  let crossing = false;
+  const { getEdeMapRoute } = loadModule(source, { imports: {
+    ...mapImports, './nyc-geodata.js': { GEO },
+    './city-config.js': { ...mapImports['./city-config.js'],
+      waterAt: x => x >= 0 && x <= 1, roadCrossesWater: () => crossing }
+  } });
+  const xs = (...positions) => Array.from(getEdeMapRoute(...positions), point => point.x);
+  assert.deepEqual(xs(-4, 0, 9, 0), [2, 8, 9]);
+  assert.deepEqual(xs(9, 0, -4, 0), []);
+  crossing = true;
+  assert.deepEqual(xs(-4, 0, 9, 0), [-4, 2, 8, 9]);
 });

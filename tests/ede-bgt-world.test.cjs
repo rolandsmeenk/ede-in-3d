@@ -50,3 +50,23 @@ test('BGT extract includes the stations, A30 crossing and both Maanderbroek turb
   assert.ok(has('turbine', 'G0228.9ba9e32d35094eeab81f12181b239d34'));
   assert.ok(has('turbine', 'G0228.167bfd43079b48c4a282a745ffa86a7a'));
 });
+
+
+test('a rail-only deck with sparse rail hits stays above its cut approaches', () => {
+  const { loadModule } = require('./helpers/module.cjs');
+  const { pathToFileURL } = require('node:url');
+  const filename = join(__dirname, '../js/ede-bgt-world.js');
+  const source = readFileSync(filename, 'utf8')
+    .replaceAll('import.meta.url', JSON.stringify(pathToFileURL(filename).href))
+    .replaceAll('export async function', 'async function') + '\nexport { makeDeckProfile };';
+  const { makeDeckProfile } = loadModule(source, { filename, imports: {
+    'three/webgpu': {}, './ede-geometry.js': {}, './terrain.js': { terrainHeightAt: () => 16.5 }
+  } });
+  const feature = { axis: [0, 0, 80, 0] };
+  const rail = (x, z, kind) => kind === 'rail-deck' && z === 0 && x >= 30 && x <= 40 ? 21.1 : undefined;
+  const surface = makeDeckProfile(feature, rail);
+  for (const x of [0, 30, 35, 40, 80]) assert.ok(Math.abs(surface(x, 7) - 20.96) < 1e-9);
+
+  const road = makeDeckProfile(feature, (x, z, kind) => kind === 'road-deck' ? 27.1 : rail(x, z, kind));
+  assert.ok(Math.abs(road(0, 7) - 26.96) < 1e-9);
+});

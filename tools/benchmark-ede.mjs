@@ -13,7 +13,16 @@ const suite = process.env.EDE_BENCH_SCENARIOS || 'standard';
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = suite === 'motorway' ? [
+const shots = suite === 'town-detail' ? [
+  { name: 'Oude Kerkplein walk', travel: ['person', -37, 20.02, 1.214] },
+  { name: 'Victoriavijver bank walk', travel: ['person', -1553.7, 697.58, 3.025] },
+  { name: 'Kolkakkerweg cycle', travel: ['cyclist', -893, 863.2, 1.736] },
+  { name: 'Polar Bearsplein walk', travel: ['person', 186.5, 2164, -0.256] },
+  { name: 'Albertstunnel cycle', way: 'w25098905', travel: ['cyclist', 98.17, 2041.51, -0.084] },
+  { name: 'Albertstunnel drive', travel: ['car', 104.1, 2042, -0.09, -6.69] },
+  { name: 'Sysseltsepad bridge cycle', way: 'w1115504037', travel: ['cyclist', 772.46, 2219.37, 0.25] },
+  { name: 'A30 Maanderbroek drive', travel: ['car', -4173.75, 2155, -0.04, -7.35] },
+] : suite === 'motorway' ? [
   { name: 'Maanderbroek A12 east', way: 'w750476158', from: [-4256, 2.4, 2138], to: [-4216, 2.4, 2164], look: [-4137, 2, 2216] },
   { name: 'Maanderbroek A12 west', way: 'w493246904', from: [-3976, 2.4, 2303], to: [-4016, 2.4, 2278], look: [-4122, 2, 2209] },
   { name: 'De Poortwachter upper north', way: 'w6921137', from: [-1397, 2.2, 3534], to: [-1402, 2.2, 3503], look: [-1409, 2, 3452] },
@@ -109,9 +118,10 @@ function sampleShot(shot, frames) {
     const from = shot.from && ground(shot.from), to = shot.to && ground(shot.to), look = shot.look && ground(shot.look);
     app.time(shot.time || 'midday');
     if (shot.travel) {
-      const [mode, ...destination] = shot.travel;
+      const [mode, x, z, heading, height] = shot.travel;
+      const deck = shot.way && gradeWayAt(shot.way, x, z, 4);
       app.mode(mode);
-      controller.teleportActiveTo(...destination);
+      controller.teleportActiveTo(x, z, heading, height ?? deck?.y);
       app.cameraSystem.resetForTeleport();
       app.camera('chase');
     } else app.setCamera(...from, ...look);
@@ -199,7 +209,9 @@ async function run(search, cache) {
 try {
   await send('Runtime.enable');
   await send('Page.enable');
+  await send('Page.bringToFront');
   await send('Network.enable');
+  await send('Network.setCacheDisabled', { cacheDisabled: false });
   await send('Network.setBlockedURLs', { urls: ['https://fonts.googleapis.com/*', 'https://fonts.gstatic.com/*'] });
   await send('Emulation.setDeviceMetricsOverride', viewport);
   const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {

@@ -171,7 +171,6 @@ const { buildRoadPaint, createRoadPaintChunkBuilder } = loadModule(roadPaintSrc,
   filename: 'road-paint.js',
   imports: {
     'three/webgpu': THREE,
-    './road-network.js': { CROSSWALK: 3.8 },
     './tsl-materials.js': { createRoadPaintMaterial: () => sharedMat }
   }
 });
@@ -208,7 +207,7 @@ test('surveyed motorway paint replaces only the overlapping divider on its own w
     dx: 1, dz: 0, rx: 0, rz: 1, len: 20, span: 20, half: 4, laneDefinition, wayId: 'upper' };
   const lower = { ...edge, from: { id: 2, shape: true }, to: { id: 3, shape: true }, wayId: 'lower' };
   const mark = { wayId: 'upper', points: [[4, 0.2], [10, 0.2]], width: 0.2, period: 8, duty: 0.3 };
-  buildRoadPaint(new Scene(), { paintEdges: [edge, lower] }, builder, undefined, undefined, { surveyed: [mark] });
+  buildRoadPaint(new Scene(), { paintEdges: [edge, lower] }, builder, undefined, { surveyed: [mark] });
   assert.deepEqual(strips.filter(s => s[12] === edge && s[2] === 0).map(s => [s[0], s[3]]), [[0, 4], [10, 20]]);
   assert.deepEqual(strips.filter(s => s[12] === lower && s[2] === 0).map(s => [s[0], s[3]]), [[0, 20]]);
   assert.equal(strips.filter(s => s[12] === mark)[0][8], 8);
@@ -249,7 +248,10 @@ test('buildRoadPaint chunks markings into compact spatial cells with shared pipe
   assert.equal(c0.userData.sharesPipelineWith, undefined, 'first chunk owns the pipeline');
   assert.equal(c1.userData.sharesPipelineWith, c0, 'subsequent chunks share first chunk pipeline');
   assert.ok(c0.geometry.index.isUint16, 'compact chunks use 16-bit index buffers');
-  assert.ok(c0.geometry.boundingSphere.radius > 80 + 16, 'boundingSphere includes screen-space widen padding');
+  const paddedRadius = c0.geometry.boundingSphere.radius;
+  c0.geometry.computeBoundingSphere();
+  assert.equal(paddedRadius, c0.geometry.boundingSphere.radius + 16, 'bounds include screen-space widen padding');
+  c0.geometry.boundingSphere.radius = paddedRadius;
 
   // Verify scene-culling hides distant road-paint chunks and keeps nearby ones visible
   setupSceneCulling(scene, [group], null);
@@ -297,7 +299,7 @@ test('createRoadPaintChunkBuilder subdivides long strips across cells with conti
   }
 });
 
-test('surveyed zebra replaces intersecting stripes while the other approach and stop bar stay painted', () => {
+test('an ordinary junction keeps its stop bar and has no zebra with no crossing asset', () => {
   const edge = { from: { id: 1 }, to: { id: 2 }, x0: 0, z0: 0, sx: 0, sz: 0,
     dx: 1, dz: 0, rx: 0, rz: 1, len: 20, span: 20, half: 3, lanes: [0] };
   const painted = [];
@@ -305,10 +307,10 @@ test('surveyed zebra replaces intersecting stripes while the other approach and 
     strip3D(x, ay, z, bx, by, bz, width, color, period) { painted.push({ x, width, period }); },
     build: () => new Group()
   };
-  buildRoadPaint(new Scene(), { edges: [edge] }, builder, undefined, (x, z, reference) => x < 0 && reference === edge);
-  assert.deepEqual(painted.map(p => p.period), [1, 1.2]);
+  buildRoadPaint(new Scene(), { edges: [edge] }, builder);
+  assert.deepEqual(painted.map(p => p.period), [1]);
   assert.equal(painted[0].width, 0.45);
-  assert.ok(painted[1].x > edge.len);
+  assert.equal(painted[0].x, edge.len - 0.35);
 });
 
 test('createRoadPaintMaterial caches one material, gates dry/distant noise, and fades smoothly before cull distance', () => {

@@ -1,5 +1,4 @@
 import * as THREE from 'three/webgpu';
-import { CROSSWALK } from './road-network.js';
 import { createRoadPaintMaterial } from './tsl-materials.js';
 
 // Road markings follow the lane layout and stop lines supplied by the road network.
@@ -104,7 +103,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
   return { strip3D, build };
 }
 
-function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replacesZebra, { surveyed = [], preserveGBuffer } = {}) {
+function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { surveyed = [], preserveGBuffer } = {}) {
   const builder = sharedBuilder || createRoadPaintChunkBuilder('RoadMarkings', { heightAt, preserveGBuffer });
   const lines = [];
   const bends = new Map();
@@ -280,13 +279,6 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replaces
       const left = physical ? physical[0].offset - physical[0].width / 2 : back ? Math.max(0, f.lanes[0] - 1.8) : -f.half;
       const right = physical ? physical.at(-1).offset + physical.at(-1).width / 2 : f.half;
       if (right - left > 0.2) across(f, f.len - 0.35, left + 0.1, right - 0.1, 0.45, WHITE);
-    }
-
-    // Continental crosswalks curb to curb, between the stop lines and the intersections at both ends
-    for (const [node, s] of [[e.from, -CROSSWALK / 2], [e.to, e.len + CROSSWALK / 2]]) {
-      if (!node.shape && !definition?.fast && !e.boundary && !e.underpass && !e.busOnly && !replacesZebra?.(...at(e, s, 0), e)) {
-        across(e, s, -e.half, e.half, CROSSWALK - 0.3, WHITE, 1.2, 0.5);
-      }
     }
 
     for (const [end, node] of [[0, e.from], [1, e.to]]) {

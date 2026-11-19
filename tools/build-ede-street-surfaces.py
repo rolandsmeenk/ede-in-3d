@@ -35,6 +35,7 @@ BUMP_PROFILES = {
     'table': ('table', 7, 0.08), 'cushion': ('cushion', 2.5, 0.07),
 }
 MOTOR = 7
+ZEBRA_MARKINGS = {'zebra', 'zebra:double', 'zebra:paired', 'zebra:bicolour'}
 
 
 def pair(point, marks=2):
@@ -325,11 +326,72 @@ def osm_bumps(map_, rows, result, geometry, omitted):
                                 candidateWayIds=sorted(item['id'] for item in candidates), estimated=True, sources=[source]))
 
 
-def crossing_tags(tags):
-    signal = tags.get('crossing:signals') == 'yes' or tags.get('crossing') == 'traffic_signals'
-    marking = tags.get('crossing:markings')
-    zebra = bool(marking and marking.startswith('zebra')) or tags.get('crossing') == 'zebra'
-    return signal, zebra, marking
+def marking_tokens(value):
+    return {token.strip() for token in (value or '').split(';') if token.strip()}
+
+
+def apply_crossing_marking(crossing):
+    """Resolve paint for one carriageway independently of its crossing control."""
+    sources = crossing['sources']
+    crossing.pop('markingEvidence', None)
+    crossing.pop('markingReview', None)
+    crossing.pop('markingColour', None)
+    reviewed = next((s for s in sources if s['source'] == 'pdok'), None)
+    if reviewed:
+        marking = reviewed['markings']
+        crossing.update(markings=marking, marked=bool(marking_tokens(marking) & ZEBRA_MARKINGS),
+                        markingEvidence='pdok')
+        if reviewed.get('markingColour'):
+            crossing['markingColour'] = reviewed['markingColour']
+        return
+
+    vop = any(s['source'] == 'vop' for s in sources)
+    osm = [s for s in sources if s['source'] == 'osm']
+    reported = {s['markings'].strip() for s in osm if s.get('markings')}
+    if any(s.get('crossing') == 'zebra' for s in osm):
+        reported.add('zebra')
+    if any(s.get('crossing') == 'unmarked' for s in osm):
+        reported.add('no')
+    zebra = [tokens for value in reported if (tokens := marking_tokens(value)) & ZEBRA_MARKINGS]
+    other = sorted(value for value in reported - {'yes'} if not marking_tokens(value) & ZEBRA_MARKINGS)
+    if (vop or zebra) and (other or any('no' in tokens for tokens in zebra)):
+        crossing.update(markings=other[0] if len(other) == 1 else None, marked=False,
+                        markingReview='conflicting-markings')
+        return
+    if vop or zebra:
+        styles = set().union(*zebra)
+        variants = sorted((styles & ZEBRA_MARKINGS) - {'zebra'})
+        if len(variants) > 1:
+            crossing.update(markings=None, marked=False, markingReview='conflicting-markings')
+            return
+        marking = ';'.join([variants[0] if variants else 'zebra', *sorted(styles - ZEBRA_MARKINGS - {'yes'})])
+        crossing.update(markings=marking, marked=True, markingEvidence='vop' if vop else 'osm')
+    else:
+        crossing.update(markings=other[0] if len(other) == 1 else 'yes' if reported == {'yes'} else None, marked=False)
+        if len(other) > 1:
+            crossing['markingReview'] = 'conflicting-markings'
+    colours = {s['markingColour'] for s in osm if s.get('markingColour')
+               and marking_tokens(s.get('markings')) & marking_tokens(crossing['markings'])}
+    if len(colours) == 1:
+        crossing['markingColour'] = colours.pop()
+
+
+def marking_reviews(crossings, reviews):
+    by_id = {c['id']: c for c in crossings}
+    for identity, review in reviews.items():
+        required = ('markings', 'imagery', 'date', 'note')
+        if (identity not in by_id or not isinstance(review, dict)
+                or any(not isinstance(review.get(k), str) or not review[k].strip() for k in required)
+                or not review['imagery'].startswith('https://')):
+            raise ValueError(f'Invalid crossing marking review: {identity}')
+        crossing = by_id[identity]
+        source = {'source': 'pdok', 'id': identity, **{k: review[k] for k in required}}
+        if 'markingColour' in review:
+            if not isinstance(review['markingColour'], str) or not review['markingColour'].strip():
+                raise ValueError(f'Invalid crossing marking colour: {identity}')
+            source['markingColour'] = review['markingColour']
+        crossing['sources'].append(source)
+        apply_crossing_marking(crossing)
 
 
 def band_axis(polygon, direction):
@@ -373,7 +435,8 @@ def ndw_crossings(map_, rows, omitted):
         ends = [pair(advance(center_coords, axis, length)) for length in across]
         result.append(road_pose(road, center, (axis[1], -axis[0]), width, length, id='ndw-vop-' + key,
                                 candidateWayIds=tied_ways(plausible, road), marked=True, markings='zebra',
-                                control='zebra', ends=ends, osmNodeIds=[], pathWayIds=[], refuge=False,
+                                markingEvidence='vop',
+                                control='uncontrolled', ends=ends, osmNodeIds=[], pathWayIds=[], refuge=False,
                                 widthSource='ndw-polygon', lengthSource='ndw-polygon', footprint=footprint(polygon),
                                 sources=[{'source': 'vop', 'id': key, 'featureId': identity, 'nwbWayId': wvk,
                                           'signs': (signs or '').split(',') if signs else [],
@@ -385,7 +448,7 @@ def ndw_crossings(map_, rows, omitted):
 def osm_crossing_nodes(map_, omitted):
     for node_id, e in map_.nodes.items():
         tags = e.get('tags', {})
-        signal, zebra, marking = crossing_tags(tags)
+        signal = tags.get('crossing:signals') == 'yes' or tags.get('crossing') == 'traffic_signals'
         if tags.get('highway') != 'crossing' and not signal:
             continue
         point = map_.point(e)
@@ -418,16 +481,24 @@ def osm_crossing_nodes(map_, omitted):
         center, width = point.coords[0], road['width'] / abs(dot(axis, normal(direction)))
         ends = [pair(advance(center, axis, side * width / 2)) for side in (-1, 1)]
         related = map_.related_paths(point, road, direction, ends, [node_id])
-        yield road_pose(road, point, (axis[1], -axis[0]), width, 3 if zebra else 2.5,
-                        id=f'osm-crossing-n{node_id}', candidateWayIds=sorted(c[1] for c in candidates if same_level(c[2], road)),
-                        control='signal' if signal else 'zebra', marked=zebra, markings=marking, estimated=True,
-                        widthSource=road['widthSource'], lengthSource='model', ends=ends, osmNodeIds=[node_id], pathWayIds=sorted(related),
-                        refuge=tags.get('crossing:island') == 'yes' or tags.get('traffic_calming') == 'island',
-                        sources=[{'source': 'osm', 'id': f'n{node_id}', 'crossing': tags.get('crossing'),
-                                  'signals': tags.get('crossing:signals'), 'markings': marking}])
+        source = {'source': 'osm', 'id': f'n{node_id}', 'crossing': tags.get('crossing'),
+                  'signals': tags.get('crossing:signals'), 'markings': tags.get('crossing:markings')}
+        if tags.get('crossing:markings:colour'):
+            source['markingColour'] = tags['crossing:markings:colour']
+        crossing = road_pose(road, point, (axis[1], -axis[0]), width, 2.5,
+                             id=f'osm-crossing-n{node_id}', candidateWayIds=sorted(c[1] for c in candidates if same_level(c[2], road)),
+                             estimated=True, widthSource=road['widthSource'], lengthSource='model', ends=ends,
+                             osmNodeIds=[node_id], pathWayIds=sorted(related),
+                             refuge=tags.get('crossing:island') == 'yes' or tags.get('traffic_calming') == 'island',
+                             sources=[source])
+        apply_crossing_marking(crossing)
+        crossing['control'] = 'signal' if signal else 'uncontrolled'
+        if crossing['marked']:
+            crossing['length'] = 3
+        yield crossing
 
 
-def merge_sources(map_, crossings, osm):
+def merge_sources(map_, crossings, osm, reviews):
     polygons = [Polygon(c['footprint']) for c in crossings]
     tree = STRtree(polygons)
     for c in osm:
@@ -445,12 +516,10 @@ def merge_sources(map_, crossings, osm):
             ndw['refuge'] |= c['refuge']
             if c['control'] == 'signal':
                 ndw['control'] = 'signal'
-            if c['markings'] in ('no', 'dots', 'dashes', 'lines'):
-                ndw['marked'] = False
-                ndw['markings'] = c['markings']
-                ndw['estimated'] = True
+            apply_crossing_marking(ndw)
             continue
-        if c['marked'] or c['control'] == 'signal':
+        if (c['marked'] or c['control'] == 'signal' or c['markings'] is not None or c.get('markingReview')
+                or c['id'] in reviews):
             crossings.append(c)
     for c in crossings:
         road = map_.by_id[c['wayId']]
@@ -505,6 +574,8 @@ def pack_crossings(map_, strips):
             second = strips[j]
             if not same_level(first, second) or first['control'] != second['control']:
                 continue
+            if first['control'] != 'signal' and first['marked'] != second['marked']:
+                continue
             if abs(dot(first['tangent'], second['tangent'])) < 0.88:
                 continue
             offset = (second['x'] - first['x'], second['z'] - first['z'])
@@ -527,12 +598,13 @@ def pack_crossings(map_, strips):
                 first['osmNodeIds'] = sorted(set(first['osmNodeIds'] + second['osmNodeIds']))
                 first['pathWayIds'] = sorted(set(first['pathWayIds'] + second['pathWayIds']))
                 first['refuge'] |= second['refuge']
-                first['marked'] |= second['marked']
+                apply_crossing_marking(first)
                 continue
             group.append(second)
         axis = normal(first['tangent'])
         group.sort(key=lambda c: dot((c['x'], c['z']), axis))
-        parts = [{k: c[k] for k in ('ends', 'wayId', 'layer', 'width', 'length', 'marked', 'markings', 'bumpId', 'footprint') if k in c}
+        parts = [{k: c[k] for k in ('ends', 'wayId', 'layer', 'width', 'length', 'marked', 'markings', 'markingEvidence',
+                                        'markingReview', 'markingColour', 'bumpId', 'footprint') if k in c}
                  for c in group]
         ends = sorted((p for c in group for p in c['ends']), key=lambda point: dot(point, axis))
         combined = {**first, 'ends': [ends[0], ends[-1]], 'width': round(math.dist(ends[0], ends[-1]), 2), 'segments': parts,
@@ -543,6 +615,9 @@ def pack_crossings(map_, strips):
                     'estimated': any(c['estimated'] for c in group),
                     'refuge': len(group) > 1 or any(c['refuge'] for c in group)}
         if len(group) > 1:
+            zebra_part = next((part for part in group if part['marked']), None)
+            if zebra_part:
+                combined.update(marked=True, markings=zebra_part['markings'], markingEvidence=zebra_part['markingEvidence'])
             inner_a = max(group[0]['ends'], key=lambda p: dot(p, axis))
             inner_b = min(group[1]['ends'], key=lambda p: dot(p, axis))
             combined['refugePoint'] = pair([(a + b) / 2 for a, b in zip(inner_a, inner_b)])
@@ -562,7 +637,11 @@ def build(args):
     bumps, polygons = ndw_bumps(map_, source_rows(args.drempels, project, map_.bounds, True), omitted)
     osm_bumps(map_, rows, bumps, polygons, omitted)
     crossings = ndw_crossings(map_, source_rows(args.vops, project, map_.bounds, False), omitted)
-    merge_sources(map_, crossings, osm_crossing_nodes(map_, omitted))
+    reviews = json.loads(args.marking_review.read_bytes()) if args.marking_review else {}
+    if not isinstance(reviews, dict):
+        raise ValueError('Expected marking reviews keyed by crossing ID')
+    merge_sources(map_, crossings, osm_crossing_nodes(map_, omitted), reviews)
+    marking_reviews(crossings, reviews)
     link_bumps(crossings, bumps)
     crossings = list(pack_crossings(map_, crossings))
     if not bumps or not crossings or not any(c['control'] == 'signal' for c in crossings):
@@ -584,6 +663,7 @@ def main():
     parser.add_argument('drempels', type=Path)
     parser.add_argument('vops', type=Path)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--marking-review', type=Path, help='PDOK imagery decisions keyed by crossing ID')
     args = parser.parse_args()
     result = build(args)
     args.output.write_text(json.dumps(result, separators=(',', ':'), allow_nan=False) + '\n')

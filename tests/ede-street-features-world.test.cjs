@@ -5,31 +5,43 @@ const { pathToFileURL } = require('node:url');
 const test = require('node:test');
 const { loadModule } = require('./helpers/module.cjs');
 
-test('Ede street features batch painted refuge arms on the raised grade and only replace matching markings', async () => {
+async function loadWorld() {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const filename = join(__dirname, '../js/ede-street-features-world.js');
   const source = readFileSync(filename, 'utf8')
     .replaceAll('import.meta.url', JSON.stringify(pathToFileURL(filename).href))
     .replace('export async function', 'async function') + '\nexport { buildEdeStreetFeaturesWorld };';
-  const { buildEdeStreetFeaturesWorld } = loadModule(source, { filename, imports: {
+  const world = loadModule(source, { filename, imports: {
     'three/webgpu': THREE,
     'three/tsl': {},
-    './road-network.js': { CROSSWALK: 2.5 },
     './ede-grade.js': { gradeProfileAt: () => null, gradeWayAt: id => id === 'grade' ? { y: 8 } : null },
     './terrain.js': { terrainHeightAt: () => 2 },
     './tsl-materials.js': { createRoadSurfaceMaterial: () => new THREE.MeshStandardNodeMaterial() },
     './ede-geometry.js': { nearestEdeRoad: () => null }
   } });
+  return { THREE, ...world };
+}
+
+test('zebra evidence controls paint independently from signals, with measured footprints and raised refuge arms', async () => {
+  const { THREE, buildEdeStreetFeaturesWorld } = await loadWorld();
   const feature = { x: 0, z: 0, tangent: [1, 0], wayId: 'source-road', renderWay: 'grade', layer: 1 };
   const bump = { ...feature, id: 'raised', height: 0.10, length: 6, width: 8, profile: 'table',
     footprint: [[-3, -4], [-3, 1.6], [3, 3.4], [3, -4]] };
-  const crossing = { ...feature, id: 'surveyed', length: 2, width: 8, control: 'zebra', bumpId: bump.id, segments: [
-    { ends: [[0, -4], [0, -1]], width: 3 },
-    { ends: [[0, 1], [0, 4]], width: 3 }
+  const crossing = { ...feature, id: 'surveyed', length: 2, width: 8, control: 'signal', bumpId: bump.id, segments: [
+    { ends: [[0, -4], [0, -1]], width: 3, markings: 'zebra', markingEvidence: 'osm' },
+    { ends: [[0, 1], [0, 4]], width: 3, markings: 'zebra', markingEvidence: 'vop',
+      footprint: [[-0.5, 1], [-0.5, 4], [0.7, 4], [0.7, 1]] }
   ] };
   const scene = new THREE.Scene();
-  const { group, replacesZebra } = await buildEdeStreetFeaturesWorld(scene, { bumps: [bump], crossings: [crossing] });
+  const unpainted = [
+    { ...feature, id: 'control-only', x: 10, length: 2, width: 6, control: 'zebra' },
+    { ...feature, id: 'source-missing', x: 20, length: 2, width: 6, control: 'zebra', markings: 'zebra', marked: true },
+    { ...feature, id: 'dashes', x: 30, length: 2, width: 6, control: 'signal', markings: 'dashes' },
+    { ...feature, id: 'no-profile', x: 40, length: 2, width: 6, renderWay: 'unmodelled', markings: 'zebra', markingEvidence: 'osm' },
+  ];
+  const { group } = await buildEdeStreetFeaturesWorld(scene, { bumps: [bump], crossings: [crossing, ...unpainted] });
   assert.equal(scene.getObjectByName('EdeStreetFeatures'), group);
+  assert.equal(group.userData.crossings, 1);
   assert.equal(group.children.length, 2);
   const [table, paint] = group.children;
   const yOf = ({ geometry }) => Array.from(geometry.attributes.position.array).filter((_, i) => i % 3 === 1);
@@ -37,10 +49,79 @@ test('Ede street features batch painted refuge arms on the raised grade and only
   assert.ok(Math.abs(Math.max(...yOf(paint)) - 8.183) < 1e-4);
   const ray = new THREE.Raycaster(new THREE.Vector3(0.05, 10, 2.45), new THREE.Vector3(0, -1, 0));
   assert.ok(Math.abs(ray.intersectObject(paint)[0].point.y - ray.intersectObject(table)[0].point.y - 0.02) < 1e-4);
-  assert.ok(paint.geometry.attributes.position.array.every((z, i) => i % 3 !== 2 || Math.abs(z) >= 1));
-  const edge = { dx: 1, dz: 0, layer: 1 };
-  assert.equal(replacesZebra(0, 2, edge), true);
-  assert.equal(replacesZebra(0, 0, edge), false);
-  assert.equal(replacesZebra(0, 2, { ...edge, layer: 0 }), false);
-  assert.equal(replacesZebra(0, 2, { ...edge, dx: 0, dz: 1 }), false);
+  const position = paint.geometry.attributes.position;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i), z = position.getZ(i);
+    assert.ok(Math.abs(z) >= 1);
+    assert.ok(z < 0 || (x >= -0.5001 && x <= 0.7001));
+  }
+});
+
+test('explicit crossing patterns draw distinct geometry without inventing markings at signals', async () => {
+  const { THREE, buildEdeStreetFeaturesWorld } = await loadWorld();
+  const make = (x, markings, extra = {}) => ({
+    x, z: 0, tangent: [1, 0], id: `markings-${x}`, width: 6.3, length: 2.5,
+    sources: [{ source: 'osm', markings }], markings, ...extra
+  });
+  const { group } = await buildEdeStreetFeaturesWorld(new THREE.Scene(), { crossings: [
+    make(5, 'dashes', { control: 'signal', marked: false }),
+    make(10, 'dots', { marked: false }),
+    make(15, 'zebra:double', { marked: true }),
+    make(20, 'zebra:paired', { marked: true }),
+    make(25, 'zebra:bicolour', { marked: true, markingColour: '#eecc66;red' }),
+    make(30, 'zebra;dots', { marked: true }),
+    make(35, 'no', { control: 'signal' }),
+    make(40, null, { control: 'signal' }),
+    make(45, 'dots', { sources: [], control: 'signal' }),
+    make(50, 'dashes', { markingReview: 'conflicting-markings' }),
+    make(55, 'lines:paired', { marked: false }),
+  ] }, [
+    { layer: 0, function: 'verkeerseiland', polygons: [[[5.8, -1.45, 6.5, -1.45, 6.5, -0.4, 5.8, -0.4]]] },
+    { layer: 0, function: 'voetpad', polygons: [[[8.6, -0.5, 9, -0.5, 9, 0.6, 8.6, 0.6]]] },
+    { layer: 1, function: 'verkeerseiland', polygons: [[[5.8, -0.4, 6.5, -0.4, 6.5, 0.4, 5.8, 0.4]]] }
+  ]);
+  assert.equal(group.userData.crossings, 7);
+  assert.equal(group.userData.zebras, 4);
+
+  const ray = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0));
+  function paintAt(x, z) {
+    ray.ray.origin.set(x, 10, z);
+    return ray.intersectObjects(group.children)[0]?.object.material.color.getHex();
+  }
+  assert.ok(paintAt(5 + 1.19, 0));
+  assert.ok(paintAt(5 - 1.19, 0.21));
+  assert.equal(paintAt(5 + 1.19, -0.90), undefined);
+  assert.ok(paintAt(5 - 1.19, -0.90));
+  assert.equal(paintAt(5, 0), undefined);
+  assert.equal(paintAt(5 + 1.19, 0.43), undefined);
+  assert.ok(paintAt(10 + 1.1, 0.315));
+  assert.equal(paintAt(10 - 1.1, 0.315), undefined);
+  assert.equal(paintAt(10 + 1.1, 0.52), undefined);
+  assert.equal(paintAt(10, 0.315), undefined);
+  assert.ok(paintAt(15 - 0.8, -2.625));
+  assert.ok(paintAt(15 + 0.8, -2.625));
+  assert.equal(paintAt(15, -2.625), undefined);
+  assert.ok(paintAt(20, -2.625));
+  assert.ok(paintAt(20, -1.575));
+  assert.equal(paintAt(20, -0.525), undefined);
+  assert.ok(paintAt(20, 0.525));
+  assert.equal(paintAt(25, -2.625), 0xeecc66);
+  assert.equal(paintAt(25, -1.575), 0xff0000);
+  assert.equal(paintAt(25, -0.525), 0xeecc66);
+  assert.ok(paintAt(30, -2.625));
+  assert.ok(paintAt(30 + 1.10, 0.315));
+  for (const x of [35, 40, 45, 50]) assert.equal(paintAt(x + 1.15, 0.315), undefined);
+  for (const offset of [0.925, 1.185]) assert.ok(paintAt(55 + offset, 0.37));
+  assert.equal(paintAt(55 + 1.055, 0.37), undefined);
+});
+
+test('every explicitly painted crossing in the shipped asset reaches the mapped paint layer', async () => {
+  const { THREE, buildEdeStreetFeaturesWorld } = await loadWorld();
+  const { gunzipSync } = require('node:zlib');
+  const asset = JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets/ede-street-features.json.gz'))));
+  const { surfaces } = JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets/ede-road-surfaces.json.gz'))));
+  const { group } = await buildEdeStreetFeaturesWorld(new THREE.Scene(), { crossings: asset.crossings }, surfaces);
+  assert.equal(group.userData.crossings, 187);
+  assert.equal(group.userData.zebras, 119);
+  assert.ok(group.children.every(mesh => mesh.material.name === 'Ede crossing paint'));
 });

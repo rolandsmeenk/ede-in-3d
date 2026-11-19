@@ -9,6 +9,7 @@ import {
   createCurbMaterial,
   createWaterMaterial,
   createParkLawnMaterial,
+  createEdeGroundMaterial,
   createParkPavingMaterial
 } from './tsl-materials.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
@@ -45,7 +46,7 @@ function setAerialSurfaceColors(geometry, segment, asphalt) {
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4, true));
 }
 
-function buildCityGrid(scene, treeInventory) {
+function buildCityGrid(scene, treeInventory, landCover) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
@@ -53,10 +54,11 @@ function buildCityGrid(scene, treeInventory) {
   const roadMat = createRoadSurfaceMaterial(aerial);
   roadMat.name = 'Ede asphalt';
   const sidewalkMat = createSidewalkMaterial(aerial ? 0.4 : 0);
-  const terrainMat = aerial && terrain ? createSidewalkMaterial(0.85) : sidewalkMat;
+  const terrainMat = terrain && landCover ? createEdeGroundMaterial(aerial, landCover)
+    : aerial && terrain ? createSidewalkMaterial(0.85) : sidewalkMat;
   const curbMat = createCurbMaterial();
   const waterMat = createWaterMaterial();
-  const lawnMat = createParkLawnMaterial(false, aerial);
+  const lawnMat = createParkLawnMaterial(false, aerial, landCover);
   const pavingMat = createParkPavingMaterial(aerial);
   const mappedPavingMat = createEdePavingMaterial(aerial);
   const aerialMaterials = new Set([roadMat, terrainMat, sidewalkMat, lawnMat, pavingMat, mappedPavingMat]);
@@ -415,6 +417,7 @@ function buildCityGrid(scene, treeInventory) {
     }
   } else {
     for (const tree of EDE_DATA.trees || []) {
+      if (waterAt(tree.x, tree.z)) continue;
       const h = Math.abs(Math.sin(tree.x * 1.9 + tree.z * 8.1));
       parkTreeSites.push({ x: tree.x, z: tree.z, y: terrainHeightAt(tree.x, tree.z) + 0.09, scale: tree.h ? Math.max(0.45, Math.min(1.8, tree.h / 13)) : 0.66 + h * 0.62,
         species: h < 0.42 ? 0 : h < 0.65 ? 1 : 2, yaw: h * Math.PI * 2 });
@@ -440,7 +443,7 @@ function buildCityGrid(scene, treeInventory) {
   // Photo-referenced trees and undergrowth around Berghain use the original
   // tree geometry, instancing and LOD. Keep mapped trees in preference to extras.
   for (const tree of BERGHAIN_TREE_SITES) {
-    if (nearbyTree(tree.x, tree.z, tree.isShrub ? 1.25 : 5)) continue;
+    if (waterAt(tree.x, tree.z) || nearbyTree(tree.x, tree.z, tree.isShrub ? 1.25 : 5)) continue;
     parkTreeSites.push(tree); indexTree(tree);
   }
   const landmarkTrees = parkTreeSites.length - mappedTreeCount;

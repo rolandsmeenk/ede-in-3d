@@ -1,0 +1,41 @@
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const { gunzipSync } = require('node:zlib');
+
+const asset = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '..', 'assets', name))));
+
+test('the corrected shoreline is shared by map layers, park geometry and movement', async () => {
+  const { EDE_DATA, pointInPoly, roadCrossesWater, toPts, waterAt, waterAtExact } = await import('../js/city-config.js');
+  const { GEO } = await import('../js/nyc-geodata.js');
+  const { water, land } = asset('ede-shorelines.json.gz');
+  const original = asset('ede-map-v1.json.gz');
+  assert.deepEqual(EDE_DATA.water, water);
+  assert.equal(GEO.centralPark.water, EDE_DATA.water);
+  assert.deepEqual(EDE_DATA.roadGraph, original.roadGraph);
+  assert.deepEqual(EDE_DATA.activeGraph, original.activeGraph);
+  assert.ok(land.parks.some(([, , fragments]) => fragments.length > 1));
+  assert.ok(water.some(feature => feature.holes.length));
+
+  const parks = EDE_DATA.parks.map(({ ring, holes }) => [toPts(ring), ...holes.map(toPts)]);
+  for (const [x, z] of [[-1726.18, 715.90], [-1438.15, 639.20], [-3032.76, 675.16], [389.51, -564.67]]) {
+    assert.equal(waterAtExact(x, z), true);
+    assert.equal(waterAt(x, z), true);
+    assert.equal(parks.some(([outline, ...holes]) =>
+      pointInPoly(outline, x, z) && !holes.some(hole => pointInPoly(hole, x, z))), false);
+  }
+
+  assert.equal(waterAt(-2234.52, 2264.48), false);
+  assert.equal(waterAt(-1948.85, 2944.54), true);
+  assert.equal(roadCrossesWater(-1948.85, 2944.54), true);
+
+  for (const { ring, holes } of water) for (const outline of [ring, ...holes]) {
+    for (let k = 0, last = outline.length - 2; k < outline.length; last = k, k += 2) {
+      const x = (outline[k] + outline[last]) / 2, z = (outline[k + 1] + outline[last + 1]) / 2;
+      for (const [dx, dz] of [[-0.5, 0.5], [0.5, -0.5]]) {
+        assert.equal(waterAt(x + dx, z + dz), waterAtExact(x + dx, z + dz));
+      }
+    }
+  }
+});

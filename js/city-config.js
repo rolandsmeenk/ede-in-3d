@@ -172,32 +172,82 @@ function sidewalkAt(x, z) {
 
 
 
-const WATER_POLYGONS=EDE_DATA.water.map(w=>{const poly=toPts(w.ring);return {...w,poly,inner:(w.holes||[]).map(toPts),minX:Math.min(...poly.map(p=>p.x)),maxX:Math.max(...poly.map(p=>p.x)),minZ:Math.min(...poly.map(p=>p.z)),maxZ:Math.max(...poly.map(p=>p.z))};});
-function waterAtExact(x,z){return WATER_POLYGONS.some(w=>x>=w.minX&&x<=w.maxX&&z>=w.minZ&&z<=w.maxZ&&pointInPoly(w.poly,x,z)&&!w.inner.some(h=>pointInPoly(h,x,z)));}
-// Ponds are mapped water polygons, and traffic calls waterAt many times per frame.
-// A 4 m grid (scanline even-odd fill) answers inside/outside; only cells crossed by a shoreline use the exact test.
-const WATER_CELL=4, WNX=Math.ceil((maxX-minX)/WATER_CELL), WNZ=Math.ceil((maxZ-minZ)/WATER_CELL);
-const WATER_GRID=new Uint8Array(WNX*WNZ);
-{
- const rings=[];for(const w of WATER_POLYGONS){rings.push(w.poly,...w.inner);}
- const xs=[];
- for(let j=0;j<WNZ;j++){
-  const zc=minZ+(j+.5)*WATER_CELL;xs.length=0;
-  for(const r of rings)for(let i=0,k=r.length-1;i<r.length;k=i++){const a=r[i],b=r[k];if((a.z>zc)!==(b.z>zc))xs.push(a.x+(zc-a.z)*(b.x-a.x)/(b.z-a.z));}
-  xs.sort((p,q)=>p-q);
-  for(let t=0;t+1<xs.length;t+=2){const i0=Math.max(0,Math.ceil((xs[t]-minX)/WATER_CELL-.5)),i1=Math.min(WNX-1,Math.floor((xs[t+1]-minX)/WATER_CELL-.5));for(let i=i0;i<=i1;i++)WATER_GRID[j*WNX+i]=1;}
- }
- for(const r of rings)for(let i=0,k=r.length-1;i<r.length;k=i++){
-  const a=r[i],b=r[k],n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/1));
-  for(let t=0;t<=n;t++){const x=a.x+(b.x-a.x)*t/n,z=a.z+(b.z-a.z)*t/n;
-   for(const [dx,dz] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]){const gi=Math.floor((x-minX)/WATER_CELL)+dx,gj=Math.floor((z-minZ)/WATER_CELL)+dz;if(gi>=0&&gj>=0&&gi<WNX&&gj<WNZ)WATER_GRID[gj*WNX+gi]=2;}}
- }
+// A 4 m fill serves most water queries. Boundary cells use the exact outline in a local index.
+const WATER_CELL = 4;
+const WATER_INDEX_CELL = 64;
+const waterCols = Math.ceil((maxX - minX) / WATER_CELL);
+const waterRows = Math.ceil((maxZ - minZ) / WATER_CELL);
+const waterGrid = new Uint8Array(waterCols * waterRows);
+const waterIndex = new Map();
+
+function waterCellKey(column, row) {
+  return column * 100000 + row;
 }
-function waterAt(x,z){
- const gi=Math.floor((x-minX)/WATER_CELL),gj=Math.floor((z-minZ)/WATER_CELL);
- if(gi<0||gj<0||gi>=WNX||gj>=WNZ)return waterAtExact(x,z);
- const v=WATER_GRID[gj*WNX+gi];return v===2?waterAtExact(x,z):v===1;
+
+function registerWater(feature) {
+  const block = makeBlock(feature, feature.id);
+  const rings = [block.poly, ...block.holes];
+  const column0 = Math.floor(block.minX / WATER_INDEX_CELL), column1 = Math.floor(block.maxX / WATER_INDEX_CELL);
+  const row0 = Math.floor(block.minZ / WATER_INDEX_CELL), row1 = Math.floor(block.maxZ / WATER_INDEX_CELL);
+  for (let column = column0; column <= column1; column++) for (let row = row0; row <= row1; row++) {
+    const key = waterCellKey(column, row);
+    if (!waterIndex.has(key)) waterIndex.set(key, []);
+    waterIndex.get(key).push(block);
+  }
+
+  const crossings = new Map();
+  for (const ring of rings) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    const low = Math.max(0, Math.ceil((Math.min(a.z, b.z) - minZ) / WATER_CELL - 0.5));
+    const high = Math.min(waterRows, Math.ceil((Math.max(a.z, b.z) - minZ) / WATER_CELL - 0.5));
+    for (let row = low; row < high; row++) {
+      const z = minZ + (row + 0.5) * WATER_CELL;
+      const x = a.x + (z - a.z) * (b.x - a.x) / (b.z - a.z);
+      if (!crossings.has(row)) crossings.set(row, []);
+      crossings.get(row).push(x);
+    }
+  }
+  for (const [row, xs] of crossings) {
+    xs.sort((a, b) => a - b);
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      const left = Math.max(0, Math.ceil((xs[i] - minX) / WATER_CELL - 0.5));
+      const right = Math.min(waterCols - 1, Math.floor((xs[i + 1] - minX) / WATER_CELL - 0.5));
+      for (let column = left; column <= right; column++) {
+        const index = row * waterCols + column;
+        if (!waterGrid[index]) waterGrid[index] = 1;
+      }
+    }
+  }
+
+  const neighbors = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const ring of rings) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j], steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z)));
+    for (let k = 0; k <= steps; k++) {
+      const x = a.x + (b.x - a.x) * k / steps, z = a.z + (b.z - a.z) * k / steps;
+      const col = Math.floor((x - minX) / WATER_CELL), row = Math.floor((z - minZ) / WATER_CELL);
+      for (const [dx, dz] of neighbors) {
+        const column = col + dx, r = row + dz;
+        if (column >= 0 && column < waterCols && r >= 0 && r < waterRows) waterGrid[r * waterCols + column] = 2;
+      }
+    }
+  }
 }
+
+for (const feature of EDE_DATA.water) registerWater(feature);
+
+function waterAtExact(x, z) {
+  const cell = waterIndex.get(waterCellKey(Math.floor(x / WATER_INDEX_CELL), Math.floor(z / WATER_INDEX_CELL)));
+  return cell?.some(w => x >= w.minX && x <= w.maxX && z >= w.minZ && z <= w.maxZ
+    && pointInPoly(w.poly, x, z) && !w.holes.some(hole => pointInPoly(hole, x, z))) ?? false;
+}
+
+function waterAt(x, z) {
+  const column = Math.floor((x - minX) / WATER_CELL), row = Math.floor((z - minZ) / WATER_CELL);
+  if (column < 0 || row < 0 || column >= waterCols || row >= waterRows) return waterAtExact(x, z);
+  const state = waterGrid[row * waterCols + column];
+  return state === 2 ? waterAtExact(x, z) : state === 1;
+}
+
 function nearestRoadPoint(x,z,roads){
  let best=null,dist=Infinity;
  for(const r of roads)for(let i=0;i+1<r.pts.length;i++){

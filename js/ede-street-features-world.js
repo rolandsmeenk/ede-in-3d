@@ -1,25 +1,42 @@
 import * as THREE from 'three/webgpu';
 import { texture } from 'three/tsl';
-import { CROSSWALK } from './road-network.js';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { createRoadSurfaceMaterial } from './tsl-materials.js';
 import { nearestEdeRoad } from './ede-geometry.js';
 
 const CELL = 320;
-const OVERLAP_CELL = 24;
 const ROAD_LIFT = 0.063;
 const PAINT_LIFT = 0.02;
 const TRIANGLES = [0, 1, 2, 0, 2, 3];
 
 const wayOf = feature => feature.renderWay ?? feature.wayId ?? feature.edges?.[0]?.way;
 const layerOf = feature => feature.layer ?? feature.edges?.[0]?.layer ?? 0;
-const isMarked = crossing => crossing.marked ?? crossing.control === 'zebra';
+const isZebra = style => /^zebra(?::(?:double|paired|bicolour))?$/.test(style);
+const edgeStyles = new Set(['dots', 'dashes', 'lines', 'lines:paired']);
+const zebraEvidence = new Set(['vop', 'osm', 'pdok']);
+const markingTokens = value => typeof value === 'string' ? value.split(';').map(token => token.trim()) : [];
+
+function crossingStyles(strip, sources = []) {
+  if (strip.markingReview) return [];
+  return markingTokens(strip.markings).filter(style => {
+    const fromOsm = sources.some(source => source.source === 'osm' && (
+      markingTokens(source.markings).includes(style) ||
+      style === 'zebra' && !source.markings && source.crossing === 'zebra'));
+    if (isZebra(style)) {
+      if (strip.marked === false) return false;
+      if (strip.markingEvidence !== undefined) return zebraEvidence.has(strip.markingEvidence);
+      // Older baked data carries original source tags on the parent crossing.
+      return fromOsm || strip.footprint?.length >= 3 && sources.some(source => source.source === 'vop');
+    }
+    return edgeStyles.has(style) && (fromOsm || strip.markingEvidence === 'pdok' || strip.markingEvidence === 'osm');
+  });
+}
 const hasSurface = feature => feature.tangent?.length === 2
   && [feature.x, feature.z, feature.length, feature.width, ...feature.tangent].every(Number.isFinite)
   && feature.length > 0 && feature.width > 0 && Math.hypot(...feature.tangent) > 0;
 
-function surfaceHeight(feature, x, z, reach = 1.2) {
+function surfaceHeight(feature, x, z, reach = 1.2, requireProfile = false) {
   const way = gradeWayAt(wayOf(feature), x, z, reach);
   if (way) return way.y;
   const layer = layerOf(feature);
@@ -28,6 +45,7 @@ function surfaceHeight(feature, x, z, reach = 1.2) {
     const heading = feature.tangent && Math.atan2(...feature.tangent);
     const profile = gradeProfileAt(x, z, 'motor', heading);
     if (profile?.kind === kind) return profile.y;
+    if (requireProfile) return undefined;
   }
   return terrainHeightAt(x, z);
 }
@@ -65,13 +83,13 @@ function bumpSurface(bump) {
   return { frame, footprint, halfLength, halfWidth, ramp, edgeSlope, baseAt, heightAt };
 }
 
-function clipRing(ring, axis, cut, side) {
+function clipByDistance(ring, distance) {
   if (!ring.length) return ring;
   const out = [];
   let a = ring[ring.length - 1];
-  let da = (a[axis] - cut) * side;
+  let da = distance(a);
   for (const b of ring) {
-    const db = (b[axis] - cut) * side;
+    const db = distance(b);
     if ((da >= 0) !== (db >= 0)) {
       const u = da / (da - db);
       out.push(a.map((value, i) => value + (b[i] - value) * u));
@@ -81,6 +99,23 @@ function clipRing(ring, axis, cut, side) {
     da = db;
   }
   return out;
+}
+
+const clipRing = (ring, axis, cut, side) => clipByDistance(ring, point => (point[axis] - cut) * side);
+
+function clipToTriangle(ring, triangle, outside) {
+  const distance = ([x, z], [u, v], [px, pz]) => (u - x) * (pz - z) - (v - z) * (px - x);
+  const side = Math.sign(distance(...triangle));
+  if (!side) return [];
+  for (let i = 0; i < 3; i++) {
+    const edge = point => side * distance(triangle[i], triangle[(i + 1) % 3], point);
+    if (outside) {
+      const piece = clipByDistance(ring, point => -edge(point));
+      if (piece.length >= 3) outside.push(piece);
+    }
+    ring = clipByDistance(ring, edge);
+  }
+  return ring;
 }
 
 function splitFootprint(footprint, axes, emit) {
@@ -126,7 +161,7 @@ function crossingFrame(crossing) {
   const alongAt = t => s0 + (s1 - s0) * (t - start) / (end - start);
   const center = (t0 + t1) / 2;
   const [x, z] = frame.at(alongAt(center), center);
-  const road = nearestEdeRoad(x, z, 15, wayOf(crossing));
+  const road = nearestEdeRoad(x, z, 15, wayOf(crossing), layerOf(crossing));
   if (road) {
     const lateral = (px, pz) => (pz - road.z) * road.ux - (px - road.x) * road.uz;
     const from = lateral(...frame.at(s0, t0)), to = lateral(...frame.at(s1, t1));
@@ -142,40 +177,52 @@ function crossingFrame(crossing) {
   return { ...frame, t0, t1, alongAt };
 }
 
-function createZebraLookup(crossings) {
-  const cells = new Map();
-  const key = (x, z) => `${x}/${z}`;
-  for (const crossing of crossings) {
-    const frame = crossingFrame(crossing);
-    const from = frame.at(frame.alongAt(frame.t0), frame.t0), to = frame.at(frame.alongAt(frame.t1), frame.t1);
-    const padding = crossing.length / 2 + CROSSWALK / 2 + 2;
-    const low = axis => Math.floor((Math.min(from[axis], to[axis]) - padding) / OVERLAP_CELL);
-    const high = axis => Math.floor((Math.max(from[axis], to[axis]) + padding) / OVERLAP_CELL);
-    for (let x = low(0); x <= high(0); x++) for (let z = low(1); z <= high(1); z++) {
-      const cell = key(x, z);
-      if (!cells.has(cell)) cells.set(cell, []);
-      cells.get(cell).push({ crossing, frame });
-    }
-  }
-  return (x, z, edge) => (cells.get(key(Math.floor(x / OVERLAP_CELL), Math.floor(z / OVERLAP_CELL))) || [])
-    .some(({ crossing, frame }) => {
-      if (layerOf(crossing) !== (edge.layer ?? 0) || Math.abs(frame.dx * edge.dx + frame.dz * edge.dz) < 0.82) return false;
-      // The other half of a divided street can be an independently painted crossing.
-      const across = frame.across(x, z);
-      if (across < frame.t0 - 0.6 || across > frame.t1 + 0.6) return false;
-      return Math.abs(frame.along(x, z) - frame.alongAt(across)) < (crossing.length + CROSSWALK - 0.3) / 2;
-    });
+function paintExclusions(surfaces) {
+  return surfaces.filter(surface => surface.function === 'verkeerseiland' || surface.function === 'voetpad')
+    .flatMap(({ layer, polygons, function: kind }) => polygons.map(rings => {
+      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+      const outer = rings[0];
+      for (let i = 0; i < outer.length; i += 2) {
+        left = Math.min(left, outer[i]);
+        right = Math.max(right, outer[i]);
+        top = Math.min(top, outer[i + 1]);
+        bottom = Math.max(bottom, outer[i + 1]);
+      }
+      return { layer, rings, left, right, top, bottom, island: kind === 'verkeerseiland' };
+    }));
 }
 
-function collectRoadSurfaces({ bumps = [], crossings = [] }, quad) {
+function triangulatedRings(rings) {
+  const [outer, ...holes] = rings.map(ring => {
+    const points = ring.map(p => new THREE.Vector2(...p));
+    if (points.length > 1 && points[0].equals(points.at(-1))) points.pop();
+    return points;
+  });
+  const vertices = [...outer, ...holes.flat()];
+  return THREE.ShapeUtils.triangulateShape(outer, holes)
+    .map(face => face.map(i => vertices[i].toArray()));
+}
+
+function collectRoadSurfaces({ bumps = [], crossings = [] }, quad, roadSurfaces) {
+  const exclusions = paintExclusions(roadSurfaces);
   const asphalt = createRoadSurfaceMaterial();
-  const paint = new THREE.MeshStandardNodeMaterial({ color: 0xe6e2d6, roughness: 0.78 });
-  const marked = crossings.filter(crossing => isMarked(crossing) && hasSurface(crossing));
-  const strips = marked.flatMap(crossing => !crossing.segments?.length ? [crossing]
-    : crossing.segments.filter(segment => segment.marked !== false).map(segment => ({
-      ...crossing, ...segment,
+  const defaultColour = 0xe6e2d6;
+  const paints = new Map();
+  function paintMaterial(colour) {
+    if (!paints.has(colour)) {
+      const material = new THREE.MeshStandardNodeMaterial({ color: colour, roughness: 0.78 });
+      material.name = 'Ede crossing paint';
+      paints.set(colour, material);
+    }
+    return paints.get(colour);
+  }
+  const strips = crossings.flatMap(crossing => (crossing.segments?.length ? crossing.segments : [crossing])
+    .map(segment => ({
+      ...crossing, ...segment, footprint: segment.footprint,
+      styles: crossingStyles(segment, crossing.sources), markingColour: segment.markingColour,
       renderWay: segment.renderWay ?? (segment.wayId && segment.wayId !== crossing.wayId ? segment.wayId : crossing.renderWay)
-    })));
+    }))).filter(strip => strip.styles.length && hasSurface(strip));
+  const marked = new Set(), zebras = new Set();
   const bumpPlanes = new Map(strips.filter(crossing => crossing.bumpId).map(crossing => [crossing.bumpId, []]));
   const surfacePoint = (frame, heightAt, s, t) => {
     const [x, z] = frame.at(s, t);
@@ -248,37 +295,112 @@ function collectRoadSurfaces({ bumps = [], crossings = [] }, quad) {
 
   for (const crossing of strips) {
     const frame = crossingFrame(crossing);
-    const heightAt = (x, z) => surfaceHeight(crossing, x, z) + ROAD_LIFT + PAINT_LIFT;
-    // Clip paint to the actual raised triangles so it follows a skew or irregular ramp edge exactly.
-    const planes = bumpPlanes.get(crossing.bumpId)?.map(triangle => triangle.map(([x, y, z]) => {
+    const heightAt = (x, z) => surfaceHeight(crossing, x, z, 1.2, true) + ROAD_LIFT + PAINT_LIFT;
+    const local = (x, z) => {
       const t = frame.across(x, z);
-      return [frame.along(x, z) - frame.alongAt(t), t, y];
-    })) ?? [];
-    const skewedFrame = { at: (s, t) => frame.at(s + frame.alongAt(t), t) };
-    const count = Math.max(1, Math.round((frame.t1 - frame.t0) / 1.05));
-    const pitch = (frame.t1 - frame.t0) / count, half = Math.min(0.27, pitch * 0.29);
-    const s = splits(-crossing.length / 2, crossing.length / 2, 0.25);
-    for (let i = 0; i < count; i++) {
-      const middle = frame.t0 + pitch * (i + 0.5);
-      const left = middle - half, right = middle + half;
-      for (let j = 1; j < s.length; j++) {
-        quad(paint, crossing, rectangle(skewedFrame, heightAt, s[j - 1], s[j], left, right));
+      return [frame.along(x, z) - frame.alongAt(t), t];
+    };
+    const footprint = crossing.footprint?.map(([x, z]) => local(x, z));
+    const mask = footprint?.length >= 3 ? triangulatedRings([footprint]) : null;
+    const across = (frame.t0 + frame.t1) / 2;
+    const [cx, cz] = frame.at(frame.alongAt(across), across);
+    const reach = (crossing.width + crossing.length) / 2 + 1;
+    const edge = crossing.styles.find(style => edgeStyles.has(style));
+    const blockers = exclusions.filter(({ layer, island, left, right, top, bottom }) =>
+      (island || edge) && layer === layerOf(crossing) &&
+      cx - reach < right && cx + reach > left && cz - reach < bottom && cz + reach > top)
+      .flatMap(({ rings }) => triangulatedRings(rings.map(ring => {
+        const points = [];
+        for (let i = 0; i < ring.length; i += 2) points.push(local(ring[i], ring[i + 1]));
+        return points;
+      })));
+    const paintBand = (ring, paint, zebra) => {
+      let polygons = mask ? mask.map(triangle => clipToTriangle(ring, triangle)) : [ring];
+      for (const triangle of blockers) {
+        const outside = [];
+        for (const polygon of polygons) {
+          if (clipToTriangle(polygon, triangle).length < 3) outside.push(polygon);
+          else clipToTriangle(polygon, triangle, outside);
+        }
+        polygons = outside;
+      }
+      for (const polygon of polygons) {
+        if (polygon.length < 3) continue;
+        const vertices = polygon.map(([s, t, y]) => {
+          const [x, z] = frame.at(s + frame.alongAt(t), t);
+          return [x, y === undefined ? heightAt(x, z) : y + PAINT_LIFT, z];
+        });
+        if (!vertices.every(p => Number.isFinite(p[1]))) continue;
+        for (let j = 2; j < vertices.length; j++) quad(paint, crossing, [vertices[0], vertices[j - 1], vertices[j]]);
+        marked.add(crossing.id);
+        if (zebra) zebras.add(crossing.id);
+      }
+    };
+    // Clip paint to the actual raised triangles so it follows a skew or irregular ramp edge exactly.
+    const planes = (bumpPlanes.get(crossing.bumpId) ?? []).map(triangle => triangle.map(([x, y, z]) => [...local(x, z), y]));
+    const halfLength = crossing.length / 2;
+    const width = frame.t1 - frame.t0;
+    const colours = markingTokens(crossing.markingColour).map(value => value.toLowerCase())
+      .filter(value => /^#[0-9a-f]{6}$/.test(value) || Object.hasOwn(THREE.Color.NAMES, value))
+      .map(value => new THREE.Color(value).getHex());
+    const paint = paintMaterial(colours[0] ?? defaultColour);
+    const paintRect = (start, end, left, right, material, zebra) => {
+      const along = splits(start, end, 0.25);
+      const across = zebra ? [left, right] : splits(left, right, 0.5);
+      for (let i = 1; i < along.length; i++) {
+        for (let j = 1; j < across.length; j++) {
+          paintBand([[along[i - 1], across[j - 1]], [along[i - 1], across[j]],
+            [along[i], across[j]], [along[i], across[j - 1]]], material, zebra);
+        }
       }
       for (const triangle of planes) {
-        let band = clipRing(triangle, 0, s[0], 1);
-        band = clipRing(band, 0, s.at(-1), -1);
+        let band = clipRing(triangle, 0, start, 1);
+        band = clipRing(band, 0, end, -1);
         band = clipRing(band, 1, left, 1);
         band = clipRing(band, 1, right, -1);
-        if (band.length < 3) continue;
-        const vertices = band.map(([s, t, y]) => {
-          const [x, z] = skewedFrame.at(s, t);
-          return [x, y + PAINT_LIFT, z];
-        });
-        for (let j = 2; j < vertices.length; j++) quad(paint, crossing, [vertices[0], vertices[j - 1], vertices[j]]);
+        paintBand(band, material, zebra);
+      }
+    };
+    const zebra = crossing.styles.find(isZebra);
+    const edgeWidth = Math.min(edge === 'dots' ? 0.30 : 0.13, halfLength * 0.35);
+    if (edge) {
+      const spacing = edge === 'dots' ? 0.62 : 0.88;
+      const count = Math.max(1, Math.round(width / spacing));
+      const pitch = width / count;
+      const half = Math.min(edge === 'dots' ? edgeWidth / 2 : 0.25, pitch * 0.34);
+      for (const sign of [-1, 1]) {
+        const outer = sign * (halfLength - edgeWidth / 2);
+        const centers = edge === 'lines:paired' ? [outer, outer - sign * edgeWidth * 2] : [outer];
+        for (const center of centers) {
+          if (edge.startsWith('lines')) {
+            paintRect(center - edgeWidth / 2, center + edgeWidth / 2, frame.t0, frame.t1, paint, false);
+            continue;
+          }
+          for (let i = 0; i < count; i++) {
+            const t = frame.t0 + pitch * (i + 0.5);
+            paintRect(center - edgeWidth / 2, center + edgeWidth / 2, t - half, t + half, paint, false);
+          }
+        }
+      }
+    }
+    if (zebra) {
+      const count = Math.max(1, Math.round(width / 1.05));
+      const pitch = width / count, half = Math.min(0.27, pitch * 0.29);
+      const barLength = halfLength - (edge === 'lines:paired' ? 3 * edgeWidth : edge ? edgeWidth : 0);
+      const gap = barLength * 0.24;
+      const ranges = zebra === 'zebra:double' ? [[-barLength, -gap], [gap, barLength]] : [[-barLength, barLength]];
+      const alternate = zebra === 'zebra:bicolour' && colours.length
+        ? paintMaterial(colours[1] ?? defaultColour) : paint;
+      for (let i = 0; i < count; i++) {
+        if (zebra === 'zebra:paired' && i % 3 === 2) continue;
+        const middle = frame.t0 + pitch * (i + 0.5);
+        for (const [start, end] of ranges) {
+          paintRect(start, end, middle - half, middle + half, i % 2 ? alternate : paint, true);
+        }
       }
     }
   }
-  return { marked, strips, raisedSurfaces };
+  return { marked, raisedSurfaces, zebras };
 }
 
 async function loadFaceAtlas() {
@@ -484,7 +606,7 @@ function collectSigns(signs, atlas, quad, batch) {
   return count;
 }
 
-export async function buildEdeStreetFeaturesWorld(scene, features) {
+export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces = []) {
   const signs = features.signs ?? [];
   let atlas;
   if (signs.some(sign => sign.faceKey)) {
@@ -510,7 +632,7 @@ export async function buildEdeStreetFeaturesWorld(scene, features) {
       if (uvs) output.uv.push(...uvs[i]);
     }
   }
-  const { marked, strips, raisedSurfaces } = collectRoadSurfaces(features, quad);
+  const { marked, raisedSurfaces, zebras } = collectRoadSurfaces(features, quad, roadSurfaces);
   const signsDrawn = collectSigns(signs, atlas, quad, batch);
 
   for (const { material, positions, normals, uv } of batches.values()) {
@@ -529,7 +651,7 @@ export async function buildEdeStreetFeaturesWorld(scene, features) {
     else firstMesh.set(material, mesh);
     group.add(mesh);
   }
-  group.userData = { signs: signsDrawn, bumps: raisedSurfaces.length, crossings: marked.length, batches: batches.size };
+  group.userData = { signs: signsDrawn, bumps: raisedSurfaces.length, crossings: marked.size, zebras: zebras.size, batches: batches.size };
   scene.add(group);
-  return { group, replacesZebra: createZebraLookup(strips) };
+  return { group };
 }

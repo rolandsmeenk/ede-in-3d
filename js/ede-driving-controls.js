@@ -6,7 +6,8 @@ const BUMP_SPEED = { hump: 5.2, table: 7.2, cushion: 5.8 };
 const ROAD_MARKING_DWELL = 1.25;
 const sameLayer = (a, b) => (a.layer ?? 0) === (b.layer ?? 0);
 const eligible = (feature, match, confidence) => feature.match === 'matched' && match.confidence >= confidence;
-const completeZebra = feature => feature.match === 'matched' && feature.control === 'zebra' && feature.marked
+const isYieldingZebra = feature => feature.marked && (feature.control === 'uncontrolled' || feature.control === 'zebra');
+const completeZebra = feature => feature.match === 'matched' && isYieldingZebra(feature)
   && feature.sidewalks?.length === 2 && feature.sidewalks.every(end => end.edges.length);
 
 function add(index, key, item) {
@@ -38,7 +39,7 @@ export function createEdeDrivingControls(features, network, evidence = EDE_DRIVI
     other !== edge && other.axisIndex !== edge.axisIndex && sameLayer(edge, other));
 
   for (const line of evidence.lines) add(linesByWay, line[2], line);
-  const zebras = features?.crossings?.filter(feature => feature.control === 'zebra' && feature.marked) ?? EMPTY;
+  const zebras = features?.crossings?.filter(isYieldingZebra) ?? EMPTY;
   for (const zebra of zebras) {
     if (!completeZebra(zebra)) continue;
     for (const osmId of zebra.osmNodeIds ?? EMPTY) add(zebrasByOsmNode, String(osmId), zebra);

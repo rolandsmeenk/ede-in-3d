@@ -149,7 +149,9 @@ Add `--fetch` to the sign importer for the latest placed signs. Reuse the downlo
 
 Measured footprints supply length and width where available. OSM-only hump, short bump, raised table, and cushion length defaults are 3.5, 1.2, 7, and 2.5 m, with modelled heights of 8, 6, 8, and 7 cm respectively. Tables use short linear ramps and humps use a rounded longitudinal profile. The same profile sets the stripe height on a raised zebra. [NDW Drempels](https://verkeersveiligheid.ndw.nu/dataset/drempels) · [WKD pedestrian crossings](https://verkeersveiligheid.ndw.nu/dataset/voetgangersoversteekplaatsen) · [NDW open-data terms](https://docs.ndw.nu/algemeen/data-gebruiksvoorwaarden/)
 
-The snapshot contains 6,345 sign locations, 966 humps and tables, and 201 crossings. The renderer has exact artwork for 5,958 sign faces and paints 119 confirmed zebras. The 82 other crossing records retain their mapped signal controls. Nine crossings link to a raised feature. Of the 18 reported refuges, four have a mapped position and separate carriageway strips.
+The snapshot contains 6,345 sign locations, 966 humps and tables, and 201 crossings. The renderer has exact artwork for 5,958 sign faces. It paints 119 zebras at 121 carriageway strips, supported by NDW VOP at 67 locations and explicit OSM zebra tags at 52. The crossing layer also paints 37 dashed and 31 dotted crossings from the mapped OSM patterns. Two explicitly unmarked crossings and 12 with unknown markings have bare pavement. The layer confines paint to the mapped carriageway and level, clips it around surveyed BGT islands, trims edge markings at sidewalks, and follows the fitted table height. If the asset is unavailable, ordinary road markings still load. [Zebra source and site review](tools/data/ede-zebra-review.md)
+
+For a documented imagery decision, pass `--marking-review` to `build-ede-street-surfaces.py` with a JSON object keyed by the source crossing ID. Each decision records `markings`, an `imagery` URL, a capture date or imagery vintage in `date`, and a short `note`. An optional `markingColour` records the paint colours. The bake retains split, paired and bicolour zebra tags and explicit edge markings, including combined patterns such as zebra bars with dotted borders. The renderer uses the recorded colours for bicolour zebras. It uses standard paint when no colours are recorded. The bake records provenance per carriageway strip and withholds disputed paint pending review. [OSM crossing marking patterns](https://wiki.openstreetmap.org/wiki/Key:crossing:markings)
 
 Review is needed for 248 sign matches and 109 partial crossing matches. The asset also retains 2,016 signs, 66 raised surfaces, and five crossings whose positions lack a reliable directed edge association. Common cases are a sign between approaches, different relative layer codes in NWB and OSM, or an unlinked sidewalk endpoint.
 
@@ -157,14 +159,29 @@ The review covered the C3 sign on Notaris Fischerstraat, the raised zebra on Kli
 
 ## Refresh BGT street detail and 1GIS motorway infrastructure
 
-The street detail bake uses active BGT vegetation, boundary, furniture, bollard, and water-edge records. It checks them against mapped gates, paths, driveways, existing trees and civil structures. Shelters keep their surveyed location and link to an existing stop where the match and boarding clearance agree. Rijkswaterstaat’s Geografische Areaalregistratie supplies A12 and A30 infrastructure in RD New and metres NAP. The bake matches features to directed carriageways, NWB sections and fitted elevations. Surveyed paint replaces coincident procedural paint on the matching way. The lane graph still supplies simulation lanes and access. [PDOK BGT](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
+The town-wide BGT bake fits vegetation, boundaries, street furniture, roadside barriers, drains and banks to the existing scene. It checks mapped gates, paths, driveways, boarding corridors, existing trees and civil structures. The land-cover mask distinguishes woodland, heath, grass, planting beds and courtyards and combines their materials with the existing aerial tint. The shoreline bake reconciles compatible BGT and OSM water polygons and cuts out ground-level park and square overlaps offline. The map, world and movement use those same outlines. Both bakes use the current Oude Kerk frame and 12 m AHN runtime grid. [PDOK BGT collections](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [BGT source notes](tools/data/ede-bgt-detail.sources.md) · [Shoreline audit](tools/data/ede-shorelines.md)
+
+Use local Gelderland and Utrecht OSM PBF extracts for gate openings. Fetch the dated BGT tiles, rebuild shorelines, then bake detail and land cover again against the new water outlines.
 
 ```sh
-uv run --with 'shapely>=2.1' python tools/build-ede-bgt-detail.py /tmp/ede-bgt-detail --date 2026-11-19 --coverage expanded --fetch
+uv run --python 3.12 --with 'shapely>=2.1' --with osmium --with pyproj --with rasterio \
+  python tools/build-ede-bgt-detail.py /tmp/ede-bgt-town --date 2026-11-19 --coverage town \
+  --fetch --station-ahn --osm /tmp/gelderland.osm.pbf /tmp/utrecht.osm.pbf
+uv run --with 'shapely>=2.1' python tools/build-ede-shorelines.py /tmp/ede-bgt-town \
+  --date 2026-11-19 --report /tmp/ede-shoreline-report.json
+uv run --offline --python 3.12 --with 'shapely>=2.1' --with pyproj --with rasterio \
+  python tools/build-ede-bgt-detail.py /tmp/ede-bgt-town --date 2026-11-19 --coverage town
+```
+
+Run `build-ede-shorelines.py --audit --osm` to check the original OSM water polygons and `--audit` to check the shipped shorelines. Reuse the original snapshot date for an offline refresh.
+
+Rijkswaterstaat’s Geografische Areaalregistratie supplies A12 and A30 infrastructure in RD New and metres NAP. The bake matches features to directed carriageways, NWB sections and fitted elevations. Surveyed paint replaces coincident procedural paint on the matching way. The lane graph supplies simulation lanes and access. [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
+
+```sh
 uv run --with pyproj --with 'shapely>=2.1' python tools/build-ede-1gis.py --report /tmp/ede-1gis-report.json
 ```
 
-Omit `--fetch` from the BGT command to rebuild from the local downloads, using their original snapshot date. Add `/tmp/ede-1gis --fetch --save-snapshot tools/data/ede-1gis.snapshot.json.gz` to refresh the 1GIS snapshot. The DTB source notes describe the former import and its benchmark. [Historical DTB reference](tools/data/ede-dtb-detail.sources.md)
+Add `/tmp/ede-1gis --fetch --save-snapshot tools/data/ede-1gis.snapshot.json.gz` to refresh the 1GIS snapshot. [Historical DTB reference](tools/data/ede-dtb-detail.sources.md)
 
 NBd provides the destinations and drawing references for the blue motorway direction signs. 1GIS supplies mounting evidence and NDW supplies standard signs and supplementary plates. [NBd exports](https://downloads.rijkswaterstaatdata.nl/bewegwijzering/) · [NDW Verkeersborden](https://docs.ndw.nu/en/data-uitwisseling/interface-beschrijvingen/verkeersborden-api/v5/)
 
@@ -172,7 +189,7 @@ NBd provides the destinations and drawing references for the blue motorway direc
 uv run --with 'pillow>=12.1' python tools/build-ede-nbd-signs.py /tmp/ede-nbd /tmp/ede-1gis --date 2026-11-18 --fetch
 ```
 
-The game loads the baked assets locally in the Oude Kerk scene frame. Props use spatially tiled instances. Long barriers and directional sign faces use batched geometry. For a performance comparison, open the game with `?perf=1` and set `detail=off`, `bgtDetail=off`, `motorwayDetail=off`, or `nbdSigns=off`. [Motorway pilot verification](tools/data/ede-1gis-verification.md)
+The game loads the baked assets locally in the Oude Kerk scene frame. Props use spatially tiled instances. Long barriers and directional sign faces use batched geometry. For a performance comparison, open the game with `?perf=1` and use `bgtStage=street`, `bgtStage=infrastructure`, or `bgtStage=all`. The existing `detail=off`, `bgtDetail=off`, `motorwayDetail=off`, and `nbdSigns=off` switches remain available. [Town and shoreline verification](tools/data/ede-bgt-town-verification.md) · [Motorway pilot verification](tools/data/ede-1gis-verification.md)
 
 ## Refresh the aerial colors
 

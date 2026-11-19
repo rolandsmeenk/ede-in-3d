@@ -1,29 +1,47 @@
 # Ede BGT street detail
 
-The 2026-11-19 snapshot uses the LV-BGT collections for vegetation objects, separations, street furniture, poles, planted terrain and water. The importer selects active source records, uses the existing Oude Kerk transform and keeps the BGT relative level and registration date. Surveyed lines and footprints set the placement. Model dimensions and the orientation of point furniture are estimates. [PDOK BGT collections](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [IMGeo data catalogue](https://www.geonovum.nl/uploads/standards/downloads/IMGeoGegevenscatalogus211.pdf)
+The November 19, 2026 snapshot covers the 39.92 km² playable rectangle in 12 request tiles. The downloader follows every PDOK page, keeps the latest active version of each local source ID, and transforms the geometry to the existing Oude Kerk frame. The seven original preview areas remain available through `--coverage expanded`. [PDOK BGT catalogue](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [IMGeo data catalogue](https://www.geonovum.nl/uploads/standards/downloads/IMGeoGegevenscatalogus211.pdf)
+
+## Refresh
+
+Download the Gelderland and Utrecht OSM province extracts for gate locations, then run the dated fetch. Keep the saved files to rebuild offline. The shoreline asset should be baked first so the planting and land classification use the same water boundary as the game.
 
 ```sh
-uv run --with 'shapely>=2.1' python tools/build-ede-bgt-detail.py /tmp/ede-bgt-detail --coverage expanded --date 2026-11-19 --fetch
-uv run --offline --with 'shapely>=2.1' python tools/build-ede-bgt-detail.py /tmp/ede-bgt-detail --coverage expanded --date 2026-11-19
+uv run --python 3.12 --with 'shapely>=2.1' --with osmium --with rasterio --with pyproj \
+  python tools/build-ede-bgt-detail.py /tmp/ede-bgt-town --coverage town \
+  --date 2026-11-19 --fetch --station-ahn --osm gelderland.osm.pbf utrecht.osm.pbf
+uv run --offline --python 3.12 --with 'shapely>=2.1' --with rasterio --with pyproj \
+  python tools/build-ede-bgt-detail.py /tmp/ede-bgt-town --coverage town --date 2026-11-19
 ```
 
-`--coverage pilot` selects Oude Kerkplein, Kuiperplein, Ede-Wageningen and Kolkakkerweg. Expanded coverage also samples Marktplein, Proosdijpark and the Rijksweg shelter. The compressed runtime asset can be rebuilt offline from the saved GeoJSON and gate snapshots. `--output` and `--review` can select temporary destinations while comparing imports. The [machine-readable review](ede-bgt-detail.review.json) records the source dates, site bounds, placement counts, affected road and gate IDs, and withheld positions.
+`--output`, `--land-output` and `--review` select temporary destinations while comparing variants. The runtime benchmark stages use `?perf=1&bgtStage=street` for furniture, fences, hedge, shoreline and planting, `bgtStage=infrastructure` to add road detail and station roofs, and `bgtStage=all` to add the land texture. The geometry asset is 778,664 bytes compressed and the land texture is 656,305 bytes compressed.
 
-| Feature | Active native records | Placed pieces or samples |
+## Inventory
+
+The machine-readable [placement review](ede-bgt-detail.review.json) includes each tile’s matched counts, affected road and gate IDs, and records with uncertain height or access clearance. The two counts below distinguish physical source features from the pieces or instances they produced after clipping and simplification.
+
+| Feature | Active mapped records | Placed pieces or instances |
 | --- | ---: | ---: |
-| Fence | 70 | 57 |
-| Hedge | 1 | 1 |
-| Bench | 2 | 2 |
-| Bike rack | 83 | 73 |
-| Bollard | 57 | 40 |
+| Fence | 1,507 | 1,425 |
+| Hedge | 47 | 38 |
+| Bench | 31 | 30 |
+| Bike rack | 104 | 91 |
+| Bollard | 162 | 126 |
 | Bus shelter | 1 | 1 |
 | Playground equipment | 0 | 0 |
-| Shrub | 204 | 484 |
-| Ground cover | 393 | 535 |
-| Water edge | 3 | 8 |
+| Shrub | 4,431 | 13,754 |
+| Ground cover | 12,539 | 22,507 |
+| Shore edge | 2,914 | 2,164 |
+| Balustrade | 15 | 8 |
+| Guardrail | 29 | 26 |
+| Gutter | 73 | 71 |
+| Drain and grate | 61 | 61 |
+| Bin | 26 | 24 |
+| Container | 31 | 27 |
+| Station canopy | 5 | 2 |
+| Station landings and steps | 0 | 0 |
 
-- **Access clearance.** The exporter trims fences and hedges where their geometry overlaps a same-layer route buffer. It reserves mapped cycle lanes and sidewalk offsets as well as road centrelines and same-level GTFS boarding corridors. It holds back conflicting point furniture. The latest import flags 17 trimmed route conflicts and 26 point props with route overlap. Five barriers were trimmed against existing civil geometry and one point prop was withheld for an existing-asset overlap. A geometric recheck of the placed barriers found no overlap larger than 0.007 m² with same-level travel surfaces or the 11 nearby GTFS boarding corridors.
-- **Gates.** Ten mapped gate or entrance nodes fall in these sites from the 2026-11-19 OSM extract. One, node `44925795`, lines up with Ede-Wageningen fence `L0004.8bf0e125047d40eab5c4411b924b03da`. The importer splits its geometry at the mapped opening. Gate width follows the OSM tag when usable, with defaults of 3.2 m for vehicle gates and 1.5 m for pedestrian openings. [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
-- **Decks.** Three station fence pieces are on BGT deck `G0228.fb4f59fbd4b440dea6e4074e91013155` at Albertstunnel and use that deck’s fitted surface. Four raised ground-cover samples near Hartogspad and Kuiperplein were withheld until there is an applicable surveyed footprint or height. Kuiperplein fences `G0228.d9ec9ab56a224fba8e08aa009b08665b` and `L0004.127d5fac783545bcb5d80ab14851ee17` meet at one endpoint.
-- **Furniture coverage.** The dated station window includes 67 racks and two benches. PDOK returned zero station shelters and zero mapped playground equipment across the playable bounds. The single Rijksweg shelter is at local `(-4040.96, 38.78)` and has no reliable match among the locally shipped GTFS stops. Furniture coverage reflects the optional IMGeo classes supplied by the source custodians. [PDOK street furniture](https://api.pdok.nl/lv/bgt/ogc/v1/collections/straatmeubilair)
-- **Planting and shorelines.** New planting samples stay inside native low vegetation and ground-cover polygons, with mapped routes and existing trees kept clear. Proosdijpark and Rijksweg contain verified BGT water edges near mapped routes. The importer uses source shorelines and removes overlapping civil walls and redundant water edges.
+- **Access.** The bake trims barriers against same-level travel strips, including mapped cycle lanes, sidewalk offsets and GTFS boarding corridors. It recorded 298 route trims, 55 withheld point placements, one overlap with an existing asset and 33 trims against existing civil geometry. It used 301 mapped gate points and recorded 23 gate openings. The gate snapshot is dated November 18, 2026. The geometric recheck found no barrier overlaps larger than 0.007 m² with a same-level travel strip or boarding corridor. The mapped Rijksweg shelter has no confident GTFS stop match. [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
+- **Decks and drainage.** Three fences, two balustrades and two guardrails use verified positive-level mount footprints or fitted profiles. The bake withheld 16 unsupported elevated or depressed placements. It removed one matching barrier segment covered by 1GIS. The surveyed gutter, drain and grate geometry is drawn close to the surface and only visible at short range. Point drain and cover records were absent. [PDOK Weginrichtingselement](https://api.pdok.nl/lv/bgt/ogc/v1/collections/weginrichtingselement_lijn) · [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
+- **Station canopy pilot.** The AHN6 roof samples inside footprint `G0228.4a117f153d1842c2a12559eca57dc532` support two distinct roof sections at 27.04 and 28.64 m NAP. The fitted join follows the sampled split within the mapped outline. The 15 cm modeled slab thickness is estimated. Three slim column positions were fitted from the published entrance and architect imagery. Their pads clear the mapped travel and boarding strips and their feet meet the existing rendered plaza. [ProRail entrance illustration](https://www.prorail.nl/nieuws/contouren-nieuw-station-ede-wageningen-zichtbaarder) · [Haskoning station project](https://www.haskoning.nl/nl-NL/projecten/indrukwekkend-nieuw-station-ede-wageningen-multifunctioneel-en-toekomstbestendig) Four other mapped canopies lacked usable roof heights, and the station window supplied no landing or entrance-step records. [PDOK Gebouwinstallatie](https://api.pdok.nl/lv/bgt/ogc/v1/collections/gebouwinstallatie) · [AHN6 DSM and DTM, CC BY 4.0](https://www.ahn.nl/eerste-deel-ahn-6-beschikbaar)
+- **Land and shore.** The 3,698 × 2,700 material mask samples woodland, heath, grass, planting beds and yards from active BGT terrain parts at 2 m spacing. The runtime shades the existing 12 m terrain with this mask and aerial tint. The bake clears water cells and keeps planting clear of the shared water outline. The geometric recheck found zero shrub or ground-cover placement centres inside the shared water polygons. The bake uses mapped banks near travel routes and trims them around existing civil walls. [PDOK terrain and water collections](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html)

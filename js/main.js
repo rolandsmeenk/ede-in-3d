@@ -50,6 +50,7 @@ async function initApp() {
   const query = new URLSearchParams(window.location.search);
   const profiling = query.get('perf') === '1';
   const fixedStep = profiling && query.get('bench') === '1';
+  const bgtStage = profiling ? query.get('bgtStage') ?? undefined : undefined;
   const standard = query.get('quality') === 'standard';
   const enabled = (key, fallback = true) => {
     const value = profiling ? query.get(key) : null;
@@ -135,7 +136,7 @@ async function initApp() {
     motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult] = await Promise.allSettled([
     loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
-    enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), motorway: enabled('motorwayDetail'),
+    enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, motorway: enabled('motorwayDetail'),
       directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null
   ]);
   if (terrainResult.status === 'fulfilled') {
@@ -155,13 +156,14 @@ async function initApp() {
   if (roadSurfaceResult.status === 'rejected') console.warn('[road surfaces] using OSM surfaces:', roadSurfaceResult.reason);
   const roadTraffic = createEdeRoadTraffic(speedResult.status === 'fulfilled' ? speedResult.value : undefined);
   const streetFeatures = featureResult.status === 'fulfilled' ? featureResult.value : null;
+  const detailData = detailResult.value;
   if (!streetFeatures) console.warn('[street features] using existing road markings:', featureResult.reason);
   if (trainResult.status === 'rejected') console.warn('[trains] timetable unavailable:', trainResult.reason);
   markInit('map assets and timetables');
 
   // 3. Build the city, buildings, street details and traffic
   await showLoadingStage('Building streets, parks and water…');
-  const cityGrid = buildCityGrid(scene, treeResult.status === 'fulfilled' ? treeResult.value : undefined);
+  const cityGrid = buildCityGrid(scene, treeResult.status === 'fulfilled' ? treeResult.value : undefined, detailData?.landCover);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
   const gradeWorld = buildEdeGradeWorld(scene);
@@ -223,7 +225,6 @@ async function initApp() {
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');
   const mappedLamps = lampResult.status === 'fulfilled' ? lampResult.value : undefined;
-  const detailData = detailResult.value;
   let importedDetail;
   try {
     if (detailResult.status === 'rejected') throw detailResult.reason;
@@ -276,10 +277,9 @@ async function initApp() {
   }
   setTrafficDraw(enabled('trafficDraw'));
   await showLoadingStage('Adding road markings...');
-  let streetWorld;
   if (streetFeatures) {
     try {
-      streetWorld = await buildEdeStreetFeaturesWorld(scene, streetFeatures);
+      await buildEdeStreetFeaturesWorld(scene, streetFeatures, roadSurfaceResult.value?.surfaces);
     } catch (error) {
       console.warn('[street features] unable to build the feature layer:', error);
     }
@@ -291,7 +291,7 @@ async function initApp() {
       const grade = fitted || gradeWayAt(edge?.wayId, x, z, 1.2);
       // Free-standing surveyed strips and the broad asphalt polygons sample the AHN grid at different intervals.
       return grade ? grade.y + 0.055 : terrainHeightAt(x, z) + (edge?.type === 'marking' ? 0.09 : 0.065);
-    }, streetWorld?.replacesZebra, { surveyed: detailData?.markings, preserveGBuffer: graphics.ssr });
+    }, { surveyed: detailData?.markings, preserveGBuffer: graphics.ssr });
   markInit('roadPaint');
 
   // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Helicopter) & Multi-Camera System

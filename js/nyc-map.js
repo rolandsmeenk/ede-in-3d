@@ -27,6 +27,7 @@ import {
   getLocationLabel,
   isTypingInField,
   waterAt,
+  roadCrossesWater,
   blockAt,
   nearestDrivingPoint
 } from './city-config.js';
@@ -431,6 +432,16 @@ function drawPlayerArrow(ctx, tipY, halfWidth, tailY) {
 // The original GPS styling now follows Ede's directed OSM road graph.
 let ROUTING=null;
 let ROUTE_CACHE=null;
+function dryMapConnection(a, b) {
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz)));
+  for (let i = 0; i <= steps; i++) {
+    const x = a.x + dx * i / steps, z = a.z + dz * i / steps;
+    if (waterAt(x, z) && !roadCrossesWater(x, z)) return false;
+  }
+  return true;
+}
+
 function getEdeMapRoute(x0,z0,x1,z1){
   const graph=GEO.roadGraph;
   if(GEO.city !== 'Ede'||!graph)return null;
@@ -458,10 +469,18 @@ function getEdeMapRoute(x0,z0,x1,z1){
     }
     const chain=[];let at=to;
     while(at!==from&&previous[at]){chain.push(previous[at].edge.shape);at=previous[at].from;}
-    const route=at===from?chain.reverse().flatMap((shape,i)=>i?shape.slice(1):shape):[];
+    const route = at !== from ? null : from === to ? [points[from]]
+      : chain.reverse().flatMap((shape, i) => i ? shape.slice(1) : shape);
     ROUTE_CACHE={key,route};
   }
-  return [{x:x0,z:z0},...ROUTE_CACHE.route,{x:x1,z:z1}];
+  const route = ROUTE_CACHE.route;
+  if (!route) return [];
+  const start = { x: x0, z: z0 }, end = { x: x1, z: z1 };
+  return [
+    ...(dryMapConnection(start, route[0]) ? [start] : []),
+    ...route,
+    ...(dryMapConnection(route.at(-1), end) ? [end] : []),
+  ];
 }
 
 // GPS route from the player to the waypoint, along the grid (x first, then z): taxi yellow on a dark casing
@@ -469,9 +488,15 @@ function drawRoute(ctx, x0, y0, x1, y1, width, points=null) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(x0, y0);
-  if(points){for(const p of points)ctx.lineTo(p.x,p.z);}
-  else {ctx.lineTo(x1,y0);ctx.lineTo(x1,y1);}
+  if (points) {
+    if (points.length < 2) return;
+    ctx.moveTo(points[0].x, points[0].z);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].z);
+  } else {
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y0);
+    ctx.lineTo(x1, y1);
+  }
   ctx.strokeStyle = MAP.halo;
   ctx.lineWidth = width + 3;
   ctx.stroke();

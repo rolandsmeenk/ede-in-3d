@@ -19,6 +19,8 @@ test('the Ede map binds a raised zebra, directed stops and roundabout priority',
 
   const zebra = features.byId('ndw-vop-4407');
   assert.equal(zebra.street, 'Molenstraat');
+  assert.equal(zebra.control, 'uncontrolled');
+  assert.equal(zebra.markings, 'zebra');
   assert.equal(features.byId(zebra.bumpId).profile, 'hump');
   const edge = network.edges.find(e => controls.crossings(e, CAR).some(row => row.id === zebra.id));
   const row = controls.crossings(edge).find(row => row.id === zebra.id);

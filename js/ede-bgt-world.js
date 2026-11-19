@@ -38,8 +38,10 @@ function makeDeckProfile(feature, gradeSurfaceAt) {
   const road = axisSamples('road-deck'), rail = axisSamples('rail-deck');
   const kind = road.length >= rail.length ? 'road-deck' : 'rail-deck';
   const measured = kind === 'road-deck' ? road : rail;
-  // Select one alignment along the deck axis so the lower route cannot pull down its edges.
-  const samples = measured.length >= 4 ? measured : [];
+  // A rail-only deck can run across its tracks, so only two samples hit the rail profiles.
+  // Its end probes can otherwise land in the cut below the deck.
+  const hasRailDeck = !road.length && rail.length >= 2;
+  const samples = measured.length >= 4 || hasRailDeck ? measured : [];
   return (x, z) => {
     const height = samples.length ? gradeSurfaceAt(x, z, kind) : undefined;
     if (Number.isFinite(height)) return height - 0.14;
