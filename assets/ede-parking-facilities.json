@@ -1,0 +1,261 @@
+{
+  "version": 1,
+  "verifiedOn": "2026-11-19",
+  "coordinateSystem": "Ede world metres, x east, z south",
+  "facilities": [
+    {
+      "id": "ede-wageningen-pr",
+      "name": "P+R Ede-Wageningen",
+      "operator": "P1",
+      "address": "Polar Bearsplein 1, Ede",
+      "kind": "station",
+      "garage": true,
+      "capacity": 539,
+      "access": "paid",
+      "x": 151.5,
+      "z": 2246.4,
+      "entrance": {
+        "x": 138.6,
+        "z": 2207.1,
+        "layer": -1,
+        "wayId": "w1546549246",
+        "approachWayId": "w1193451504",
+        "route": [
+          {"x": 192.9, "z": 2305.3}, {"x": 191.9, "z": 2301.7}, {"x": 189.6, "z": 2298.9},
+          {"x": 210.4, "z": 2234.7}, {"x": 212.6, "z": 2228.1}, {"x": 208.9, "z": 2222.1},
+          {"x": 144.8, "z": 2201.3}, {"x": 140.7, "z": 2202.9}, {"x": 138.6, "z": 2207.1}
+        ]
+      },
+      "exit": {
+        "x": 141.3,
+        "z": 2208.1,
+        "layer": -1,
+        "wayId": "w1546549244",
+        "approachWayId": "w1193451514",
+        "route": [
+          {"x": 141.3, "z": 2208.1}, {"x": 144, "z": 2205.2}, {"x": 148.1, "z": 2206},
+          {"x": 202.1, "z": 2224}, {"x": 202.4, "z": 2227.9}, {"x": 199, "z": 2240.2},
+          {"x": 187.5, "z": 2278.9}, {"x": 186.2, "z": 2286.6}, {"x": 183.6, "z": 2293.3},
+          {"x": 180.5, "z": 2297.3}, {"x": 178.3, "z": 2298.5}, {"x": 176.4, "z": 2300.3}
+        ]
+      },
+      "rules": {
+        "open24h": true,
+        "maxHeightM": 2.1,
+        "tariffEuros": 1,
+        "tariffMinutes": 25,
+        "dailyMaxEuros": 9,
+        "railDayEuros": 4.5,
+        "railDiscountMaxHours": 72,
+        "extendedStayHours": 168,
+        "extendedStayDayEuros": 12.5,
+        "closedFrom": "2026-11-15",
+        "closedThrough": "2026-11-27",
+        "temporaryAlternative": "Tijdelijk P+R-terrein bij de Stingerbol"
+      },
+      "sources": [
+        "https://www.p1.nl/parkeerplaats/pr-ede-wageningen/",
+        "https://www.ede.nl/in-de-gemeente-ede/ede-werkt-aan/p-r-garage-ede-wageningen",
+        "https://www.openstreetmap.org/way/1453735184",
+        "https://www.openstreetmap.org/way/1546549245",
+        "https://www.openstreetmap.org/way/1546549247"
+      ]
+    },
+    {
+      "id": "q-park-markt",
+      "name": "Q-Park Markt",
+      "operator": "Q-Park",
+      "address": "Brouwerstraat 21 A, Ede",
+      "kind": "shopping",
+      "garage": true,
+      "capacity": 440,
+      "access": "paid",
+      "x": -105.1,
+      "z": -115.1,
+      "nprId": "2088bea9-dae1-4093-987e-9c253746f2a5",
+      "nprDynamic": {"limitedAccess": true},
+      "entrance": {
+        "x": -90,
+        "z": -121.1,
+        "layer": 0,
+        "wayId": "w138398970",
+        "approachWayId": "w6954224",
+        "route": [{"x": -42.3, "z": -136.9}, {"x": -55.5, "z": -131.2}, {"x": -90, "z": -121.1}]
+      },
+      "exit": {
+        "x": -89.3,
+        "z": -118.1,
+        "layer": 0,
+        "wayId": "w138398969",
+        "approachWayId": "w698120592",
+        "route": [{"x": -89.3, "z": -118.1}, {"x": -56.1, "z": -126.4}, {"x": -42.8, "z": -129.4}, {"x": -36, "z": -129.8}]
+      },
+      "alternateEntrances": [
+        {
+          "x": -119,
+          "z": -110.3,
+          "layer": 0,
+          "wayId": "w6954204",
+          "approachWayId": "w698120592",
+          "route": [{"x": -171.2, "z": -90.9}, {"x": -157, "z": -99.6}, {"x": -119, "z": -110.3}]
+        }
+      ],
+      "alternateExits": [
+        {
+          "x": -119.6,
+          "z": -113.2,
+          "layer": 0,
+          "wayId": "w138398971",
+          "approachWayId": "w6954224",
+          "route": [{"x": -119.6, "z": -113.2}, {"x": -159.8, "z": -103.7}, {"x": -167.2, "z": -103.5}, {"x": -174.3, "z": -103.3}]
+        }
+      ],
+      "rules": {"open24h": true, "maxHeightM": 1.95, "tariffEuros": 1, "tariffMinutes": 23, "dailyMaxEuros": 8, "saturdayDailyMaxEuros": 9.5},
+      "sources": [
+        "https://www.q-park.nl/nl-nl/parkeren/ede/markt/",
+        "https://npropendata.rdw.nl/parkingdata/v2/static/2088bea9-dae1-4093-987e-9c253746f2a5",
+        "https://www.openstreetmap.org/node/45011858",
+        "https://www.openstreetmap.org/way/138398970",
+        "https://www.openstreetmap.org/way/138398969",
+        "https://www.openstreetmap.org/way/6954204",
+        "https://www.openstreetmap.org/way/138398971"
+      ]
+    },
+    {
+      "id": "q-park-achterdoelen",
+      "name": "Q-Park Achterdoelen",
+      "operator": "Q-Park",
+      "address": "Achterdoelen 45, Ede",
+      "kind": "shopping",
+      "garage": true,
+      "capacity": 490,
+      "access": "paid",
+      "x": -13,
+      "z": 231.7,
+      "nprId": "9de627c9-d074-405e-8c48-80f048b4c9c3",
+      "nprDynamic": {"limitedAccess": true},
+      "entrance": {
+        "x": -13,
+        "z": 231.7,
+        "layer": 0,
+        "wayId": "w6953035",
+        "approachWayId": "w6952994",
+        "route": [{"x": -23.8, "z": 280.6}, {"x": -20, "z": 263.4}, {"x": -13, "z": 231.7}]
+      },
+      "exit": {
+        "x": -13,
+        "z": 231.7,
+        "layer": 0,
+        "wayId": "w6953035",
+        "approachWayId": "w377755746",
+        "route": [{"x": -13, "z": 231.7}, {"x": -20, "z": 263.4}, {"x": -23.8, "z": 280.6}]
+      },
+      "rules": {"open24h": true, "maxHeightM": 2, "tariffEuros": 1, "tariffMinutes": 23, "dailyMaxEuros": 8, "saturdayDailyMaxEuros": 9.5},
+      "sources": [
+        "https://www.q-park.nl/nl-nl/parkeren/ede/achterdoelen/",
+        "https://npropendata.rdw.nl/parkingdata/v2/static/9de627c9-d074-405e-8c48-80f048b4c9c3",
+        "https://www.openstreetmap.org/node/44996953",
+        "https://www.openstreetmap.org/way/6953035"
+      ]
+    },
+    {
+      "id": "ziekenhuis-gelderse-vallei",
+      "name": "Parkeergarage Ziekenhuis Gelderse Vallei",
+      "operator": "Ziekenhuis Gelderse Vallei",
+      "address": "Willy Brandtlaan 10, Ede",
+      "kind": "other",
+      "garage": true,
+      "capacity": 1350,
+      "access": "paid",
+      "x": -1664.8,
+      "z": 2690,
+      "nprId": "0c54053c-5744-4246-bdf0-f8bc0472613e",
+      "entrance": {
+        "x": -1616.1,
+        "z": 2735,
+        "layer": 0,
+        "wayId": "w764414016",
+        "approachWayId": "w335027661",
+        "route": [
+          {"x": -1636.3, "z": 2837.8}, {"x": -1638.9, "z": 2826.9},
+          {"x": -1641.5, "z": 2815.9}, {"x": -1629.2, "z": 2780.9},
+          {"x": -1616, "z": 2743.1}, {"x": -1616.1, "z": 2735}
+        ]
+      },
+      "exit": {
+        "x": -1660.4,
+        "z": 2606.2,
+        "layer": 0,
+        "wayId": "w764414017",
+        "approachWayId": "w6954800",
+        "route": [
+          {"x": -1660.4, "z": 2606.2}, {"x": -1661.7, "z": 2600.5},
+          {"x": -1666.1, "z": 2593.9}, {"x": -1669.8, "z": 2588.4}
+        ]
+      },
+      "rules": {
+        "open24h": true,
+        "paidFrom": "07:00",
+        "paidUntil": "22:00",
+        "tariffEuros": 1,
+        "tariffMinutes": 24,
+        "dailyMaxEuros": 9.5,
+        "freeExitMinutes": 15,
+        "maxHeightM": 2.1
+      },
+      "sources": [
+        "https://www.geldersevallei.nl/contact/locatie/ede/parkeren/%21ut/p/z0/04_Sj9CPykssy0xPLMnMz0vMAfIjo8zizQwMjTw8vA38_C1dLQ0czQMs3AJ8AgxdnU31C7IdFQHngLD7/",
+        "https://npropendata.rdw.nl/parkingdata/v2/static/0c54053c-5744-4246-bdf0-f8bc0472613e",
+        "https://www.openstreetmap.org/way/764414016",
+        "https://www.openstreetmap.org/way/764414017"
+      ]
+    },
+    {
+      "id": "kuiperplein",
+      "name": "Kuiperplein",
+      "operator": "Gemeente Ede",
+      "kind": "shopping",
+      "garage": false,
+      "areaId": "kuiperplein",
+      "capacity": 218,
+      "estimatedCapacity": true,
+      "access": "paid",
+      "x": -222,
+      "z": 109,
+      "nprId": "e997aca8-1629-4422-8121-404b13e38567",
+      "entrance": {
+        "x": -233.9,
+        "z": 119.6,
+        "layer": 0,
+        "wayId": "w1055118985",
+        "approachWayId": "w1337350654",
+        "route": [{"x": -251.8, "z": 129.5}, {"x": -233.9, "z": 119.6}]
+      },
+      "exit": {
+        "x": -233.9,
+        "z": 119.6,
+        "layer": 0,
+        "wayId": "w1055118985",
+        "approachWayId": "w1337350654",
+        "route": [{"x": -233.9, "z": 119.6}, {"x": -251.8, "z": 129.5}]
+      },
+      "rules": {
+        "paidDays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        "paidFrom": "07:00",
+        "paidUntil": "18:00",
+        "freeOnPublicHolidays": true,
+        "holidayExceptions": "Goede vrijdag en Bevrijdingsdag volgen de gemeentelijke lustrumregeling",
+        "tariffEuros": 1,
+        "tariffMinutes": 25,
+        "dayTicketEuros": 6.5
+      },
+      "sources": [
+        "https://www.ede.nl/in-de-gemeente-ede/parkeerplaatsen/",
+        "https://npropendata.rdw.nl/parkingdata/v2/static/e997aca8-1629-4422-8121-404b13e38567",
+        "https://npropendata.rdw.nl/parkingdata/v2/static/6b673145-0ca2-4b4d-b6ca-acc2bb3b7f46",
+        "https://www.openstreetmap.org/way/491922182",
+        "https://www.openstreetmap.org/way/1055118985"
+      ]
+    }
+  ]
+}

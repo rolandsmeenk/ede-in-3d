@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the local Ede simulator with optional same-origin traffic and weather feeds."""
+"""Serve the local Ede simulator with optional same-origin traffic, train, parking and weather feeds."""
 
 import argparse
 import json
@@ -16,6 +16,8 @@ from xml.etree.ElementTree import ParseError
 
 sys.dont_write_bytecode = True
 from ede_ndw import CLOSURES, CONFIG, MEASUREMENTS, TEMPORARY_SPEEDS, fetch_xml, read_observations, read_restrictions, read_sites
+from ede_live_parking import parking_readers, parking_snapshot
+from ede_live_trains import TrainUpdates, ns_position_snapshots, train_snapshot
 from ede_traffic_geometry import load_graph
 from ede_weather import LiveWeather
 
@@ -32,6 +34,17 @@ class LiveFeeds:
         if not offline:
             Thread(target=self.start_ndw, daemon=True).start()
             self.refresh('buses', 30, self.read_buses)
+            self.refresh('trainUpdates', 60, TrainUpdates())
+            Thread(target=self.start_ns_positions, daemon=True).start()
+            for key, read in parking_readers():
+                self.refresh(key, 60, read)
+
+    def start_ns_positions(self):
+        try:
+            for records in ns_position_snapshots():
+                self.data['trainGps'] = records
+        except ImportError:
+            print('NS GPS feed requires pyzmq', file=sys.stderr)
 
     @staticmethod
     def read_buses():
@@ -79,6 +92,12 @@ class LiveFeeds:
 
         Thread(target=run, daemon=True).start()
 
+    def trains_snapshot(self):
+        return train_snapshot(self.data.copy(), time.time())
+
+    def parking_snapshot(self):
+        return parking_snapshot(self.data.copy(), time.time())
+
     def snapshot(self):
         now = now_ms()
         feeds = self.data.copy()
@@ -102,7 +121,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def end_headers(self):
-        if urlsplit(self.path).path not in ('/api/ede-traffic', '/api/ede-weather'):
+        if urlsplit(self.path).path not in ('/api/ede-traffic', '/api/ede-trains', '/api/ede-parking', '/api/ede-weather'):
             self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
@@ -111,6 +130,10 @@ class Handler(SimpleHTTPRequestHandler):
         status = 200
         if path == '/api/ede-traffic':
             payload = json.dumps(self.feeds.snapshot(), allow_nan=False, separators=(',', ':')).encode()
+        elif path == '/api/ede-trains':
+            payload = json.dumps(self.feeds.trains_snapshot(), allow_nan=False, separators=(',', ':')).encode()
+        elif path == '/api/ede-parking':
+            payload = json.dumps(self.feeds.parking_snapshot(), allow_nan=False, separators=(',', ':')).encode()
         elif path == '/api/ede-weather':
             payload = self.weather.snapshot()
             if payload is None:
@@ -131,7 +154,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bind', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8000)
-    parser.add_argument('--offline', action='store_true', help='serve static assets without contacting traffic or weather feeds')
+    parser.add_argument('--offline', action='store_true', help='serve static assets without contacting traffic, train, parking or weather feeds')
     args = parser.parse_args()
     handler = partial(Handler, feeds=LiveFeeds(args.offline), weather=LiveWeather(args.offline))
     with ThreadingHTTPServer((args.bind, args.port), handler) as server:

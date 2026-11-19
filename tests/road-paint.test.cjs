@@ -181,6 +181,24 @@ const { setupSceneCulling, updateSceneCulling } = loadModule(sceneCullingSrc, {
   imports: { 'three/webgpu': THREE }
 });
 
+test('Ede lane boundaries use resolved offsets and treat advisory and bus boundaries differently', () => {
+  const strips = [];
+  const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };
+  const laneDefinition = {
+    lanes: [{ offset: -1.8, width: 3.6 }, { offset: 1.8, width: 3.6, busOnly: true }],
+    centers: [], markings: true, bikes: [{ offset: 4.4, width: 1.2, kind: 'advisory' }]
+  };
+  const edge = { from: { id: 0, shape: true }, to: { id: 1, shape: true }, x0: 0, z0: 0, sx: 0, sz: 0,
+    dx: 1, dz: 0, rx: 0, rz: 1, len: 20, span: 20, half: 5, lanes: [-1.8], laneDefinition, wayId: 'test' };
+  buildRoadPaint(new Scene(), { paintEdges: [edge] }, builder);
+  assert.equal(strips.length, 2);
+  const [busBorder, bikeBorder] = strips;
+  assert.equal(busBorder[2], 0);
+  assert.equal(busBorder[9], 1);
+  assert.ok(Math.abs(bikeBorder[2] - 3.8) < 1e-9);
+  assert.equal(bikeBorder[9], 0.5);
+});
+
 test('buildRoadPaint chunks markings into compact spatial cells with shared pipeline and padded bounds', () => {
   const makeEdge = (id0, id1, x0, z, len) => ({
     from: { id: id0, shape: false },

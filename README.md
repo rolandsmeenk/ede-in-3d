@@ -12,7 +12,7 @@ Run the local server and open [localhost:8000](http://localhost:8000). Live road
 python3 tools/serve-ede.py
 ```
 
-Add `--offline` to skip upstream traffic and weather feeds. A plain static server such as `python3 -m http.server 8000` also runs the offline traffic model. Three.js, OpenStreetMap geometry, posted limits, and the timetable are local. The simulator streams LoD 2.2 buildings when 3DBAG is reachable and uses OpenStreetMap footprints otherwise.
+Add `--offline` to skip upstream traffic, rail and weather feeds. A plain static server such as `python3 -m http.server 8000` also runs the offline traffic model. Three.js, OpenStreetMap geometry, posted limits, and the timetable are local. The simulator streams LoD 2.2 buildings when 3DBAG is reachable and uses OpenStreetMap footprints otherwise.
 
 The live server caches the national NDW DATEX II v3 and OVapi GTFS-Realtime feeds and serves only matches within the Ede map. NDW readings change demand and cruising speed on their matched direction. Posted or applicable temporary limits cap speed. Valid closures block new entry. The camera-local simulation uses Amsterdam time-of-day demand and the timetable when live data expires. See the [traffic data notes](tools/data/ede-traffic-sources.md) for coverage, fallbacks, and the frame-time measurements.
 
@@ -73,6 +73,40 @@ uv run --with 'shapely>=2.1' python tools/build-ede-bgt-roads.py /tmp/ede-bgt-ro
 ```
 
 Omit `--fetch` to reuse a downloaded snapshot. The road evidence builder samples the generated OSM map, so build a new OSM snapshot before matching it and rebuild the map afterward to apply the evidence. The [crossing profile notes](tools/data/ede-grade-sources.md) give the ProRail refresh queries and record the measured and estimated heights for each modeled crossing. Road and path contact, walls, and the follow camera use those layered surfaces while the rail renderer keeps its OSM alignment. Level crossing equipment is modeled in its open position.
+
+### Verify bridges, tunnels and passages
+
+The [crossing audit](tools/data/ede-crossing-audit.md) lists the two route levels independently and includes the 14 public level crossings. The [catalogue and source notes](tools/data/ede-crossing-scan.sources.md) describe the geographic discovery and two-level overlap checks.
+
+Open the game with `?debug=1` and choose **Debug** in the toolbar for temporary test teleports to the 19 repaired crossings. Each destination selects the appropriate travel mode and places you at the tested surface height.
+
+Start the local game and an isolated Chrome session with `--remote-debugging-port=9297`. The audit sends test inputs through the actual player controllers and samples the train routes used by the game.
+
+```sh
+node tools/audit-ede-crossings.mjs /tmp/ede-crossing-checks.json http://127.0.0.1:8990 9297
+python3 tools/report-ede-crossings.py /tmp/ede-crossing-checks.json
+```
+
+Supply a fourth argument to the Node script to test one site by name or ID. To rebuild surveyed additions, put the local PDOK AHN 0.5 m coverage rasters in a directory as `<site-id>-dtm.tif` and `<site-id>-dsm.tif`. Run the profile fitter, then rebuild the main grade asset with the OSM and ProRail inputs in the crossing profile notes.
+
+```sh
+uv run --with shapely --with rasterio --with pyproj python tools/build-ede-crossing-fits.py /tmp/ede-crossing-survey
+```
+
+## Refresh road materials and lanes
+
+PDOK BGT polygons supply physical material boundaries and surveyed carriageway widths. Detailed BGT classes take precedence. Compatible OpenStreetMap surface tags refine broad classes. The materials use the local PDOK aerial vertex colours as tint and respond to the existing wetness controls. Roads and paths use their mapped level and the fitted bridge and tunnel profiles.
+
+Use the map’s Overpass JSON for `osm-road-tags.json`, or extract tags for the checked-in road IDs from the [Gelderland and Utrecht PBFs](https://download.geofabrik.de/europe/netherlands.html). This refresh retains the original OSM geometry and junction connections. Motorway curves subdivide at existing shape points. Their original directed keys still resolve posted speeds, traffic updates, and street features.
+
+```sh
+uv run --with osmium python tools/extract-ede-road-tags.py gelderland.osm.pbf utrecht.osm.pbf > /tmp/osm-road-tags.json
+uv run --with 'shapely>=2.1' python tools/build-ede-bgt-roads.py /tmp/ede-bgt-roads --date 2026-11-18 --fetch --osm /tmp/osm-road-tags.json --report /tmp/ede-bgt-road-report.json
+node tools/build-ede-road-tags.mjs /tmp/osm-road-tags.json
+python3 tools/build-ede-motorway-lanes.py --fetch
+```
+
+Set `--date` to the BGT snapshot date. The shared lane definition supplies both painted markings and traffic lane centres. It retains turn lanes, bus permissions, and cycle and advisory strips. Accepted A12 and A30 sections link to the original NWB offsets and WEGGEG counts. The [motorway evidence and imagery review](tools/data/ede-motorway-lanes.sources.md) records ambiguous matches and confirmed tapers. Rebuild the reviewed motorway asset offline by omitting `--fetch`.
 
 ## Refresh traffic signs, speed bumps and crossings
 
@@ -180,6 +214,34 @@ node tools/build-ede-bus-routes.mjs /tmp/ede-gtfs.json /tmp/ede-bus-graph.json a
 The match report lists gaps by variant, including coordinates and affected boarding points. Matching uses actual graph turns, with separate edges for the mapped busways and selected underpasses. Buses are hidden inside tunnels whose interiors are outside the terrain model. Sections with no reliable connected lane are omitted from the driving simulation.
 
 The November 2026 snapshot contains 79 variants, 62 of which enter the playable map. All 125 GTFS boarding locations in the scene are marked. See the match report for the current list of stops and route sections that lack a reliable lane.
+
+## Parking simulation
+
+Parking uses 18,193 fitted spaces in 1,562 areas, in the same horizontal and vertical datum as the street scene. The bake merges mapped bays and estimates row capacity from BGT surfaces, WKD roadside coverage, and OpenStreetMap data. The [parking inventory notes](tools/data/ede-parking-sources.md) document sources, fit counts, restrictions, clearances, and the rebuild command.
+
+Parkweg and Kuiperplein use local survey anchors. Other streets use Amsterdam time-of-day and weekday profiles. The station P+R has a weekday commuter profile and honours its published closure through 27 November 2026. Each garage has virtual spaces and separate access routes where mapped. The [demand notes](tools/data/ede-parking-demand.md) explain the source and dwell assumptions.
+
+Parked cars use reusable instance tiles. Departures replace ambient spawns and arrivals divert cars already in the traffic pool. Up to four nearby cars can reserve spaces or manoeuvre at once. Cars yield at the Kuiperplein driveway, and the approach checker rejects curb movements across protected paths without a verified opening.
+
+The local server supplies `/api/ede-parking`. Exact Q-Park readings require authorised NPR credentials in `EDE_NPR_USERNAME` and `EDE_NPR_PASSWORD` on the server. The simulation places cars in the mapped spaces or at garage entrances and exits. Readings expire after three minutes and occupancy eases into the local profile. Parkweg, Kuiperplein and the new station garage use surveyed or inferred occupancy. [NPR data access](https://www.nationaalparkeerregister.nl/downloads/certificaten-en-aanvraagformulieren)
+
+For profiling, append `?parking=off` to the game URL. The debug API `window.__slopwaw.trafficSystem.parking.summary()` reports local capacity, occupancy, source, and completed arrivals and departures by area. The [parking verification report](tools/data/ede-parking-verification.md) records the fixed-time checks and performance comparison.
+
+## Passenger trains
+
+NS services follow the Utrecht–Arnhem main line through Ede-Wageningen. RRReis RS34 follows the Valleilijn through Ede Centrum and reverses at Ede-Wageningen. The trains use the same mapped rails, turnouts and elevation profiles as the track renderer. Berth centers are estimated from the mapped platforms. The simulator keeps up to eight nearby trains in a reusable pool and shows the closest train’s number, data status and track when known.
+
+The server publishes local services at `/api/ede-trains`. NS position reports come from NDOV’s key-free stream. To enable that stream, install `pyzmq` in the server’s Python environment or start with `uv run --with pyzmq python tools/serve-ede.py`. The default GPS prediction window is 32 seconds and can be changed with `data-train-prediction-seconds` in `index.html`. The browser advances each train along the matched track and brakes for the next confirmed stop. After the window, a matched service continues on a timetable estimate aligned with the last predicted position. An unmatched service retires when its prediction expires. [NDOV real-time feeds](https://govi.nu/realtime.html)
+
+OVapi supplies RS34 delays, changes to station times and platforms, skipped stops and cancellations. The server polls every minute. After three minutes, timing switches to a timetable estimate. The server retains dated cancellations through feed gaps. Train status reads **GPS**, **estimated from live updates**, or **timetable**. Service dates follow Europe/Amsterdam, including trips continuing after midnight, regardless of the lighting mode. [OVapi rail updates](https://gtfs.ovapi.nl/nl/)
+
+The bundled timetable covers 18 November 2026 through 11 December 2027. Offline mode and static hosting use that timetable for both operators. Outside the bundled dates, the simulator reuses the closest bundled service pattern for the same weekday. Refresh the local asset from the [OVapi GTFS archive](https://gtfs.ovapi.nl/nl/).
+
+```sh
+python3 tools/import-ede-trains.py ./gtfs-nl.zip assets/ede-train-timetable.json
+```
+
+The final WebGPU check in headless Chrome at 960 × 537 ran two 100-frame passes with two trains drawn and two passes along the same camera route with train drawing hidden. All four passes measured 16.7 ms at the median and 95th percentile. An earlier pair of runs measured 33.4 ms at the 95th percentile in both conditions. The train update itself measured 0.1 ms at the 95th percentile. These tests used the offline map.
 
 ## Make it your own
 

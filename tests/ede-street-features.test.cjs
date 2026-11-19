@@ -55,3 +55,18 @@ test('the checked-in Ede snapshot links the one-way sign, raised zebra, signal c
   assert.equal(gradeSign.sourceLayer, -1);
   assert.equal(gradeSign.edges[0].layer, 0);
 });
+
+test('street feature distances continue to refer to the proper part of a subdivided road', async () => {
+  const { indexStreetFeatures, streetRoadKey } = await import('../js/ede-street-features.js');
+  const from = { x: 0, z: 0 }, to = { x: 20, z: 0 }, split = { x: 10, z: 0 };
+  const original = { from, to, wayId: 'w42', sourceRoadSpan: 20 };
+  const sourceRoadKey = streetRoadKey(original);
+  const dataset = indexStreetFeatures({ version: 1, crossings: [],
+    signs: [{ id: 'sign', edges: [{ key: sourceRoadKey, from: 13, to: 13 }] }],
+    bumps: [{ id: 'bump', edges: [{ key: sourceRoadKey, from: 9, to: 12 }] }] });
+  const ranges = edge => dataset.forRoad(edge).map(match => [match.type, match.from, match.to]);
+  assert.deepEqual(ranges({ ...original, to: split, sourceRoadKey, sourceRoadStart: 0, sourceRoadEnd: 0.5 }),
+    [['bump', 9, 10]]);
+  assert.deepEqual(ranges({ ...original, from: split, sourceRoadKey, sourceRoadStart: 0.5, sourceRoadEnd: 1 }),
+    [['bump', 0, 2], ['sign', 3, 3]]);
+});

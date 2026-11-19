@@ -19,6 +19,7 @@
   </script>
   <!-- Fetch the city modules in parallel before stylesheets. Keep the lighting versions in sync with the entry and imports. -->
   <link rel="modulepreload" href="./js/ede-geodata.js" />
+  <link rel="modulepreload" href="./js/ede-road-tags.js" />
   <link rel="modulepreload" href="./js/nyc-geodata.js" />
   <link rel="modulepreload" href="./js/ede-geometry.js" />
   <link rel="modulepreload" href="./js/terrain.js" />
@@ -35,7 +36,12 @@
   <link rel="modulepreload" href="./js/vehicles.js" />
   <link rel="modulepreload" href="./js/cars.js" />
   <link rel="modulepreload" href="./js/bus.js" />
+  <link rel="modulepreload" href="./js/ede-transit-time.js" />
   <link rel="modulepreload" href="./js/ede-bus-schedule.js" />
+  <link rel="modulepreload" href="./js/ede-train-schedule.js" />
+  <link rel="modulepreload" href="./js/ede-train-tracks.js" />
+  <link rel="modulepreload" href="./js/ede-train-traffic.js" />
+  <link rel="modulepreload" href="./js/ede-trains.js" />
   <link rel="modulepreload" href="./js/ede-bus-stops.js" />
   <link rel="modulepreload" href="./js/ede-bus-traffic.js" />
   <link rel="modulepreload" href="./js/helicopter.js" />
@@ -61,9 +67,15 @@
   <link rel="modulepreload" href="./js/road-paint.js" />
   <link rel="modulepreload" href="./js/ede-street-features.js" />
   <link rel="modulepreload" href="./js/ede-street-features-world.js" />
-  <link rel="modulepreload" href="./js/traffic.js" />
+  <link rel="modulepreload" href="./js/traffic.js?v=20261119-parking" />
+  <link rel="modulepreload" href="./js/ede-parking.js" />
+  <link rel="modulepreload" href="./js/ede-parking-access.js" />
+  <link rel="modulepreload" href="./js/ede-parking-demand.js" />
   <link rel="modulepreload" href="./js/traffic-area.js" />
   <link rel="modulepreload" href="./js/ede-road-traffic.js" />
+  <link rel="modulepreload" href="./js/ede-motorway-lanes.js" />
+  <link rel="modulepreload" href="./js/ede-road-lanes.js" />
+  <link rel="modulepreload" href="./js/ede-road-surfaces.js" />
   <link rel="modulepreload" href="./js/pedestrian-system.js" />
   <link rel="modulepreload" href="./js/pedestrian-routes.js" />
   <link rel="modulepreload" href="./js/controllers.js" />
@@ -82,13 +94,13 @@
   <link rel="modulepreload" href="./js/ede-facades.js" />
   <link rel="modulepreload" href="./js/ede-facade-material.js" />
   <link rel="modulepreload" href="./js/ede-facade-photos.js" />
-  <link rel="modulepreload" href="./js/main.js?v=20261119-weather" />
-  <script type="module" src="./js/main.js?v=20261119-weather"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261119-crossing-debug" />
+  <script type="module" src="./js/main.js?v=20261119-crossing-debug"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261119-weather" />
+  <link rel="stylesheet" href="./css/style.css?v=20261119-crossing-debug" />
 </head>
 <body>
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
@@ -134,7 +146,7 @@
   </div>
 
   <!-- 3D WebGPU Viewport Container -->
-  <main id="canvas-container" aria-label="3D Interactive Slop Ede Viewport"></main>
+  <main id="canvas-container" data-train-prediction-seconds="32" aria-label="3D Interactive Slop Ede Viewport"></main>
   <div class="map-attribution">
     <a href="https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html" target="_blank" rel="noopener noreferrer">Structures via PDOK BGT</a>
     <a href="https://verkeersveiligheid.ndw.nu/" target="_blank" rel="noopener noreferrer">Traffic signs, bumps and zebras via NDW</a>
@@ -179,6 +191,7 @@
       <button id="btn-teleport" class="tool-btn" type="button" popovertarget="teleport-popover" title="Teleport the active player">
         <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><span class="tool-label">Teleport</span><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
       </button>
+      <button id="btn-crossing-debug" class="tool-btn" type="button" popovertarget="crossing-debug-popover" title="Crossing test teleports" hidden>Debug</button>
       <button id="btn-open-map" class="tool-btn" type="button" title="Ede street map [M]">
         <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label">Map</span><kbd>M</kbd>
       </button>
@@ -223,9 +236,14 @@
     <button id="tp-sherman-tank" class="pop-item tp-btn" data-teleport="sherman-tank" type="button"><span class="pop-name">Sherman Tank</span><span class="pop-sub">Arnhemseweg · Langenberg</span></button>
   </div>
 
+  <div id="crossing-debug-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-labelledby="crossing-debug-title">
+    <h2 id="crossing-debug-title" class="pop-title">Crossing test teleports</h2>
+  </div>
+
   <!-- Bottom-Left: Street-Name Signs & Live GPS Radar Minimap -->
   <div class="hud hud-bottom-left">
     <div id="hud-location" class="location" aria-live="off"></div>
+    <div id="hud-rail-status" class="rail-status" hidden></div>
     <aside id="minimap-card" class="panel radar" aria-label="Live Ede Street Radar Minimap" title="Open the Ede street map [M]">
       <canvas id="minimap-canvas"></canvas>
       <span class="radar-north" aria-hidden="true">N</span>

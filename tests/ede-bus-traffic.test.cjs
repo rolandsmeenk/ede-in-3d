@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 const test = require('node:test');
 
 test('matched buses start at the boundary and use only connected lanes', async () => {
@@ -34,6 +36,37 @@ test('ordinary traffic has an onward lane without entering the bus-only station 
   for (const edge of edges) for (const lane of edge.ambientLanes) {
     assert.ok(edge.ambientMoves.some((move) => move.to.ambientLanes.includes(move.out[lane])));
   }
+});
+
+test('all Ede bus sections retain connected legal lanes after lane counts change', async () => {
+  const { buildRoadNetwork } = await import('../js/road-network.js');
+  const { prepareEdeBusPaths } = await import('../js/ede-bus-traffic.js');
+  const { setEdeMotorwayLanes } = await import('../js/ede-motorway-lanes.js');
+  const { BUS } = await import('../js/road-access.js');
+  const load = name => JSON.parse(readFileSync(join(__dirname, `../assets/ede-${name}.json`), 'utf8'));
+  const schedule = load('bus-routes');
+  setEdeMotorwayLanes(load('motorway-lanes'));
+  const { edges, paintEdges, alternateBusMove } = buildRoadNetwork([], [], [], load('grade'));
+  const paths = prepareEdeBusPaths(schedule, edges, alternateBusMove);
+  assert.equal(paths.size, schedule.variants.flatMap(variant => variant.slices).length);
+  for (const { legs } of paths.values()) for (let i = 0; i < legs.length; i++) {
+    const { road, lane, move } = legs[i];
+    assert.ok(road.laneModes[lane] & BUS);
+    const next = legs[i + 1];
+    if (next) {
+      assert.equal(move.to, next.road);
+      assert.equal(move.out[lane], next.lane);
+    }
+  }
+  const approach = edges.find(edge => edge.wayId === 'w1156964960');
+  assert.equal(approach.laneDefinition, paintEdges.find(edge => edge.wayId === approach.wayId).laneDefinition);
+  assert.equal(approach.laneDefinition.width, 9.8);
+  assert.deepEqual(approach.ambientLanes, [0, 1, 2]);
+  assert.equal(approach.laneModes[3], BUS);
+  assert.deepEqual(approach.moves.find(move => move.to.wayId === 'w620928502').out.slice(0, 3), [0, 1, -1]);
+  const carriageway = edges.filter(edge => edge.wayId === 'w6960114' && edge.sourceRoadKey);
+  assert.ok(carriageway.length > 4);
+  assert.ok(carriageway.every(edge => edge.laneDefinition.source === 'weggeg' && edge.sourceRoadStart < edge.sourceRoadEnd));
 });
 
 test('fresh exact GTFS observations replace their scheduled run and stale data restores it', async () => {

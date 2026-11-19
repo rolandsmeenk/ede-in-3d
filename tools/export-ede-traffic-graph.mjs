@@ -4,9 +4,12 @@ import { EDE_DATA } from '../js/ede-geodata.js';
 import { buildRoadNetwork } from '../js/road-network.js';
 import { streetRoadKey, streetPathKey } from '../js/ede-street-features.js';
 import { BICYCLE, CAR, FOOT } from '../js/road-access.js';
+import { setEdeMotorwayLanes } from '../js/ede-motorway-lanes.js';
+
+setEdeMotorwayLanes(JSON.parse(readFileSync(new URL('../assets/ede-motorway-lanes.json', import.meta.url), 'utf8')));
 
 const streetFeatures = process.argv.includes('--street-features');
-const grade = streetFeatures && JSON.parse(readFileSync(new URL('../assets/ede-grade.json', import.meta.url), 'utf8'));
+const grade = streetFeatures ? JSON.parse(readFileSync(new URL('../assets/ede-grade.json', import.meta.url), 'utf8')) : null;
 const info = console.info;
 console.info = console.error;
 const { edges, activeTravel } = buildRoadNetwork([], [], [], grade);
@@ -18,7 +21,9 @@ const records = edges.filter(edge => streetFeatures ? edge.wayId && !edge.bounda
     key: streetRoadKey(edge), a: [edge.from.x, edge.from.z], b: [edge.to.x, edge.to.z],
     layer: edge.layer, bridge: edge.bridge, tunnel: edge.underpass, lanes: edge.lanes,
     way: edge.wayId, kind: road?.kind, name: road?.name, oneway: !!road?.oneway,
-    ...(streetFeatures && { modes: edge.modes, width: road?.bgt?.width ?? road?.width ?? edge.half * 2 })
+    ...(streetFeatures && { modes: edge.modes, width: road?.bgtWidth ?? road?.bgt?.width ?? road?.width ?? edge.half * 2,
+      laneDefinition: edge.laneDefinition, sourceRoadKey: edge.sourceRoadKey, sourceRoadSpan: edge.sourceRoadSpan,
+      sourceRoadStart: edge.sourceRoadStart, sourceRoadEnd: edge.sourceRoadEnd })
   };
 });
 const { bounds, geographicBounds, lonLatAffine } = EDE_DATA.meta;

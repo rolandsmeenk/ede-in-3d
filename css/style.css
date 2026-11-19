@@ -409,6 +409,8 @@ body.hud-minimized .toolbar > :not(#btn-toggle-hud) {
   background: var(--divider);
 }
 
+#btn-crossing-debug[hidden] { display: none; }
+
 #time-live-clock {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
@@ -601,6 +603,8 @@ body.hud-minimized .icon-show {
   color: var(--text-3);
 }
 
+#crossing-debug-popover { width: min(330px, calc(100vw - 2 * var(--edge))); }
+
 /* ------------------------------------------------------------------------------------------------------------------
    Bottom left: NYC street-name signs over the GPS radar
    ------------------------------------------------------------------------------------------------------------------ */
@@ -624,6 +628,15 @@ body.hud-minimized .icon-show {
   color: rgba(255, 255, 255, 0.92);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 14px rgba(0, 0, 0, 0.4);
   animation: rise-in 0.4s var(--ease-out) both;
+}
+
+.rail-status {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(8, 11, 15, 0.83);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .location-signs {

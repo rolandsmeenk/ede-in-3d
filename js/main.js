@@ -9,7 +9,8 @@ import { buildLandmarks } from './landmarks.js';
 import { buildCityBlocks } from './buildings.js';
 import { loadBagBuildings } from './bag3d.js';
 import { buildStreetDetails } from './street-details.js';
-import { createTrafficSystem, createHighwayTraffic } from './traffic.js';
+import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261119-parking';
+import { loadEdeParking } from './ede-parking.js';
 import { buildRoadPaint } from './road-paint.js';
 import { ThirdPersonControllerManager } from './controllers.js';
 import { TouchControls } from './touch-controls.js';
@@ -30,10 +31,14 @@ import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeight
 import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
+import { loadEdeTrainTimetable } from './ede-train-schedule.js';
+import { createEdeTrainSystem } from './ede-trains.js';
 import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js';
 import { loadEdeStreetFeatures } from './ede-street-features.js';
 import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js';
 import { buildEdeBusStops } from './ede-bus-stops.js';
+import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
+import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
@@ -101,10 +106,11 @@ async function initApp() {
   const precipitation = createWeatherPrecipitation(scene);
   markInit('lighting');
 
-  await showLoadingStage('Loading Ede’s map and bus timetable…');
-  const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult] = await Promise.allSettled([
+  await showLoadingStage('Loading Ede’s map and timetables…');
+  const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult] = await Promise.allSettled([
     loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
-    loadEdePostedSpeeds(), loadEdeStreetFeatures()
+    loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking()
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -119,10 +125,13 @@ async function initApp() {
   if (busResult.status === 'fulfilled') busSchedule = busResult.value;
   else console.warn('[buses] timetable unavailable:', busResult.reason);
   if (gradeResult.status === 'rejected') console.warn('[grade] using AHN surface heights:', gradeResult.reason);
+  if (motorwayResult.status === 'rejected') console.warn('[motorways] using OSM lanes:', motorwayResult.reason);
+  if (roadSurfaceResult.status === 'rejected') console.warn('[road surfaces] using OSM surfaces:', roadSurfaceResult.reason);
   const roadTraffic = createEdeRoadTraffic(speedResult.status === 'fulfilled' ? speedResult.value : undefined);
   const streetFeatures = featureResult.status === 'fulfilled' ? featureResult.value : null;
   if (!streetFeatures) console.warn('[street features] using existing road markings:', featureResult.reason);
-  markInit('map assets and bus timetable');
+  if (trainResult.status === 'rejected') console.warn('[trains] timetable unavailable:', trainResult.reason);
+  markInit('map assets and timetables');
 
   // 3. Build the city, buildings, street details and traffic
   await showLoadingStage('Building streets, parks and waterfronts...');
@@ -141,8 +150,19 @@ async function initApp() {
         const surface = gradeProfileAt(x, z);
         return surface?.kind === 'underpass' ? surface.y : undefined;
       }
-      const rail = nearbyRailHeightAt(x, z, kind === 'deck' ? 3.5 : 7);
-      if (kind === 'deck' || kind === 'raised-wall') return gradeDeckAt(x, z) ?? rail;
+      if (kind === 'road-deck') return gradeDeckAt(x, z);
+      if (kind === 'raised-wall') {
+        // A parapet sits beside the upper carriageway, outside its travel footprint.
+        const deck = gradeDeckAt(x, z, 9);
+        if (deck !== undefined) return deck;
+        const lower = gradeProfileAt(x, z);
+        if (lower?.kind === 'underpass' && Number.isFinite(lower.roof)) return lower.roof + 0.62;
+      }
+      const railReach = kind === 'deck' || kind === 'rail-deck' ? 3.5 : kind === 'raised-platform' ? 20 : 7;
+      const rail = nearbyRailHeightAt(x, z, railReach);
+      if (kind === 'rail-deck') return rail;
+      if (kind === 'deck') return gradeDeckAt(x, z) ?? rail;
+      if (kind === 'raised-wall') return rail;
       return rail === undefined ? undefined : rail + 0.89;
     });
     setEdePlatforms(bgtWorld.platforms);
@@ -184,8 +204,17 @@ async function initApp() {
     ...streetDetails.footprints,
     ...allColliders.filter((c) => !c.obb && !c.kind && (c.minY ?? 0) < 3.5),
     ...allColliders.filter(c => c.obb && !c.kind && (c.minY ?? 0) < 2).map(c => ({ ...c, pedestrianOnly: true }))
-  ], streetDetails.signalIntersections, busSchedule, roadTraffic);
+  ], streetDetails.signalIntersections, busSchedule, roadTraffic,
+    parkingResult.status==='fulfilled' ? parkingResult.value : undefined);
+  if (parkingResult.status==='rejected') console.warn('[parking] inventory unavailable:', parkingResult.reason);
   watchEdeTraffic(roadTraffic);
+  let trainSystem;
+  try {
+    trainSystem = createEdeTrainSystem(scene, trainResult.status === 'fulfilled' ? trainResult.value : undefined,
+      document.getElementById('hud-rail-status'), { predictionSeconds: Number(container.dataset.trainPredictionSeconds) });
+  } catch (error) {
+    console.warn('[trains] rail simulation unavailable:', error);
+  }
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
   await showLoadingStage('Adding road markings...');
@@ -199,7 +228,10 @@ async function initApp() {
   }
   markInit('street features');
   buildRoadPaint(scene, trafficSystem.network, cityGrid.roadPaint,
-    (x, z, edge) => gradeWayAt(edge?.wayId, x, z, 1.2)?.y ?? terrainHeightAt(x, z), streetWorld?.replacesZebra);
+    (x, z, edge) => {
+      const grade = gradeWayAt(edge?.wayId, x, z, 1.2);
+      return grade ? grade.y + 0.055 : terrainHeightAt(x, z) + 0.065;
+    }, streetWorld?.replacesZebra);
   markInit('roadPaint');
 
   // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Helicopter) & Multi-Camera System
@@ -606,8 +638,8 @@ async function initApp() {
     elLocation.replaceChildren(...nodes);
   }
 
-  function teleportTo(x, z, heading = Math.PI) {
-    const destination = controllerManager.teleportActiveTo(x, z, heading);
+  function teleportTo(x, z, heading = Math.PI, altitude = null) {
+    const destination = controllerManager.teleportActiveTo(x, z, heading, altitude);
     touchControls.reset();
     gamepadControls.reset();
     cameraSystem.resetForTeleport();
@@ -650,6 +682,16 @@ async function initApp() {
 
   const openMapBtn = document.getElementById('btn-open-map');
   if (openMapBtn) openMapBtn.addEventListener('click', () => mapSystem.toggleFullMap(true));
+
+  if (supportsPopover && new URLSearchParams(window.location.search).get('debug') === '1') {
+    const { mountCrossingTeleports } = await import('./ede-crossing-debug.js');
+    mountCrossingTeleports(document.getElementById('crossing-debug-popover'), (mode, x, z, heading, altitude) => {
+      selectMode(mode);
+      teleportTo(x, z, heading, altitude);
+      closePopovers();
+    });
+    document.getElementById('btn-crossing-debug').hidden = false;
+  }
 
   if (hudToggleBtn) {
     hudToggleBtn.addEventListener('click', () => {
@@ -828,6 +870,7 @@ async function initApp() {
     gamepadControls.update(dt);
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
     cameraSystem.update(dt, elapsed);
+    trainSystem?.update(dt, cameraSystem.currentPos);
     bagBuildings?.userData.facadePhotos?.update(cameraSystem.currentPos);
     streetDetails.signalClock.value = elapsed;
     trafficSystem.update(
@@ -890,7 +933,7 @@ async function initApp() {
         window.__slopwaw = {
           ready: true, firstFrameAt: performance.now(), init: initTimings.join(', '),
           backend: renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback',
-          scene, renderer, cameraSystem, controllerManager, TELEPORT_LOCATIONS, trafficSystem,
+          scene, renderer, cameraSystem, controllerManager, TELEPORT_LOCATIONS, trafficSystem, trainSystem,
           get weather() { return liveWeather.state; }, streetFeatures,
           teleport(key) { const l = TELEPORT_LOCATIONS[key]; return teleportTo(l.x, l.z, l.heading); },
           teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },

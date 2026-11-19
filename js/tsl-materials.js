@@ -1448,6 +1448,59 @@ function createParkPavingMaterial(aerial = false) {
   return mat;
 }
 
+function createEdePavingMaterial(aerial = false, grade = false) {
+  const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0, roughness: 0.86 });
+  mat.name = 'Ede non-asphalt paving';
+  mat.aoNode = canyonSkyAONode();
+  const style = attribute('pavingStyle', 'float');
+  const p = uv();
+  const block = step(0.5, style);
+  const tile = step(1.5, style);
+  const concrete = step(2.5, style);
+  const gravel = step(3.5, style);
+  const sand = step(4.5, style);
+
+  // Running bond for small brick and concrete pavers, aligned square sidewalk tiles.
+  const unitX = mix(0.202, 0.207, block).mix(0.30, tile);
+  const unitY = mix(0.071, 0.103, block).mix(0.30, tile);
+  const row = floor(p.y.div(unitY));
+  const x = p.x.add(mod(row, 2).mul(unitX).mul(float(0.5).sub(tile.mul(0.5))));
+  const jointWidth = mix(0.0023, 0.0035, block);
+  const pixelSize = length(fwidth(p));
+  const joint = max(gridLine(x, unitX, jointWidth), gridLine(p.y, unitY, jointWidth))
+    .mul(float(1).sub(concrete)).mul(smoothstep(0.12, 0.022, pixelSize));
+  const unit = hash2D(vec2(floor(x.div(unitX)), row));
+
+  const grit = noise2D(positionWorld.xz.mul(mix(19, 44, sand)));
+  const field = noise2D(positionWorld.xz.mul(0.75));
+  const fine = smoothstep(0.08, 0.014, pixelSize);
+  const damp = roadWetMasks(roadPuddleField(positionWorld.x, positionWorld.z))
+    .mul(grade ? attribute('pavingExposure', 'float') : 1);
+  const wet = damp.x.mul(mix(1, 0.4, gravel));
+  const film = damp.z;
+  const puddle = damp.y.mul(gravel.oneMinus());
+
+  const low = mix(
+    mix(mix(color(0x744737), color(0x66625c), block), color(0x817e75), tile),
+    mix(color(0x8c897f), mix(color(0x796b59), color(0x8e7657), sand), gravel), concrete
+  );
+  const high = mix(
+    mix(mix(color(0xa96449), color(0x939084), block), color(0xa9a69a), tile),
+    mix(color(0xb7b2a3), mix(color(0xb29e7c), color(0xbfaa84), sand), gravel), concrete
+  );
+  const tone = mix(mix(float(0.5), unit, smoothstep(0.16, 0.035, pixelSize)),
+    mix(field, grit, gravel.mul(fine).mul(0.72)), concrete);
+  const base = mix(low, high, tone);
+  const tinted = aerial ? blendAerialSurfaceColor(base, 0.32) : base;
+  mat.colorNode = tinted.mul(field.mul(0.17).add(0.91)).mul(grit.sub(0.5).mul(fine).mul(0.18).add(1))
+    .mul(joint.mul(0.47).oneMinus()).mul(wet.mul(0.24).add(film.mul(0.1)).oneMinus());
+  mat.roughnessNode = mix(mix(mix(0.79, 0.97, gravel), 0.56, wet.mul(0.65).add(film.mul(0.12))), 0.12, puddle);
+  mat.metalnessNode = puddle.mul(0.12);
+  mat.normalNode = bumpNormal(grit.sub(0.5).mul(mix(0.002, 0.009, gravel)).mul(fine)
+    .sub(joint.mul(0.004)).mul(puddle.oneMinus()));
+  return mat;
+}
+
 /**
  * Central Park Perimeter Wall TSL Material: coursed grey schist & gneiss ashlar with recessed mortar joints on
  * the vertical faces and a smoother pale bluestone coping on top (axis-aligned walls, world-space courses).
@@ -1771,7 +1824,7 @@ const roadTarSnakes = Fn(([wxz, px]) => {
  * from above.
  * Lane markings are separate geometry built from the road network (js/road-paint.js).
  */
-function createRoadSurfaceMaterial(aerial = false) {
+function createRoadSurfaceMaterial(aerial = false, grade = false) {
   const mat = new THREE.MeshStandardNodeMaterial({
     metalness: 0.24,
     roughness: 0.48
@@ -1817,7 +1870,7 @@ function createRoadSurfaceMaterial(aerial = false) {
   // Puddle field & wetness masks shared by every channel below (each node is generated once per fragment); potholes
   // hold water first
   const puddleField = roadPuddleField(positionWorld.x, positionWorld.z).add(pothole.mul(0.45));
-  const wet = roadWetMasks(puddleField);
+  const wet = roadWetMasks(puddleField).mul(grade ? attribute('pavingExposure', 'float') : 1);
   const damp = wet.x;
   const puddle = wet.y;
   const film = wet.z;
@@ -3295,6 +3348,7 @@ export {
   createCarPaintMaterial,
   createTreeMaterial,
   createParkPavingMaterial,
+  createEdePavingMaterial,
   createParkWallMaterial,
   createIronFenceMaterial,
   createParkLampGlobeMaterial,

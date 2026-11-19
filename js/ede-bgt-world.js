@@ -26,14 +26,22 @@ function makeDeckProfile(feature, gradeSurfaceAt) {
   const reach = Math.min(3, length / 3);
   const start = terrainHeightAt(ax - reach * ux, az - reach * uz) + 0.025;
   const end = terrainHeightAt(bx + reach * ux, bz + reach * uz) + 0.025;
-  const samples = [];
-  for (let i = 0; i <= 8; i++) {
-    const t = i / 8;
-    const height = gradeSurfaceAt(ax + (bx - ax) * t, az + (bz - az) * t, 'deck');
-    if (Number.isFinite(height)) samples.push({ t, height: height - 0.14 });
-  }
+  const axisSamples = kind => {
+    const samples = [];
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      const height = gradeSurfaceAt(ax + (bx - ax) * t, az + (bz - az) * t, kind);
+      if (Number.isFinite(height)) samples.push({ t, height: height - 0.14 });
+    }
+    return samples;
+  };
+  const road = axisSamples('road-deck'), rail = axisSamples('rail-deck');
+  const kind = road.length >= rail.length ? 'road-deck' : 'rail-deck';
+  const measured = kind === 'road-deck' ? road : rail;
+  // Select one alignment along the deck axis so the lower route cannot pull down its edges.
+  const samples = measured.length >= 4 ? measured : [];
   return (x, z) => {
-    const height = gradeSurfaceAt(x, z, 'deck');
+    const height = samples.length ? gradeSurfaceAt(x, z, kind) : undefined;
     if (Number.isFinite(height)) return height - 0.14;
     const t = clamp(((x - ax) * ux + (z - az) * uz) / length, 0, 1);
     if (!samples.length) return start + (end - start) * t;
@@ -245,15 +253,20 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
         slab(kind, form, surface, (px, pz) => surface(px, pz) - thickness, { solid: false, underside: true });
       } else if (kind === 'platform') {
         const surface = (px, pz) => {
-          const platform = gradeSurfaceAt(px, pz, 'platform');
+          const platform = gradeSurfaceAt(px, pz, layer > 0 ? 'raised-platform' : 'platform');
           if (Number.isFinite(platform)) return platform - 0.015;
           const deck = layer > 0 ? gradeSurfaceAt(px, pz, 'deck') : undefined;
           return Number.isFinite(deck) ? deck + 0.28 : terrainHeightAt(px, pz) + 0.78;
         };
-        slab(kind, form, surface, belowGround, { solid: false, side: 'platformEdge' });
         platforms.push({ id: ids[0], outer, holes, height: surface });
-        const top = Math.min(...outer.map(p => surface(p.x, p.z))) - 0.08;
-        if (top > ground + 0.1) addCollider(outer, holes, ground - 0.25, top, kind);
+        if (layer > 0) {
+          slab(kind, form, surface, (px, pz) => surface(px, pz) - 0.24,
+            { side: 'platformEdge', underside: true, localHeight: true });
+        } else {
+          slab(kind, form, surface, belowGround, { solid: false, side: 'platformEdge' });
+          const top = Math.min(...outer.map(p => surface(p.x, p.z))) - 0.08;
+          if (top > ground + 0.1) addCollider(outer, holes, ground - 0.25, top, kind);
+        }
       } else if (kind === 'abutment' || kind === 'pier' || kind === 'foundation') {
         const deck = deckProfiles.get(feature.deck);
         const surface = (px, pz) => {

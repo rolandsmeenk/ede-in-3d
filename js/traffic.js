@@ -3,6 +3,8 @@ import { buildRoadNetwork, roadEdgeKey } from './road-network.js';
 import { indexLocalRoads, localSegmentLength, pickByArea } from './traffic-area.js';
 import { busEntryAt, busRouteDistance, busTrackingSpeed, createEdeBusTracker, prepareEdeBusPaths } from './ede-bus-traffic.js';
 import { terrainHeightAt } from './terrain.js';
+import { createEdeParking } from './ede-parking.js';
+import { parkingPose } from './ede-parking-access.js';
 import { getEdeGrade, gradeHeightAt, gradeWayAt } from './ede-grade.js';
 import { createPedestrianSystem } from './pedestrian-system.js';
 import { vehicleContact, resolveVehicleContact, sweptVehicleContact } from './vehicle-physics.js';
@@ -97,7 +99,7 @@ function createBusDestinationTexture(routes) {
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, busSchedule, roadTraffic) {
+function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, busSchedule, roadTraffic, parkingData) {
   const group = new THREE.Group();
   group.name = 'ManhattanTrafficAndPedestrians';
   let collisionListener = null;
@@ -128,7 +130,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const network = buildRoadNetwork(sidewalks, obstacles, signalIntersections, getEdeGrade());
   const { nodes, edges, connector, curvePoint } = network;
   roadTraffic.bind(edges, edge => `${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer}`);
-  const busPaths = prepareEdeBusPaths(busSchedule, edges);
+  const busPaths = prepareEdeBusPaths(busSchedule, edges, network.alternateBusMove);
 
   // Sides of an intersection (road-network.js step 9): a grid intersection's are 0 east, 1 west, 2 south, 3 north;
   // centreline junctions number their arms from 4. Where lane i of edge e meets a crosswalk, measured along the
@@ -291,7 +293,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     const car = createVehicle(false, kind.half, kind.halfWidth, kind.axle, CAR_DRIVER, 10 + (i % 5) * 0.9);
     // paint as float32 values, so renderCar() can tell whether an instance slot's paint changes by comparing
     const paint = [Math.fround(col.r), Math.fround(col.g), Math.fround(col.b)];
-    Object.assign(car, { isPolice, bodyType, paint, style, halfL: kind.halfL, mass: kind.mass, engine: kind.engine });
+    const parkingStyle = bodyType==='sedan' && !isPolice && !isBoroTaxi
+      ? fleetStyles.sedan.findIndex(entry=>entry.col===col && entry.style===style) : null;
+    Object.assign(car, { isPolice, bodyType, paint, style, halfL: kind.halfL, mass: kind.mass, engine: kind.engine,
+      parkingStyle: parkingStyle>=0 && parkingStyle!==null ? parkingStyle : null, parkingTrip:null });
     cars.push(car);
   }
 
@@ -318,6 +323,14 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     };
   }
   const bodyMeshes = Object.values(bodies).flatMap((b) => [b.near, b.far]);
+  let parking;
+  if (parkingData) {
+    try {
+      parking=createEdeParking(group,bodies.sedan.far,fleetStyles.sedan,network,parkingData,edge=>roadTraffic.isClosed(edge));
+    } catch (error) {
+      console.warn('[parking] simulation unavailable:',error);
+    }
+  }
 
   const carWheelLeftInst = new THREE.InstancedMesh(carWheelLeftGeo, carWheelMat, NUM_CARS * 2);
   const carWheelRightInst = new THREE.InstancedMesh(carWheelRightGeo, carWheelMat, NUM_CARS * 2);
@@ -665,7 +678,11 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     for (const v of vehicles) {
       const e = v.edge;
       if (!e || e.mapped) continue;
-      if (!v.conn) {
+      if (v.parkingTrip?.phase==='maneuver') {
+        const along=(v.x-e.sx)*e.dx+(v.z-e.sz)*e.dz;
+        const side=(v.x-e.sx)*e.rx+(v.z-e.sz)*e.rz-e.lanes[v.lane];
+        if (Math.abs(side)<2.45 && along>0 && along<e.len) occupy(e.occ[v.lane],v,along);
+      } else if (!v.conn) {
         occupy(e.occ[v.lane], v, v.s);
         const side = straddle(v);
         if (side) occupy(e.occ[v.lane + side], v, v.s);
@@ -901,9 +918,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const weights = [];
   function chooseMove(v, fromLane) {
     const e = v.edge;
-    if (v.busRun) {
-      const next = v.busPath.legs[v.busLeg + 1];
-      return next ? e.moves.find((m) => m.to === next.road && m.out[v.lane] === next.lane) : null;
+    if (v.busRun) return v.busPath.legs[v.busLeg].move;
+    if (v.parkingTrip?.phase==='approach') {
+      const trip=v.parkingTrip;
+      const hop=trip.route[trip.step];
+      if (hop && hop.out[v.lane]>=0 && !roadTraffic.isClosed(hop.to)) return hop;
+      if (!hop && e===trip.link.entrance.edge && v.lane===trip.link.entrance.lane) return null;
+      parking.cancel(v,clock);
     }
     const moves = (v.bodyType === 'van' ? e.vanMoves : e.ambientMoves) || e.moves;
     let total = 0;
@@ -1353,6 +1374,12 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         cap = Math.min(cap, Math.sqrt(4 * Math.max(0, distance)));
       }
     }
+    const parkAt=v.parkingTrip?.phase==='approach' ? parkingTarget(v) : null;
+    if (parkAt!==null) {
+      const remaining=parkAt-v.s;
+      worst=Math.min(worst,stopAt(v,remaining+0.22,0.24));
+      cap=Math.min(cap,Math.sqrt(3.6*Math.max(remaining,0)));
+    }
     worst = Math.min(worst, stopForMappedCrossings(v, v.conn ? v.move.to : e));
     cap = Math.min(cap, roadSpeed(v));
     const pg = playerGap(v, 0);
@@ -1491,10 +1518,29 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     v.conn = null;
     v.commit = null;
     if (v.busRun) v.busLeg++;
+    if (v.parkingTrip?.phase==='approach') v.parkingTrip.step++;
     v.move = chooseMove(v, false);
   }
 
+  function parkingTarget(v) {
+    const trip=v.parkingTrip;
+    return trip?.phase==='approach' && !v.conn && v.edge===trip.link.entrance.edge &&
+      v.lane===trip.link.entrance.lane ? trip.link.entrance.s : null;
+  }
+
   function drive(v, dt) {
+    if (!v.conn && v.parkingTrip?.phase==='approach') {
+      const trip=v.parkingTrip;
+      const full=!parking.accepts(trip);
+      const target=parkingTarget(v);
+      if (full || clock>=trip.expires || roadTraffic.isClosed(trip.link.entrance.edge) ||
+          (target!==null && v.s>target+0.5)) {
+        const retries=trip.retries??0;
+        parking.cancel(v,clock);
+        if (full && retries<2 && parking.routeArrival(v,clock)) v.parkingTrip.retries=retries+1;
+        v.move=chooseMove(v,true);
+      }
+    }
     if (!v.conn && !v.busRun && (v.move ? roadTraffic.isClosed(v.move.to) : clock >= (v.nextRouteCheck ?? 0))) {
       v.commit = null;
       v.move = chooseMove(v, false);
@@ -1518,7 +1564,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         const z = v.edge.sz + v.edge.dz * stop.at + v.edge.rz * (v.edge.lanes[v.lane] + offset);
         if (network.isRoadClear(x, z, v.halfWidth)) v.off = offset;
       }
-    } else {
+    } else if (!v.parkingTrip) {
       v.laneTimer -= dt;
       if (v.laneTimer <= 0) {
         v.laneTimer = (v.bike ? 0.15 : 0.4) + Math.random() * 0.3;
@@ -1541,6 +1587,17 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     v.wait = v.speed < 0.5 ? v.wait + dt : 0;
     if (!v.conn) {
       v.s += ds;
+      const parkAt=v.parkingTrip?.phase==='approach' ? parkingTarget(v) : null;
+      if (parkAt!==null && v.s>=parkAt-0.24) {
+        v.s=parkAt;
+        v.speed=0;
+        v.dl=v.nose=v.steer=0;
+        const trip=v.parkingTrip;
+        trip.phase='maneuver';
+        trip.distance=0;
+        trip.expires=clock+90;
+        return;
+      }
       if (stop && v.s >= busStopTarget(v, stop) - 0.22 && (v.speed < 1.1 || v.s >= busStopTarget(v, stop))) {
         const [arrival, departure] = v.busRun.trip.stops[stop.index];
         v.s = Math.min(v.s, busStopTarget(v, stop));
@@ -1728,6 +1785,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   function collideWithPlayer(v) {
     const pe = player.entity;
     if (v.edge.unmodeledTunnel || Math.abs(pe.position.y - v.y) > 1.8) return;
+    if (v.parkingTrip?.phase==='maneuver') {
+      collideParkedPlayer(v.x,v.y,v.z,v.yaw);
+      return;
+    }
     const reach = v.half + player.halfL + player.halfW;
     const prevX = pe.prevX ?? pe.position.x, prevZ = pe.prevZ ?? pe.position.z;
     const dx = pe.position.x - prevX - v.x + v.prevX;
@@ -1775,13 +1836,32 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     if (speed > 2.2) spawnCollisionSparks(hit.x, y, hit.z, hit.nx, hit.nz, speed);
   }
 
+  function collideParkedPlayer(x,y,z,heading) {
+    const pe=player.entity;
+    if (Math.abs(pe.position.y-y)>1.55 || Math.abs(pe.position.x-x)>6 || Math.abs(pe.position.z-z)>6) return;
+    const a=contactA, b=contactB, hit=vehicleHit;
+    const pyaw=pe.heading || 0;
+    Object.assign(a,{x:pe.position.x,z:pe.position.z,prevX:pe.prevX??pe.position.x,prevZ:pe.prevZ??pe.position.z,
+      sin:Math.sin(pyaw),cos:Math.cos(pyaw),halfW:player.halfW,halfL:player.halfL});
+    Object.assign(b,{x,z,prevX:x,prevZ:z,sin:Math.sin(heading),cos:Math.cos(heading),halfW:0.94,halfL:2.25});
+    if (!sweptVehicleContact(a,b,hit) && !vehicleContact(a,b,hit)) return;
+    pe.position.x=hit.ax+hit.nx*(hit.depth+0.025);
+    pe.position.z=hit.az+hit.nz*(hit.depth+0.025);
+    if (pe.type==='car' || pe.type==='cyclist' || pe.type==='cargobike') {
+      pe.speed*=0.12;
+      pe.vx=pe.vz=0;
+    }
+    pe.mesh?.position.copy(pe.position);
+  }
+
   // Only disturbed traffic needs pair contacts. Newly struck cars join the same
   // queue, and each pair is visited once before any instance matrices are written.
   function collideTraffic() {
     collisionStep++;
     impacted.length = 0;
     for (const v of vehicles) {
-      if (v.edge && (v.impactTime > 0 || Math.abs(v.yawVel) > 0.05 || v.vx * v.vx + v.vz * v.vz > 0.04)) {
+      if (v.edge && v.parkingTrip?.phase!=='maneuver' &&
+          (v.impactTime > 0 || Math.abs(v.yawVel) > 0.05 || v.vx * v.vx + v.vz * v.vz > 0.04)) {
         v.contactStep = collisionStep;
         impacted.push(v);
       }
@@ -1789,7 +1869,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     for (let i = 0; i < impacted.length; i++) {
       const v = impacted[i];
       for (const o of vehicles) {
-        if (o === v || !o.edge || o.edge.unmodeledTunnel || v.edge.unmodeledTunnel || o.contactDone === collisionStep || Math.abs(o.y - v.y) > 1.8) continue;
+        if (o === v || !o.edge || o.parkingTrip?.phase==='maneuver' || o.edge.unmodeledTunnel ||
+            v.edge.unmodeledTunnel || o.contactDone===collisionStep || Math.abs(o.y-v.y)>1.8) continue;
         const reach = v.half + o.half + 0.5;
         const dx = v.x - o.x, dz = v.z - o.z;
         if (Math.abs(dx) > reach + Math.abs(dx - v.prevX + o.prevX)
@@ -1823,8 +1904,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // 6. PLACING VEHICLES
   // =========================================================================
   // Room at s in a lane list: margin metres to the vehicles either side, and two seconds more for the one behind
-  function laneClear(list, s, margin) {
-    for (const o of list) if (Math.abs(o.s - s) < o.v.half + margin + (o.s < s ? 2 * o.v.speed : 0)) return false;
+  function laneClear(list,s,margin,self) {
+    for (const o of list) if (o.v!==self && Math.abs(o.s-s)<o.v.half+margin+(o.s<s?2*o.v.speed:0)) return false;
     return true;
   }
 
@@ -1850,6 +1931,105 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     v.nose = v.yawRate = v.steer = v.delta = 0;
     v.move = chooseMove(v, false);
     occupy(e.occ[lane], v, s);
+  }
+
+  const parkingSample={}, parkingLook={}, parkingBody={}, parkedCheck={};
+  function parkingClear(v, sample, look) {
+    const x=sample.x, z=sample.z, y=sample.y;
+    const lx=look.x, lz=look.z;
+    if (player.active && Math.abs(y-player.y)<1.5 &&
+        ((player.x-lx)**2+(player.z-lz)**2<10 || (player.x-x)**2+(player.z-z)**2<6)) return false;
+    for (const other of vehicles) {
+      if (other===v || !other.edge || Math.abs(y-other.y)>1.55 || Math.abs(other.x-x)>17 || Math.abs(other.z-z)>17) continue;
+      const ahead=other.bike ? 0.65 : 0.24;
+      const dx=other.x+other.tx*other.speed*ahead-lx, dz=other.z+other.tz*other.speed*ahead-lz;
+      const near=other.bike?2.65:other.half>4?4.1:3.45;
+      if (dx*dx+dz*dz<near*near || (other.x-x)**2+(other.z-z)**2<near*near*0.72) return false;
+    }
+    for (const person of pedestrianSystem.peds) {
+      if (person.placed && Math.abs(y-person.y)<1.55 &&
+          ((person.x-lx)**2+(person.z-lz)**2<5.3 || (person.x-x)**2+(person.z-z)**2<4)) return false;
+    }
+    let nearbyClear=true;
+    parkingBody.x=x; parkingBody.z=z;
+    parkingBody.sin=Math.sin(sample.yaw); parkingBody.cos=Math.cos(sample.yaw);
+    parkingBody.halfW=0.87; parkingBody.halfL=2.13;
+    parking.forParked(x,z,5,({space})=>{
+      if (!nearbyClear || space===v.parkingTrip.token.space || Math.abs(y-space.y)>1.55) return;
+      const heading=space.heading;
+      parkedCheck.x=space.x; parkedCheck.z=space.z;
+      parkedCheck.sin=Math.sin(heading); parkedCheck.cos=Math.cos(heading);
+      parkedCheck.halfW=0.88; parkedCheck.halfL=2.14;
+      if (vehicleContact(parkingBody,parkedCheck,vehicleHit)) nearbyClear=false;
+    });
+    return nearbyClear;
+  }
+
+  function setManeuverPose(v,path,s) {
+    const pose=parkingPose(path,s,parkingSample);
+    Object.assign(v,{x:pose.x,y:pose.y,z:pose.z,yaw:pose.yaw,
+      tx:Math.sin(pose.yaw)*(pose.reversing?-1:1),tz:Math.cos(pose.yaw)*(pose.reversing?-1:1)});
+  }
+
+  function moveParking(v,dt) {
+    const trip=v.parkingTrip, incoming=trip.token.kind==='arrival';
+    const path=incoming?trip.link.arrival:trip.link.departure;
+    const finish=incoming?trip.link.entrance:trip.link.exit;
+    if (clock>=trip.expires || (!incoming && roadTraffic.isClosed(finish.edge))) {
+      parking.cancel(v,clock);
+      v.edge=null;
+      return;
+    }
+    const top=path.length>24?4.5:2.05;
+    const last=v.speed;
+    const next=Math.min(top,Math.sqrt(Math.max(.06,2.6*(path.length-trip.distance))),last+dt*1.35);
+    const s=Math.min(path.length,trip.distance+dt*next);
+    parkingPose(path,s,parkingSample);
+    parkingPose(path,Math.min(path.length,s+1.7+next*.4),parkingLook);
+    if (!parkingClear(v,parkingSample,parkingLook) ||
+        (!incoming && path.length-s<4 && !laneClear(finish.edge.occ[finish.lane],finish.s,5.7,v))) {
+      v.speed=0;
+      v.acc=-Math.min(3,last/dt);
+      return;
+    }
+    v.speed=next;
+    v.acc=(next-last)/dt;
+    trip.distance=s;
+    setManeuverPose(v,path,s);
+    v.blink=incoming?1:-1;
+    if (s<path.length-0.001) return;
+    parking.finish(v);
+    if (incoming) v.edge=null;
+    else {
+      place(v,finish.edge,finish.lane,finish.s);
+      v.speed=Math.min(3,next);
+    }
+  }
+
+  function spawnParkingDeparture(v) {
+    if (!parking?.enabled) return false;
+    const trip=parking.selectDeparture(v,clock,(lane,space)=>
+      laneClear(lane.edge.occ[lane.lane],lane.s,6) &&
+      (!player.active || Math.abs(player.y-(space.virtual?lane.pose.y:space.y))>1.55 ||
+        (player.x-space.x)**2+(player.z-space.z)**2>36));
+    if (!trip) return false;
+    const {exit,departure}=trip.link;
+    place(v,exit.edge,exit.lane,exit.s);
+    v.parkingTrip=trip;
+    const seed=trip.token.occupant.appearanceSeed;
+    const {col,style}=parking.appearance(seed);
+    v.parkingStyle=(seed>>>0)%fleetStyles.sedan.length;
+    v.paint=[Math.fround(col.r),Math.fround(col.g),Math.fround(col.b)];
+    v.style=style;
+    v.speed=v.acc=0;
+    setManeuverPose(v,departure,0);
+    v.prevX=v.x;
+    v.prevZ=v.z;
+    return true;
+  }
+
+  function spawnCar(v,rMin,rMax,protectView) {
+    return spawnParkingDeparture(v) || spawnVehicle(v,rMin,rMax,protectView);
   }
 
   // Put v in a free lane around the focus. Normal replenishment protects the near view; teleports can fill it.
@@ -2080,6 +2260,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   }
 
   function fitVehicleGrade(v, sinY, cosY) {
+    if (v.parkingTrip?.phase==='maneuver') {
+      v.roadPitch=v.roadRoll=0;
+      return;
+    }
     const ground = v.edge?.wayId ? (x, z) => roadGround(v.edge, x, z, v.conn && v.move?.to) : terrainHeightAt;
     const nose = ground(v.x + sinY * v.axle, v.z + cosY * v.axle);
     const side = ground(v.x + cosY * v.halfWidth, v.z - sinY * v.halfWidth);
@@ -2090,7 +2274,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // 3D spinning alloy wheels & tires (left & right, front & rear), exact 1:1 ground rolling, steering front wheels.
   // The wheel geometry is modelled at baseRadius (the sedan's 0.35 m car wheel), scaled to the vehicle's radius
   function placeWheels(v, i, rotY, roll, radius, halfTrack, halfBase, leftInst, rightInst, baseRadius = 0.35) {
-    const ground = v.edge?.wayId ? (x, z) => roadGround(v.edge, x, z, v.conn && v.move?.to) : terrainHeightAt;
+    const ground = v.parkingTrip?.phase==='maneuver' ? ()=>v.y : v.edge?.wayId ? (x, z) => roadGround(v.edge, x, z, v.conn && v.move?.to) : terrainHeightAt;
     const sinY = Math.sin(rotY);
     const cosY = Math.cos(rotY);
     const scale = radius / baseRadius;
@@ -2174,7 +2358,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     const [shadowW, shadowL, shadowZ] = bodies[c.bodyType].shadow;
     const shadowX = c.x + sinY * shadowZ, shadowWorldZ = c.z + cosY * shadowZ;
     dummy.rotation.set(c.roadPitch, rotY, c.roadRoll, 'YXZ');
-    dummy.position.set(shadowX, roadGround(c.edge, shadowX, shadowWorldZ, c.conn && c.move?.to) + 0.018, shadowWorldZ);
+    const shadowY=c.parkingTrip?.phase==='maneuver'?c.y:roadGround(c.edge,shadowX,shadowWorldZ,c.conn&&c.move?.to);
+    dummy.position.set(shadowX,shadowY+0.018,shadowWorldZ);
     dummy.scale.set(shadowW, 1.0, shadowL);
     dummy.updateMatrix();
     carShadowInst.setMatrixAt(visIdx, dummy.matrix);
@@ -2385,14 +2570,17 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // =========================================================================
   let lastFocusX = Infinity;
   let lastFocusZ = Infinity;
-  const carPopulation = { cursor: 0 }, bikePopulation = { cursor: 0 };
+  const carPopulation={cursor:0}, bikePopulation={cursor:0};
+  let parkingCursor=0, nextParkingOffer=0;
 
   function populate(pool, population, target, spawn, innerRadius, jump) {
     let count = 0;
     for (const v of pool) {
       if (!v.edge) continue;
-      if (Math.hypot(v.x - focusX, v.z - focusZ) > VEHICLE_RADIUS) v.edge = null;
-      else count++;
+      if (Math.hypot(v.x-focusX,v.z-focusZ)>VEHICLE_RADIUS) {
+        if (v.parkingTrip) parking.cancel(v);
+        v.edge=null;
+      } else count++;
     }
     let budget = jump ? 8 : 3;
     for (let scanned = 0; scanned < pool.length && budget > 0 && count !== target; scanned++) {
@@ -2401,7 +2589,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       if (count < target && !v.edge) {
         budget--;
         if (spawn(v, jump ? 0 : innerRadius, NEAR_RADIUS, !jump)) count++;
-      } else if (count > target && v.edge && !nearView(v.x, v.z, v.half + 4, NEAR_RADIUS, v.y)) {
+      } else if (count > target && v.edge && !v.parkingTrip && !nearView(v.x,v.z,v.half+4,NEAR_RADIUS,v.y)) {
         v.edge = null;
         count--;
         budget--;
@@ -2442,8 +2630,19 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     player.halfW = activeMode === 'cargobike' ? 0.38 : activeMode === 'cyclist' ? 0.35 : activeMode === 'person' ? 0.32 : 0.86;
     player.halfL = activeMode === 'cargobike' ? 1.34 : activeMode === 'cyclist' ? 0.85 : activeMode === 'person' ? 0.32 : 2.18;
 
-    // Previous-frame lane lists protect spawn spacing. Recycle outside the retention margin first.
-    populate(cars, carPopulation, carTarget, spawnVehicle, 100, jump);
+    // Departures consume the same free car slots as normal replenishment.
+    parking?.tick(focusX,focusZ,clock,jump);
+    populate(cars, carPopulation, carTarget, spawnCar, 100, jump);
+    if (parking?.enabled && clock>=nextParkingOffer) {
+      nextParkingOffer=clock+1.65;
+      for (let i=0;i<cars.length;i++) {
+        const car=cars[parkingCursor++%cars.length];
+        if (!car.edge || car.conn || car.parkingTrip || car.parkingStyle==null || car.commit ||
+            Math.hypot(car.x-focusX,car.z-focusZ)>275) continue;
+        if (parking.routeArrival(car,clock)) car.move=chooseMove(car,true);
+        break;
+      }
+    }
     populate(bikes, bikePopulation, bikeTarget, spawnBike, 70, jump);
     spawnScheduledBuses();
     buildOccupancy();
@@ -2460,9 +2659,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       const v = vehicles[i];
       if (!v.edge) continue;
 
-      v.prevX = v.x;
-      v.prevZ = v.z;
-      v.y = roadGround(v.edge, v.x, v.z, v.conn && v.move?.to);
+      v.prevX=v.x;
+      v.prevZ=v.z;
+      if (v.parkingTrip?.phase==='maneuver') {
+        moveParking(v,dt);
+        continue;
+      }
+      v.y=roadGround(v.edge,v.x,v.z,v.conn&&v.move?.to);
       if (v.edge.mapped) {
         driveBike(v, dt);
         if (v.edge) v.y = roadGround(v.edge, v.x, v.z);
@@ -2479,8 +2682,12 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     }
     if (player.active) {
       for (const v of vehicles) if (v.edge) collideWithPlayer(v);
+      parking?.forParked(player.x,player.z,8,({space})=>{
+        collideParkedPlayer(space.x,space.y,space.z,space.heading);
+      });
     }
     collideTraffic();
+    parking?.flush();
     for (const v of vehicles) {
       if (!v.edge) continue;
       if (v.bus) renderBus(v);
@@ -2562,6 +2769,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     roadTraffic,
     bikes,
     peds: pedestrianSystem.peds,
+    parking,
     network
   };
 }

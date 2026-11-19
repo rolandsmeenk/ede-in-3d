@@ -61,12 +61,23 @@ def float_field(value):
 
 
 @lru_cache(maxsize=1)
+def local_map():
+    with (ROOT / 'js' / 'ede-geodata.js').open(encoding='utf-8') as source:
+        row = next(line for line in source if line.startswith('export const EDE_DATA = '))
+    meta = json.loads(row.removeprefix('export const EDE_DATA = ').strip().removesuffix(';'))['meta']
+    return meta['bounds'], meta['lonLatAffine']
+
+
+def project_lon_lat(lon, lat, projection):
+    dx, dy = lon - projection['lon0'], lat - projection['lat0']
+    return tuple(zero + a * dx + b * dy for zero, a, b in (projection['x'], projection['z']))
+
+
+@lru_cache(maxsize=1)
 def local_network():
     with (ROOT / 'assets' / 'ede-bus-routes.json').open(encoding='utf-8') as source:
         schedule = json.load(source)
-    with (ROOT / 'js' / 'ede-geodata.js').open(encoding='utf-8') as source:
-        row = next(line for line in source if line.startswith('export const EDE_DATA = '))
-    projection = json.loads(row.removeprefix('export const EDE_DATA = ').strip().removesuffix(';'))['meta']['lonLatAffine']
+    _, projection = local_map()
     trips = {trip['id']: (variant['routeId'], variant['direction'])
              for variant in schedule['variants'] for trip in variant['trips']}
     return trips, schedule['bounds'], projection
@@ -87,8 +98,7 @@ def local_vehicle(data, trips, bounds, projection):
     lat, lon = float_field(position.get(1)), float_field(position.get(2))
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None
-    dx, dy = lon - projection['lon0'], lat - projection['lat0']
-    x, z = (zero + a * dx + b * dy for zero, a, b in (projection['x'], projection['z']))
+    x, z = project_lon_lat(lon, lat, projection)
     min_x, min_z, max_x, max_z = bounds
     if not (min_x - 100 <= x <= max_x + 100 and min_z - 100 <= z <= max_z + 100):
         return None

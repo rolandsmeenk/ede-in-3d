@@ -12,6 +12,8 @@ import { GEO } from './nyc-geodata.js';
 import { polygonBoxOverlaps } from './building-collision.js';
 import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad } from './road-access.js';
 import { buildEdeActiveTravel } from './ede-active-travel.js';
+import { resolveEdeRoadLanes, permittedTurn, shareTurn } from './ede-road-lanes.js';
+import { motorwayLanesAt } from './ede-motorway-lanes.js';
 
 // Drivable road graph derived from the ground layout that city-grid.js actually builds: avenue corridors
 // between the raised curbs, cross-street gaps between curb rows, lanes that keep clear of medians, plazas
@@ -447,6 +449,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       const pts = [{ x: A.x, z: A.z }, ...l.pts.slice(1, -1), { x: B.x, z: B.z }];
       // stations along it: the ends and every bend over 12° at least 15 m from the last station and from the far end
       const stations = [A];
+      const stationIndices = [0];
       let last = pts[0];
       let rest = l.len;
       for (let k = 1; k < pts.length - 1; k++) {
@@ -461,11 +464,57 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         const s = { x: p1.x, z: p1.z, hx: 0, hz: 0, signal: false, in: [], out: [], general: true, shape: true };
         nodes.push(s);
         stations.push(s);
+        stationIndices.push(k);
         last = p1;
       }
       stations.push(B);
-      const lanes = lanesOf(l);
-      for (let k = 0; k + 1 < stations.length; k++) runs.push({ ...l, ...lanes, from: stations[k], to: stations[k + 1] });
+      stationIndices.push(pts.length - 1);
+      const roadShape = l.road?.pts;
+      const atWayEnd = (point, i) => roadShape && Math.hypot(point.x - roadShape[i], point.z - roadShape[i + 1]) < 0.2;
+      const heading = (a, b) => {
+        const dx = l.pts[b].x - l.pts[a].x, dz = l.pts[b].z - l.pts[a].z;
+        const distance = Math.hypot(dx, dz);
+        return distance && [dx / distance, dz / distance];
+      };
+      const original = lanesOf(l);
+      const fast = /^(motorway|trunk)(?:_link)?$/.test(l.road?.kind);
+      function addRun(start, end, from, to, source) {
+        if (fast) {
+          const span = Math.hypot(to.x - from.x, to.z - from.z);
+          const dx = (to.x - from.x) / span, dz = (to.z - from.z) / span;
+          let pivot = -1, deviation = 1;
+          for (let i = start + 1; i < end; i++) {
+            const x = l.pts[i].x - from.x, z = l.pts[i].z - from.z;
+            const along = x * dx + z * dz;
+            const distance = Math.abs(z * dx - x * dz);
+            if (along < 5 || along > span - 5 || distance <= deviation) continue;
+            pivot = i;
+            deviation = distance;
+          }
+          if (pivot !== -1) {
+            const shape = { ...l.pts[pivot], hx: 0, hz: 0, signal: false, in: [], out: [], general: true, shape: true };
+            nodes.push(shape);
+            const parent = source || { from, to };
+            addRun(start, pivot, from, shape, parent);
+            addRun(pivot, end, shape, to, parent);
+            return;
+          }
+        }
+        const definitions = l.road && resolveEdeRoadLanes(l.road, l.modes,
+          [0, 1].map(direction => motorwayLanesAt(l.road, direction, from, to)));
+        const lanes = definitions ? {
+          half: definitions[0].width / 2,
+          axis: definitions[0].width >= 14.5 || definitions[0].totalCount >= 3 || MAJOR.test(l.name) ? 'ave' : 'st',
+          fwd: definitions[0].lanes.map(lane => lane.offset), back: definitions[1].lanes.map(lane => lane.offset)
+        } : original;
+        const turnTagsAtEnd = [end === pts.length - 1 && atWayEnd(l.pts.at(-1), roadShape?.length - 2),
+          start === 0 && atWayEnd(l.pts[0], 0)];
+        const a = l.pts[start], b = l.pts[end];
+        runs.push({ ...l, ...lanes, definitions, turnTagsAtEnd, from, to, original, source, keepShape: l.keepShape || !!source,
+          sourceCenter: { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 },
+          headings: [[heading(start, start + 1), heading(end - 1, end)], [heading(end, end - 1), heading(start + 1, start)]] });
+      }
+      for (let k = 0; k + 1 < stations.length; k++) addRun(stationIndices[k], stationIndices[k + 1], stations[k], stations[k + 1]);
     }
     console.info(`[roads] centreline streets: ${links.length} links not on the grid, ${runs.length} straight runs`);
     return runs;
@@ -523,20 +572,37 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   };
   function addEdgeGeneral(from, to, lanes, run, direction) {
     const { axis, half, divided, keepShape, road, boundary } = run;
-    const x0 = from.x;
-    const z0 = from.z;
-    const span = Math.hypot(to.x - x0, to.z - z0);
+    const span = Math.hypot(to.x - from.x, to.z - from.z);
     if (span < (keepShape ? 2 : 8)) return;
-    const dx = (to.x - x0) / span;
-    const dz = (to.z - z0) / span;
+    const dx = (to.x - from.x) / span, dz = (to.z - from.z) / span;
+    // At collapsed junctions the node identifies the connection. Keep the lanes on the mapped approach.
+    const sourceCenter = run.definitions && run.sourceCenter;
+    const shift = sourceCenter ? (sourceCenter.z - (from.z + to.z) / 2) * dx - (sourceCenter.x - (from.x + to.x) / 2) * dz : 0;
+    const x0 = from.x - dz * shift, z0 = from.z + dx * shift;
     const modes = run.modes[direction] & MOTOR;
-    const tagged = road?.laneModes?.[direction];
+    const laneDefinition = run.definitions?.[direction];
+    const tagged = laneDefinition?.lanes.map(lane => lane.permissions) ?? road?.laneModes?.[direction];
     const underpass = !!road?.tunnel, bridge = !!road?.bridge;
-    const open = lanes.filter((o, i) => (!tagged || tagged[i] & modes) && (underpass || bridge || laneOpen(x0, z0, dx, dz, span, o, boundary)));
+    const usable = lanes.flatMap((o, i) => (!tagged || tagged[i] & modes) &&
+      (underpass || bridge || laneOpen(x0, z0, dx, dz, span, o, boundary)) ? [i] : []);
+    const open = usable.map(i => lanes[i]);
     if (!open.length) return;
+    let sourceRoad;
+    if (run.source) {
+      const a = direction ? run.source.to : run.source.from;
+      const b = direction ? run.source.from : run.source.to;
+      const sx = b.x - a.x, sz = b.z - a.z;
+      const fraction = p => Math.max(0, Math.min(1, ((p.x - a.x) * sx + (p.z - a.z) * sz) / (sx * sx + sz * sz)));
+      sourceRoad = { sourceRoadKey: `${roadEdgeKey({ from: a, to: b })}|${road.id}|${road.layer || 0}`, sourceRoadSpan: Math.hypot(sx, sz),
+        sourceRoadStart: fraction(from), sourceRoadEnd: fraction(to) };
+    }
     edges.push({ from, to, axis, x0, z0, dx, dz, rx: -dz, rz: dx, span, half, lanes: open, moves: [],
       general: true, cand: lanes, divided: !!divided, busOnly: modes === BUS, modes,
-      ...(tagged ? { laneModes: open.map(o => tagged[lanes.indexOf(o)]) } : {}),
+      ...sourceRoad,
+      ...(tagged ? { laneModes: usable.map(i => tagged[i]) } : {}),
+      ...(laneDefinition ? { laneDefinition, driveLanes: usable.map(i => laneDefinition.lanes[i]), direction,
+        graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
+        turnTagsAtEnd: !!run.turnTagsAtEnd[direction] && laneDefinition.lanes.some(lane => lane.turns), headings: run.headings[direction] } : {}),
       underpass, tunnelType: road?.tunnelType, bridge, boundary, keepShape, wayId: road?.id, layer: road?.layer || 0, limits: road?.limits });
   }
   // A divided road drawn as two one-way roadways between the same two junctions (most of the Bowery) runs both ways
@@ -545,13 +611,13 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   const travel = (r) => (r.fwd.length ? [r.from, r.to] : [r.to, r.from]);
   const oneWays = new Map(); // node -> next node -> the one-way run from one to the other
   for (const r of genRuns) {
-    if (!r.fwd.length === !r.back.length) continue;
+    if (r.definitions || !r.fwd.length === !r.back.length) continue;
     const [a, b] = travel(r);
     if (!oneWays.has(a)) oneWays.set(a, new Map());
     oneWays.get(a).set(b, r);
   }
   for (const r of genRuns) {
-    if (!r.fwd.length === !r.back.length || r.divided) continue;
+    if (r.definitions || !r.fwd.length === !r.back.length || r.divided) continue;
     const [a, b] = travel(r);
     const o = oneWays.has(b) && oneWays.get(b).get(a);
     if (!o || o.divided || r.road?.laneModes || o.road?.laneModes || r.road?.layer !== o.road?.layer) continue;
@@ -572,7 +638,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   // Two edges from one node to the same next one (a service road whose ends were drawn onto its main road's junctions)
   // would drive through each other: keep the grid's, else the one with the most lanes
   const keptEdge = new Map();
-  const edgeRank = (e) => (e.general ? 0 : 1000) + e.lanes.length * 10 + e.half / 100;
+  const edgeRank = (e) => (e.general ? 0 : 1000) + (e.graphRank ?? e.lanes.length * 10 + e.half / 100);
   for (const e of edges) {
     let to = keptEdge.get(e.from);
     if (!to) keptEdge.set(e.from, (to = new Map()));
@@ -820,8 +886,14 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   // Paint describes the physical streets, including dead ends and roads AI traffic cannot circulate through.
   // Snapshot their geometry before routing moves stop lines, drops edges and renumbers the surviving junctions.
   const paintNodes = new Map(nodes.map((n, id) => [n, { id, x: n.x, z: n.z, shape: n.shape }]));
-  const paintEdges = edges.filter((e) => !e.busOnly && !e.underpass && !e.boundary).map(({ from, to, axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes, wayId, layer, bridge }) => ({
-    from: paintNodes.get(from), to: paintNodes.get(to), axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes, wayId, layer, bridge
+  const gradeWays = grade ? new Set(grade.sites.flatMap(site => site.profiles.flatMap(profile => profile.wayIds || []))) : null;
+  const paintEdges = edges.filter(e => e.laneDefinition ? !e.underpass || gradeWays?.has(e.wayId) : !e.busOnly && !e.underpass && !e.boundary)
+    .map(({ from, to, axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes, wayId, layer,
+      bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd,
+      sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan }) => ({
+    from: paintNodes.get(from), to: paintNodes.get(to), axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes,
+    wayId, layer, bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd,
+    sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan
   }));
 
   // 6. Movements at each intersection (no U-turns) and the lane each lane leads to, along obstacle-free curves:
@@ -831,8 +903,19 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   //    left turns, straight on, right turns, into lanes in the same order, so no two paths from one approach cross.
   const lateral = (e, i) => e.x0 * e.rx + e.z0 * e.rz + e.lanes[i];
   const ORDER = { L: 0, S: 1, R: 2 };
+  function turnAllowed(e, m, i, j) {
+    const lane = e.driveLanes?.[i];
+    if (!e.turnTagsAtEnd || !lane?.turns || (e.to.shape && e.wayId === m.to.wayId)) return true;
+    const next = m.to;
+    // A short approach can carry the arrows to a junction that follows the graph node.
+    if (m.tagDot > 0.65 && next.span <= 20 && next.turnTagsAtEnd && next.driveLanes.some(other => shareTurn(lane, other))) {
+      return shareTurn(lane, next.driveLanes[j]);
+    }
+    return m.unbranched || m.tagTurns.some(turn => permittedTurn(lane, turn, m.tagCross));
+  }
+  const compatibleLanes = (e, i, f, j) => (e.laneModes?.[i] ?? e.modes ?? MOTOR) & (f.laneModes?.[j] ?? f.modes ?? MOTOR);
   function pathClear(e, i, f, j) {
-    if (!((e.laneModes?.[i] ?? e.modes ?? MOTOR) & (f.laneModes?.[j] ?? f.modes ?? MOTOR))) return false;
+    if (!compatibleLanes(e, i, f, j)) return false;
     if (e.underpass || f.underpass || e.bridge || f.bridge) return true;
     const c = makeCurve(e, i, f, j);
     const p = { x: 0, z: 0, dx: 0, dz: 0 };
@@ -865,7 +948,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   // Let lane i of e make move m into lane j of its edge (clamped to the lanes there), if the way is clear
   function link(e, m, i, j) {
     j = Math.max(0, Math.min(m.to.lanes.length - 1, j));
-    if (m.out[i] < 0 && inOrder(e, m, i, j) && pathClear(e, i, m.to, j)) m.out[i] = j;
+    if (m.out[i] < 0 && turnAllowed(e, m, i, j) && inOrder(e, m, i, j) && pathClear(e, i, m.to, j)) m.out[i] = j;
     return m.out[i] >= 0;
   }
   function serveEveryLane(e) {
@@ -887,14 +970,40 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     for (const f of e.to.out) {
       if (!canTurn(e, f)) continue;
       const cross = e.dx * f.dz - e.dz * f.dx;
-      e.moves.push({ to: f, turn: cross > 0.5 ? 'R' : cross < -0.5 ? 'L' : 'S', cross, out: new Array(n).fill(-1) });
+      const continuation = e.to.shape && e.wayId === f.wayId;
+      let tags;
+      if (e.turnTagsAtEnd) {
+        const [adx, adz] = e.headings?.[1] || [e.dx, e.dz];
+        const [bdx, bdz] = f.headings?.[0] || [f.dx, f.dz];
+        const tagCross = adx * bdz - adz * bdx;
+        tags = { tagCross, tagDot: adx * bdx + adz * bdz, tagTurns: [tagCross > 0.5 ? 'R' : tagCross < -0.5 ? 'L' : 'S'] };
+      }
+      e.moves.push({ to: f, turn: !continuation && cross > 0.5 ? 'R' : !continuation && cross < -0.5 ? 'L' : 'S',
+        cross, ...tags, out: new Array(n).fill(-1) });
     }
     // the straightest first: where a road forks, the branch going most nearly straight on keeps most of its lanes
     const ahead = (m) => e.dx * m.to.dx + e.dz * m.to.dz;
+    if (e.turnTagsAtEnd && e.moves.length) {
+      const byHeading = e.moves.slice().sort((a, b) => b.tagDot - a.tagDot);
+      if (byHeading.length === 1) byHeading[0].unbranched = true;
+      else {
+        if (!byHeading.some(move => move.tagTurns.includes('S'))) byHeading[0].tagTurns.push('S');
+        for (const [turn, sign] of [['L', -1], ['R', 1]]) {
+          if (byHeading.some(move => move.tagTurns.includes(turn)) || !e.driveLanes.some(lane => lane.turns && permittedTurn(lane, turn, 0))) continue;
+          const side = e.moves.filter(move => move.tagCross * sign > 0.1)
+            .sort((a, b) => sign * (b.tagCross - a.tagCross))[0];
+          side?.tagTurns.push(turn);
+        }
+      }
+    }
     for (const m of e.moves.slice().sort((p, q) => ahead(q) - ahead(p))) {
       const f = m.to;
-      if (m.turn === 'L') link(e, m, 0, 0);
-      else if (m.turn === 'R') link(e, m, n - 1, f.lanes.length - 1);
+      if (m.turn === 'L' || m.turn === 'R') {
+        const preferred = m.turn === 'L' ? 0 : n - 1;
+        const destination = m.turn === 'L' ? 0 : f.lanes.length - 1;
+        link(e, m, preferred, destination);
+        for (let i = 0; i < n; i++) if (e.turnTagsAtEnd && e.driveLanes[i].turns && i !== preferred) link(e, m, i, destination + i - preferred);
+      }
       else {
         let best = 0;
         let bestScore = -Infinity;
@@ -1066,12 +1175,18 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     // of the straightest move anyway, so every lane always has a way on
     for (let i = 0; i < e.lanes.length; i++) {
       if (!e.moves.length || e.moves.some((m) => m.out[i] >= 0)) continue;
-      const m = e.moves.find((q) => q.turn === 'S') || e.moves[0];
-      m.out[i] = nearestLane(e, i, m.to);
+      const moves = e.moves.slice();
+      moves.sort((a, b) => Number(b.turn === 'S') - Number(a.turn === 'S'));
+      for (const m of moves) {
+        const nearest = nearestLane(e, i, m.to);
+        const choices = m.to.lanes.map((_, j) => j).filter(j => turnAllowed(e, m, i, j) && compatibleLanes(e, i, m.to, j));
+        if (!choices.length) continue;
+        m.out[i] = choices.reduce((best, j) => Math.abs(j - nearest) < Math.abs(best - nearest) ? j : best);
+        break;
+      }
     }
   }
   edges.forEach((e, i) => (e.id = i));
-  const gradeWays = grade && new Set(grade.sites.flatMap(site => site.profiles.flatMap(profile => profile.wayIds || [])));
   for (const e of edges) e.unmodeledTunnel = !!gradeWays && e.underpass && e.tunnelType !== 'building_passage' && !gradeWays.has(e.wayId);
   for (const [mode, vehicle, lanes, moves] of [
     [CAR, VEHICLE_CLEARANCE.car, 'ambientLanes', 'ambientMoves'],
@@ -1151,14 +1266,33 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   // Lane-to-lane curves are built on first use and cached
   const curves = new Map();
   function connector(e, i, f, j) {
-    const k = ((e.id * 8 + i) * 16384 + f.id) * 8 + j;
+    const k = ((e.id * 16 + i) * edges.length + f.id) * 16 + j;
     let c = curves.get(k);
     if (!c) curves.set(k, (c = makeCurve(e, i, f, j)));
     return c;
   }
 
+  const busMoves = new WeakMap();
+  function alternateBusMove(e, move, i, j) {
+    const f = move.to;
+    if (!(compatibleLanes(e, i, f, j) & BUS) || !turnAllowed(e, move, i, j)) return null;
+    let lanes = busMoves.get(move);
+    if (!lanes) busMoves.set(move, (lanes = new Map()));
+    const key = i * 16 + j;
+    if (!lanes.has(key)) {
+      let alternative = null;
+      if (pathClear(e, i, f, j)) {
+        const out = move.out.slice();
+        out[i] = j;
+        alternative = { ...move, out };
+      }
+      lanes.set(key, alternative);
+    }
+    return lanes.get(key);
+  }
+
   const isRoadClear = (x, z, clear = 0.15) => !blockedOnStreet(x, z, clear);
-  return { nodes, edges, paintEdges, connector, curvePoint, walkable, onSidewalk, isRoadClear,
+  return { nodes, edges, paintEdges, connector, curvePoint, alternateBusMove, walkable, onSidewalk, isRoadClear,
     activeTravel: GEO.city === 'Ede' ? buildEdeActiveTravel(GEO.ede, grade, { walkable, sidewalkAt, motorNodes: nodes }) : null };
 }
 

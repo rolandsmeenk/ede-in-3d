@@ -20,7 +20,15 @@ class BufferGeometry {
   attributes = {};
   setAttribute(name, value) { this.attributes[name] = value; }
   setIndex(value) { this.index = value; }
-  computeBoundingBox() {}
+  computeBoundingBox() {
+    const { array } = this.attributes.position;
+    this.boundingBox = { min: { x: Infinity, z: Infinity }, max: { x: -Infinity, z: -Infinity } };
+    const { min, max } = this.boundingBox;
+    for (let i = 0; i < array.length; i += 3) {
+      min.x = Math.min(min.x, array[i]); max.x = Math.max(max.x, array[i]);
+      min.z = Math.min(min.z, array[i + 2]); max.z = Math.max(max.z, array[i + 2]);
+    }
+  }
   computeBoundingSphere() {}
 }
 
@@ -34,10 +42,10 @@ class Vector3 {
   normalize() { return this; }
 }
 
-function loadBag({ blocks = [], aerial = {} } = {}) {
+function loadBag({ blocks = [], aerial = {}, grade = {}, three } = {}) {
   return loadModule(read('bag3d.js').replaceAll('export async function', 'async function'), {
     imports: {
-      'three/webgpu': {
+      'three/webgpu': three ?? {
         BufferGeometry, BufferAttribute, Vector3,
         Matrix4: class { multiplyMatrices() { return this; } },
         Matrix3: class { getNormalMatrix() { return this; } },
@@ -50,6 +58,7 @@ function loadBag({ blocks = [], aerial = {} } = {}) {
       './city-config.js': { BLOCKS: blocks },
       './building-collision.js': loadModule(read('building-collision.js')),
       './terrain.js': { terrainHeightAt: (x) => 10 + x / 2 },
+      './ede-grade.js': { buildingPassageCuts: () => [], ...grade },
       './ede-facades.js': {},
       './ede-facade-material.js': {},
       './ede-facade-photos.js': {},
@@ -57,6 +66,60 @@ function loadBag({ blocks = [], aerial = {} } = {}) {
     }
   });
 }
+
+test('BAG clears the Raadhuisstraat portal below its posted soffit and preserves the upper facade', async () => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const grade = await import('../js/ede-grade.js');
+  const { profile } = grade.getEdeBuildingPassages().get('w274278314');
+  const { carveBagBuildingPassages } = loadBag({ grade, three });
+  const [a, b] = profile.points;
+  const origin = new three.Vector3(a[0], 0, a[1]);
+  const direction = new three.Vector3(b[0] - a[0], 0, b[1] - a[1]).normalize();
+  const side = new three.Vector3(direction.z, 0, -direction.x);
+  const position = [-6, 6].flatMap(offset => [0, 8].flatMap(y =>
+    origin.clone().addScaledVector(side, offset).setY(y).toArray()));
+  const facade = new three.BufferGeometry();
+  facade.setAttribute('position', new three.Float32BufferAttribute(position, 3));
+  facade.setAttribute('buildingHeight', new three.Float32BufferAttribute([0, 8, 0, 8], 1));
+  facade.setIndex([0, 2, 1, 1, 2, 3]);
+  facade.computeBoundingBox();
+  carveBagBuildingPassages(facade);
+  facade.computeBoundingSphere();
+  const mesh = new three.Mesh(facade, new three.MeshBasicMaterial({ side: three.DoubleSide }));
+  const intersects = (y, offset = 0) => new three.Raycaster(
+    origin.clone().addScaledVector(direction, -2).addScaledVector(side, offset).setY(y), direction
+  ).intersectObject(mesh).length > 0;
+  assert.equal(intersects(4.1), false);
+  assert.equal(intersects(4.3), true);
+  assert.equal(intersects(1.5, 5), true);
+  const { position: vertices, buildingHeight } = facade.attributes;
+  assert.ok(vertices.count > 4);
+  for (let i = 0; i < vertices.count; i++) assert.equal(vertices.getY(i), buildingHeight.getX(i));
+});
+
+test('fitted passages cut two openings through the same BAG facade and retain the slab between them', async t => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const grade = await import('../js/ede-grade.js');
+  const prior = grade.getEdeGrade();
+  t.after(() => grade.setEdeGrade(prior));
+  grade.setEdeGrade({ sites: [0, 5].map((y, i) => ({
+    id: i, kind: i ? 'bridge' : 'underpass', profiles: [{ id: `opening-${i}`, modes: ['foot'], points: [[0, -6, y], [0, 6, y]],
+      width: 4, covered: [2, 10], clearance: 2.5, cutBuildings: true }]
+  })) });
+  const { carveBagBuildingPassages } = loadBag({ grade, three });
+  const facade = new three.PlaneGeometry(12, 12).translate(0, 4, 0);
+  facade.computeBoundingBox();
+  carveBagBuildingPassages(facade);
+  const mesh = new three.Mesh(facade, new three.MeshBasicMaterial({ side: three.DoubleSide }));
+  const wallAt = (y, x = 0.2) => new three.Raycaster(new three.Vector3(x, y, -2), new three.Vector3(0, 0, 1))
+    .intersectObject(mesh).length > 0;
+  assert.equal(wallAt(-0.5), true);
+  assert.equal(wallAt(1), false);
+  assert.equal(wallAt(4), true);
+  assert.equal(wallAt(6), false);
+  assert.equal(wallAt(8), true);
+  assert.equal(wallAt(6, 3), true);
+});
 
 function bakeGeometry(bakeTile, geometry) {
   const scene = {

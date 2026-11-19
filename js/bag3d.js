@@ -5,6 +5,7 @@ import { GEO } from './nyc-geodata.js';
 import { BLOCKS } from './city-config.js';
 import { polygonContains } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
+import { buildingPassageCuts } from './ede-grade.js';
 import { getAerialColors, sampleGroundColor, sampleRoofColor } from './aerial-colors.js';
 import { applyBagFacades, loadEdeFacades, meshBagFacadeFeatures, readBagFacadeFeatures } from './ede-facades.js';
 import { buildFacadeMaskAtlas, createBagFacadeMaterial, projectFacadeUv } from './ede-facade-material.js';
@@ -98,6 +99,89 @@ export async function selectTiles(matrix, { minX = MIN_X, maxX = MAX_X, minZ = M
 function hash(n) {
   n = Math.imul(n ^ (n >>> 16), 0x45d9f3b); n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+function outsidePassage(polygon, planes) {
+  const fragments = [];
+  let inside = polygon;
+  for (const [nx, ny, nz, c] of planes) {
+    const inner = [], outer = [];
+    let a = inside.at(-1), da = nx * a.x + ny * a.y + nz * a.z - c;
+    for (const b of inside) {
+      const db = nx * b.x + ny * b.y + nz * b.z - c;
+      if ((da >= 0) !== (db >= 0)) {
+        const t = da / (da - db);
+        const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t,
+          weights: a.weights.map((weight, i) => weight + (b.weights[i] - weight) * t) };
+        inner.push(p);
+        outer.push(p);
+      }
+      (db >= 0 ? inner : outer).push(b);
+      a = b;
+      da = db;
+    }
+    if (inner.length < 3) return [polygon];
+    if (outer.length >= 3) fragments.push(outer);
+    inside = inner;
+  }
+  return fragments;
+}
+
+export function carveBagBuildingPassages(geometry) {
+  const { position } = geometry.attributes;
+  const { index, boundingBox: { min, max } } = geometry;
+  const pad = 0.45;
+  const cuts = [...buildingPassageCuts({ minX: min.x - pad, maxX: max.x + pad, minZ: min.z - pad, maxZ: max.z + pad })]
+    .map(cut => ({
+      ...cut, planes: [
+        ...cut.planes.map(([nx, nz, c]) => [nx, 0, nz, c - pad * Math.hypot(nx, nz)]),
+        [cut.ux * cut.slope, -1, cut.uz * cut.slope, -cut.roofAt(0, 0)],
+        ...(cut.openingBaseAt ? [[-cut.ux * cut.slope, 1, -cut.uz * cut.slope, cut.openingBaseAt(0, 0)]] : [])
+      ]
+    }));
+  if (!cuts.length) return;
+  const attributes = Object.entries(geometry.attributes).map(([name, attribute]) => ({ name, attribute, extra: [] }));
+  let nextVertex = position.count, edited = false;
+  const indexOut = [];
+  for (let i = 0; i < (index?.count ?? position.count); i += 3) {
+    const vertices = index ? [index.getX(i), index.getX(i + 1), index.getX(i + 2)] : [i, i + 1, i + 2];
+    const [ax, bx, cx] = vertices.map(j => position.getX(j)), [az, bz, cz] = vertices.map(j => position.getZ(j));
+    const minX = Math.min(ax, bx, cx), maxX = Math.max(ax, bx, cx);
+    const minZ = Math.min(az, bz, cz), maxZ = Math.max(az, bz, cz);
+    const nearby = cuts.filter(cut => minX <= cut.maxX + pad && maxX >= cut.minX - pad &&
+      minZ <= cut.maxZ + pad && maxZ >= cut.minZ - pad);
+    if (!nearby.length) {
+      indexOut.push(...vertices);
+      continue;
+    }
+    const original = vertices.map((vertex, j) => ({
+      x: position.getX(vertex), y: position.getY(vertex), z: position.getZ(vertex),
+      vertex, weights: [Number(j === 0), Number(j === 1), Number(j === 2)]
+    }));
+    let fragments = [original];
+    for (const cut of nearby) fragments = fragments.flatMap(fragment => outsidePassage(fragment, cut.planes));
+    if (fragments.length !== 1 || fragments[0] !== original) edited = true;
+    for (const fragment of fragments) {
+      const indices = fragment.map(p => {
+        if (p.vertex !== undefined) return p.vertex;
+        for (const { attribute: { array, itemSize }, extra } of attributes) {
+          for (let k = 0; k < itemSize; k++) {
+            extra.push(p.weights.reduce((value, weight, j) => value + weight * array[vertices[j] * itemSize + k], 0));
+          }
+        }
+        return nextVertex++;
+      });
+      for (let j = 1; j + 1 < indices.length; j++) indexOut.push(indices[0], indices[j], indices[j + 1]);
+    }
+  }
+  if (!edited) return;
+  geometry.setIndex(indexOut);
+  for (const { name, attribute: { array, itemSize, normalized }, extra } of attributes) {
+    const expanded = new array.constructor(array.length + extra.length);
+    expanded.set(array);
+    expanded.set(extra, array.length);
+    geometry.setAttribute(name, new THREE.BufferAttribute(expanded, itemSize, normalized));
+  }
 }
 
 const ROOF_CELL = 64;
@@ -293,7 +377,9 @@ export function bakeTile(gltf, matrix, tables, atlas) {
       const applied = applyBagFacades(g, fid, facadeFeatures, groundByBuilding, atlas, projectFacadeUv, linearColor);
       if (applied) g.userData.facades = applied;
     }
-    g.computeBoundingSphere(); g.computeBoundingBox();
+    g.computeBoundingBox();
+    carveBagBuildingPassages(g);
+    g.computeBoundingSphere();
     geometries.push(g);
   });
   return geometries;

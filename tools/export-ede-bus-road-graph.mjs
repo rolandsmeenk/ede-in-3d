@@ -1,7 +1,11 @@
 // Export the same directed edges and lane turns used by the traffic simulator.
+import { readFileSync } from 'node:fs';
 import { EDE_DATA } from '../js/ede-geodata.js';
 import { buildRoadNetwork, roadEdgeKey } from '../js/road-network.js';
 import { BUS, VEHICLE_CLEARANCE, fitsRoad } from '../js/road-access.js';
+import { setEdeMotorwayLanes } from '../js/ede-motorway-lanes.js';
+
+setEdeMotorwayLanes(JSON.parse(readFileSync(new URL('../assets/ede-motorway-lanes.json', import.meta.url), 'utf8')));
 
 const info = console.info;
 console.info = console.error;

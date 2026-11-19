@@ -152,7 +152,7 @@ function sidewalkAt(x, z) {
         const distance = Math.hypot(x - s.ax - at * dx / len, z - s.az - at * dz / len);
         if (r.kind === 'cycleway' && !r.modes?.some(mask => mask & FOOT)) continue;
         const pedestrian = ['footway', 'pedestrian', 'path', 'steps', 'cycleway'].includes(r.kind);
-        const half = (r.bgt?.width ?? r.w) / 2;
+        const half = (r.bgtWidth ?? r.bgt?.width ?? r.w) / 2;
         const matches = pedestrian ? distance <= half : distance >= half - 0.4 && distance <= half + 5.5;
         if (!matches || distance >= bestDistance) continue;
         bestDistance = distance;

@@ -1,5 +1,6 @@
 import { BICYCLE, FOOT, MOTOR } from './road-access.js';
 import { EDE_SHOPS } from './ede-shops.js';
+import { edeBikeFacilities } from './ede-road-lanes.js';
 
 const CELL = 64;
 const CONNECTOR_LIMIT = 24;
@@ -82,7 +83,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
     if (!(road.modes?.reduce((mask, direction) => mask | direction, 0) & MOTOR)) continue;
     for (let i = 2; i < road.pts.length; i += 2) {
       const t = trackBetween(road.pts.slice(i - 2, i), road.pts.slice(i, i + 2),
-        { wayId: road.id, width: road.width, layer: road.layer });
+        { wayId: road.id, width: road.bgtWidth ?? road.bgt?.width ?? road.width, layer: road.layer });
       if (t) motorTracks.push(t);
     }
   }
@@ -208,13 +209,13 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
       const road = data.roads[roadIndex], [forward, reverse] = road.modes;
       if ((road.bridge || road.tunnel && road.tunnelType !== 'building_passage') && !profiles.has(road.id)) continue;
       const footProfile = mode === FOOT && separateFootways.get(road.id);
-      const width = road.bgt?.width ?? road.width;
+      const width = road.bgtWidth ?? road.bgt?.width ?? road.width;
       const surfaces = mode === FOOT && (footProfile || (forward | reverse) & FOOT)
         ? (footProfile ? [0] : footOffsets).map(offset => ({
           offset, width: footProfile?.width ?? (offset ? 2 : width), kind: offset ? 'sidewalk' : road.kind,
           allowed: [!!footProfile || !!(forward & FOOT), !!footProfile || !!(reverse & FOOT)]
         }))
-        : mode === BICYCLE ? road.cycle || [] : [];
+        : mode === BICYCLE ? edeBikeFacilities(road).filter(lane => lane.kind !== 'advisory') : [];
       const points = [nodes[a * 2], nodes[a * 2 + 1], ...inner, nodes[b * 2], nodes[b * 2 + 1]];
       for (const { offset, width, allowed, kind } of surfaces) {
         const shape = [];

@@ -20,7 +20,7 @@ function eventTarget() {
   };
 }
 
-function keyboardHarness(nyc = {}, terrainHeightAt = () => 0) {
+function keyboardHarness(nyc = {}, terrainHeightAt = () => 0, buildingPassageHeadingAt = () => undefined) {
   const window = eventTarget();
   const document = { ...eventTarget(), hidden: false };
   const config = {
@@ -41,7 +41,8 @@ function keyboardHarness(nyc = {}, terrainHeightAt = () => 0) {
       './landmarks.js': {},
       './building-collision.js': polygonCollision,
       './terrain.js': { terrainHeightAt },
-      './ede-grade.js': { gradeHeightAt: terrainHeightAt, gradeDeckAt: () => undefined, gradeProfileAt: () => null }
+      './ede-grade.js': { gradeHeightAt: terrainHeightAt, gradeGroundHeightAt: terrainHeightAt,
+        gradeDeckAt: () => undefined, gradeProfileAt: () => null, buildingPassageHeadingAt }
     }
   });
   // Exercise the production event handlers without constructing the scene's 3D models.
@@ -452,13 +453,13 @@ test('car turning, handbraking and impact recovery agree across display rates', 
   }
 });
 
-function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eastX: 500 }), terrainHeightAt) {
+function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eastX: 500 }), terrainHeightAt, buildingPassageHeadingAt) {
   const harness = keyboardHarness({
     ISLAND_BOUNDS: { minX: -500, maxX: 500, minZ: -500, maxZ: 500, sidewalkHeight: 0.22 },
     CENTRAL_PARK_BOUNDS: { minX: 1000, maxX: 1100, minZ: 1000, maxZ: 1100 },
     getIslandBoundsAtZ: shore,
     blockAt: () => null
-  }, terrainHeightAt);
+  }, terrainHeightAt, buildingPassageHeadingAt);
   const { controller } = harness;
   const position = (x = 0, y = 0, z = 0) => ({ x, y, z, copy(p) { this.x = p.x; this.y = p.y; this.z = p.z; } });
   const pivot = () => ({ position: position(), rotation: { x: 0.1, y: 0, z: -0.2 } });
@@ -486,6 +487,13 @@ function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eas
   controller.getGroundHeight = (x, z, mode = 'person') => getGroundHeight(x, z, mode) + (mode === 'person' ? (x < 0 ? 1.24 : 0.22) : 0);
   return { ...harness, ent };
 }
+
+test('a car can align to a narrow passage and spawn at the requested point', () => {
+  const walls = [-2, 2].map(x => ({ minX: x - 0.2, maxX: x + 0.2, minZ: -4, maxZ: 4, maxY: 3 }));
+  const { controller, ent } = teleportHarness('car', walls, undefined, undefined, () => 0);
+  assert.deepEqual({ ...controller.teleportActiveTo(0, 0, Math.PI / 2) }, { x: 0, z: 0 });
+  assert.equal(ent.heading, 0);
+});
 
 for (const mode of ['person', 'car', 'cyclist', 'cargobike']) {
   test(`${mode} follows the terrain downhill after teleporting`, () => {

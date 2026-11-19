@@ -1,0 +1,90 @@
+{
+  "087cb999-1311-5ea7-b71f-932d40bf5c51": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=707&HEIGHT=1079&BBOX=52.02324968144438%2C5.614767600200999%2C52.02421862076409%2C5.615800068360743",
+    "observation": "The A12-to-A30 connector gains a marked lane. The OSM join is within the published interval, beside the start of the divider.",
+    "transition": [
+      "6960084",
+      "636835435"
+    ]
+  },
+  "0adc5893-c5d4-5bb2-b1a3-6864bcd8b8fc": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.01375731752398%2C5.657284296799823%2C52.01445731752398%2C5.658584296799823",
+    "observation": "Four marked lanes are visible at the sample cross-section, including the diverging outer lane."
+  },
+  "0eba8554-fd80-5b5b-abb3-1c6f0f41ef90": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.04025088103928%2C5.617329381952028%2C52.04095088103927%2C5.6186293819520285",
+    "observation": "Two continuous lanes and an outer block-marked lane are visible at the sample cross-section."
+  },
+  "187ae763-9f39-5c52-ab3d-78ce24116e1c": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.015403031124386%2C5.641681358475511%2C52.01610303112438%2C5.642981358475511",
+    "observation": "Five marked lanes are visible on the mapped carriageway at the sample cross-section, including the two exit lanes."
+  },
+  "1d4af8e4-db0d-556c-acc9-b78f318222bf": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.01659419719106%2C5.636707260046918%2C52.017294197191056%2C5.638007260046918",
+    "observation": "Four marked lanes are visible on the mapped carriageway at the sample cross-section, including the outer block-marked lane."
+  },
+  "2dfa7cb7-fef0-561d-9faf-f098086681fe": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.05905980645703%2C5.613064408405855%2C52.05975980645702%2C5.614364408405856",
+    "observation": "Two continuous lanes and an outer block-marked lane are visible at the sample cross-section."
+  },
+  "475e8a1e-adb5-5eac-833e-f70b626bb31f": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.01296724923164%2C5.648505316149388%2C52.01366724923164%2C5.649805316149388",
+    "observation": "Five painted lanes with separate directional arrows are visible at the sample cross-section."
+  },
+  "4be5f43e-a776-5de7-baab-501f1dbc9807": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.03166792765767%2C5.613565396736793%2C52.03236792765767%2C5.614865396736794",
+    "observation": "Two continuous lanes and a block-marked diverging lane are visible at the sample cross-section."
+  },
+  "5205fdf8-7a6f-5a3c-bd7c-d5db4720f5d8": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=801&HEIGHT=1000&BBOX=52.02645574740091%2C5.61246094852796%2C52.02735418378343%2C5.613630845967836",
+    "observation": "The A12-to-A30 connector narrows from two marked lanes to one. The OSM join is inside the marked hatched taper.",
+    "transition": [
+      "663875342",
+      "6960093"
+    ]
+  },
+  "67088cc5-6dd4-5ce5-9a41-85cd52aaa1e0": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.03129108439601%2C5.613132326648971%2C52.031991084396005%2C5.614432326648972",
+    "observation": "Two continuous lanes and a block-marked diverging lane are visible at the sample cross-section."
+  },
+  "6899f6f6-f0df-5b2f-a012-51f0d319c9f3": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.01369353713881%2C5.656544499162448%2C52.01439353713881%2C5.657844499162448",
+    "observation": "Four marked lanes are visible at the sample cross-section, including the merging outer lane."
+  },
+  "74b0ea8c-fa96-5ade-887b-346133033a0d": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=680&HEIGHT=865&BBOX=52.03473925852941%2C5.613756408494158%2C52.03551641147079%2C5.614749728065949",
+    "observation": "The merge island and block markings are visible. OSM and WEGGEG divide the approach differently, so a single count is unconfirmed."
+  },
+  "80afc208-c7b8-5d39-b650-1d46363e764a": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=692&HEIGHT=753&BBOX=52.04662164670659%2C5.620609211649808%2C52.0472976330606%2C5.621619586565692",
+    "observation": "The off-ramp has three marked turn lanes by the splitter island. The published two-lane end count does not cover that full cross-section."
+  },
+  "a1e2ed98-1570-58b4-9abc-dca7982a9f9d": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=1299&HEIGHT=844&BBOX=52.02191246996456%2C5.6191379553872105%2C52.02267087887238%2C5.6210353642437125",
+    "observation": "The southbound A30 connector toward A12 narrows from two marked lanes to one at the hatch. The NWB offset order runs from two marked lanes to one despite the published 1 to 2 description.",
+    "transition": [
+      "6960067",
+      "1092588591"
+    ]
+  },
+  "ac45e7e1-937e-5aa6-8ff8-b497664ee37a": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.03898425648874%2C5.617125627222682%2C52.039684256488734%2C5.618425627222683",
+    "observation": "Two continuous lanes and an outer block-marked lane are visible at the sample cross-section."
+  },
+  "bf910777-0b7d-5912-8f20-2c92817f5057": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=775&HEIGHT=803&BBOX=52.01478929640971%2C5.6522738699243975%2C52.01551066536346%2C5.653405835604783",
+    "observation": "A marked approach fans into multiple turn lanes around the bend. The published taper count cannot describe the whole OSM approach."
+  },
+  "cbebcd3e-9edf-5509-acd7-5f7151858081": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=890&HEIGHT=780&BBOX=52.01507873930684%2C5.651628825029007%2C52.01577873930683%2C5.652928825029008",
+    "observation": "Four painted turn lanes with four queue positions are visible at the sample cross-section."
+  },
+  "cfa9beee-fc6d-5cd4-9812-77a07c6b9c24": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=811&HEIGHT=628&BBOX=52.014955363348356%2C5.647067140534751%2C52.01551935255808%2C5.64825180732818",
+    "observation": "The ramp has a marked merge and adjacent hatch. The published begin and end counts do not support a constant replacement."
+  },
+  "e322b3a9-ab9b-5113-afca-ddd502f7cf94": {
+    "crop": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=706&HEIGHT=627&BBOX=52.01495935255809%2C5.646936132596769%2C52.01552241346695%2C5.6479671405347505",
+    "observation": "The point section is by the same hatch and merge as WEGGEG record 18117. Precise physical lane allocation across the split remains unconfirmed."
+  }
+}

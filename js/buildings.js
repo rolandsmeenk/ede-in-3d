@@ -48,6 +48,7 @@ import { fdrViaduct, pavedPlazaRects, parkTreeSites, sidewalkBlocks } from './ci
 import { edePoints, edeBounds, edePolygonGeometry, nearestEdeRoad, edeSpatialGroups, edeGeometryGroups } from './ede-geometry.js';
 import { createShopSigns } from './shop-signs.js';
 import { solidWallSpans } from './passages.js';
+import { buildingPassageOpenings } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleRoofColor } from './aerial-colors.js';
 import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js';
@@ -2044,19 +2045,42 @@ function buildCityBlocks(scene, { bag = false } = {}) {
             }
           }
           const wallTop = ground + eave;
-          if (!bag) buckets[matIndex].push({ x, y: (wallBottom + wallTop) / 2 + 0.02, z, w: length + 0.06, h: wallTop - wallBottom, d: thickness,
-            ry, tone, facadeColour, facadeLevels: source.facadeLevels, faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, face, face] });
-          if (base < 1) {
-            // Walkways crossing the wall open a 2.8 m gap (passages and arcades), and so does a road running right along it; the rest stays solid
-            const cs = Math.cos(ry), sn = Math.sin(ry), hz = thickness / 2;
-            const spans = solidWallSpans(a.x, a.z, b.x, b.z, 1.4 / length);
-            for (const [t0, t1] of spans) {
-              const segLen = (t1 - t0) * length;
-              if (segLen < 0.2) continue;
-              const sx = a.x + dx * (t0 + t1) / 2, sz = a.z + dz * (t0 + t1) / 2, hx = segLen / 2;
-              const ex = Math.abs(cs) * hx + Math.abs(sn) * hz, ez = Math.abs(sn) * hx + Math.abs(cs) * hz;
-              colliders.push({ minX: sx - ex, maxX: sx + ex, minZ: sz - ez, maxZ: sz + ez, minY: wallBottom, maxY: ground + height,
-                obb: { cx: sx, cz: sz, hx, hz, cs, sn } });
+          const openings = buildingPassageOpenings(a, b);
+          const splits = [...new Set([0, 1, ...openings.flatMap(({ from, to }) => [from, to])])].sort((a, b) => a - b);
+          const solid = base < 1 ? solidWallSpans(a.x, a.z, b.x, b.z, 1.4 / length) : [];
+          const cs = Math.cos(ry), sn = Math.sin(ry), hz = thickness / 2;
+          for (let j = 1; j < splits.length; j++) {
+            const from = splits[j - 1], to = splits[j], mid = (from + to) / 2;
+            const sx = a.x + dx * mid, sz = a.z + dz * mid;
+            const cuts = openings.filter(({ from, to }) => mid >= from && mid <= to).map(({ openingBaseAt, roofAt }) => {
+              const yAt = (fn, t) => fn(a.x + dx * t, a.z + dz * t);
+              const floor = openingBaseAt ? Math.min(yAt(openingBaseAt, from), yAt(openingBaseAt, to)) : -Infinity;
+              const roof = Math.max(yAt(roofAt, from), yAt(roofAt, to));
+              return [floor, roof];
+            }).sort((a, b) => a[0] - b[0]);
+            const panels = [];
+            let next = wallBottom;
+            for (const [floor, roof] of cuts) {
+              if (floor > next) panels.push([next, Math.min(floor, ground + height)]);
+              next = Math.max(next, roof);
+            }
+            panels.push([next, ground + height]);
+            for (const [bottom, top] of panels) {
+              if (bottom >= top) continue;
+              const renderTop = Math.min(top, wallTop);
+              if (!bag && bottom < renderTop) {
+                buckets[matIndex].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz,
+                  w: (to - from) * length + 0.06, h: renderTop - bottom, d: thickness,
+                  ry, tone, facadeColour, facadeLevels: source.facadeLevels, faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, face, face] });
+              }
+              for (const [t0, t1] of cuts.length ? [[from, to]] : solid) {
+                const lo = Math.max(t0, from), hi = Math.min(t1, to), hx = (hi - lo) * length / 2;
+                if (hx < 0.1) continue;
+                const cx = a.x + dx * (lo + hi) / 2, cz = a.z + dz * (lo + hi) / 2;
+                const ex = Math.abs(cs) * hx + Math.abs(sn) * hz, ez = Math.abs(sn) * hx + Math.abs(cs) * hz;
+                colliders.push({ minX: cx - ex, maxX: cx + ex, minZ: cz - ez, maxZ: cz + ez, minY: bottom, maxY: top,
+                  kind: cuts.length && bottom > wallBottom ? 'passage-lintel' : undefined, obb: { cx, cz, hx, hz, cs, sn } });
+              }
             }
           }
           if (!bag && !modern && height > 7 && length > 1.5) {

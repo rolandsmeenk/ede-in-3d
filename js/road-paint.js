@@ -2,9 +2,7 @@ import * as THREE from 'three/webgpu';
 import { CROSSWALK } from './road-network.js';
 import { createRoadPaintMaterial } from './tsl-materials.js';
 
-// Road markings generated from the drivable road network (js/road-network.js), so the paint matches where traffic
-// actually drives and stops: dashed lane lines, double yellow centre lines on two-way roads, stop bars at the stop
-// lines, continental crosswalks across every intersection approach and green bike lanes along wide one-way avenues.
+// Road markings follow the lane layout and stop lines supplied by the road network.
 
 const WHITE = new THREE.Color(0xe6e2d6);
 const YELLOW = new THREE.Color(0xe8ad22);
@@ -120,10 +118,36 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replaces
   const at = (e, s, o) => [e.sx + e.dx * s + e.rx * o, e.sz + e.dz * s + e.rz * o];
   const along = (e, o, w, col, period = 1, duty = 1) => {
     const start = (e.sx - e.x0) * e.dx + (e.sz - e.z0) * e.dz;
-    const ends = [at(e, e.from.shape ? -start : 0.9, o), at(e, e.to.shape ? e.span - start : e.len - 0.9, o)];
+    const fast = e.laneDefinition?.fast;
+    const startAt = fast || e.from.shape ? -start : 0.9;
+    const endAt = fast || e.to.shape ? e.span - start : e.len - 0.9;
+    if (endAt - startAt < 0.1) return;
+    const ends = [at(e, startAt, o), at(e, endAt, o)];
     lines.push({ e, o, w, col, period, duty, ends, joins: [] });
   };
   const across = (e, s, o0, o1, w, col, period, duty) => strip(...at(e, s, o0), ...at(e, s, o1), w, col, period, duty, 0, 1, e);
+  function turnArrows(e) {
+    if (!e.turnTagsAtEnd || e.to.shape || e.len < 9) return;
+    for (const lane of e.laneDefinition.lanes) {
+      const turns = lane.turns?.filter(turn => turn !== 'reverse');
+      if (!turns?.length) continue;
+      const s = e.len - 6;
+      const o = lane.offset;
+      const draw = (a, b, c, d) => strip(...at(e, s + a, o + b), ...at(e, s + c, o + d), 0.135, WHITE, 1, 1, 0, 1, e);
+      draw(-1.2, 0, 0, 0);
+      for (const turn of turns) {
+        const side = turn.endsWith('right') ? 1 : turn.endsWith('left') ? -1 : 0;
+        const forward = side && !turn.includes('_') ? 0.55 : 1.2;
+        const across = side * Math.min(0.65, lane.width * 0.3);
+        const length = Math.hypot(forward, across);
+        const tipX = forward / length, tipZ = across / length;
+        draw(0, 0, forward, across);
+        for (const wing of [-0.22, 0.22]) {
+          draw(forward, across, forward - tipX * 0.4 - tipZ * wing, across - tipZ * 0.4 + tipX * wing);
+        }
+      }
+    }
+  }
   const clearCentre = (e, o) => {
     if (!network.isRoadClear) return false;
     const steps = Math.max(1, Math.ceil((e.len - 1.8) / 2.5));
@@ -137,30 +161,61 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replaces
   // The one or two directed edges of each road between a pair of intersections
   const roads = new Map();
   for (const e of network.paintEdges || network.edges) {
-    const key = Math.min(e.from.id, e.to.id) * 65536 + Math.max(e.from.id, e.to.id);
+    const key = `${Math.min(e.from.id, e.to.id)}:${Math.max(e.from.id, e.to.id)}:${e.laneDefinition ? e.wayId : ''}`;
     if (roads.has(key)) roads.get(key).push(e);
     else roads.set(key, [e]);
   }
 
   for (const [e, back] of roads.values()) {
     const firstLine = lines.length;
+    const definition = e.laneDefinition;
     // Lanes of both directions, measured to the right of e, left to right
-    const lanes = e.lanes.map((o) => ({ o, dir: 1 }));
-    if (back) for (const o of back.lanes) lanes.push({ o: -o, dir: -1 });
+    const lanesOf = (edge, dir) => edge.laneDefinition
+      ? edge.laneDefinition.lanes.map(lane => ({ ...lane, o: lane.offset * dir, dir }))
+      : edge.lanes.map(o => ({ o: o * dir, dir }));
+    const lanes = lanesOf(e, 1);
+    if (back) lanes.push(...lanesOf(back, -1));
+    if (definition) lanes.push(...definition.centers.map(lane => ({ ...lane, o: lane.offset, dir: 0 })));
     lanes.sort((p, q) => p.o - q.o);
 
     // Dashed white between lanes going the same way, double yellow between opposing ones
     // (nothing across a median or a lane closed off by an obstacle)
-    for (let k = 0; k + 1 < lanes.length; k++) {
+    for (let k = 0; k + 1 < lanes.length && (!definition || definition.markings || back?.laneDefinition?.markings); k++) {
       const p = lanes[k];
       const q = lanes[k + 1];
       const mid = (p.o + q.o) / 2;
+      if (definition) {
+        const busBoundary = !!p.busOnly !== !!q.busOnly;
+        along(e, mid, definition.fast ? 0.16 : 0.12, WHITE,
+          busBoundary ? 1 : definition.fast ? 12 : 8, busBoundary ? 1 : 0.25);
+        continue;
+      }
       if (q.o - p.o > 4.5 && (p.dir === q.dir || !clearCentre(e, mid))) continue;
       if (p.dir === q.dir) {
         along(e, mid, 0.13, WHITE, 12, 0.25);
       } else {
         along(e, mid - 0.12, 0.11, YELLOW);
         along(e, mid + 0.12, 0.11, YELLOW);
+      }
+    }
+
+    if (definition) {
+      if (definition.fast && lanes.length) {
+        const left = lanes[0], right = lanes.at(-1);
+        along(e, left.o - left.width / 2 + 0.08, 0.16, WHITE);
+        along(e, right.o + right.width / 2 - 0.08, 0.16, WHITE);
+      }
+      const bikeBorders = new Set();
+      for (const [edge, dir] of back ? [[e, 1], [back, -1]] : [[e, 1]]) {
+        for (const bike of edge.laneDefinition.bikes) {
+          const offset = (bike.offset - Math.sign(bike.offset) * bike.width / 2) * dir;
+          const key = offset.toFixed(2);
+          if (bikeBorders.has(key)) continue;
+          bikeBorders.add(key);
+          const advisory = bike.kind === 'advisory';
+          along(e, offset, advisory ? 0.10 : 0.14, WHITE, advisory ? 2 : 1, advisory ? 0.5 : 1);
+        }
+        if (edge.laneDefinition.markings) turnArrows(edge);
       }
     }
 
@@ -178,14 +233,16 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replaces
     // Stop bars across the lanes arriving at each stop line, from the centre line (or median) to the curb (none where a
     // street merely bends: a shape node of the centreline streets)
     for (const f of back ? [e, back] : [e]) {
-      if (f.to.shape) continue;
-      const left = back ? Math.max(0, f.lanes[0] - 1.8) : -f.half;
-      across(f, f.len - 0.35, left + 0.1, f.half - 0.1, 0.45, WHITE);
+      if (f.to.shape || definition?.fast || f.boundary || f.underpass || f.busOnly) continue;
+      const physical = f.laneDefinition?.lanes;
+      const left = physical ? physical[0].offset - physical[0].width / 2 : back ? Math.max(0, f.lanes[0] - 1.8) : -f.half;
+      const right = physical ? physical.at(-1).offset + physical.at(-1).width / 2 : f.half;
+      if (right - left > 0.2) across(f, f.len - 0.35, left + 0.1, right - 0.1, 0.45, WHITE);
     }
 
     // Continental crosswalks curb to curb, between the stop lines and the intersections at both ends
     for (const [node, s] of [[e.from, -CROSSWALK / 2], [e.to, e.len + CROSSWALK / 2]]) {
-      if (!node.shape && !replacesZebra?.(...at(e, s, 0), e)) {
+      if (!node.shape && !definition?.fast && !e.boundary && !e.underpass && !e.busOnly && !replacesZebra?.(...at(e, s, 0), e)) {
         across(e, s, -e.half, e.half, CROSSWALK - 0.3, WHITE, 1.2, 0.5);
       }
     }
@@ -241,7 +298,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replaces
   for (const line of lines) {
     // An unmatched marking keeps its original gap instead of extending towards a curb at a sharp bend.
     for (const end of [0, 1]) {
-      if (!line.joins[end]) line.ends[end] = at(line.e, end ? line.e.len - 0.9 : 0.9, line.o);
+      if (!line.joins[end] && !line.e.laneDefinition?.fast) line.ends[end] = at(line.e, end ? line.e.len - 0.9 : 0.9, line.o);
     }
     line.len = Math.hypot(line.ends[1][0] - line.ends[0][0], line.ends[1][1] - line.ends[0][1]);
   }

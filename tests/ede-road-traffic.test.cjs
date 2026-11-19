@@ -64,3 +64,24 @@ test('a long road contributes only its local clipped length and spawn choices fo
   assert.equal(pickByArea(candidates, () => 0.24), 'local cycle path');
   assert.equal(pickByArea(candidates, () => 0.25), 'wide cycle path');
 });
+
+test('subdividing a curve preserves the original carriageway traffic controls', async () => {
+  const { createEdeRoadTraffic } = await roadTrafficModule;
+  const now = Date.parse('2026-11-19T10:30:00Z');
+  const first = { key: 'east-a', sourceRoadKey: 'east' };
+  const second = { key: 'east-b', sourceRoadKey: 'east' };
+  const west = { key: 'west' };
+  const traffic = createEdeRoadTraffic({ east: [100], 'east-b': [90], west: [120] }, () => now);
+  traffic.bind([first, second, west], edge => edge.key);
+  assert.equal(Math.round(traffic.limit(first) * 3.6), 100);
+  assert.equal(Math.round(traffic.limit(second) * 3.6), 90);
+  traffic.setSnapshot({ version: 1, restrictions: [
+    { key: 'east', limitKmh: 70, startsAt: now, expiresAt: now + 10000 },
+    { key: 'east-b', closed: true, startsAt: now, expiresAt: now + 10000 }
+  ] });
+  assert.equal(Math.round(traffic.limit(first) * 3.6), 70);
+  assert.equal(Math.round(traffic.limit(second) * 3.6), 70);
+  assert.equal(traffic.isClosed(first), false);
+  assert.equal(traffic.isClosed(second), true);
+  assert.equal(Math.round(traffic.limit(west) * 3.6), 120);
+});

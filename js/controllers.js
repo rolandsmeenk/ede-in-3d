@@ -31,7 +31,7 @@ import { HEADLIGHTS, createVehicleHeadlight, placeVehicleHeadlight } from './veh
 import { bryantParkLawn } from './landmarks.js';
 import { polygonContact } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
-import { gradeDeckAt, gradeHeightAt, gradeProfileAt } from './ede-grade.js';
+import { buildingPassageHeadingAt, gradeDeckAt, gradeGroundHeightAt, gradeHeightAt, gradeProfileAt } from './ede-grade.js';
 
 // js/controllers.js
 // Sculpted, non-blocky GTA 6-style 3D models, animations, and physics controllers
@@ -600,7 +600,7 @@ class ThirdPersonControllerManager {
     if (destination) {
       ent.position.x = destination.x;
       ent.position.z = destination.z;
-      ent.heading = heading;
+      ent.heading = destination.heading;
       ent.position.y = heli
         ? helicopterAltitude(destination.x, destination.z, altitude, clearance)
         : this.getGroundHeight(destination.x, destination.z, this.activeMode, savedAltitude ?? terrainHeightAt(destination.x, destination.z));
@@ -647,9 +647,7 @@ class ThirdPersonControllerManager {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
     const heli = this.activeMode === 'helicopter';
     const radius = heli ? 4.5 : this.activeMode === 'person' ? 0.48 : 0.65;
-    const sinH = Math.sin(heading), cosH = Math.cos(heading);
     const shape = collisionBody(this.activeMode, radius, heading, 0.1);
-    const reach = Math.max(shape.extX, shape.extZ);
     const margin = heli ? 6000 : 0;
     const entity = this.getActiveEntity();
     // Conservative body cylinders, including the taxi's corners, bicycle wheels and helicopter tail/rotor.
@@ -671,7 +669,7 @@ class ThirdPersonControllerManager {
       }
       return { x: px, z: pz };
     };
-    const clear = (p) => {
+    const clear = (p, shape) => {
       if (!p) return false;
       if (!heli && this.isUnbridgedWater(p.x, p.z)) return false;
       const baseY = heli ? helicopterAltitude(p.x, p.z, altitude, clearance)
@@ -682,16 +680,31 @@ class ThirdPersonControllerManager {
       for (const other of others) {
         if (other.bottom > viewTop + 0.3 || other.top < baseY - (heli ? 0.7 : 0) - 0.3) continue;
         const dx = other.x - p.x, dz = other.z - p.z;
-        const back = Math.max(0, Math.min(cameraBack, -dx * sinH - dz * cosH));
-        if (Math.hypot(dx + sinH * back, dz + cosH * back) < other.radius + Math.max(body[entity.type][0], 0.5) + 0.1) return false;
+        const back = Math.max(0, Math.min(cameraBack, -dx * shape.sin - dz * shape.cos));
+        if (Math.hypot(dx + shape.sin * back, dz + shape.cos * back) < other.radius + Math.max(body[entity.type][0], 0.5) + 0.1) return false;
       }
+      const reach = Math.max(shape.extX, shape.extZ);
       for (const c of this.nearColliders(p.x, p.z, reach)) {
         if (buildingContact(c, p.x, baseY, p.z, shape)) return false;
       }
       return true;
     };
     const origin = clampPoint(x, z);
-    if (clear(origin)) return origin;
+    if (clear(origin, shape)) return { ...origin, heading };
+    if (origin && this.activeMode === 'cyclist') {
+      const surface = gradeProfileAt(origin.x, origin.z, this.activeMode, heading,
+        altitude ?? terrainHeightAt(origin.x, origin.z));
+      // A surveyed narrow deck can fit the bike itself without its normal spawn padding.
+      if (surface?.kind === 'bridge' && clear(origin, collisionBody(this.activeMode, radius, heading))) {
+        return { ...origin, heading };
+      }
+    }
+    if (origin && shape.oriented) {
+      const aligned = buildingPassageHeadingAt(origin.x, origin.z, altitude, heading);
+      if (Number.isFinite(aligned) && clear(origin, collisionBody(this.activeMode, radius, aligned, 0.1))) {
+        return { ...origin, heading: aligned };
+      }
+    }
     // Four-metre rings cover nearby streets and courtyards, with bounded work even for a click inside a large block.
     const cx = origin ? origin.x : Math.max(ISLAND_BOUNDS.minX, Math.min(ISLAND_BOUNDS.maxX, x));
     const cz = origin ? origin.z : Math.max(ISLAND_BOUNDS.minZ + 30, Math.min(ISLAND_BOUNDS.maxZ, z));
@@ -699,7 +712,7 @@ class ThirdPersonControllerManager {
       for (let i = 0; i < 32; i++) {
         const angle = i * Math.PI / 16;
         const p = clampPoint(cx + Math.cos(angle) * distance, cz + Math.sin(angle) * distance);
-        if (clear(p)) return p;
+        if (clear(p, shape)) return { ...p, heading };
       }
     }
     return null;
@@ -1691,7 +1704,7 @@ class ThirdPersonControllerManager {
   getGroundHeight(x, z, mode = 'person', referenceY = this.entities?.[mode]?.position.y) {
     const surface = gradeProfileAt(x, z, mode, this.entities?.[mode]?.heading, referenceY ?? terrainHeightAt(x, z));
     if (surface) return surface.y;
-    const y = terrainHeightAt(x, z);
+    const y = gradeGroundHeightAt(x, z, referenceY);
     // Inside Central Park (5th Ave to Central Park West, 59th St to 110th St)
     const cp = CENTRAL_PARK_BOUNDS;
     if (x > cp.minX && x < cp.maxX && z > cp.minZ && z < cp.maxZ) {

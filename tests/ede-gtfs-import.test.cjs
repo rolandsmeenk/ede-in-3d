@@ -51,3 +51,62 @@ assert variant['trips'] == [{'id': '162158', 'departure': 90245, 'dates': [0, 1,
 assert 'stopSequences' not in data['variants'][1]['trips'][0]
 `], { cwd: join(__dirname, '..') });
 });
+
+test('Ede rail import keeps scheduled platforms, overnight times and the direct through route', () => {
+  execFileSync('python3', ['-B', '-c', `
+import csv
+from io import BytesIO, StringIO
+from runpy import run_path
+from zipfile import ZipFile
+
+module = run_path('tools/import-ede-trains.py')
+with ZipFile(BytesIO(), 'w') as feed:
+    def table(name, header, rows):
+        content = StringIO()
+        writer = csv.writer(content)
+        writer.writerow(header.split())
+        writer.writerows(rows)
+        feed.writestr(f'{name}.txt', content.getvalue())
+
+    stations = [('ut', 'Utrecht Centraal', -800), ('ed', 'Ede-Wageningen', 0),
+                ('edc', 'Ede Centrum', 30), ('ah', 'Arnhem Centraal', 800)]
+    table('stops', 'stop_id stop_name stop_code location_type parent_station platform_code stop_lon stop_lat',
+          [(code, name, code, 1, '', '', x, 0) for code, name, x in stations]
+          + [(code + 'p', name, '', 0, code, platform, x, 0)
+             for (code, name, x), platform in zip(stations, ['19', '4', '1', '4b'])]
+          + [('eda', 'Ede-Wageningen', '', 0, 'ed', '1a', -1, 0),
+             ('aha', 'Arnhem Centraal', '', 0, 'ah', '4a', 800, 0)])
+    table('routes', 'route_id agency_id route_short_name route_type',
+          [('ns', 'IFF:NS', 'S72', 2), ('rr', 'IFF:RRREIS_K', 'RS34', 2),
+           ('ice', 'IFF:NS_INT', 'ICE', 2)])
+    table('trips', 'route_id service_id trip_id trip_short_name realtime_trip_id trip_long_name shape_id', [
+        ('ns', 'weekday', 'A', 7501, 'IFF:SPR:7501', 'Sprinter', 'direct'),
+        ('rr', 'weekend', 'B', 31300, 'IFF:SPR:31300', 'Sprinter', 'branch'),
+        ('ice', 'weekday', 'C', 123, 'IFF:ICE:123', 'ICE', 'direct'),
+        ('ice', 'weekday', 'D', 124, 'IFF:ICE:124', 'ICE', 'diverted'),
+        ('ice', 'weekday', 'E', 123, 'IFF:ICE:123', 'ICE', 'direct'),
+    ])
+    table('calendar_dates', 'service_id date exception_type',
+          [('weekday', 20261119, 1), ('weekend', 20261119, 1), ('weekday', 20261120, 2)])
+    table('shapes', 'shape_id shape_pt_lon shape_pt_lat', [('direct', 0, 0), ('diverted', 0, 800)])
+    table('stop_times', 'trip_id stop_sequence stop_id arrival_time departure_time', [
+        (trip, sequence * 3, stop, f'25:{sequence:02}:00', f'25:{sequence:02}:20')
+        for trip, stops in [('A', ['edp', 'ahp', 'aha']), ('B', ['eda', 'edcp']),
+                            ('C', ['utp', 'ahp']), ('D', ['ahp', 'utp']), ('E', ['utp', 'ahp'])]
+        for sequence, stop in enumerate(stops, 1)
+    ])
+    data = module['import_feed'](feed, lambda x, z: (float(x), float(z)))
+
+assert data['version'] == 1
+assert data['dates'] == ['2026-11-19']
+assert data['calendars'] == [(0,)]
+assert data['platforms'] == {'edp': '4', 'eda': '1a', 'edcp': '1'}
+ns, rr, ice = data['trips']
+assert (ns['route'], ns['direction'], ns['realtimeTripId']) == ('main', 1, 'IFF:SPR:7501')
+assert ns['stops'][0] == {'station': 'ede-wageningen', 'arrival': 90060, 'departure': 90080,
+                          'stopId': 'edp', 'sequence': 3, 'platform': '4'}
+assert [stop['platform'] for stop in ns['stops']] == ['4', '4b', '4a']
+assert (rr['operator'], rr['route'], rr['direction']) == ('RRReis', 'rs34', -1)
+assert [stop['station'] for stop in ice['stops']] == ['utrecht-centraal', 'arnhem-centraal']
+`], { cwd: join(__dirname, '..') });
+});

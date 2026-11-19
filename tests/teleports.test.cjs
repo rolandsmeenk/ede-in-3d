@@ -70,7 +70,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
     calls.length = 0;
     handlers.get(name)();
     assert.deepEqual(calls, [
-      ['teleport', point.x, point.z, point.heading], ['touch'], ['gamepad'], ['camera'], ['selectCamera', 'chase', true]
+      ['teleport', point.x, point.z, point.heading, null], ['touch'], ['gamepad'], ['camera'], ['selectCamera', 'chase', true]
     ]);
     assert.equal(map.waypoint.x, landed.x);
     assert.equal(map.waypoint.z, landed.z);
@@ -80,4 +80,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
   assert.equal(map.waypoint.x, landed.x, 'map marker follows the safe position returned by the controller');
   assert.equal(map.waypoint.z, landed.z);
   assert.equal(map.waypoint.name, `${landed.x}, ${landed.z}`);
+  calls.length = 0;
+  map.onTeleport(100, 200, 1.5, -7);
+  assert.deepEqual(calls[0], ['teleport', 100, 200, 1.5, -7], 'layered teleports pass the requested altitude');
 });

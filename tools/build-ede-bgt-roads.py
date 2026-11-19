@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Match dated PDOK BGT road surfaces to OSM centerlines for physical evidence.
+"""Match dated PDOK BGT road surfaces and export their mapped paving footprints.
 
 Requires Shapely 2.1+. Use --fetch to populate the snapshot directory.
 The BGT classes and transverse widths describe mapped surfaces only.
@@ -9,6 +9,7 @@ import argparse
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
+import gzip
 import hashlib
 import json
 import math
@@ -16,7 +17,7 @@ from pathlib import Path
 import runpy
 from statistics import median, quantiles
 
-from shapely import STRtree
+from shapely import STRtree, orient_polygons, set_precision, union_all
 from shapely.geometry import LineString, box
 
 
@@ -36,6 +37,27 @@ OSM_PHYSICAL = {
 WIDTH_RANGE = {'foot': (0.65, 6), 'cycle': (1.1, 6.5), 'motor': (2.4, 23),
                'bus': (2.8, 12), 'shared': (1.5, 12)}
 MIN_COVERAGE = 0.75
+DETAILED_MATERIALS = {
+    'asfalt': 'asphalt', 'gebakken klinkers': 'brick', 'betonstraatstenen': 'block', 'tegels': 'tile',
+    'cementbeton': 'concrete', 'beton element': 'concrete', 'grasklinkers': 'block',
+    'grind': 'gravel', 'gravel': 'gravel', 'puin': 'gravel', 'schelpen': 'gravel', 'zand': 'sand',
+}
+MATERIAL_FAMILIES = {
+    'gesloten verharding': {'asphalt', 'concrete'},
+    'open verharding': {'brick', 'block', 'tile'},
+    'half verhard': {'gravel', 'block'},
+    'onverhard': {'sand', 'gravel'},
+}
+GENERIC_MATERIALS = {'gesloten verharding': 'asphalt', 'open verharding': 'block',
+                     'half verhard': 'gravel', 'onverhard': 'sand'}
+OSM_MATERIALS = {
+    'asphalt': 'asphalt', 'chipseal': 'asphalt', 'brick': 'brick',
+    'paving_stones': 'block', 'grass_paver': 'block', 'sett': 'block',
+    'cobblestone': 'block', 'unhewn_cobblestone': 'block',
+    'tiles': 'tile', 'concrete': 'concrete', 'concrete:plates': 'concrete',
+    'gravel': 'gravel', 'fine_gravel': 'gravel', 'compacted': 'gravel', 'pebblestone': 'gravel',
+    'sand': 'sand', 'dirt': 'sand', 'earth': 'sand', 'ground': 'sand',
+}
 
 
 def fetch(directory, scene, day):
@@ -94,7 +116,7 @@ def get_snapshot(directory, scene, area):
                 kind = None
             for polygon in BGT['polygons'](geometry):
                 geometries.append(polygon)
-                surfaces.append((props.get('relatieve_hoogteligging'), kind, tag, props['lokaal_id']))
+                surfaces.append((props.get('relatieve_hoogteligging'), kind, tag, props['lokaal_id'], props))
     return STRtree(geometries), surfaces, sources
 
 
@@ -150,7 +172,7 @@ def match_way(line, level, expected, tree, surfaces):
         matching = defaultdict(list)
         off_kinds, other_tags = set(), set()
         for index in hits:
-            layer, kind, tag, identity = surfaces[index]
+            layer, kind, tag, identity, _ = surfaces[index]
             if layer == level and kind:
                 matching[kind].append(index)
                 sources.add(identity)
@@ -196,6 +218,145 @@ def match_way(line, level, expected, tree, surfaces):
     return result, None if 'width' in result else 'uncertainWidth', diagnostic
 
 
+def osm_surface_tags(path, scene):
+    if path is None:
+        return {road['id']: road['surface'] for road in scene['roads'] if road.get('surface')}
+    if path.suffix == '.js':
+        prefix = 'export const EDE_ROAD_TAGS = '
+        content = path.read_text()
+        data = json.loads(content.split(prefix, 1)[1].strip().removesuffix(';'))
+        return {way_id: tags['surface'] for way_id, tags in data.items() if tags.get('surface')}
+    data = json.loads(path.read_bytes())
+    if data.get('remark') or not data.get('elements'):
+        raise ValueError(f'Expected a complete OSM snapshot in {path}')
+    return {f"w{row['id']}": row['tags']['surface'] for row in data['elements']
+            if row['type'] == 'way' and row.get('tags', {}).get('surface')}
+
+
+def refine_surface(polygon, broad, layer, kind, roads, road_index):
+    if kind is None:
+        return None
+    # Reject incidental crossings, nearby parallel paths and conflicting tags.
+    length_by_tag = Counter()
+    matches = []
+    for index in road_index.query(polygon, predicate='intersects'):
+        road, raw_value, material = roads[index]
+        expected = OSM_PHYSICAL.get(road['kind'], {'motor', 'shared'})
+        if road.get('layer', 0) != layer or kind not in expected:
+            continue
+        line = road_index.geometries[index]
+        length = polygon.intersection(line).length
+        if length >= max(1.5, min(8, line.length * 0.4)):
+            length_by_tag[material] += length
+            matches.append([road['id'], raw_value])
+    if len(length_by_tag) != 1:
+        return None
+    material, overlap = length_by_tag.most_common(1)[0]
+    grass_blocks = broad != 'half verhard' or material != 'block' or all(tag == 'grass_paver' for _, tag in matches)
+    if grass_blocks and material in MATERIAL_FAMILIES[broad] and overlap >= max(2, math.sqrt(polygon.area) * 0.45):
+        return material, sorted(matches)
+    return None
+
+
+def encode_surface(geometry):
+    return [[[round(value, 3) for point in ring.coords[:-1] for value in point]
+             for ring in [part.exterior, *part.interiors]]
+            for part in BGT['polygons'](orient_polygons(geometry.normalize(), exterior_cw=True))]
+
+
+def encode_surface_coverage(items, geometries):
+    tree = STRtree(geometries)
+    for index, (item, geometry) in enumerate(zip(items, geometries)):
+        # Take the more specific record where source polygons or simplified edges overlap.
+        neighbors = [geometries[i] for i in tree.query(geometry, predicate='intersects')
+                     if i < index and items[i]['layer'] == item['layer']
+                     and geometry.relate_pattern(geometries[i], '2********')]
+        rings = encode_surface(geometry.difference(union_all(neighbors)) if neighbors else geometry)
+        if rings:
+            yield {**item, 'polygons': rings}
+
+
+def build_surfaces(scene, index, surfaces, tags, source, day):
+    roads, lines = [], []
+    for road in scene['roads']:
+        raw_value = tags.get(road['id'])
+        material = OSM_MATERIALS.get(raw_value)
+        if material and len(road['pts']) >= 4:
+            roads.append((road, raw_value, material))
+            lines.append(LineString(BGT['pairs'](road['pts'])))
+    road_index = STRtree(lines)
+    records, ground, ground_kinds = [], [], []
+    for polygon, (layer, kind, function, identity, props) in zip(index.geometries, surfaces):
+        broad = props.get('fysiek_voorkomen')
+        detail = props.get('plus_fysiek_voorkomen')
+        if (broad not in GENERIC_MATERIALS or props.get('in_onderzoek') in (True, 'true')
+                or function in {'spoorbaan', 'voetpad op trap'}):
+            continue
+        material = DETAILED_MATERIALS.get(detail)
+        resolution = 'bgt-detail'
+        osm_matches = None
+        if not material:
+            refined = refine_surface(polygon, broad, layer, kind, roads, road_index)
+            if refined:
+                material, osm_matches = refined
+                resolution = 'osm-compatible'
+        if not material:
+            material, resolution = GENERIC_MATERIALS[broad], 'bgt-general'
+        geometry = set_precision(polygon.simplify(0.08, preserve_topology=True), 0.01)
+        # Keep compact surveyed vertices, with millimetre precision for new clipping vertices.
+        geometry = set_precision(geometry, 0.001)
+        if geometry.is_empty:
+            continue
+        if layer == 0 and kind:
+            ground.append(polygon)
+            ground_kinds.append(kind)
+        # A paving row follows the long edge of its source polygon.
+        extent = polygon.minimum_rotated_rectangle
+        corners = list(extent.exterior.coords)
+        dx, dz = max(((b[0] - a[0], b[1] - a[1]) for a, b in zip(corners, corners[1:])),
+                     key=lambda edge: math.hypot(*edge))
+        angle = round(math.atan2(dz, dx) % math.pi, 3)
+        record = {'id': identity, 'layer': layer, 'function': function, 'fysiek_voorkomen': broad,
+                  'plus_fysiek_voorkomen': detail, 'material': material, 'resolution': resolution, 'angle': angle}
+        if osm_matches:
+            record['osm'] = osm_matches
+        records.append((record, geometry))
+    priority = {'bgt-detail': 0, 'osm-compatible': 1, 'bgt-general': 2}
+    records.sort(key=lambda record: priority[record[0]['resolution']])
+    items, geometries = zip(*records)
+    items = list(encode_surface_coverage(items, geometries))
+    counts = Counter(item['material'] for item in items)
+    resolutions = Counter(item['resolution'] for item in items)
+    assert all(counts[material] > 0 for material in set(GENERIC_MATERIALS.values()) | {'brick', 'tile', 'concrete'})
+
+    ground_index = STRtree(ground)
+    covered = {}
+    for road in scene['roads']:
+        if road.get('bridge') or road.get('tunnel') or road.get('layer', 0) or len(road['pts']) < 4:
+            continue
+        line = LineString(BGT['pairs'](road['pts']))
+        expected = OSM_PHYSICAL.get(road['kind'], {'motor', 'shared'})
+        mapped = union_all([ground_index.geometries[i] for i in ground_index.query(line, predicate='intersects')
+                            if ground_kinds[i] in expected])
+        if mapped.is_empty:
+            continue
+        mapped = mapped.buffer(0.12)
+        pairs = list(line.coords)
+        covered_segments = []
+        for i, (a, b) in enumerate(zip(pairs, pairs[1:])):
+            path = LineString([a, b])
+            if path.length >= 0.8 and mapped.intersection(path).length >= path.length * 0.94:
+                covered_segments.append(i)
+        if covered_segments:
+            covered[road['id']] = covered_segments
+
+    sources = dict(source)
+    if resolutions['osm-compatible']:
+        sources['osm'] = {'url': 'https://www.openstreetmap.org/copyright', 'license': 'ODbL 1.0'}
+    return {'version': 1, 'date': str(day), 'source': sources, 'counts': dict(sorted(counts.items())),
+            'resolutions': dict(sorted(resolutions.items())), 'covered': covered, 'surfaces': items}
+
+
 def build(scene, directory, day):
     area = box(*scene['meta']['bounds'])
     index, surfaces, sources = get_snapshot(directory, scene, area)
@@ -225,7 +386,7 @@ def build(scene, directory, day):
              'ways': ways}
     report = {'date': str(day), 'source': source,
               'collections': sources, 'counts': dict(counts), 'matchedClasses': dict(kinds), 'issues': issues}
-    return asset, report
+    return asset, report, index, surfaces
 
 
 def main():
@@ -235,11 +396,19 @@ def main():
     parser.add_argument('--fetch', action='store_true')
     parser.add_argument('--output', type=Path, default=ROOT / 'tools/data/ede-bgt-road-evidence.json')
     parser.add_argument('--report', type=Path)
+    parser.add_argument('--osm', type=Path, help='OSM snapshot or generated EDE_ROAD_TAGS module')
+    parser.add_argument('--surfaces', type=Path, default=ROOT / 'assets/ede-road-surfaces.json.gz')
     args = parser.parse_args()
     scene = BGT['load_scene']()
     if args.fetch:
         fetch(args.directory, scene, args.date)
-    asset, report = build(scene, args.directory, args.date)
+    asset, report, index, surfaces = build(scene, args.directory, args.date)
+    osm = args.osm
+    if osm is None:
+        osm = next((p for p in (ROOT / 'tools/data/osm_ede.json', ROOT / 'js/ede-road-tags.js') if p.exists()), None)
+    paving = build_surfaces(scene, index, surfaces, osm_surface_tags(osm, scene), asset['source'], args.date)
+    args.surfaces.write_bytes(gzip.compress(json.dumps(paving, ensure_ascii=False, separators=(',', ':'),
+                                                       allow_nan=False).encode(), mtime=0))
     metadata = {key: value for key, value in asset.items() if key != 'ways'}
     prefix = json.dumps(metadata, indent=2).removesuffix('\n}')
     rows = ',\n'.join(f'    {json.dumps(key)}:{json.dumps(row, separators=(",", ":"))}'
@@ -248,6 +417,7 @@ def main():
     if args.report:
         args.report.write_text(json.dumps(report, ensure_ascii=False, separators=(',', ':')) + '\n')
     print(json.dumps({key: report[key] for key in ('collections', 'counts', 'matchedClasses')}, indent=2))
+    print(f"Surface polygons: {paving['counts']}. Material evidence: {paving['resolutions']}.")
 
 
 if __name__ == '__main__':

@@ -29,8 +29,24 @@ export function indexStreetFeatures(asset) {
   }
   for (const matches of byEdge.values()) matches.sort((a, b) => a.from - b.from || a.to - b.to);
   const forEdge = (key) => byEdge.get(key) ?? [];
+  function forRoad(edge) {
+    const key = streetRoadKey(edge);
+    const current = forEdge(key);
+    const source = forEdge(edge.sourceRoadKey);
+    if (!source.length || !(edge.sourceRoadEnd > edge.sourceRoadStart)) return current;
+    const left = edge.sourceRoadSpan * edge.sourceRoadStart;
+    const right = edge.sourceRoadSpan * edge.sourceRoadEnd;
+    if (!(right > left)) return current;
+    const span = edge.span ?? Math.hypot(edge.to.x - edge.from.x, edge.to.z - edge.from.z);
+    const scale = span / (right - left);
+    const resolved = new Set(current.map(match => match.feature.id));
+    const inherited = source.filter(match => match.to >= left && match.from <= right && !resolved.has(match.feature.id))
+      .map(match => ({ ...match, key, from: Math.max(0, match.from - left) * scale,
+        to: (Math.min(right, match.to) - left) * scale }));
+    return inherited.length ? [...current, ...inherited].sort((a, b) => a.from - b.from || a.to - b.to) : current;
+  }
   return {
-    ...asset, forEdge, forRoad: (edge) => forEdge(streetRoadKey(edge)),
+    ...asset, forEdge, forRoad,
     forPath: (track, direction, mode) => forEdge(streetPathKey(track, direction, mode)),
     byId: (id) => byId.get(id)
   };

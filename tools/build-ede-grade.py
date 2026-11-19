@@ -99,6 +99,7 @@ def fitting_curve(knots, distance):
 
 def build(osm, output, survey_dir):
     terrain = Terrain()
+    level_survey = json.loads((ROOT / 'tools/data/ede-level-crossing-elevations.json').read_text())
     scene = load_scene()
     frame = scene['meta']['lonLatAffine']
     scene_ways = {item['id']: item for item in scene['roads'] + scene['railways']}
@@ -128,16 +129,19 @@ def build(osm, output, survey_dir):
             return []
         return json.loads((survey_dir / f'slop-ede-grade-pr-{layer}.json').read_text())['features']
 
-    def profile(name, ids, width, modes, window, controls, covers=(), offset=0, **fields):
+    def profile(name, ids, width, modes, window, controls, covers=(), offset=0, endpoint_heights=None, **fields):
         points, stations, spans = path(ids)
         start, end = window
         start, end = max(0, start), min(stations[-1], end)
         if not start < end:
             raise ValueError(f'Invalid profile bounds for {name}')
         cuts = {start, end, *[s for s in stations if start < s < end]}
-        knots = [(start, terrain.at(point_on_line(points, stations, start)))]
+        start_nap, end_nap = endpoint_heights or (
+            terrain.at(point_on_line(points, stations, start)), terrain.at(point_on_line(points, stations, end))
+        )
+        knots = [(start, start_nap)]
         knots += [(s, nap) for s, nap in controls if start + 0.1 < s < end - 0.1]
-        knots += [(end, terrain.at(point_on_line(points, stations, end)))]
+        knots += [(end, end_nap)]
         assert all(a[0] < b[0] for a, b in zip(knots, knots[1:])), (name, knots)
         cuts.update(s for s, _ in knots)
         cuts.update(s for limits in covers for s in limits if start < s < end)
@@ -204,9 +208,9 @@ def build(osm, output, survey_dir):
         tunnel('alberts-northbound', [1136549919, 1063323754, 6952971, 846327504], [1063323754],
                8, motor, (82, 80), (16.44, 15.96, 15.85, 16.0, 16.61)),
         tunnel('alberts-west-path', [25098903, 25098905, 25098904], [25098905],
-               5, active, (54, 58), (17.02, 16.96, 16.94, 16.96, 17.0), 3.05),
+               scene_ways['w25098905']['width'], active, (54, 58), (17.02, 16.96, 16.94, 16.96, 17.0), 3.05),
         tunnel('alberts-east-path', [25031947, 1063323753, 846200814], [1063323753],
-               5, active, (70, 74), (17.72, 17.70, 17.69, 17.72, 17.74), 2.35),
+               scene_ways['w1063323753']['width'], active, (70, 74), (17.72, 17.70, 17.69, 17.72, 17.74), 2.35),
     ]
     alberts = dict(id='albertstunnel', name='Albertstunnel (Klinkenbergerweg)', kind='underpass',
                   clearance=4.1, clearanceStatus='Mapped signed vehicle limit in OSM',
@@ -343,35 +347,39 @@ def build(osm, output, survey_dir):
                        (18.34, 18.36, 18.44, 18.33, 18.29)),
     ]
     a30 = dict(id='a30-rail-bridge', name='A30 railway viaduct', kind='bridge',
-               profiles=a30_profiles, clearance=7.5, clearanceStatus='Estimated from AHN separation and deck thickness',
+               profiles=a30_profiles, clearance=7.4, clearanceStatus='Estimated from AHN separation and deck thickness',
                evidence=dict(bgt=['L0002.73bbac3ff8164220957d09d21d823920',
                                   'L0004.1c481e61d284455d88ac29601d54f5c3',
                                   'L0004.e2da4da92f3b4e8ebbf1c3a4e5a86171'],
-                             heights='AHN 0.5 m DSM deck 18.3–18.7 m NAP and DTM track cut 9.8–10.0 m NAP',
-                             railReference='ProRail layer 9 aligns in plan. Its ~15 m Z differs from AHN in the excavated cut.'))
+                             heights='AHN 0.5 m DSM deck 18.3–18.7 m NAP and DTM ballast 9.8–10.1 m NAP',
+                             railReference='ProRail layer 9 objects 9351 and 5472 align in plan. Their 14.7–15.3 m Z disagrees with exposed ballast and deck clearance.'))
 
-    center = xy((5.6663876, 52.0413441))
-    ln, ss, _ = path([6953582])
-    overweg_s = station_at(ln, ss, center)
-    level_profile = profile('telefoonweg-road', [6953582], 8, road_modes,
-                            (overweg_s - 27, overweg_s + 34),
-                            [(overweg_s - 12, 20.87), (overweg_s - 4, 20.95), (overweg_s, 20.98),
-                             (overweg_s + 5, 20.95), (overweg_s + 14, 20.87), (overweg_s + 24, 20.77)])
-    control_a, control_b = [point_on_line(ln, ss, overweg_s + offset) for offset in (-7.4, 7.4)]
-    heading = math.atan2(control_b[0] - control_a[0], control_b[1] - control_a[1])
-    crossing = dict(id='telefoonweg-level-crossing', name='Telefoonweg railway crossing', kind='level',
-                    profiles=[level_profile], controls=dict(x=round(center[0], 2), z=round(center[1], 2),
-                    heading=round(heading, 5), width=8, y=round(20.98 - terrain.nap, 3),
-                    railWayId='w431865751', nodeId='828435934', type='AHOB',
-                    approaches=[dict(x=round(q[0], 2), z=round(q[1], 2)) for q in (control_a, control_b)]),
-                    evidence=dict(bgt=['L0004.e3161f37a99649789c8824e422269bc4',
-                                       'L0004.30bece1bd4134cf1928e6ab8f623ea90'],
-                                  proRailId='1058febe-631b-4d94-b470-8115b64a54e4',
-                                  heights='Shared OSM road/rail node and AHN 0.5 m crossing surface 20.98 m NAP'))
+    langekamp, langekamp_stations, _ = path([189224783])
+
+    def path_station(easting):
+        a, b = langekamp[:2]
+        fraction = (easting - a[0]) / (b[0] - a[0])
+        return fraction * langekamp_stations[1]
+
+    langekamp_cover = [path_station(-3697), path_station(-3743)]
+    langekamp_path = profile('a30-langekamppad', [189224783], 3.6, active,
+                            (path_station(-3635), path_station(-3769)),
+                            [(path_station(x), y) for x, y in (
+                                (-3650, 8.82), (-3670, 8.75), (-3690, 8.65), (-3697, 8.59),
+                                (-3720, 8.57), (-3743, 8.57), (-3750, 8.62), (-3760, 8.71))],
+                            [langekamp_cover], clearance=9.1)
+    langekamp_site = dict(id='a30-rail-bridge-lower', name='Langekamppad beneath the A30 railway viaduct',
+                          kind='underpass', profiles=[langekamp_path], surfacesOnly=True, cutCoveredTerrain=True,
+                          evidence=dict(bgt=a30['evidence']['bgt'][:1],
+                                        heights='AHN 0.5 m DTM 8.60 and 8.58 m NAP on exposed east and west approaches; '
+                                                'the floor between them and the soffit are estimated.'))
 
     # These public AHOB crossings share OSM nodes with the track and sit on BGT
     # overweg polygons at relative level zero. Each group covers one roadway.
     public_crossings = [
+        ('telefoonweg', 'Telefoonweg', '1058febe-631b-4d94-b470-8115b64a54e4',
+         ['L0004.e3161f37a99649789c8824e422269bc4', 'L0004.30bece1bd4134cf1928e6ab8f623ea90'],
+         [[(6953582, 431865751, 828435934)]]),
         ('asakkerweg', 'Asakkerweg (Kernhemseweg)', '6af0b230-22d1-4206-bfe1-70cd683e73eb',
          ['L0004.91a246b38cc74a1a82a5fbb89e06084c'], [[(145299446, 431865751, 540386091)]]),
         ('prins-bernhardlaan', 'Prins Bernhardlaan', '987ed6cd-2391-424b-8571-70ae21a8ac5e',
@@ -443,13 +451,47 @@ def build(osm, output, survey_dir):
                     roadWayIds=list(dict.fromkeys(f'w{r}' for r, _, _ in group)), railWayIds=rails,
                     nodeIds=list(dict.fromkeys(str(n) for _, _, n in group)))
 
+    def fitted_crossing_road(slug, road_id, nodes):
+        points, stations, _ = path([road_id])
+        road = raw[road_id]
+        scene_road = scene_ways[f'w{road_id}']
+        shared = sorted((stations[road['nodes'].index(node)], level_survey['crossingSurfacesNAP'][str(node)])
+                        for node in nodes)
+        near, far = shared[0][0], shared[-1][0]
+        start, end = max(0, near - 36), min(stations[-1], far + 36)
+        endpoints = tuple(next((nap for s, nap in shared if abs(at - s) < 1e-6),
+                               terrain.at(point_on_line(points, stations, at))) for at in (start, end))
+        samples = [(near + d, nap) for d, nap in level_survey['roadApproachNAP'][str(road_id)]]
+        samples = sorted([*samples, *shared])
+        kind = scene_road['kind']
+        modes = {'cycleway': active, 'footway': ['foot'], 'pedestrian': ['foot']}.get(kind, road_modes)
+        surface = road.get('tags', {}).get('surface')
+        return profile(f'{slug}-road-{road_id}', [road_id], scene_road['width'], modes, (start, end), samples,
+                       endpoint_heights=endpoints, **({'surface': surface} if surface else {}))
+
     level_sites = []
+    rail_crossings = {}
     for slug, name, puic, bgt, groups in public_crossings:
         controls = [crossing_control(group) for group in groups]
+        roads, crossings = {}, {}
+        for group in groups:
+            for road_id, rail_id, node in group:
+                roads.setdefault(road_id, set()).add(node)
+                road = raw[road_id]
+                q = road['geometry'][road['nodes'].index(node)]
+                x, z = xy((q['lon'], q['lat']))
+                nap = level_survey['crossingSurfacesNAP'][str(node)]
+                crossing = crossings.setdefault(node, dict(nodeId=str(node), x=round(x, 2), z=round(z, 2),
+                    y=round(nap - terrain.nap, 3), railWayId=f'w{rail_id}', roadWayIds=[]))
+                crossing['roadWayIds'].append(f'w{road_id}')
+                # Fitted paving sits 0.055 m above its profile and the railhead 0.13 m above ballast.
+                rail_crossings.setdefault(rail_id, {})[node] = (x, z, nap + 0.055 - 0.13)
         level_sites.append(dict(id=f'{slug}-level-crossing', name=f'{name} railway crossing', kind='level',
-                                profiles=[], controls=controls[0] if len(controls) == 1 else controls,
-                                evidence=dict(bgt=bgt, proRailId=puic, public=True)))
-
+                                profiles=[fitted_crossing_road(slug, road_id, nodes) for road_id, nodes in roads.items()],
+                                controls=controls[0] if len(controls) == 1 else controls,
+                                crossings=list(crossings.values()),
+                                evidence=dict(bgt=bgt, proRailId=puic, public=True,
+                                              heights='AHN 0.5 m overweg surfaces and measured approaches')))
 
     # ProRail positions are used to sample NAP, retaining the game's OSM axes.
     official = []
@@ -499,35 +541,68 @@ def build(osm, output, survey_dir):
                      'ProRail Spoortakdeel and nearby parallel station rail survey', lambda p, _: station_height(p))
         for way in (227837719, 431639755, 431657554, 1052080205, 1052080207)
     ]
-    rail_heights += [
-        rail_profile(way, (5.6172, 52.0379), 64, 'AHN 0.5 m visible ballast',
-                     lambda p, d: 9.92 + abs(d) * 0.0002, tie=True)
-        for way in (431666247, 431666248)
-    ]
-    cut_points = rail_heights[-1]['points']
-    cut = envelope(dict(points=cut_points), 'a30-rail-cut', 10, -1.85)
-    a30['excavation'] = cut
-    rail_heights.append(rail_profile(431865751, (5.6663876, 52.0413441), 43,
-                                    'AHN 0.5 m existing overweg surface',
-                                    lambda p, d: 20.98 - min(abs(d) * 0.006, 0.22), tie=True))
+    level_rail_profiles = {}
+    for key, surveyed in level_survey['railBallastNAP'].items():
+        way_id = int(key)
+        way = scene_ways[f'w{way_id}']
+        points = list(zip(way['pts'][::2], way['pts'][1::2]))
+        ss = stations_of(points)
+        measured = [(*xy((lon, lat)), nap) for lon, lat, nap in surveyed]
+        measured.extend(rail_crossings.get(way_id, {}).values())
+        knots = sorted((station_at(points, ss, (x, z)), nap) for x, z, nap in measured)
+        start, end = knots[0][0], knots[-1][0]
+        if start < 0.01:
+            start = 0
+            knots[0] = (start, knots[0][1])
+        if ss[-1] - end < 0.01:
+            end = ss[-1]
+            knots[-1] = (end, knots[-1][1])
+        distances = sorted({*[s for s, _ in knots], *[s for s in ss if start < s < end],
+                            *range(math.ceil(start), math.floor(end), 5)})
+        route = [[round(x, 2), round(z, 2), round(fitting_curve(knots, s) - terrain.nap, 3)]
+                 for s in distances for x, z in [point_on_line(points, ss, s)]]
+        source = 'AHN 0.5 m western mainline ballast' if way_id in (431666247, 431666248) else (
+            'AHN 0.5 m crossings and ProRail Valleilijn ballast')
+        rail_heights.append(dict(wayId=f'w{way_id}', points=route, source=source, fittedBallast=True))
+        level_rail_profiles[way_id] = (points, ss, knots)
+
+    def a30_cut_height(point, _):
+        beds = []
+        for way_id in (431666247, 431666248):
+            points, stations, knots = level_rail_profiles[way_id]
+            beds.append(fitting_curve(knots, station_at(points, stations, point)))
+        return min(beds)
+
+    cut_points = rail_profile(431666248, (5.6172, 52.0379), 64, 'AHN 0.5 m ballast', a30_cut_height)['points']
+    a30['excavation'] = envelope(dict(points=cut_points), 'a30-rail-cut', 10, -1.85)
 
     keesom_rail_center = (5.64608, 52.03260)
-    def keesom_rail_height(point, nap, slope):
+    def keesom_rail_height(point, nap):
         east = point[0] - xy(keesom_rail_center)[0]
-        weight = max(0, min(1, (34 - abs(east)) / 12))
-        return terrain.at(point) * (1 - weight) + (nap + slope * east) * weight
+        # The exposed mainline stays on its measured embankment well beyond the deck.
+        t = max(0, min(1, (112 - abs(east)) / 52))
+        weight = t * t * (3 - 2 * t)
+        return terrain.at(point) * (1 - weight) + (nap + 0.0045 * east) * weight
 
-    for rail_ways, nap, slope in [((431662176, 6306101, 431666247), 14.95, 0.002),
-                                  ((431666248, 431660809, 458879661), 15.05, 0.003)]:
+    for rail_ways, nap in [((431662176, 6306101, 431666247), 14.95),
+                           ((431666248, 431660809, 458879661), 15.05)]:
         for way in rail_ways:
-            rail_heights.append(rail_profile(way, keesom_rail_center, 44, 'AHN 0.5 m Keesomtunnel track deck',
-                                            lambda p, _: keesom_rail_height(p, nap, slope)))
+            rail_heights.append(rail_profile(way, keesom_rail_center, 120,
+                                            'AHN 0.5 m Keesomtunnel track deck and exposed ballast',
+                                            lambda p, _: keesom_rail_height(p, nap)))
 
     for way_id, sign in [(431658944, -1), (1092211189, 1)]:
         rail_heights.append(rail_profile(way_id, (5.682945, 52.025802), 32, 'AHN 0.5 m Sysselt rail bed',
                                         lambda _, d: 24.10 + sign * d * 0.005, tie=True))
 
-    sites = [alberts, west, a30, crossing, park, keesom, keesom_decks, sysselt, *level_sites]
+    sites = [alberts, west, a30, langekamp_site, park, keesom, keesom_decks, sysselt, *level_sites]
+    for filename in ('ede-crossing-fits.json', 'ede-interior-fits.json', 'ede-discovered-crossing-fits.json'):
+        surveyed = ROOT / 'tools/data' / filename
+        if not surveyed.exists():
+            continue
+        for site in json.loads(surveyed.read_text())['sites']:
+            rail_heights.extend(site.pop('auditRailHeights', []))
+            sites.append(site)
     for site in sites:
         qa = []
         for p in site['profiles']:
@@ -540,7 +615,9 @@ def build(osm, output, survey_dir):
             elif site['kind'] == 'bridge':
                 middle = sum(p['span']) / 2
             else:
-                middle = station_at(pts, ss, center)
+                crossing_distances = [station_at(pts, ss, (q['x'], q['z'])) for q in site['crossings']
+                                      if any(way in p['wayIds'] for way in q['roadWayIds'])]
+                middle = (min(crossing_distances) + max(crossing_distances)) / 2
             before = point_on_line(pts, ss, min(9, ss[-1]))
             after = point_on_line(pts, ss, ss[-1] - min(9, ss[-1]))
             qa.append(dict(profile=p['id'], entry=list(map(lambda v: round(v, 3), before)),

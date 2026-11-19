@@ -1,9 +1,46 @@
 import { roadEdgeKey } from './road-network.js';
 import { busProgressAt } from './ede-bus-schedule.js';
+import { BUS } from './road-access.js';
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
-export function prepareEdeBusPaths(schedule, edges) {
+function assignBusLanes(legs, alternateMove) {
+  let next = null;
+  for (let i = legs.length - 1; i >= 0; i--) {
+    const { road, lane } = legs[i];
+    if (!road) return false;
+    const moves = next && road.moves.filter(move => move.to === legs[i + 1].road);
+    const choices = road.lanes.map((_, index) => {
+      if (!((road.laneModes?.[index] ?? road.modes ?? BUS) & BUS)) return null;
+      const cost = Math.abs(index - lane);
+      if (!next) return { index, cost };
+      let best = null;
+      for (const move of moves) {
+        for (const onward of next) {
+          if (!onward) continue;
+          const normal = move.out[index] === onward.index;
+          const total = cost + onward.cost + (normal ? 0 : 10);
+          if (best && best.cost <= total) continue;
+          const connection = normal ? move : alternateMove?.(road, move, index, onward.index);
+          if (connection) best = { index, cost: total, onward, connection };
+        }
+      }
+      return best;
+    });
+    if (!choices.some(Boolean)) return false;
+    next = choices;
+  }
+  let choice = next?.reduce((best, lane) => lane && (!best || lane.cost < best.cost) ? lane : best, null);
+  if (!choice) return false;
+  for (const leg of legs) {
+    leg.lane = choice.index;
+    leg.move = choice.connection;
+    choice = choice.onward;
+  }
+  return true;
+}
+
+export function prepareEdeBusPaths(schedule, edges, alternateMove) {
   const byKey = new Map(edges.map((edge) => [roadEdgeKey(edge), edge]));
   const references = (schedule?.edges || []).map((key) => byKey.get(key));
   const paths = new Map();
@@ -11,10 +48,7 @@ export function prepareEdeBusPaths(schedule, edges) {
   for (const variant of schedule?.variants || []) {
     for (const slice of variant.slices) {
       const legs = slice.legs.map((leg) => ({ ...leg, road: references[leg.edge] }));
-      const usable = legs.length && legs.every(({ road, lane }, i) =>
-        road && lane >= 0 && lane < road.lanes.length && (!legs[i + 1] ||
-          road.moves.some((move) => move.to === legs[i + 1].road && move.out[lane] === legs[i + 1].lane)));
-      if (!usable) {
+      if (!assignBusLanes(legs) && (!alternateMove || !assignBusLanes(legs, alternateMove))) {
         missing++;
         continue;
       }

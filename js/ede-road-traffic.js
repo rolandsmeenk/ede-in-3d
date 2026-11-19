@@ -40,6 +40,7 @@ export async function loadEdePostedSpeeds() {
 // on the wall clock outside the animation loop, even when the lighting is set to a manual preset.
 export function createEdeRoadTraffic(posted = {}, now = Date.now) {
   const byKey = new Map();
+  const sourceRuns = new Map();
   const states = new WeakMap();
   let observations = [], restrictions = [], busFeedHandler;
   let timeOfDay = cityClock(now());
@@ -53,7 +54,7 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
       const state = {
         fallbackKmh: limitValue(edge.limits?.speed) ? edge.limits.speed : 50,
         lanes: edge.ambientLanes?.length || edge.vanLanes?.length || 1,
-        rule: posted[key], limit: 0, temporary: Infinity, closed: false,
+        rule: posted[key] ?? posted[edge.sourceRoadKey], limit: 0, temporary: Infinity, closed: false,
         flow: profile, speed: 0, speedWeight: 0
       };
       if (!byKey.has(key)) byKey.set(key, state);
@@ -66,6 +67,10 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
         state.rule = undefined;
         byKey.set(key, null); // Ambiguous stacked geometry cannot use a source match.
       }
+      if (edge.sourceRoadKey && edge.sourceRoadKey !== key) {
+        if (!sourceRuns.has(edge.sourceRoadKey)) sourceRuns.set(edge.sourceRoadKey, []);
+        sourceRuns.get(edge.sourceRoadKey).push(state);
+      }
       states.set(edge, state);
       state.limit = (scheduledLimit(state.rule, timeOfDay.minute) ?? state.fallbackKmh) / 3.6;
     }
@@ -75,6 +80,11 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
   const smoothed = new Set();
   const limited = new Set();
   const accepted = new Map();
+  function matchingStates(key) {
+    const direct = byKey.get(key);
+    if (direct !== undefined) return direct ? [direct] : [];
+    return sourceRuns.get(key) ?? [];
+  }
 
   function refresh(at = now()) {
     if (Math.floor(at / 60000) !== Math.floor(lastRefresh / 60000)) {
@@ -92,20 +102,22 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
     }
     limited.clear();
     for (const r of restrictions) {
-      const state = byKey.get(r.key);
-      if (!state || !(r.startsAt <= at && r.expiresAt > at)) continue;
-      state.closed ||= r.closed === true;
-      if (limitValue(r.limitKmh)) state.temporary = Math.min(state.temporary, r.limitKmh / 3.6);
-      limited.add(state);
+      if (!(r.startsAt <= at && r.expiresAt > at)) continue;
+      for (const state of matchingStates(r.key)) {
+        state.closed ||= r.closed === true;
+        if (limitValue(r.limitKmh)) state.temporary = Math.min(state.temporary, r.limitKmh / 3.6);
+        limited.add(state);
+      }
     }
 
     accepted.clear();
     for (const observation of observations) {
-      const state = byKey.get(observation.key);
-      if (!state || observation.expiresAt <= at || observation.observedAt > at + 60000) continue;
-      if ((accepted.get(state)?.observedAt ?? -Infinity) >= observation.observedAt) continue;
-      accepted.set(state, observation);
-      smoothed.add(state);
+      if (observation.expiresAt <= at || observation.observedAt > at + 60000) continue;
+      for (const state of matchingStates(observation.key)) {
+        if ((accepted.get(state)?.observedAt ?? -Infinity) >= observation.observedAt) continue;
+        accepted.set(state, observation);
+        smoothed.add(state);
+      }
     }
     for (const state of smoothed) {
       const row = accepted.get(state);
