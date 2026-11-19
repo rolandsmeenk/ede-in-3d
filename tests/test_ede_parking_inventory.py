@@ -5,9 +5,11 @@ import json
 import math
 from pathlib import Path
 import runpy
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+TOOLS = ROOT / 'tools'
 try:
     import osmium
     from shapely import STRtree
@@ -15,7 +17,11 @@ try:
 except ImportError:
     BUILDER = None
 else:
-    BUILDER = runpy.run_path(str(ROOT / 'tools/build-ede-parking.py'))
+    sys.path.insert(0, str(TOOLS))
+    try:
+        BUILDER = runpy.run_path(str(TOOLS / 'build-ede-parking.py'))
+    finally:
+        sys.path.pop(0)
 
 
 class ParkingInventoryTest(unittest.TestCase):
@@ -75,7 +81,11 @@ class ParkingInventoryTest(unittest.TestCase):
                     self.assertLess(footprints[a].intersection(footprints[b]).area, .12)
 
     def test_kuiperplein_uses_scene_relative_ground_height(self):
-        terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']()
+        sys.path.insert(0, str(TOOLS))
+        try:
+            terrain = runpy.run_path(str(TOOLS / 'build-ede-grade.py'))['Terrain']()
+        finally:
+            sys.path.pop(0)
         spaces = [row for row in self.data['spaces'] if row['areaId'] == 'kuiperplein']
         self.assertGreater(len(spaces), 50)
         for space in spaces:

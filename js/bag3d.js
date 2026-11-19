@@ -8,7 +8,7 @@ import { terrainHeightAt } from './terrain.js';
 import { buildingPassageCuts } from './ede-grade.js';
 import { getAerialColors, sampleGroundColor, sampleRoofColor } from './aerial-colors.js';
 import { applyBagFacades, loadEdeFacades, meshBagFacadeFeatures, readBagFacadeFeatures } from './ede-facades.js';
-import { buildFacadeMaskAtlas, createBagFacadeMaterial, projectFacadeUv } from './ede-facade-material.js';
+import { buildFacadeMaskAtlas, buildFacadeMaskAtlasIncrementally, createBagFacadeMaterial, projectFacadeUv } from './ede-facade-material.js';
 import { buildFacadePhotos } from './ede-facade-photos.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
@@ -77,23 +77,30 @@ export function boxLocalBounds(box, matrix) {
   return bounds;
 }
 
-// Collects the leaf tile URLs of the tileset hierarchy that overlap the given local bounds.
-export async function selectTiles(matrix, { minX = MIN_X, maxX = MAX_X, minZ = MIN_Z, maxZ = MAX_Z, margin = 60, fetchJson } = {}) {
+// Traverse the catalogue without starting one fetch for every matching external subtree.
+async function selectTileRecords(matrix, { minX = MIN_X, maxX = MAX_X, minZ = MIN_Z, maxZ = MAX_Z, margin = 60, fetchJson } = {}) {
   const getJson = fetchJson || (async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.json(); });
-  const overlaps = (box) => {
-    const b = boxLocalBounds(box, matrix);
-    return b.max.x >= minX - margin && b.min.x <= maxX + margin && b.max.z >= minZ - margin && b.min.z <= maxZ + margin;
-  };
-  const urls = [];
-  const visit = async (node) => {
-    if (!node.boundingVolume?.box || !overlaps(node.boundingVolume.box)) return;
-    if (node.children?.length) { await Promise.all(node.children.map(visit)); return; }
+  const tiles = [], pending = [];
+  const visit = (node) => {
+    if (!node.boundingVolume?.box) return;
+    const bounds = boxLocalBounds(node.boundingVolume.box, matrix);
+    if (bounds.max.x < minX - margin || bounds.min.x > maxX + margin || bounds.max.z < minZ - margin || bounds.min.z > maxZ + margin) return;
+    if (node.children?.length) { node.children.forEach(visit); return; }
     const uri = node.content?.uri;
     if (!uri) return;
-    if (uri.endsWith('.json')) { const sub = await getJson(BAG_BASE + uri); await visit(sub.root); } else urls.push(BAG_BASE + uri);
+    if (uri.endsWith('.json')) pending.push(BAG_BASE + uri);
+    else tiles.push({ url: BAG_BASE + uri, bounds });
   };
-  await visit((await getJson(BAG_BASE + 'tileset.json')).root);
-  return urls;
+  visit((await getJson(BAG_BASE + 'tileset.json')).root);
+  while (pending.length) {
+    const subtrees = await Promise.all(pending.splice(0, 4).map(getJson));
+    for (const subtree of subtrees) visit(subtree.root);
+  }
+  return tiles;
+}
+
+export async function selectTiles(matrix, options) {
+  return (await selectTileRecords(matrix, options)).map(tile => tile.url);
 }
 
 function hash(n) {
@@ -385,6 +392,81 @@ export function bakeTile(gltf, matrix, tables, atlas) {
   return geometries;
 }
 
+// A BAG tile's oriented bounds can enclose holes, adjacent tiles and missing buildings.
+// Suppress a fallback only when its interior samples are actually covered by BAG surfaces.
+export function coveredFallbackBuildings(geometries, fallback) {
+  if (!geometries.length || !fallback) return [];
+  const cell = 24, bins = new Map();
+  const bounds = new THREE.Box3();
+  for (const { attributes: { position }, index, boundingBox } of geometries) {
+    bounds.union(boundingBox);
+    for (let i = 0; i < (index?.count ?? position.count); i += 3) {
+      const a = index ? index.getX(i) : i, b = index ? index.getX(i + 1) : i + 1, c = index ? index.getX(i + 2) : i + 2;
+      const x = position.getX(a), z = position.getZ(a), bx = position.getX(b), bz = position.getZ(b);
+      const cx = position.getX(c), cz = position.getZ(c);
+      const ux = bx - x, uz = bz - z, vx = cx - x, vz = cz - z;
+      const area = ux * vz - uz * vx;
+      if (Math.abs(area) < 0.05) continue;
+      const triangle = { x, z, ux, uz, vx, vz, area };
+      for (let u = Math.floor(Math.min(x, bx, cx) / cell); u <= Math.floor(Math.max(x, bx, cx) / cell); u++) {
+        for (let v = Math.floor(Math.min(z, bz, cz) / cell); v <= Math.floor(Math.max(z, bz, cz) / cell); v++) {
+          const key = `${u}/${v}`;
+          if (!bins.has(key)) bins.set(key, []);
+          bins.get(key).push(triangle);
+        }
+      }
+    }
+  }
+  const hit = (x, z) => bins.get(`${Math.floor(x / cell)}/${Math.floor(z / cell)}`)?.some(t => {
+    const dx = x - t.x, dz = z - t.z;
+    const u = (dx * t.vz - dz * t.vx) / t.area, v = (t.ux * dz - t.uz * dx) / t.area;
+    return u >= -0.001 && v >= -0.001 && u + v <= 1.001;
+  });
+  const center = bounds.getCenter(new THREE.Vector3());
+  const radius = Math.hypot(bounds.max.x - center.x, bounds.max.z - center.z);
+  const matches = [];
+  for (const b of fallback.quadtree.queryRange(center.x, center.z, radius)) {
+    if (b.minX < bounds.min.x - 2 || b.maxX > bounds.max.x + 2 || b.minZ < bounds.min.z - 2 || b.maxZ > bounds.max.z + 2) continue;
+    const [footprint] = b.footprints;
+    const polygon = { outer: footprint.pts, holes: footprint.holes };
+    let samples = 0, covered = 0;
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+      const x = b.minX + (b.maxX - b.minX) * (i + 0.5) / 5;
+      const z = b.minZ + (b.maxZ - b.minZ) * (j + 0.5) / 5;
+      if (!polygonContains(polygon, x, z)) continue;
+      samples++;
+      if (hit(x, z)) covered++;
+    }
+    if (samples >= 4 && covered >= 0.84 * samples) matches.push(b.id);
+  }
+  return matches;
+}
+
+async function bagGeometry(gltf, matrix, facades, atlas) {
+  const features = atlas && await readBagFacadeFeatures(gltf, facades.byId).catch(error => {
+    console.warn('[facades] BAG feature IDs unavailable:', error.message);
+    return null;
+  });
+  return bakeTile(gltf, matrix, features, atlas);
+}
+
+function addBagGeometry(group, geometries, material, detailedMaterial, matched, panels) {
+  let recesses = 0;
+  for (const geometry of geometries) {
+    const detail = geometry.userData.facades;
+    if (detail) {
+      for (const wall of detail.matched) matched.add(wall);
+      panels.push(...detail.panels);
+      recesses += detail.recesses;
+      delete geometry.userData.facades;
+    }
+    const mesh = new THREE.Mesh(geometry, detail ? detailedMaterial : material);
+    mesh.castShadow = mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  return recesses;
+}
+
 export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fetchJson, loader } = {}) {
   const ecefMatrix = ecefToLocalMatrix();
   const matrix = gltfToLocalMatrix(ecefMatrix);
@@ -409,22 +491,8 @@ export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fet
     while (next < urls.length) {
       const url = urls[next++];
       const gltf = await gltfLoader.loadAsync(url);
-      const features = atlas && await readBagFacadeFeatures(gltf, facades.byId).catch(error => {
-        console.warn('[facades] BAG feature IDs unavailable:', error.message);
-        return null;
-      });
-      for (const g of bakeTile(gltf, matrix, features, atlas)) {
-        const detail = g.userData.facades;
-        if (detail) {
-          for (const wall of detail.matched) matched.add(wall);
-          panels.push(...detail.panels);
-          recesses += detail.recesses;
-          delete g.userData.facades;
-        }
-        const mesh = new THREE.Mesh(g, detail ? detailedMaterial : material);
-        mesh.castShadow = mesh.receiveShadow = true;
-        group.add(mesh);
-      }
+      const geometries = await bagGeometry(gltf, matrix, facades, atlas);
+      recesses += addBagGeometry(group, geometries, material, detailedMaterial, matched, panels);
       onProgress?.(++done, urls.length);
     }
   };
@@ -434,5 +502,216 @@ export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fet
     facades: { walls: matched.size, observed: [...matched].filter(wall => wall.status === 'observed').length,
       recesses, maskTextureBytes: atlas?.byteLength ?? 0 },
     facadePhotos: buildFacadePhotos(group, panels) };
+  return group;
+}
+
+const STREAM_ENTER = 650;
+const STREAM_LEAVE = 1050;
+const STREAM_ACTIVE = 12;
+const STREAM_RESIDENT = 18;
+const STREAM_FETCHES = 2;
+const STREAM_BYTES = 48 * 1024 * 1024;
+const tileDistance = ({ min, max }, { x, z }) => Math.hypot(
+  Math.max(min.x - x, 0, x - max.x), Math.max(min.z - z, 0, z - max.z)
+);
+
+async function fetchTile(url, signal) {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`${url}: ${response.status}`);
+  return response.arrayBuffer();
+}
+
+export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer = fetchTile, loader } = {}) {
+  const origin = ecefToLocalMatrix();
+  const matrix = gltfToLocalMatrix(origin);
+  const group = new THREE.Group();
+  group.name = 'bag3d-buildings';
+  scene.add(group);
+  const stats = { catalogue: 0, requested: 0, completed: 0, evicted: 0, failed: 0, resident: 0, inFlight: 0,
+    geometryBytes: 0, peakGeometryBytes: 0, sourceBytes: 0, coveredBuildings: 0, lastBuildMs: 0,
+    maskTextureBytes: 0, get photoTextureBytes() {
+      let bytes = 0;
+      for (const { photos } of resident.values()) bytes += photos?.stats.textureBytes ?? 0;
+      return bytes;
+    } };
+  const gltfLoader = loader || new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  const frustum = new THREE.Frustum(), view = new THREE.Matrix4();
+  const current = new THREE.Vector3(), lastPosition = new THREE.Vector3(Infinity, Infinity, Infinity);
+  const direction = new THREE.Vector3(), lastDirection = new THREE.Vector3();
+  const material = createBagFacadeMaterial();
+  const resident = new Map(), fetching = new Map(), buffered = new Map();
+  let tiles, facades, atlas, detailedMaterial, desired = new Map(), enabled = true, disposed = false, building = false;
+  let catalogueRequested = false, generation = 0;
+
+  function removeTile(tile) {
+    const record = resident.get(tile);
+    record.photos?.dispose();
+    record.group.traverse(mesh => mesh.geometry?.dispose());
+    record.group.removeFromParent();
+    fallback?.replaceBuildings(record.covered, false);
+    stats.geometryBytes -= record.bytes;
+    stats.coveredBuildings -= record.covered.length;
+    resident.delete(tile);
+    stats.resident = resident.size;
+    stats.evicted++;
+  }
+
+  function requestCatalogue() {
+    if (catalogueRequested) return;
+    catalogueRequested = true;
+    selectTileRecords(origin, { fetchJson }).then(value => {
+      if (disposed) return;
+      tiles = value;
+      stats.catalogue = value.length;
+      lastPosition.x = Infinity;
+    }).catch(error => {
+      stats.failed++;
+      console.warn('[bag3d] using OSM buildings:', error);
+    });
+    loadEdeFacades().then(value => { if (!disposed) facades = value; })
+      .catch(error => console.warn('[facades] using procedural walls:', error.message));
+  }
+
+  function nextView(camera) {
+    if (lastPosition.distanceToSquared(current) < 24 ** 2 && lastDirection.dot(direction) > 0.978) return;
+    lastPosition.copy(current);
+    lastDirection.copy(direction);
+    view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(view, camera.coordinateSystem, camera.reversedDepth);
+    const ordered = [];
+    for (const tile of tiles) {
+      const distance = tileDistance(tile.bounds, current);
+      if (distance <= STREAM_ENTER && (distance <= 175 || frustum.intersectsBox(tile.bounds))) ordered.push([tile, distance]);
+    }
+    desired = new Map(ordered.sort((a, b) => a[1] - b[1] || a[0].url.localeCompare(b[0].url)).slice(0, STREAM_ACTIVE));
+    for (const [tile, request] of fetching) if (!desired.has(tile)) request.abort();
+    for (const tile of buffered.keys()) if (!desired.has(tile)) buffered.delete(tile);
+    for (const tile of resident.keys()) if (tileDistance(tile.bounds, current) > STREAM_LEAVE) removeTile(tile);
+  }
+
+  function failure(tile, error) {
+    tile.retryAt = performance.now() + 15000;
+    stats.failed++;
+    console.warn('[bag3d] keeping OSM fallback for tile:', error);
+  }
+
+  function fetchNearby() {
+    for (const tile of desired.keys()) {
+      if (fetching.size + buffered.size >= STREAM_FETCHES) break;
+      if (resident.has(tile) || tile.building || fetching.has(tile) || buffered.has(tile) || tile.retryAt > performance.now()) continue;
+      const request = new AbortController();
+      fetching.set(tile, request);
+      stats.requested++;
+      stats.inFlight = fetching.size;
+      loadBuffer(tile.url, request.signal).then(buffer => {
+        stats.sourceBytes += buffer.byteLength;
+        if (!request.signal.aborted && enabled && desired.has(tile)) buffered.set(tile, buffer);
+      }).catch(error => {
+        if (!request.signal.aborted) failure(tile, error);
+      }).finally(() => {
+        fetching.delete(tile);
+        stats.inFlight = fetching.size;
+      });
+    }
+  }
+
+  function makeRoom(tile, bytes) {
+    while (resident.size >= STREAM_RESIDENT || stats.geometryBytes + bytes > STREAM_BYTES) {
+      const candidates = [...resident.keys()].filter(other => !desired.has(other) || desired.get(other) > desired.get(tile));
+      candidates.sort((a, b) => tileDistance(b.bounds, current) - tileDistance(a.bounds, current));
+      if (!candidates.length) return false;
+      removeTile(candidates[0]);
+    }
+    return true;
+  }
+
+  async function buildNearest() {
+    const tile = [...desired.keys()].find(candidate => buffered.has(candidate));
+    if (!tile) return;
+    const buffer = buffered.get(tile);
+    buffered.delete(tile);
+    tile.building = building = true;
+    const start = performance.now();
+    const requestedGeneration = generation;
+    const stillWanted = () => enabled && requestedGeneration === generation && desired.has(tile);
+    try {
+      const gltf = await gltfLoader.parseAsync(buffer, new URL('.', tile.url).href);
+      if (!stillWanted()) return;
+      const hasDetail = facades?.walls.some(({ a }) => a[0] >= tile.bounds.min.x - 2 && a[0] <= tile.bounds.max.x + 2
+        && a[1] >= tile.bounds.min.z - 2 && a[1] <= tile.bounds.max.z + 2);
+      if (hasDetail && !atlas) {
+        const bakedAtlas = await buildFacadeMaskAtlasIncrementally(facades.walls, stillWanted);
+        if (!stillWanted()) { bakedAtlas?.texture.dispose(); return; }
+        atlas = bakedAtlas;
+        if (atlas) {
+          detailedMaterial = createBagFacadeMaterial(atlas.texture);
+          stats.maskTextureBytes = atlas.byteLength;
+        }
+      }
+      const geometries = await bagGeometry(gltf, matrix, facades, hasDetail ? atlas : null);
+      // Let rendering run between geometry construction and the fallback coverage scan.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const bytes = geometries.reduce((sum, geometry) => sum + (geometry.index?.array.byteLength ?? 0)
+        + Object.values(geometry.attributes).reduce((size, attr) => size + attr.array.byteLength, 0), 0);
+      if (!stillWanted() || !makeRoom(tile, bytes)) {
+        geometries.forEach(geometry => geometry.dispose());
+        tile.retryAt = performance.now() + 5000;
+        return;
+      }
+      const tileGroup = new THREE.Group(), panels = [], matched = new Set();
+      const covered = coveredFallbackBuildings(geometries, fallback);
+      addBagGeometry(tileGroup, geometries, material, detailedMaterial, matched, panels);
+      const photos = buildFacadePhotos(tileGroup, panels);
+      tileGroup.updateMatrixWorld(true);
+      group.add(tileGroup);
+      fallback?.replaceBuildings(covered, true);
+      resident.set(tile, { group: tileGroup, photos, covered, bytes });
+      stats.resident = resident.size;
+      stats.completed++;
+      stats.coveredBuildings += covered.length;
+      stats.geometryBytes += bytes;
+      stats.peakGeometryBytes = Math.max(stats.peakGeometryBytes, stats.geometryBytes);
+      stats.lastBuildMs = performance.now() - start;
+    } catch (error) {
+      failure(tile, error);
+    } finally {
+      tile.building = building = false;
+    }
+  }
+
+  function update(camera) {
+    if (!enabled || document.hidden) return;
+    requestCatalogue();
+    if (!tiles) return;
+    camera.getWorldPosition(current);
+    camera.getWorldDirection(direction);
+    nextView(camera);
+    fetchNearby();
+    if (!building && buffered.size) void buildNearest();
+    for (const { photos } of resident.values()) photos?.update(current);
+  }
+
+  function setEnabled(value) {
+    if (disposed || enabled === value) return;
+    enabled = value;
+    if (value) { lastPosition.x = Infinity; return; }
+    generation++;
+    for (const request of fetching.values()) request.abort();
+    desired.clear();
+    buffered.clear();
+    for (const tile of resident.keys()) removeTile(tile);
+    atlas?.texture.dispose();
+    detailedMaterial?.dispose();
+    atlas = detailedMaterial = null;
+    stats.maskTextureBytes = 0;
+  }
+
+  function dispose() {
+    setEnabled(false);
+    disposed = true;
+    material.dispose();
+    group.removeFromParent();
+  }
+  group.userData = { city: 'Ede', source: '3D BAG LoD 2.2', update, setEnabled, stats, dispose };
   return group;
 }

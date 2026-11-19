@@ -29,7 +29,7 @@ const LOOKS = {
   midnight: { exposure: 1.04, contrast: 1.08, saturation: 1.06, balance: [0.985, 1.00, 1.035], bloom: 0.30, threshold: 1.00 }
 };
 
-function createPostProcessing(renderer, sceneColor, reflections) {
+function createPostProcessing(renderer, sceneColor, reflections, { bloomEnabled = true } = {}) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Exposure is applied before bloom so its threshold follows the image's exposed brightness.
   // RenderPipeline performs ACES and the output color-space conversion exactly once, after this graph.
@@ -45,12 +45,14 @@ function createPostProcessing(renderer, sceneColor, reflections) {
   // The original HDR image keeps its full range for the tone mapper's highlight shoulder.
   const peak = max(max(exposed.r, exposed.g), exposed.b);
   const bloomInput = vec4(exposed.mul(float(8.0).div(max(peak, 8.0))), 1.0);
-  const bloomPass = bloom(bloomInput, 0.24, 0.40, 1.20);
-  bloomPass.smoothWidth.value = 0.30;
-  bloomPass.setResolutionScale(0.5);
+  const bloomPass = bloomEnabled ? bloom(bloomInput, 0.24, 0.40, 1.20) : null;
+  if (bloomPass) {
+    bloomPass.smoothWidth.value = 0.30;
+    bloomPass.setResolutionScale(0.5);
+  }
 
   const outputNode = Fn(() => {
-    const color = exposed.add(bloomPass.rgb).toVar();
+    const color = (bloomPass ? exposed.add(bloomPass.rgb) : exposed).toVar();
     const luma = dot(color, vec3(0.2126, 0.7152, 0.0722)).toVar();
 
     // Gentle cool shadow / warm highlight separation; multiply rather than lifting the black level.
@@ -80,8 +82,10 @@ function createPostProcessing(renderer, sceneColor, reflections) {
     contrast.value = lerp('contrast');
     saturation.value = lerp('saturation');
     balance.value.set(...a.balance.map((value, i) => THREE.MathUtils.lerp(value, b.balance[i], weight)));
-    bloomPass.strength.value = lerp('bloom');
-    bloomPass.threshold.value = lerp('threshold');
+    if (bloomPass) {
+      bloomPass.strength.value = lerp('bloom');
+      bloomPass.threshold.value = lerp('threshold');
+    }
   }
 
   function applyPreset(id) {

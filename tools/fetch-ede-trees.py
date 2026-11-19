@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 from urllib.parse import urlencode
 
+from ede_map import load_scene
 
 PDOK = 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/vegetatieobject_punt/items'
 EDE_WFS = 'https://geo.ede.nl/geoserver/Ede/wfs'
@@ -24,13 +25,7 @@ def fetch_json(url, **parameters):
 
 
 def bounds():
-    path = Path(__file__).resolve().parents[1] / 'js' / 'ede-geodata.js'
-    prefix = 'export const EDE_DATA = '
-    with path.open() as source:
-        for line in source:
-            if line.startswith(prefix):
-                return tuple(map(Decimal, map(str, json.loads(line[len(prefix):].strip().removesuffix(';'))['meta']['geographicBounds'])))
-    raise ValueError('Cannot read Ede map bounds')
+    return tuple(Decimal(str(value)) for value in load_scene()['meta']['geographicBounds'])
 
 
 def fetch_pdok_tile(box, snapshot_date):

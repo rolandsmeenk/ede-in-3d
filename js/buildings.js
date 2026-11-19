@@ -267,11 +267,31 @@ function colorEdeRoof(roof, id, fallback, aerial) {
 }
 
 // `bag`: 3D BAG meshes already supply the facades and roofs, so only colliders and street-level details are built here.
-function buildCityBlocks(scene, { bag = false } = {}) {
+function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeCityBlocks' : 'ManhattanCityBlocks';
   const colliders = [];
   const buildingGrounds = new Map();
+  const replacements = streamBag ? new Map() : null;
+  function linkFallback(id, toggle) {
+    const record = replacements.get(id);
+    if (record) record.toggle.push(toggle);
+  }
+  function replaceBuildings(ids, loaded) {
+    if (!replacements) return;
+    let visibilityChanged = false;
+    for (const id of ids) {
+      const record = replacements.get(id);
+      if (!record) continue;
+      const wasCovered = record.tiles > 0;
+      record.tiles += loaded ? 1 : -1;
+      const covered = record.tiles > 0;
+      if (covered === wasCovered) continue;
+      visibilityChanged = true;
+      for (const toggle of record.toggle) toggle(covered);
+    }
+    if (visibilityChanged) lastStreamX = Infinity;
+  }
 
   // Frame of the lots being populated. Irregular blocks come with frontage frames (city-config.js BLOCKS: lots laid
   // out along the streets they front, in a frame turned by θ about p); the generator works in the frame as on a grid
@@ -2021,6 +2041,7 @@ function buildCityBlocks(scene, { bag = false } = {}) {
         cornices: [], waterTowers: [], hvacUnits: [], fireEscapes: [], awnings: [], scaffoldSheds: [], yards: [],
         footprints: [{ x0: bounds.minX, x1: bounds.maxX, z0: bounds.minZ, z1: bounds.maxZ, h: height, tone, pts: poly, holes }],
         sourceHeight: source.h, sourceHeightKind: source.heightSource };
+      if (replacements) replacements.set(source.id, { tiles: 0, toggle: [] });
       for (const [ringIndex, ring] of [poly, ...holes].entries()) {
         const direction = Math.sign(signedArea(ring)) || 1;
         for (let i = 0; i < ring.length; i++) {
@@ -2069,7 +2090,7 @@ function buildCityBlocks(scene, { bag = false } = {}) {
               if (bottom >= top) continue;
               const renderTop = Math.min(top, wallTop);
               if (!bag && bottom < renderTop) {
-                buckets[matIndex].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz,
+                buckets[matIndex].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz, fallbackId: source.id,
                   w: (to - from) * length + 0.06, h: renderTop - bottom, d: thickness,
                   ry, tone, facadeColour, facadeLevels: source.facadeLevels, faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, face, face] });
               }
@@ -2111,6 +2132,7 @@ function buildCityBlocks(scene, { bag = false } = {}) {
       }
       if (roof) {
         colorEdeRoof(roof, source.id, roofPalette[Math.floor(tone * 3)], aerial);
+        if (replacements) roof.userData.fallbackId = source.id;
         roofs.push(roof);
       }
       if (!bag && !pitched && !holes.length && !source.part && height > 12 && rand() < 0.34) {
@@ -2120,12 +2142,34 @@ function buildCityBlocks(scene, { bag = false } = {}) {
     }
     let firstMesh;
     for (const cell of edeGeometryGroups(roofs)) for (let i = 0; i < cell.length; i += 250) {
-      const pieces = cell.slice(i, i + 250).map(g => {
+      const sources = cell.slice(i, i + 250);
+      const pieces = sources.map(g => {
         if (!g.index) return g;
         const expanded = g.toNonIndexed(); g.dispose(); return expanded;
       });
       const mesh = new THREE.Mesh(mergeGeometries(pieces, false), roofMaterial);
       mesh.castShadow = mesh.receiveShadow = true; group.add(mesh);
+      if (replacements) {
+        mesh.userData.mutableFallback = true;
+        const count = mesh.geometry.attributes.position.count;
+        const indices = count > 65536 ? new Uint32Array(count) : new Uint16Array(count);
+        for (let k = 0; k < count; k++) indices[k] = k;
+        const index = new THREE.BufferAttribute(indices, 1);
+        mesh.geometry.setIndex(index);
+        let end = 0, visible = count;
+        pieces.forEach((piece, j) => {
+          const start = end, size = piece.attributes.position.count;
+          end += size;
+          linkFallback(sources[j].userData.fallbackId, covered => {
+            if (covered) indices.fill(start, start, start + size);
+            else for (let k = start; k < start + size; k++) indices[k] = k;
+            visible += covered ? -size : size;
+            mesh.visible = visible > 0;
+            index.addUpdateRange(start, size);
+            index.needsUpdate = true;
+          });
+        });
+      }
       if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
       else firstMesh = mesh;
       pieces.forEach(g => g.dispose());
@@ -2255,6 +2299,29 @@ function buildCityBlocks(scene, { bag = false } = {}) {
       const inst = createFacadeBoxes(materials[matIdx], cell);
       inst.castShadow = true;
       inst.receiveShadow = true;
+      if (replacements) {
+        inst.userData.mutableFallback = true;
+        inst.computeBoundingSphere();
+        let visible = cell.length;
+        cell.forEach(({ fallbackId }, i) => {
+          let matrix;
+          linkFallback(fallbackId, covered => {
+            const attr = inst.instanceMatrix;
+            const start = i * 16;
+            if (covered) {
+              matrix = attr.array.slice(start, start + 16);
+              attr.array.fill(0, start, start + 16);
+            } else {
+              attr.array.set(matrix, start);
+              matrix = undefined;
+            }
+            visible += covered ? -1 : 1;
+            inst.visible = visible > 0;
+            attr.addUpdateRange(start, 16);
+            attr.needsUpdate = true;
+          });
+        });
+      }
       if (firstMesh) inst.userData.sharesPipelineWith = firstMesh;
       else firstMesh = inst;
       group.add(inst);
@@ -2528,6 +2595,7 @@ function buildCityBlocks(scene, { bag = false } = {}) {
 
     for (let bIdx = 0; bIdx < nearbyBlocks.length; bIdx++) {
       const blk = nearbyBlocks[bIdx];
+      if (replacements?.get(blk.id)?.tiles) continue;
       // every piece of a block turned into a frontage frame shares its turn (see placeInFrame)
       dummy.rotation.set(0, blk.ry || 0, 0);
       const collectNearLights = bIdx < 20;
@@ -2703,6 +2771,7 @@ function buildCityBlocks(scene, { bag = false } = {}) {
     colliders,
     quadtree,
     allBlocks,
+    replaceBuildings,
     update,
     updateLights
   };

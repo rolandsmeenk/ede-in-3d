@@ -7,9 +7,11 @@ const { loadModule } = require('./helpers/module.cjs');
 class DataTexture {
   constructor(data, width, height) { this.image = { data, width, height }; }
 }
-const { buildFacadeMaskAtlas, projectFacadeUv } = loadModule(
+let turns = 0;
+const { buildFacadeMaskAtlas, buildFacadeMaskAtlasIncrementally, projectFacadeUv } = loadModule(
   readFileSync(join(__dirname, '../js/ede-facade-material.js'), 'utf8'),
-  { imports: { 'three/webgpu': { DataTexture }, 'three/tsl': {}, './tsl-materials.js': {} } }
+  { imports: { 'three/webgpu': { DataTexture }, 'three/tsl': {}, './tsl-materials.js': {} },
+    globals: { performance: { now: () => ++turns * 6 }, setTimeout } }
 );
 
 test('diagonal building walls keep openings in wall-local positions with blank shared walls', () => {
@@ -38,4 +40,17 @@ test('diagonal building walls keep openings in wall-local positions with blank s
   assert.equal(projectFacadeUv(colourOnly, atlas.rects.get(colourOnly), -10.25, 19.6, 9)[2], 0, 'colour-only fallback');
   assert.equal(atlas.texture.generateMipmaps, true);
   assert.ok(atlas.byteLength > data.length);
+});
+
+test('streamed wall masks retain the eager texture bytes and stop on cancellation', async () => {
+  const wall = { a: [0, 0], b: [4, 0], minY: 0, height: 3.2, wallType: 'street', openings: [
+    { kind: 'window', x: 1, y: 1.1, width: 2, height: 1.4 },
+    { kind: 'door', x: 0.1, y: 0, width: 0.8, height: 2 }
+  ] };
+  const eager = buildFacadeMaskAtlas([wall]);
+  const streamed = await buildFacadeMaskAtlasIncrementally([wall], () => true);
+  assert.equal(streamed.byteLength, eager.byteLength);
+  assert.deepEqual(streamed.rects.get(wall), eager.rects.get(wall));
+  assert.deepEqual(Buffer.from(streamed.texture.image.data), Buffer.from(eager.texture.image.data));
+  assert.equal(await buildFacadeMaskAtlasIncrementally([wall], () => false), null);
 });

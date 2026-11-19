@@ -6,15 +6,14 @@ from pathlib import Path
 
 import osmium
 
+from ede_map import load_scene
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('pbf', type=Path, nargs='+')
     args = parser.parse_args()
-    scene = Path(__file__).resolve().parents[1] / 'js' / 'ede-geodata.js'
-    prefix = 'export const EDE_DATA = '
-    with scene.open() as source:
-        data = json.loads(next(line for line in source if line.startswith(prefix))[len(prefix):].strip().removesuffix(';'))
+    data = load_scene()
     road_ids = {int(road['id'][1:]) for road in data['roads']}
     ways = {}
 

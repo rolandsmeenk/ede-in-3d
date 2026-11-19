@@ -66,7 +66,7 @@ function pack(walls, density) {
   return packed;
 }
 
-export function buildFacadeMaskAtlas(walls) {
+function* bakeFacadeMaskAtlas(walls) {
   const candidates = walls.filter(wall => Number.isFinite(wall.height) && wall.height > 0
     && Array.isArray(wall.a) && Array.isArray(wall.b) && wallWidth(wall) > 0 && Array.isArray(wall.openings));
   if (!candidates.length) return null;
@@ -90,6 +90,7 @@ export function buildFacadeMaskAtlas(walls) {
           ![opening.x, opening.y, opening.width, opening.height].every(Number.isFinite) ||
           opening.width <= 0 || opening.height <= 0) continue;
       fillOpening(data, width, tile, opening);
+      yield;
     }
     rects.set(tile.wall, [tile.x / width, tile.y / height, tile.width / width, tile.height / height]);
   }
@@ -107,6 +108,28 @@ export function buildFacadeMaskAtlas(walls) {
   }
   return { texture: atlasTexture, rects, byteLength };
 }
+
+export function buildFacadeMaskAtlas(walls) {
+  const bake = bakeFacadeMaskAtlas(walls);
+  let step;
+  do step = bake.next(); while (!step.done);
+  return step.value;
+}
+
+async function buildFacadeMaskAtlasIncrementally(walls, stillWanted) {
+  const bake = bakeFacadeMaskAtlas(walls);
+  let start = performance.now();
+  let step;
+  while (!(step = bake.next()).done) {
+    if (performance.now() - start < 5) continue;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    if (!stillWanted()) return null;
+    start = performance.now();
+  }
+  return step.value;
+}
+
+export { buildFacadeMaskAtlasIncrementally };
 
 export function projectFacadeUv(wall, rect, x, y, z, bottomY = wall.minY) {
   const dx = wall.b[0] - wall.a[0], dz = wall.b[1] - wall.a[1];

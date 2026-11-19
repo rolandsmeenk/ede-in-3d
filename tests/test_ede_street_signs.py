@@ -5,11 +5,17 @@ import gzip
 import json
 from pathlib import Path
 import runpy
+import sys
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-IMPORTER = runpy.run_path(str(ROOT / 'tools/build-ede-street-signs.py'))
+TOOLS = ROOT / 'tools'
+sys.path.insert(0, str(TOOLS))
+try:
+    IMPORTER = runpy.run_path(str(TOOLS / 'build-ede-street-signs.py'))
+finally:
+    sys.path.pop(0)
 
 
 class EdeStreetSignsTest(unittest.TestCase):

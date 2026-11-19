@@ -1,6 +1,19 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
+test('nearby rail lookup preserves reach and track order across cell boundaries', async () => {
+  const { nearbyRailHeightAt, setEdeGrade } = await import('../js/ede-grade.js');
+  setEdeGrade({ sites: [], railHeights: [
+    { wayId: 'first', points: [[28, 47, 2], [68, 47, 2]] },
+    { wayId: 'second', points: [[28, 49, 6], [68, 49, 6]] },
+  ] });
+  assert.equal(nearbyRailHeightAt(48, 48), 2);
+  assert.equal(nearbyRailHeightAt(48, 52), 6);
+  assert.equal(nearbyRailHeightAt(48, 79, 28), undefined);
+  assert.equal(nearbyRailHeightAt(48, 79, 32), 6);
+  assert.equal(nearbyRailHeightAt(48, 89, 40), 6);
+});
+
 test('surveyed approaches exclude canopy returns and preserve the lower Langekamppad', async () => {
   const { readFileSync } = require('node:fs');
   const { join } = require('node:path');

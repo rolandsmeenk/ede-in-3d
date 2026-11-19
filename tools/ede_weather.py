@@ -14,7 +14,7 @@ FIELDS = (
     'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m',
 )
 URL = 'https://api.open-meteo.com/v1/forecast?' + urlencode({
-    'latitude': 52.0460029, 'longitude': 5.671553,  # lonLatAffine in js/ede-geodata.js
+    'latitude': 52.0460029, 'longitude': 5.671553,  # lonLatAffine in the Ede map asset
     'current': ','.join(FIELDS), 'timezone': 'GMT', 'timeformat': 'unixtime',
     'temperature_unit': 'celsius', 'wind_speed_unit': 'kmh', 'precipitation_unit': 'mm',
 })

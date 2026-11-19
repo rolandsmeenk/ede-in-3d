@@ -2,10 +2,10 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const test = require('node:test');
+const { gunzipSync } = require('node:zlib');
 
 const asset = require('../assets/ede-bgt.json');
-const source = readFileSync(join(__dirname, '../js/ede-geodata.js'), 'utf8');
-const scene = JSON.parse(source.match(/^export const EDE_DATA = (.+);$/m)[1]);
+const scene = JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets/ede-map-v1.json.gz'))));
 
 function area(ring) {
   let sum = 0;

@@ -7,6 +7,7 @@ import re
 import struct
 from urllib.request import urlopen
 
+from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 URL = 'https://gtfs.ovapi.nl/nl/vehiclePositions.pb'
@@ -62,9 +63,7 @@ def float_field(value):
 
 @lru_cache(maxsize=1)
 def local_map():
-    with (ROOT / 'js' / 'ede-geodata.js').open(encoding='utf-8') as source:
-        row = next(line for line in source if line.startswith('export const EDE_DATA = '))
-    meta = json.loads(row.removeprefix('export const EDE_DATA = ').strip().removesuffix(';'))['meta']
+    meta = load_scene()['meta']
     return meta['bounds'], meta['lonLatAffine']
 
 

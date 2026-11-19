@@ -17,6 +17,7 @@ import re
 import struct
 import subprocess
 
+from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 PDOK, MUNICIPAL, OSM = 1, 2, 4
@@ -45,15 +46,6 @@ class Tree:
     diameter: float = 0
     species: int = UNKNOWN
     sources: int = 0
-
-
-def load_scene(path):
-    prefix = 'export const EDE_DATA = '
-    with path.open() as lines:
-        for line in lines:
-            if line.startswith(prefix):
-                return json.loads(line[len(prefix):].strip().removesuffix(';'))
-    raise ValueError(f'Cannot find the Ede scene data in {path}')
 
 
 def read_json(path):
@@ -215,7 +207,7 @@ def pack(trees):
 
 
 def build(pdok_path, municipal_path, osm_path, output):
-    scene = load_scene(ROOT / 'js/ede-geodata.js')
+    scene = load_scene()
     south, west, north, east = scene['meta']['geographicBounds']
     affine = scene['meta']['lonLatAffine']
     lon0, lat0 = affine['lon0'], affine['lat0']

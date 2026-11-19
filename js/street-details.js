@@ -1128,7 +1128,6 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
 
   function update(camera) {
     if (!camera) return;
-    treeField.update(camera.position);
     const glow = cityUniforms.uInteriorGlow.value;
     // Increase streetlight intensity toward dusk.
     const lampScale = Math.min(1.25, Math.max(0.0, (glow - 0.36) * 1.15));

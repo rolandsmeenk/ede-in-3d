@@ -8,6 +8,7 @@ test('Ede aerial builder samples inset roofs and centerlines in scene order', ()
 import runpy
 import sys
 
+sys.path.insert(0, 'tools')
 m = runpy.run_path('tools/build-ede-aerial.py')
 step = m['SAMPLE_STEP']
 width, height = 64, 32

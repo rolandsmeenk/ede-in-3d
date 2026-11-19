@@ -11,6 +11,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 
+from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 CELL_SIZE = 12
@@ -19,13 +20,7 @@ NODATA = -9999
 
 
 def map_frame():
-    source = ROOT / 'js/ede-geodata.js'
-    prefix = 'export const EDE_DATA = '
-    with source.open() as lines:
-        for line in lines:
-            if line.startswith(prefix):
-                return json.loads(line[len(prefix):].strip().removesuffix(';'))['meta']
-    raise ValueError(f'Cannot read the scene frame from {source}')
+    return load_scene()['meta']
 
 
 def fill_gaps(samples, columns, rows):

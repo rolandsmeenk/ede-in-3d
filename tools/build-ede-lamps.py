@@ -7,16 +7,14 @@ import struct
 import subprocess
 from urllib.parse import urlencode
 
+from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 PDOK = 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal/items'
 
 
 def main():
-    prefix = 'export const EDE_DATA = '
-    with (ROOT / 'js' / 'ede-geodata.js').open() as source:
-        meta = json.loads(next(line for line in source if line.startswith(prefix))
-                          .removeprefix(prefix).strip().removesuffix(';'))['meta']
+    meta = load_scene()['meta']
     south, west, north, east = meta['geographicBounds']
     affine = meta['lonLatAffine']
     url = PDOK + '?' + urlencode({'bbox': f'{west},{south},{east},{north}', 'limit': 1000, 'f': 'json'})

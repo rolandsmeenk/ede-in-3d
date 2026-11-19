@@ -12,6 +12,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from ede_map import load_scene
+
 ROOT = Path(__file__).resolve().parents[1]
 PPM = 64
 
@@ -21,10 +23,7 @@ def read(path):
 
 
 def scene_frame():
-    prefix = "export const EDE_DATA = "
-    with (ROOT / "js/ede-geodata.js").open() as source:
-        line = next(line for line in source if line.startswith(prefix))
-    return json.loads(line[len(prefix):].strip().removesuffix(";"))["meta"]["lonLatAffine"]
+    return load_scene()['meta']['lonLatAffine']
 
 
 def project(frame, lonlat):

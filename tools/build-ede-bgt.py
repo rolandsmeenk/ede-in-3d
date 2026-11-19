@@ -20,6 +20,7 @@ from shapely import STRtree, make_valid, orient_polygons, set_precision, union_a
 from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Polygon, box, shape
 
+from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 API = 'https://api.pdok.nl/lv/bgt/ogc/v1'
@@ -38,13 +39,6 @@ class Record:
     ids: tuple
     geometry: object
     estimated_type: bool = False
-
-
-def load_scene():
-    prefix = 'export const EDE_DATA = '
-    with (ROOT / 'js/ede-geodata.js').open() as stream:
-        line = next(line for line in stream if line.startswith(prefix))
-    return json.loads(line[len(prefix):].strip().removesuffix(';'))
 
 
 def fetch_tile(collection, bounds, day):

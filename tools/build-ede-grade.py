@@ -8,22 +8,14 @@ import math
 from pathlib import Path
 import struct
 
+from ede_map import load_scene
+
 ROOT = Path(__file__).resolve().parents[1]
 PRO_RAIL = 'https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer'
 BGT = 'https://api.pdok.nl/lv/bgt/ogc/v1/collections'
 AHN = 'https://service.pdok.nl/rws/ahn/wcs/v1_0'
 WEST_PROJECT = 'https://www.spoorzone-ede.nl/nieuws/opening-westtunnel-en-fietsenstalling-station-ede-wageningen'
 STATION_PLAN = 'https://www.prorail.nl/siteassets/homepage/projecten/ede-spoorzone/2.1.-spoorzone-ede-2022-p2-1.pdf'
-
-
-def load_scene():
-    path = ROOT / 'js/ede-geodata.js'
-    prefix = 'export const EDE_DATA = '
-    with path.open() as lines:
-        for line in lines:
-            if line.startswith(prefix):
-                return json.loads(line[len(prefix):].strip().removesuffix(';'))
-    raise ValueError(f'Could not find the scene frame in {path}')
 
 
 class Terrain:

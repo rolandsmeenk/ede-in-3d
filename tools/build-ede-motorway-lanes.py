@@ -15,6 +15,7 @@ from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
+from ede_map import load_scene as read_scene
 from ede_traffic_geometry import RoadGraph, Segment, SegmentIndex
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,13 +29,6 @@ SOURCES = {
 OSM = 'https://api.openstreetmap.org/api/0.6/ways'
 AERIAL = 'https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0'
 KINDS = {'HR', 'OPR', 'AFR', 'PST', 'VBD', 'VBI', 'PR'}
-
-
-def read_scene():
-    prefix = 'export const EDE_DATA = '
-    with (ROOT / 'js/ede-geodata.js').open() as stream:
-        line = next(line for line in stream if line.startswith(prefix))
-    return json.loads(line.removeprefix(prefix).strip().removesuffix(';'))
 
 
 def fetch_pages(url):

@@ -11,6 +11,8 @@ from shapely import STRtree, make_valid, union_all
 from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPoint, Point, Polygon, box, shape
 
+from ede_map import MAP_ASSET, load_scene
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'tools/data'
 ASSETS = ROOT / 'assets'
@@ -98,13 +100,6 @@ KNOWN_BGT = {
 
 def read_json(path):
     return json.loads(path.read_text())
-
-
-def load_scene():
-    prefix = 'export const EDE_DATA = '
-    with (ROOT / 'js/ede-geodata.js').open() as source:
-        return json.loads(next(line[len(prefix):].strip().removesuffix(';')
-                               for line in source if line.startswith(prefix)))
 
 
 def pairs(flat):
@@ -688,7 +683,7 @@ def build(bgt_road_snapshot=None):
     counts['level'] = sum(s['kind'] == 'level' for s in sites)
     counts['knownStructural'] = len(KNOWN)
     sources = {
-        'osmScene': {'path': 'js/ede-geodata.js', 'ways': len(scene['roads']) + len(scene['railways']),
+        'osmScene': {'path': MAP_ASSET, 'ways': len(scene['roads']) + len(scene['railways']),
                      'buildingFootprints': len(scene['buildings']), 'waterPolygons': len(waters)},
         'osmSupplement': {'path': str(OSM_SNAPSHOT.relative_to(ROOT)), 'source': osm['source'], 'date': osm['snapshots'],
                           'ways': len(osm['ways']), 'waterways': len(channels),

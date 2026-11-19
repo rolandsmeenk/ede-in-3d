@@ -16,22 +16,13 @@ import struct
 import subprocess
 from tempfile import TemporaryDirectory
 
+from ede_map import load_scene as scene_data
 
 ROOT = Path(__file__).resolve().parents[1]
 PADDING = 150
 GROUND_STEP = 3
 SAMPLE_STEP = 0.5
 MISSING = (0, 0, 0)
-
-
-def scene_data():
-    source = ROOT / 'js/ede-geodata.js'
-    prefix = 'export const EDE_DATA = '
-    with source.open() as lines:
-        for line in lines:
-            if line.startswith(prefix):
-                return json.loads(line[len(prefix):].strip().removesuffix(';'))
-    raise ValueError(f'Cannot read Ede geometry from {source}')
 
 
 def points(coordinates):

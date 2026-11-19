@@ -1,13 +1,13 @@
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2, smoothstep } from 'three/tsl';
+import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2, vec3, smoothstep } from 'three/tsl';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
-import { createPostProcessing } from './post-processing.js?v=20261118-lighting-menu';
+import { createPostProcessing } from './post-processing.js?v=20261119-perf';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
 import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
 import { buildLandmarks } from './landmarks.js';
 import { buildCityBlocks } from './buildings.js';
-import { loadBagBuildings } from './bag3d.js';
+import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildStreetDetails } from './street-details.js';
 import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261119-parking';
 import { loadEdeParking } from './ede-parking.js';
@@ -44,6 +44,23 @@ import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
 
 async function initApp() {
+  const query = new URLSearchParams(window.location.search);
+  const profiling = query.get('perf') === '1';
+  const fixedStep = profiling && query.get('bench') === '1';
+  const standard = query.get('quality') === 'standard';
+  const enabled = (key, fallback = true) => {
+    const value = profiling ? query.get(key) : null;
+    return value === 'on' ? true : value === 'off' ? false : fallback;
+  };
+  const scale = profiling ? Number(query.get('scale')) : 0;
+  const graphics = {
+    quality: standard ? 'standard' : 'fast',
+    msaa: enabled('msaa', standard), ssr: enabled('ssr', standard),
+    bloom: enabled('bloom'), shadows: enabled('shadows'), vegetation: enabled('vegetation'),
+    buildingDetail: enabled('buildingDetail'),
+    scale: scale >= 0.5 && scale <= 1 ? scale : 1,
+  };
+  let trafficUpdates = enabled('trafficUpdates');
   const container = document.getElementById('canvas-container');
   const loadingOverlay = document.getElementById('loading-overlay');
   const loadingStatus = document.getElementById('loading-status');
@@ -74,13 +91,14 @@ async function initApp() {
 
   // 1. Initialize Three.js WebGPURenderer with 32-bit float reversedDepthBuffer
   const renderer = new THREE.WebGPURenderer({
-    antialias: true,
+    antialias: graphics.msaa,
+    trackTimestamp: profiling,
     powerPreference: 'high-performance',
     reversedDepthBuffer: true
   });
-  renderer.setPixelRatio(1.0);
+  renderer.setPixelRatio(graphics.scale);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = graphics.shadows;
   renderer.lighting = new ClusteredLighting(256, 32, 28, 48);
   container.appendChild(renderer.domElement);
 
@@ -95,14 +113,17 @@ async function initApp() {
 
   await renderer.init();
   markInit('renderer');
+  const profiler = profiling ? (await import('./ede-perf.js')).createEdeProfiler(renderer) : null;
   console.info(`[renderer] Three.js r${THREE.REVISION}; ${renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback'}`);
   container.dataset.renderer = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback';
   container.dataset.threeRevision = THREE.REVISION;
+  container.dataset.quality = graphics.quality;
 
   // 2. Scene, atmosphere and lighting
   await showLoadingStage('Creating sky and environment lighting...');
   const scene = new THREE.Scene();
   const lightingSystem = new LightingSystem(scene, renderer);
+  lightingSystem.sunLight.castShadow = graphics.shadows;
   const precipitation = createWeatherPrecipitation(scene);
   markInit('lighting');
 
@@ -174,25 +195,30 @@ async function initApp() {
   await showLoadingStage('Building landmarks...');
   const { colliders: landmarkColliders } = buildLandmarks(scene);
   markInit('landmarks');
-  // Real 3D BAG building volumes; the OSM-extruded buildings remain the fallback when the tiles can't be loaded.
+  const eagerBag = graphics.buildingDetail && profiling && query.get('bag') === 'eager';
+  const streamBag = graphics.buildingDetail && !eagerBag;
   let bagBuildings = null;
-  await showLoadingStage('Loading 3D BAG buildings...');
-  try {
-    bagBuildings = await loadBagBuildings(scene, {
-      onProgress: (done, total) => { if (loadingStatus) loadingStatus.textContent = `Loading 3D BAG buildings ${done}/${total}…`; }
-    });
-  } catch (error) {
-    console.warn('[bag3d] falling back to OSM buildings:', error);
+  if (eagerBag) {
+    await showLoadingStage('Loading 3D BAG buildings...');
+    try {
+      bagBuildings = await loadBagBuildings(scene, {
+        onProgress: (done, total) => { if (loadingStatus) loadingStatus.textContent = `Loading 3D BAG buildings ${done}/${total}…`; }
+      });
+    } catch (error) {
+      console.warn('[bag3d] falling back to OSM buildings:', error);
+    }
+    markInit('bag3d');
   }
-  markInit('bag3d');
   await showLoadingStage('Generating building facades...');
-  const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings });
+  const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag });
+  if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks });
   markInit('blocks');
   const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
     ...gradeWorld.colliders, ...(bgtWorld?.colliders || [])];
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');
   const streetDetails = buildStreetDetails(scene, allColliders, lampResult.status === 'fulfilled' ? lampResult.value : null);
+  streetDetails.treeField.group.visible = graphics.vegetation;
   if (busSchedule) buildEdeBusStops(scene, busSchedule.variants);
   markInit('streetDetails');
   await showLoadingStage('Creating traffic and pedestrian routes...');
@@ -217,6 +243,11 @@ async function initApp() {
   }
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
+  const trafficGroups = [trafficSystem.group, highwayTraffic.group, trainSystem?.group].filter(Boolean);
+  function setTrafficDraw(draw) {
+    for (const group of trafficGroups) group.visible = draw;
+  }
+  setTrafficDraw(enabled('trafficDraw'));
   await showLoadingStage('Adding road markings...');
   let streetWorld;
   if (streetFeatures) {
@@ -280,7 +311,10 @@ async function initApp() {
   // pagehide also covers navigation away on mobile; preserve the context across back-forward cache restores.
   window.addEventListener('pagehide', (event) => {
     savePlayerState();
-    if (!event.persisted) audioSystem.dispose();
+    if (!event.persisted) {
+      bagBuildings?.userData.dispose?.();
+      audioSystem.dispose();
+    }
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) savePlayerState(); });
   markInit('controllers');
@@ -292,7 +326,7 @@ async function initApp() {
     'ManhattanLandmarks', 'EdeBoundaryContext', 'RoadMarkings', 'EdeStreetFeatures']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
-  setupSceneCulling(scene, cullingRoots, lightingSystem.sunLight.shadow);
+  setupSceneCulling(scene, cullingRoots, graphics.shadows ? lightingSystem.sunLight.shadow : null);
 
   // Initialize static world matrices once, including the chunks and shadow proxies created above.
   // Crowd, tree and building-detail animation changes instance/pose buffers, not Object3D transforms.
@@ -327,41 +361,35 @@ async function initApp() {
   // them spares the GPU writing 3 x 4 samples per pixel to memory every frame (transient, memoryless attachments where
   // the browser supports them). The multisampled depth stays stored: SSR reads it.
   scenePass.renderTarget.storeMultisampledColorBuffer = false;
-  const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
-  const maxSSRRoughness = 0.75;
-  const sceneMRT = mrt({
-    output: output,
-    normal: normalView,
-    metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
-  });
-  sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
-  sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
-  scenePass.setMRT(sceneMRT);
-
   const scenePassColor = scenePass.getTextureNode('output');
-  const scenePassDepth = scenePass.getTextureNode('depth');
-  const scenePassNormal = scenePass.getTextureNode('normal');
-  const scenePassMetalRough = scenePass.getTextureNode('metalRough');
-
-  const ssrPass = ssr(scenePassColor, scenePassDepth, scenePassNormal, {
-    metalnessNode: scenePassMetalRough.r,
-    roughnessNode: scenePassMetalRough.g,
-    camera: cameraSystem.camera
-  });
-  ssrPass.resolutionScale = 0.5;
-  ssrPass.blurQuality = 1;
-  ssrPass.maxDistance.value = 42;
-  ssrPass.thickness.value = 0.85;
-  // Fewer coarse steps, then refine detected hits to keep reflection edges precise.
-  ssrPass.quality.value = 0.25;
-  ssrPass.binaryRefine = true;
-  ssrPass.intensity.value = 0.50;
-  ssrPass.screenEdgeFadeBlack = true;
-
-  // Roughness mip blur must not spread reflections back onto matte or nonreflective surfaces.
-  const reflectionMask = scenePassMetalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, scenePassMetalRough.g), 0);
-  const reflections = ssrPass.mul(reflectionMask);
-  const colorGrade = createPostProcessing(renderer, scenePassColor, reflections);
+  let sceneMRT = null;
+  let reflections = vec3(0);
+  if (graphics.ssr) {
+    const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
+    const maxSSRRoughness = 0.75;
+    sceneMRT = mrt({
+      output, normal: normalView,
+      metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
+    });
+    sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
+    sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
+    scenePass.setMRT(sceneMRT);
+    const surface = scenePass.getTextureNode('metalRough');
+    const ssrPass = ssr(scenePassColor, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), {
+      metalnessNode: surface.r, roughnessNode: surface.g, camera: cameraSystem.camera
+    });
+    ssrPass.resolutionScale = 0.5;
+    ssrPass.blurQuality = 1;
+    ssrPass.maxDistance.value = 42;
+    ssrPass.thickness.value = 0.85;
+    ssrPass.quality.value = 0.25;
+    ssrPass.binaryRefine = true;
+    ssrPass.intensity.value = 0.50;
+    ssrPass.screenEdgeFadeBlack = true;
+    const mask = surface.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, surface.g), 0);
+    reflections = ssrPass.mul(mask);
+  }
+  const colorGrade = createPostProcessing(renderer, scenePassColor, reflections, { bloomEnabled: graphics.bloom });
   const renderPipeline = new THREE.RenderPipeline(renderer, colorGrade.outputNode);
 
   // 6. Wire UI Controls (Strictly using safe DOM APIs: textContent, classList, addEventListener)
@@ -561,6 +589,19 @@ async function initApp() {
       }
     });
   });
+
+  for (const button of document.querySelectorAll('[data-graphics-quality]')) {
+    const quality = button.dataset.graphicsQuality;
+    const active = quality === graphics.quality;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+    button.addEventListener('click', () => {
+      if (active) return closePopovers();
+      const url = new URL(window.location.href);
+      url.searchParams.set('quality', quality);
+      window.location.assign(url);
+    });
+  }
 
   modeButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -773,7 +814,7 @@ async function initApp() {
   const COMPILE_POOL = 16;
   const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0)));
   async function precompileShaders() {
-    await showLoadingStage('Preparing reflections and bloom...');
+    await showLoadingStage('Preparing the render pipeline...');
     // An empty frame first: it sets up the post-processing chain, which configures the scene pass's render target
     // (MSAA samples, depth format), so the pipelines compiled below are the very ones the scene pass asks for
     scene.visible = false;
@@ -853,6 +894,7 @@ async function initApp() {
   // 6. Animation Loop
   let lastTime = performance.now();
   let elapsed = 0;
+  let trafficClock = 0;
   let frameCount = 0;
   let fpsTimer = 0;
   let nextPlayerSave = 0;
@@ -861,42 +903,50 @@ async function initApp() {
   if (elFps) elFps.textContent = '60';
 
   renderer.setAnimationLoop((now) => {
+    profiler?.beginFrame(now);
     const rawDt = (now - lastTime) * 0.001;
     lastTime = now;
-    const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
+    const dt = fixedStep ? 1 / 60 : Math.min(Math.max(rawDt, 0.001), 0.05);
     elapsed += dt;
 
     // Update 3rd-person controllers, camera, signals, traffic & vehicle collisions, building LODs, and dynamic shadow focus
     gamepadControls.update(dt);
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
     cameraSystem.update(dt, elapsed);
-    trainSystem?.update(dt, cameraSystem.currentPos);
-    bagBuildings?.userData.facadePhotos?.update(cameraSystem.currentPos);
-    streetDetails.signalClock.value = elapsed;
-    trafficSystem.update(
-      dt,
-      elapsed,
-      cameraSystem.currentPos,
-      controllerManager.getActiveEntity(),
-      controllerManager.activeMode,
-      cameraSystem.camera
-    );
-    highwayTraffic.update(dt, cameraSystem.camera, controllerManager.getActiveEntity(), controllerManager.activeMode);
+    profiler?.stage('Player and camera');
+    if (trafficUpdates) {
+      trafficClock += dt;
+      trainSystem?.update(dt, cameraSystem.currentPos);
+      streetDetails.signalClock.value = trafficClock;
+      trafficSystem.update(dt, trafficClock, cameraSystem.currentPos, controllerManager.getActiveEntity(), controllerManager.activeMode, cameraSystem.camera);
+      highwayTraffic.update(dt, cameraSystem.camera, controllerManager.getActiveEntity(), controllerManager.activeMode);
+    }
+    profiler?.stage('Traffic, trains and parking');
+    if (warmedUp) {
+      bagBuildings?.userData.update?.(cameraSystem.camera);
+      bagBuildings?.userData.facadePhotos?.update(cameraSystem.currentPos);
+    }
+    cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
+    profiler?.stage('Buildings and façades');
+    if (graphics.vegetation) streetDetails.treeField.update(cameraSystem.camera.position);
+    profiler?.stage('Vegetation');
     if (!document.hidden && now >= nextPlayerSave) {
       savePlayerState();
       nextPlayerSave = now + 5000;
     }
-        cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
     const weatherEffects = liveWeather.update(dt);
     lightingSystem.update(cameraSystem.currentPos, weatherEffects);
     precipitation.update(dt, cameraSystem.camera, weatherEffects);
+    profiler?.stage('Lighting and weather');
     mapSystem.update();
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
+    profiler?.stage('Map and audio');
     if (warmedUp) updateSceneCulling(cameraSystem.camera.position); // the warm-up frame draws every chunk
     // Traffic collisions can move the player after controller updates; finalize moving hierarchies here.
     for (const root of dynamicRoots) root.updateMatrixWorld();
+    profiler?.stage('Visibility and transforms');
 
     // Render frame via TSL RenderPipeline (SSR + Bloom)
     if (!warmedUp) {
@@ -919,6 +969,8 @@ async function initApp() {
       markInit('warmup');
     }
     renderPipeline.render();
+    profiler?.stage('Render submission');
+    profiler?.endFrame();
     if (!warmedUp) {
       warmedUp = true;
       markInit('firstFrame');
@@ -934,6 +986,13 @@ async function initApp() {
           ready: true, firstFrameAt: performance.now(), init: initTimings.join(', '),
           backend: renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback',
           scene, renderer, cameraSystem, controllerManager, TELEPORT_LOCATIONS, trafficSystem, trainSystem,
+          graphics,
+          perf: profiler && {
+            report: profiler.report, reset: profiler.reset,
+            setTrafficUpdates(enabled) { trafficUpdates = Boolean(enabled); },
+            setTrafficDraw,
+            setBuildingDetail: bagBuildings?.userData.setEnabled,
+          },
           get weather() { return liveWeather.state; }, streetFeatures,
           teleport(key) { const l = TELEPORT_LOCATIONS[key]; return teleportTo(l.x, l.z, l.heading); },
           teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },
@@ -944,7 +1003,7 @@ async function initApp() {
             cameraSystem.fixedPos = new THREE.Vector3(px, py, pz); cameraSystem.fixedLook = new THREE.Vector3(tx, ty, tz);
             selectCamera('fixed', true);
           },
-          info() { return renderer.info ? { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles } : null; },
+          info() { return renderer.info ? { calls: renderer.info.render.drawCalls, triangles: renderer.info.render.triangles } : null; },
         };
         initTimings = null;
         if (loadingOverlay) loadingOverlay.classList.add('hidden');

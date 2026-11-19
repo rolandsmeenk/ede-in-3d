@@ -7,8 +7,10 @@ test('Ede GTFS import keeps the selected bus routes, midnight service and platfo
 import csv
 from io import BytesIO, StringIO
 from runpy import run_path
+import sys
 from zipfile import ZipFile
 
+sys.path.insert(0, 'tools')
 module = run_path('tools/import-ede-gtfs.py')
 routes = [(route, agency, line) for (agency, route), line in module['ROUTES'].items() if agency == 'RRREIS']
 with ZipFile(BytesIO(), 'w') as feed:
@@ -57,8 +59,10 @@ test('Ede rail import keeps scheduled platforms, overnight times and the direct 
 import csv
 from io import BytesIO, StringIO
 from runpy import run_path
+import sys
 from zipfile import ZipFile
 
+sys.path.insert(0, 'tools')
 module = run_path('tools/import-ede-trains.py')
 with ZipFile(BytesIO(), 'w') as feed:
     def table(name, header, rows):

@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 from urllib.parse import urlencode, urljoin
 
+from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / 'tools/data/ede-street-signs.snapshot.json.gz'
@@ -27,10 +28,7 @@ NDW_FIELDS = ('rvvCode', 'blackCode', 'bearing', 'placement', 'zoneCode', 'suppl
 
 
 def scene_metadata():
-    prefix = 'export const EDE_DATA = '
-    with (ROOT / 'js/ede-geodata.js').open() as stream:
-        line = next(line for line in stream if line.startswith(prefix))
-    return json.loads(line.removeprefix(prefix).strip().removesuffix(';'))['meta']
+    return load_scene()['meta']
 
 
 def build_tiles(bounds):

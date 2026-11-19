@@ -53,8 +53,9 @@ export function buildFacadePhotos(parent, panels) {
     parent.add(mesh);
     cell.mesh = mesh;
   }
-  let lastX = Infinity, lastZ = Infinity;
+  let lastX = Infinity, lastZ = Infinity, disposed = false;
   const update = ({ x, z }) => {
+    if (disposed) return;
     if (Math.hypot(x - lastX, z - lastZ) < 4) return;
     lastX = x; lastZ = z;
     stats.visible = 0;
@@ -66,6 +67,7 @@ export function buildFacadePhotos(parent, panels) {
         const started = performance.now();
         atlas.started = true;
         loader.loadAsync(new URL(`../assets/${file}`, import.meta.url).href).then(texture => {
+          if (disposed) { texture.dispose(); return; }
           texture.colorSpace = THREE.SRGBColorSpace;
           atlas.material.map = texture;
           atlas.material.needsUpdate = true;
@@ -82,5 +84,19 @@ export function buildFacadePhotos(parent, panels) {
       if (mesh.visible) stats.visible++;
     }
   };
-  return { update, stats };
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    for (const { mesh } of cells.values()) {
+      mesh.removeFromParent();
+      mesh.geometry.dispose();
+    }
+    for (const { material, texture } of atlases.values()) {
+      material.dispose();
+      texture.dispose();
+    }
+    cells.clear();
+    atlases.clear();
+  }
+  return { update, dispose, stats };
 }

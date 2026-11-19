@@ -42,8 +42,9 @@ class Vector3 {
   normalize() { return this; }
 }
 
-function loadBag({ blocks = [], aerial = {}, grade = {}, three } = {}) {
+function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}, globals = {}, meta = {} } = {}) {
   return loadModule(read('bag3d.js').replaceAll('export async function', 'async function'), {
+    globals,
     imports: {
       'three/webgpu': three ?? {
         BufferGeometry, BufferAttribute, Vector3,
@@ -54,18 +55,104 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three } = {}) {
       'three/tsl': {},
       'three/addons/loaders/GLTFLoader.js': {},
       'three/addons/libs/meshopt_decoder.module.js': {},
-      './nyc-geodata.js': { GEO: { ede: { meta: { bounds: [0, 0, 30, 30] } } } },
+      './nyc-geodata.js': { GEO: { ede: { meta: { bounds: [0, 0, 30, 30], ...meta } } } },
       './city-config.js': { BLOCKS: blocks },
       './building-collision.js': loadModule(read('building-collision.js')),
       './terrain.js': { terrainHeightAt: (x) => 10 + x / 2 },
       './ede-grade.js': { buildingPassageCuts: () => [], ...grade },
-      './ede-facades.js': {},
-      './ede-facade-material.js': {},
-      './ede-facade-photos.js': {},
+      './ede-facades.js': facadeStubs,
+      './ede-facade-material.js': facadeStubs,
+      './ede-facade-photos.js': facadeStubs,
       './aerial-colors.js': { getAerialColors: () => false, ...aerial }
     }
   });
 }
+
+test('BAG coverage requires building geometry rather than the tile bounds', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { coveredFallbackBuildings } = loadBag({ three: T });
+  const square = (id, x, z, size) => ({ id, minX: x, minZ: z, maxX: x + size, maxZ: z + size,
+    footprints: [{ pts: [{ x, z }, { x: x + size, z }, { x: x + size, z: z + size }, { x, z: z + size }], holes: [] }] });
+  const a = new T.PlaneGeometry(5, 5).rotateX(-Math.PI / 2).translate(2.5, 0, 2.5);
+  const b = new T.PlaneGeometry(5, 5).rotateX(-Math.PI / 2).translate(17.5, 0, 2.5);
+  a.computeBoundingBox();
+  b.computeBoundingBox();
+  const fallback = { quadtree: { queryRange: () => [square('present', 0, 0, 5), square('gap', 6, 0, 7), square('partial', 13, 0, 5)] } };
+  assert.deepEqual(Array.from(coveredFallbackBuildings([a, b], fallback)), ['present']);
+});
+
+test('BAG starts from fallback, bounds downloads, cancels stale work on a jump, and restores evicted coverage', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { createBagBuildingStream, ecefToLocalMatrix, gltfToLocalMatrix } = loadBag({ three: T,
+    meta: { bounds: [-200, -200, 2200, 200], lonLatAffine: { lon0: 5.67, lat0: 52.04, x: [0, 68600], z: [0, 0, -111300] } },
+    globals: { performance, URL, AbortController, setTimeout, document: { hidden: false }, console },
+    facadeStubs: { loadEdeFacades: async () => null, buildFacadePhotos: () => null, createBagFacadeMaterial: () => new T.MeshBasicMaterial() }
+  });
+  const toEcef = ecefToLocalMatrix().invert(), toGltf = gltfToLocalMatrix().invert();
+  function tile(x, extent, uri) {
+    const center = new T.Vector3(x, 0, 0).applyMatrix4(toEcef);
+    const axes = [[extent, 0, 0], [0, extent, 0], [0, 0, extent]];
+    const box = [...center.toArray(), ...axes.flatMap(offset => new T.Vector3(x + offset[0], offset[1], offset[2])
+      .applyMatrix4(toEcef).sub(center).toArray())];
+    return { boundingVolume: { box }, ...(uri && { content: { uri } }) };
+  }
+  const root = { ...tile(800, 1600), children: [tile(0, 20, 'start.glb'), tile(75, 20, 'cancel.glb'), tile(170, 20, 'queue.glb'), tile(1800, 20, 'jump.glb')] };
+  const pending = [];
+  const loadBuffer = (url, signal) => new Promise((resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    pending.push({ url, signal, resolve });
+  });
+  const loader = { async parseAsync(buffer) {
+    const x = new Float64Array(buffer)[0];
+    const geo = new T.PlaneGeometry(10, 10).rotateX(-Math.PI / 2).translate(x, 0, 0);
+    const mesh = new T.Mesh(geo);
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(toGltf);
+    return { scene: new T.Group().add(mesh) };
+  } };
+  const changes = [];
+  const fallback = {
+    replaceBuildings(ids, loaded) { changes.push([Array.from(ids), loaded]); },
+    quadtree: { queryRange(x) { return [{ id: x > 1000 ? 'jump' : 'start', minX: x - 4, maxX: x + 4, minZ: -4, maxZ: 4,
+      footprints: [{ pts: [{ x: x - 4, z: -4 }, { x: x + 4, z: -4 }, { x: x + 4, z: 4 }, { x: x - 4, z: 4 }], holes: [] }] }]; } }
+  };
+  const scene = new T.Scene();
+  const camera = new T.PerspectiveCamera(55, 1, 0.1, 2000);
+  const focus = x => { camera.position.set(x, 6, 45); camera.lookAt(x, 0, 0); };
+  const stream = createBagBuildingStream(scene, { fallback, fetchJson: async () => ({ root }), loader, loadBuffer });
+  const { update, stats, setEnabled, dispose } = stream.userData;
+  const drain = () => new Promise(resolve => setTimeout(resolve, 4));
+  assert.equal(stats.resident, 0);
+  focus(0);
+  update(camera);
+  await drain();
+  update(camera);
+  assert.deepEqual(pending.map(p => p.url.split('/').at(-1)), ['start.glb', 'cancel.glb']);
+  pending[0].resolve(new Float64Array([0]).buffer);
+  await drain();
+  update(camera);
+  await drain();
+  assert.deepEqual(changes, [[['start'], true]]);
+  let released = false;
+  stream.children[0].children[0].geometry.addEventListener('dispose', () => { released = true; });
+  focus(1800);
+  update(camera);
+  assert.equal(released, true);
+  assert.deepEqual(changes.at(-1), [['start'], false]);
+  assert.equal(pending[1].signal.aborted, true);
+  assert.equal(pending.at(-1).url.endsWith('jump.glb'), true);
+  pending.at(-1).resolve(new Float64Array([1800]).buffer);
+  await drain();
+  update(camera);
+  await drain();
+  assert.deepEqual(changes.at(-1), [['jump'], true]);
+  setEnabled(false);
+  assert.equal(stats.resident, 0);
+  assert.equal(stats.geometryBytes, 0);
+  assert.deepEqual(changes.at(-1), [['jump'], false]);
+  dispose();
+  assert.equal(stream.parent, null);
+});
 
 test('BAG clears the Raadhuisstraat portal below its posted soffit and preserves the upper facade', async () => {
   const three = await import('../vendor/three/build/three.webgpu.js');

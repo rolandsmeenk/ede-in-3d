@@ -6,6 +6,7 @@ const test = require('node:test');
 test('Ede tree builder merges surveyed attributes and retains distinct nearby trunks', () => {
   const bytes = execFileSync('python3', ['-B', '-c', `
 import runpy, sys
+sys.path.insert(0, 'tools')
 m = runpy.run_path('tools/build-ede-trees.py')
 Tree, classify, measure = m['Tree'], m['classify'], m['measure']
 def tree(x, z, source, height=0, diameter=0, species=255):

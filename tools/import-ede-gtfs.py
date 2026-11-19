@@ -12,6 +12,7 @@ from math import dist
 from pathlib import Path
 from zipfile import ZipFile
 
+from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 FEED_URL = 'https://gtfs.ovapi.nl/nl/gtfs-nl.zip'
@@ -44,10 +45,7 @@ def read_table(archive, name, key=None, ids=None):
 
 
 def load_projection():
-    prefix = 'export const EDE_DATA = '
-    with (ROOT / 'js' / 'ede-geodata.js').open() as source:
-        line = next(line for line in source if line.startswith(prefix))
-    affine = json.loads(line.removeprefix(prefix).strip().removesuffix(';'))['meta']['lonLatAffine']
+    affine = load_scene()['meta']['lonLatAffine']
 
     def project(lon, lat):
         dx = float(lon) - affine['lon0']

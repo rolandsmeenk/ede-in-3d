@@ -18,6 +18,7 @@
     }
   </script>
   <!-- Fetch the city modules in parallel before stylesheets. Keep the lighting versions in sync with the entry and imports. -->
+  <link rel="preload" href="./assets/ede-map-v1.json.gz" as="fetch" crossorigin />
   <link rel="modulepreload" href="./js/ede-geodata.js" />
   <link rel="modulepreload" href="./js/ede-road-tags.js" />
   <link rel="modulepreload" href="./js/nyc-geodata.js" />
@@ -84,7 +85,7 @@
   <link rel="modulepreload" href="./js/cameras.js" />
   <link rel="modulepreload" href="./js/nyc-map.js" />
   <link rel="modulepreload" href="./js/scene-culling.js" />
-  <link rel="modulepreload" href="./js/post-processing.js?v=20261118-lighting-menu" />
+  <link rel="modulepreload" href="./js/post-processing.js?v=20261119-perf" />
   <link rel="modulepreload" href="./js/audio-synthesis.js" />
   <link rel="modulepreload" href="./js/audio-events.js" />
   <link rel="modulepreload" href="./js/audio-sources.js" />
@@ -94,8 +95,8 @@
   <link rel="modulepreload" href="./js/ede-facades.js" />
   <link rel="modulepreload" href="./js/ede-facade-material.js" />
   <link rel="modulepreload" href="./js/ede-facade-photos.js" />
-  <link rel="modulepreload" href="./js/main.js?v=20261119-crossing-debug" />
-  <script type="module" src="./js/main.js?v=20261119-crossing-debug"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261119-perf" />
+  <script type="module" src="./js/main.js?v=20261119-perf"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -196,6 +197,7 @@
         <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label">Map</span><kbd>M</kbd>
       </button>
       <span class="toolbar-divider" aria-hidden="true"></span>
+      <button id="btn-graphics-quality" class="tool-btn" type="button" popovertarget="graphics-quality-popover" title="Graphics quality">Graphics</button>
       <button id="btn-sound" class="tool-btn icon-only" type="button" title="Mute sound [N]" aria-label="Mute sound" aria-pressed="true">
         <svg class="icon" aria-hidden="true"><use href="#i-sound"/></svg>
       </button>
@@ -238,6 +240,12 @@
 
   <div id="crossing-debug-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-labelledby="crossing-debug-title">
     <h2 id="crossing-debug-title" class="pop-title">Crossing test teleports</h2>
+  </div>
+
+  <div id="graphics-quality-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Graphics quality">
+    <div class="pop-title">Graphics quality</div>
+    <button class="pop-item active" data-graphics-quality="fast" aria-pressed="true" type="button">Fast</button>
+    <button class="pop-item" data-graphics-quality="standard" aria-pressed="false" type="button">Standard</button>
   </div>
 
   <!-- Bottom-Left: Street-Name Signs & Live GPS Radar Minimap -->

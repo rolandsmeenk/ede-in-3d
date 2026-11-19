@@ -15,7 +15,7 @@ for layer in verkeerstypen hoogtebeperkingen; do
     --data 'bbox=5.5925,52.012,5.7005,52.0605,EPSG:4326' \
     --data 'outputFormat=application/json' -o "/tmp/ede-wkd/$layer.json"
 done
-node tools/build-ede-geodata.mjs tools/data/osm_ede.json js/ede-geodata.js /tmp/ede-wkd
+node tools/build-ede-geodata.mjs tools/data/osm_ede.json assets/ede-map-v1.json.gz /tmp/ede-wkd
 ```
 
 [Kadaster BGT road areas](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections) provide physical role and width evidence where the same-layer overlap is strong. Explicit OSM widths take precedence. The BGT physical role by itself conveys no traffic permission.

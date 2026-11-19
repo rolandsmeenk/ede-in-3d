@@ -167,7 +167,7 @@ function setupSceneCulling(scene, roots, shadow = null) {
   };
   for (const root of roots) {
     root.traverse((o) => {
-      if (!isStaticMesh(o)) return;
+      if (!isStaticMesh(o) || o.userData.mutableFallback) return;
       if (!o.isInstancedMesh) {
         if (o.userData.cullDistance > 0) {
           if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
@@ -234,7 +234,7 @@ function setupSceneCulling(scene, roots, shadow = null) {
     const sources = [];
     for (const root of roots) {
       root.traverse((o) => {
-        if (!o.castShadow || !isStaticMesh(o) || !proxyableMaterial(o.material)) return;
+        if (!o.castShadow || !isStaticMesh(o) || o.userData.mutableFallback || !proxyableMaterial(o.material)) return;
         if (o.isInstancedMesh && o.count !== o.instanceMatrix.count) return;
         // Opt-ins (userData.shadowStandIn: true, or a coarser BufferGeometry to cast with): pre-chunked casters
         // (building-footprints.js) are big together, but each chunk falls under the size limits; and thin props

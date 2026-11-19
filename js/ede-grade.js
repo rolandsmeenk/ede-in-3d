@@ -3,6 +3,7 @@ import { MOTOR } from './road-access.js';
 import { terrainHeightAt } from './terrain.js';
 
 const CELL = 48;
+const RAIL_LOOKUP_REACH = 32;
 const STEP_HEIGHT = 1.7;
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const cellKey = (x, z) => `${x}/${z}`;
@@ -11,6 +12,7 @@ let segments = new Map();
 let profiles = new Map();
 let ways = new Map();
 let tracks = new Map();
+let nearbyTracks = new Map();
 let cuts = new Map();
 let roofs = new Map();
 let wayCuts = new Map();
@@ -163,11 +165,21 @@ export function setEdeGrade(data) {
       for (const section of gradeSections({ ...profile, width: 2.9 })) indexCut(nextCuts, sectionCut(section));
     }
   }
+  const nextNearbyTracks = new Map();
+  // Preserve the original track and span order when two alignments are equally close.
+  for (const spans of nextTracks.values()) for (const span of spans) {
+    const pad = RAIL_LOOKUP_REACH + (span.profile.half ?? 0);
+    indexCut(nextNearbyTracks, Object.assign(span, {
+      minX: Math.min(span.x, span.endX) - pad, maxX: Math.max(span.x, span.endX) + pad,
+      minZ: Math.min(span.z, span.endZ) - pad, maxZ: Math.max(span.z, span.endZ) + pad,
+    }));
+  }
   world = data;
   segments = nextSegments;
   profiles = nextProfiles;
   ways = nextWays;
   tracks = nextTracks;
+  nearbyTracks = nextNearbyTracks;
   cuts = nextCuts;
   roofs = nextRoofs;
   wayCuts = nextWayCuts;
@@ -315,6 +327,10 @@ export function railHeightAt(wayId, x, z) {
 }
 
 export function nearbyRailHeightAt(x, z, reach = 5) {
+  if (reach <= RAIL_LOOKUP_REACH) {
+    const spans = nearbyTracks.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || [];
+    return railElevation(nearestSpan(spans, x, z, { reach }));
+  }
   let nearest = null;
   for (const spans of tracks.values()) {
     const hit = nearestSpan(spans, x, z, { reach });

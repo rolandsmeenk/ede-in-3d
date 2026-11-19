@@ -8,7 +8,7 @@
   ],
   "sources": {
     "osmScene": {
-      "path": "js/ede-geodata.js",
+      "path": "assets/ede-map-v1.json.gz",
       "ways": 8600,
       "buildingFootprints": 44844,
       "waterPolygons": 177

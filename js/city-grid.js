@@ -500,7 +500,9 @@ function buildEdeCityGrid(scene, treeInventory) {
   for (const [material, geometries] of collections) {
     let firstMesh;
     for (const cell of edeGeometryGroups(geometries)) for (let i = 0; i < cell.length; i += 300) {
-      const chunk = cell.slice(i, i + 300).map(g => {
+      const sources = cell.slice(i, i + 300);
+      // Keep shared terrain and curb vertices when all inputs already have indices.
+      const chunk = sources.every(g => g.index) ? sources : sources.map(g => {
         if (!g.index) return g;
         const expanded = g.toNonIndexed(); g.dispose(); return expanded;
       });
