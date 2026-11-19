@@ -2,22 +2,68 @@
 const bagNumber = (id) => typeof id === 'string' && /^(?:NL\.IMBAG\.Pand\.)?\d{16}$/.test(id)
   ? id.slice(-16) : null;
 
-export async function loadEdeFacades() {
-  const response = await fetch(new URL('../assets/ede-facades.json', import.meta.url));
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  if (data.version !== 1 || !Array.isArray(data.walls)) throw new Error('Invalid Ede façade asset');
+function indexWalls(walls) {
   const byId = new Map();
-  const walls = data.walls.filter(wall => {
+  for (const wall of walls ?? []) {
     const id = bagNumber(wall.bagId);
     if (!id || ![wall.a, wall.b].every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite))
         || !Number.isFinite(wall.minY) || !Number.isFinite(wall.height) || wall.height <= 0
-        || !Array.isArray(wall.openings)) return false;
+        || !Array.isArray(wall.openings)) continue;
     if (!byId.has(id)) byId.set(id, []);
     byId.get(id).push(wall);
-    return true;
-  });
-  return { walls, byId };
+  }
+  return byId;
+}
+
+export async function loadEdeFacades() {
+  const source = new URL('../assets/ede-facades.json', import.meta.url);
+  const response = await fetch(source);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  if (data.version !== 2 || !Number.isFinite(data.tileSize) || data.tileSize < 64 ||
+      !data.tiles || typeof data.tiles !== 'object' || Array.isArray(data.tiles)) throw new Error('Invalid Ede façade index');
+  const recent = new Map();
+  const tile = (key) => {
+    const uri = data.tiles[key];
+    if (!/^ede-facades\/[a-zA-Z0-9_-]+\.json(?:\.gz)?$/.test(uri)) return null;
+    let pending = recent.get(key);
+    if (!pending) pending = fetch(new URL(uri, source)).then(async result => {
+      if (!result.ok) throw new Error(`Façade tile ${key}: HTTP ${result.status}`);
+      const bytes = new Uint8Array(await result.arrayBuffer());
+      const response = new Response(bytes);
+      return (bytes[0] === 31 && bytes[1] === 139
+        ? new Response(response.body.pipeThrough(new DecompressionStream('gzip'))) : response).json();
+    }).then(payload => {
+      if (payload.version !== 2 || !Array.isArray(payload.walls)) throw new Error(`Invalid façade tile ${key}`);
+      return indexWalls(payload.walls);
+    }).catch(error => {
+      recent.delete(key);
+      console.warn('[facades] using procedural walls for unavailable parameters:', error.message);
+      return null;
+    });
+    recent.delete(key);
+    recent.set(key, pending);
+    if (recent.size > 12) recent.delete(recent.keys().next().value);
+    return pending;
+  };
+  return { async forBounds({ min, max }) {
+    const { tileSize } = data;
+    const margin = 12;
+    const grid = n => Math.floor(n / tileSize);
+    const selected = [];
+    for (let z = grid(min.z - margin); z <= grid(max.z + margin); z++) {
+      for (let x = grid(min.x - margin); x <= grid(max.x + margin); x++) {
+        const record = tile(`${x},${z}`);
+        if (record) selected.push(record);
+      }
+    }
+    const byId = new Map();
+    for (const values of await Promise.all(selected)) for (const [id, walls] of values ?? []) {
+      if (!byId.has(id)) byId.set(id, []);
+      byId.get(id).push(...walls);
+    }
+    return byId;
+  } };
 }
 
 const scalarSize = { UINT8: 1, UINT16: 2, UINT32: 4 };
@@ -95,19 +141,52 @@ function faceNormal([a, b, c]) {
   return cross.map(n => n / length);
 }
 
+export function archRise(opening) {
+  const arch = opening.arch ?? opening.shape;
+  if (!arch || arch === 'rect' || arch === 'rectangle') return 0;
+  const height = typeof arch === 'number' ? arch : opening.width * (arch === 'pointed' ? 0.7 : 0.5);
+  return Math.max(0, Math.min(height, opening.height * 0.65));
+}
+
+function archCurve(t, pointed) {
+  return pointed ? (1 - t ** 2) ** 0.78 * (1 - t * 0.23) : Math.sqrt(1 - t ** 2);
+}
+
+export function openingTop(opening, u) {
+  const t = Math.min(1, Math.abs((u - opening.x) * 2 / opening.width - 1));
+  const rise = archRise(opening);
+  return opening.y + opening.height - rise * (1 - archCurve(t, (opening.arch ?? opening.shape) === 'pointed'));
+}
+
+function openingOutline(opening) {
+  const { x, y, width, height } = opening;
+  const points = [[x, y], [x + width, y]];
+  if (!archRise(opening)) return [...points, [x + width, y + height], [x, y + height]];
+  for (let i = 12; i >= 0; i--) {
+    const u = x + width * (1 - Math.cos(Math.PI * i / 12)) / 2;
+    points.push([u, openingTop(opening, u)]);
+  }
+  return points;
+}
+
 // Partition a wall triangle into the opening and the remaining faces in its local plane.
-export function cutFacadeOpening(triangle, { x, y, width, height }) {
+export function cutFacadeOpening(triangle, opening) {
+  return partitionWall(triangle, openingOutline(opening));
+}
+
+function partitionWall(triangle, outline) {
   let inside = triangle;
   const outside = [];
-  for (const [axis, limit, side] of [[0, x, 1], [0, x + width, -1], [1, y, 1], [1, y + height, -1]]) {
-    if (inside.length < 3) break;
+  for (let i = 0; i < outline.length && inside.length >= 3; i++) {
+    const [u, v] = outline[i], [r, t] = outline[(i + 1) % outline.length];
+    const distance = ([x, y]) => (r - u) * (y - v) - (t - v) * (x - u);
     const kept = [], removed = [];
-    let a = inside.at(-1), da = side * (a.local[axis] - limit);
+    let a = inside.at(-1), da = distance(a.local);
     for (const b of inside) {
-      const db = side * (b.local[axis] - limit);
+      const db = distance(b.local);
       if ((da >= 0) !== (db >= 0)) {
-        const t = da / (da - db);
-        const interpolate = (key) => a[key].map((n, i) => n + (b[key][i] - n) * t);
+        const fraction = da / (da - db);
+        const interpolate = key => a[key].map((n, i) => n + (b[key][i] - n) * fraction);
         const point = { local: interpolate('local'), position: interpolate('position') };
         kept.push(point);
         removed.push(point);
@@ -131,7 +210,14 @@ export function facadePoint(frame, u, v, offset = 0) {
     frame.z + u * frame.tz + offset * frame.nz];
 }
 
-export function applyBagFacades(geometry, featureIds, targets, ground, atlas, projectUv, linearColor) {
+export function applyBagFacades(...args) {
+  const work = applyBagFacadeChunks(...args);
+  let step;
+  do step = work.next(); while (!step.done);
+  return step.value;
+}
+
+function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, projectUv, linearColor) {
   const { position, normal, color, buildingHeight } = geometry.attributes;
   const originalCount = position.count;
   const input = geometry.index?.array;
@@ -139,14 +225,18 @@ export function applyBagFacades(geometry, featureIds, targets, ground, atlas, pr
   const index = i => input ? input[i] : i;
   const positionAt = i => [position.getX(i), position.getY(i), position.getZ(i)];
   const frames = new Map(), groups = new Map();
+  const useCount = new Uint16Array(originalCount);
   for (const [id, walls] of targets) frames.set(id, walls.map(wall => facadeFrame(wall, ground.get(id)))
     .filter(frame => frame.width > 0 && atlas.rects.has(frame.wall)));
   for (let i = 0; i + 2 < count; i += 3) {
-    const first = index(i);
+    if (i % 768 === 0) yield;
+    const first = index(i), second = index(i + 1), third = index(i + 2);
+    useCount[first]++;
+    useCount[second]++;
+    useCount[third]++;
     if (first >= featureIds.count) continue;
     const feature = Math.round(featureIds.getX(first));
     if (!frames.has(feature)) continue;
-    const second = index(i + 1), third = index(i + 2);
     if (second >= featureIds.count || third >= featureIds.count ||
       Math.round(featureIds.getX(second)) !== feature || Math.round(featureIds.getX(third)) !== feature) continue;
     const ids = [first, second, third];
@@ -162,85 +252,140 @@ export function applyBagFacades(geometry, featureIds, targets, ground, atlas, pr
 
   const nextIndex = Uint32Array.from(input ?? { length: count }, (value, i) => input ? value : i);
   const extraIndex = [];
-  const added = { position: [], normal: [], color: [], buildingHeight: [], facadeUv: [] };
-  const panels = [];
+  const added = { position: [], normal: [], color: [], buildingHeight: [], facadeUv: [], facadeStyle: [], facadeRelief: [] };
+  const customStride = { facadeUv: 3, facadeStyle: 3, facadeRelief: 2 };
+  const originalAttributes = Object.fromEntries(Object.entries(customStride).map(([name, stride]) =>
+    [name, new Float32Array(originalCount * stride)]));
   const matched = [];
   let recesses = 0;
-  const add = (point, norm, rgb, height, uv) => {
+  const add = (point, norm, rgb, height, uv, style, relief = [0, 0]) => {
     const id = originalCount + added.buildingHeight.length;
     added.position.push(...point); added.normal.push(...norm); added.color.push(...rgb);
     added.buildingHeight.push(height); added.facadeUv.push(...uv);
+    added.facadeStyle.push(...style); added.facadeRelief.push(...relief);
     return id;
   };
   function fan(vertices) {
     for (let i = 1; i + 1 < vertices.length; i++) extraIndex.push(vertices[0], vertices[i], vertices[i + 1]);
   }
   for (const [frame, triangles] of groups) {
+    yield;
     const { wall, nx, nz, tx, tz } = frame;
     const wallColor = linearColor(wall.wallColor);
     const rect = atlas.rects.get(wall), newId = new Map();
+    const paletteRow = atlas.rows.get(wall);
+    const materialOrigin = frame.x * tx + frame.z * tz;
+    const surfaceUv = ([u, v]) => [materialOrigin + u, frame.y + v, paletteRow];
+    const localUses = new Map();
+    for (const { ids } of triangles) for (const id of ids) localUses.set(id, (localUses.get(id) ?? 0) + 1);
     const uv = point => projectUv(wall, rect, ...point, frame.y);
     const frontNormal = [nx, 0, nz];
     const vertexColor = i => wallColor ?? [color.getX(i), color.getY(i), color.getZ(i)];
     const base = buildingHeight.getX(triangles[0].ids[0]) - triangles[0].verts[0][1];
-    const opening = wall.openings[wall.detail?.opening];
-    const depth = wall.detail?.depth;
-    const physical = opening && wall.status === 'observed' && depth >= 0.08 && depth <= 1.5
-      && opening.x >= 0.02 && opening.x + opening.width <= frame.width - 0.02
-      && opening.y >= 0 && opening.y + opening.height <= wall.height - 0.03;
-    const clipped = physical ? triangles.map(({ points, verts }) =>
-      cutFacadeOpening(points.map((position, j) => ({ position, local: verts[j] })), opening)) : [];
-    const cut = physical && clipped.reduce((sum, p) => sum + localArea(p.inside), 0) >= opening.width * opening.height * 0.97;
+    const physical = atlas.physical.has(wall) ? wall.openings.flatMap((opening, index) => {
+      const detail = wall.detail?.opening === index ? wall.detail : null;
+      const depth = opening.depth ?? detail?.depth ?? (opening.kind === 'window' ? 0.12 : 0.16);
+      if (!(depth >= 0.055 && depth <= 1.5 && opening.width >= 0.25 && opening.height >= 0.4 &&
+          opening.x >= 0.02 && opening.x + opening.width <= frame.width - 0.02 &&
+          opening.y >= 0 && opening.y + opening.height <= wall.height - 0.03)) return [];
+      return [{ ...opening, depth, surround: opening.surround ?? detail?.surround, outline: openingOutline(opening) }];
+    }).slice(0, 32) : [];
+    const source = triangles.map(({ points, verts }) => points.map((position, j) => ({ position, local: verts[j] })));
+    const cuts = [];
+    for (const opening of physical) {
+      yield;
+      const overdraw = cuts.some(accepted => opening.x < accepted.x + accepted.width &&
+        opening.x + opening.width > accepted.x && opening.y < accepted.y + accepted.height &&
+        opening.y + opening.height > accepted.y);
+      if (overdraw) continue;
+      const area = source.reduce((sum, polygon) => sum + localArea(partitionWall(polygon, opening.outline).inside), 0);
+      const expected = localArea(opening.outline.map(local => ({ local })));
+      if (area >= expected * 0.985) cuts.push(opening);
+    }
     const offset = triangles[0].verts.reduce((sum, [, , d]) => sum + d, 0) / 3;
     for (let k = 0; k < triangles.length; k++) {
-      const { i, ids, points } = triangles[k];
-      const piece = cut && clipped[k];
-      if (piece && localArea(piece.inside) > 1e-5) {
+      if (k % 32 === 0) yield;
+      const { i, ids, points, verts } = triangles[k];
+      let pieces = [source[k]];
+      const inserts = [];
+      for (const opening of cuts) {
+        pieces = pieces.flatMap(polygon => {
+          const part = partitionWall(polygon, opening.outline);
+          if (localArea(part.inside) < 1e-7) return [polygon];
+          inserts.push([part.inside, opening.depth]);
+          return part.outside.filter(fragment => localArea(fragment) > 1e-7);
+        });
+      }
+      if (inserts.length) {
         nextIndex.set([ids[0], ids[0], ids[0]], i);
         const rgb = vertexColor(ids[0]);
-        for (const fragment of piece.outside) fan(fragment.map(p =>
-          add(p.position, frontNormal, rgb, base + p.local[1], uv(p.position))));
-        fan(piece.inside.map(p => {
-          const position = [p.position[0] - nx * depth, p.position[1], p.position[2] - nz * depth];
-          return add(position, frontNormal, rgb, base + p.local[1], uv(p.position));
-        }));
+        for (const [piece, depth] of [...pieces.map(polygon => [polygon, 0]), ...inserts]) fan(piece.map(p =>
+          add(p.position, frontNormal, rgb, base + p.local[1], uv(p.position),
+            surfaceUv(p.local), [-nx * depth, -nz * depth])));
       } else {
         for (let j = 0; j < 3; j++) {
           const id = ids[j], point = points[j];
-          if (!newId.has(id)) newId.set(id, add(point, [normal.getX(id), normal.getY(id), normal.getZ(id)],
-            vertexColor(id), buildingHeight.getX(id), uv(point)));
+          if (!newId.has(id)) {
+            const pixel = uv(point), style = surfaceUv(verts[j]);
+            if (localUses.get(id) === useCount[id]) {
+              if (wallColor) color.array.set(wallColor, id * 3);
+              originalAttributes.facadeUv.set(pixel, id * 3);
+              originalAttributes.facadeStyle.set(style, id * 3);
+              newId.set(id, id);
+            } else {
+              newId.set(id, add(point, [normal.getX(id), normal.getY(id), normal.getZ(id)],
+                vertexColor(id), buildingHeight.getX(id), pixel, style));
+            }
+          }
           nextIndex[i + j] = newId.get(id);
         }
       }
     }
-    if (cut) {
+    const masonry = vertexColor(triangles[0].ids[0]);
+    const quad = (corners, norm, rgb, layer = 2) => {
+      const ids = corners.map(([u, v, d]) => add(facadePoint(frame, u, v, offset), norm, rgb, base + v,
+        [0, 0, layer], surfaceUv([u, v]), [nx * d, nz * d]));
+      fan(ids); fan([...ids].reverse());
+    };
+    for (const opening of cuts) {
+      const { x, y, width, depth, outline } = opening;
       recesses++;
-      const { x, y, width, height } = opening;
-      const rgb = vertexColor(triangles[0].ids[0]).map(c => c * 0.74);
-      const quad = (corners, norm, color) => {
-        const ids = corners.map(([u, v, d]) => add(facadePoint(frame, u, v, offset + d), norm, color, base + v, [0, 0, 1]));
-        fan(ids); fan([...ids].reverse()); // Reveal planes face the opening from both traversal directions.
-      };
-      const jamb = (u, norm) => quad([[u,y,0],[u,y+height,0],[u,y+height,-depth],[u,y,-depth]], norm, rgb);
-      const cross = (v, ny) => quad([[x,v,0],[x+width,v,0],[x+width,v,-depth],[x,v,-depth]], [0, ny, 0], rgb);
-      jamb(x, [tx,0,tz]); jamb(x+width, [-tx,0,-tz]); cross(y, 1); cross(y+height, -1);
-      const trim = Math.min(wall.detail.surround || 0, 0.30, x, frame.width - x - width, wall.height - y - height);
+      for (let j = 0; j < outline.length; j++) {
+        const [u, v] = outline[j], [r, t] = outline[(j + 1) % outline.length];
+        const length = Math.hypot(r - u, t - v);
+        if (length < 1e-5) continue;
+        const side = [-(t - v) / length * tx, (r - u) / length, -(t - v) / length * tz];
+        quad([[u,v,0],[r,t,0],[r,t,-depth],[u,v,-depth]], side, masonry.map(c => c * 0.76));
+      }
+      const sill = Math.min(opening.sill ?? 0, y, 0.22);
+      if (sill > 0.025) {
+        const rgb = linearColor(opening.sillColor ?? wall.sillColor) ?? [0.39, 0.36, 0.32];
+        const left = Math.max(x - 0.055, 0), right = Math.min(x + width + 0.055, frame.width);
+        quad([[left,y-sill,0.075],[right,y-sill,0.075],[right,y,0.075],[left,y,0.075]], frontNormal, rgb, 3);
+        quad([[left,y,0],[right,y,0],[right,y,0.075],[left,y,0.075]], [0,1,0], rgb, 3);
+      }
+      const trim = Math.min(opening.surround ?? 0, 0.30, x, frame.width - x - width);
       if (trim > 0.015) {
-        const strip = (left, bottom, right, top) => quad([[left,bottom,0.045],[right,bottom,0.045],
-          [right,top,0.045],[left,top,0.045]], frontNormal, rgb.map(c => c * 1.14));
-        strip(x-trim,y,x,y+height); strip(x+width,y,x+width+trim,y+height);
-        strip(x-trim,y+height,x+width+trim,y+height+trim);
+        const rgb = linearColor(opening.surroundColor ?? wall.surroundColor) ?? masonry.map(c => c * 1.18);
+        // Scale the same opening contour into a projecting surround, including its arch crown.
+        const centre = x + width / 2;
+        const outer = ([u, v]) => [u + (u - centre) * (2 * trim / width),
+          v + (v - y) * Math.min(trim, wall.height - y - opening.height) / opening.height, 0.035];
+        for (let j = 1; j < outline.length; j++) {
+          const a = outline[j], b = outline[(j + 1) % outline.length];
+          quad([outer(a), outer(b), [...b, 0.035], [...a, 0.035]], frontNormal, rgb, 3);
+        }
       }
     }
-    for (const photo of wall.photos || []) panels.push({ frame, offset: offset - (cut && photo.recessed ? depth : 0), photo });
     matched.push(wall);
   }
   const BufferAttribute = position.constructor, finalCount = originalCount + added.buildingHeight.length;
   for (const [name, values] of Object.entries(added)) {
+    yield;
     const old = geometry.attributes[name];
-    const stride = old?.itemSize ?? 3;
+    const stride = old?.itemSize ?? customStride[name];
     const combined = new Float32Array(finalCount * stride);
-    if (old) combined.set(old.array);
+    combined.set(old?.array ?? originalAttributes[name]);
     combined.set(values, originalCount * stride);
     geometry.setAttribute(name, new BufferAttribute(combined, stride));
   }
@@ -248,5 +393,7 @@ export function applyBagFacades(geometry, featureIds, targets, ground, atlas, pr
   const indices = new Index(nextIndex.length + extraIndex.length);
   indices.set(nextIndex); indices.set(extraIndex, nextIndex.length);
   geometry.setIndex(new BufferAttribute(indices, 1));
-  return { matched, recesses, panels };
+  return { matched, recesses };
 }
+
+export { applyBagFacadeChunks };

@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { EDE_DATA } from './city-config.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
-import { clipEdeGround, gradeCuts, localGradeSurface } from './ede-grade.js';
+import { clipEdeGround, gradeCuts, localGradeSurface, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, terrainGradeCuts } from './ede-grade.js';
 
 // Geometry adapters only: rendering stays in the upstream WebGPU/TSL systems.
 export const EDE_RENDER_CELL = 750;
@@ -61,6 +61,22 @@ export function edeStrip(a, b, halfWidth, y, offset = 0) {
   ], [], y);
 }
 
+export function edeRailStrip(sections, halfWidth, lift, offset = 0) {
+  const positions = [], indices = [], uv = [];
+  const edges = [offset - halfWidth, offset + halfWidth].map(side => side / RAIL_BALLAST_WIDTH + 0.5);
+  for (const { a, b } of sections) {
+    const vertex = positions.length / 3;
+    for (const { left, right, distance, y } of [a, b]) {
+      for (const t of edges) {
+        positions.push(left.x + (right.x - left.x) * t, y + lift, left.z + (right.z - left.z) * t);
+        uv.push(t, distance / RAIL_SLEEPER_SPACING + 0.5);
+      }
+    }
+    indices.push(vertex, vertex + 1, vertex + 2, vertex + 1, vertex + 3, vertex + 2);
+  }
+  return surfaceGeometry(positions, indices, uv);
+}
+
 export const EDE_PEDESTRIAN_WAYS = new Set(['footway', 'pedestrian', 'path', 'steps', 'cycleway', 'bridleway']);
 let segments;
 let roadIndex;
@@ -107,15 +123,17 @@ export function nearestEdeRoad(x, z, reach = 40, wayId, layer) {
   return best;
 }
 
-function surfaceGeometry(positions, indices) {
+function surfaceGeometry(positions, indices, uv) {
   const geometry = new THREE.BufferGeometry();
-  const uv = new Float32Array(positions.length / 3 * 2);
-  for (let i = 0, j = 0; i < positions.length; i += 3) {
-    uv[j++] = positions[i];
-    uv[j++] = -positions[i + 2];
+  if (!uv) {
+    uv = new Float32Array(positions.length / 3 * 2);
+    for (let i = 0, j = 0; i < positions.length; i += 3) {
+      uv[j++] = positions[i];
+      uv[j++] = -positions[i + 2];
+    }
   }
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   if (indices) geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
@@ -135,7 +153,7 @@ export function* edeTerrainGeometries(y) {
       positions[offset + 2] = minZ + (row + j) * step;
       if (i + 1 < width && j + 1 < height) indices.push(a, a + width, a + 1, a + 1, a + width, a + width + 1);
     }
-    const cuts = gradeCuts({
+    const cuts = terrainGradeCuts({
       minX: minX + col * step, maxX: minX + (col + width - 1) * step,
       minZ: minZ + row * step, maxZ: minZ + (row + height - 1) * step
     });

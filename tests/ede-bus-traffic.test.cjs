@@ -33,8 +33,14 @@ test('ordinary traffic has an onward lane without entering the bus-only station 
   const { buildRoadNetwork } = await import('../js/road-network.js');
   const { edges } = buildRoadNetwork([], []);
   assert.ok(edges.some((edge) => edge.busOnly && edge.busExclusive));
+  assert.ok(edges.some(edge => edge.wayId === 'w6960104' && edge.ambientLanes.length === 2));
+  assert.ok(edges.some(edge => edge.wayId === 'w723962249' && edge.ambientLanes.length === 3));
   for (const edge of edges) for (const lane of edge.ambientLanes) {
-    assert.ok(edge.ambientMoves.some((move) => move.to.ambientLanes.includes(move.out[lane])));
+    if (edge.motorwayExit) {
+      assert.ok(edge.motorway && edge.moves.length === 0);
+    } else {
+      assert.ok(edge.ambientMoves.some((move) => move.to.ambientLanes.includes(move.out[lane])));
+    }
   }
 });
 

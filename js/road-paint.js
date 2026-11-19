@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { createRoadPaintMaterial } from './tsl-materials.js';
+import { fittedLanePoint } from './ede-lane-geometry.js';
 
 // Road markings follow the lane layout and stop lines supplied by the road network.
 
@@ -108,6 +109,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
   const lines = [];
   const bends = new Map();
   const surveyByWay = new Map();
+  const fittedRoads = new Map();
 
   // Flat strip w wide from a to b, with a dash pattern (period, duty cycle) running along it
   function strip(ax, az, bx, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1, edge) {
@@ -155,8 +157,27 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
     if (cursor < len) draw(cursor, len);
   }
 
-  // Edges run between stop lines; s is measured from the start one and o to the right of the centre line
-  const at = (e, s, o) => [e.sx + e.dx * s + e.rx * o, e.sz + e.dz * s + e.rz * o];
+  // Translate original paint offsets through the fitted lane band, including its opposite direction.
+  const straightAt = (e, s, o) => [e.sx + e.dx * s + e.rx * o, e.sz + e.dz * s + e.rz * o];
+  function at(e, s, o) {
+    const rows = fittedRoads.get(e);
+    if (!rows) return straightAt(e, s, o);
+    let right = rows.findIndex(row => row.offset >= o);
+    if (right < 0) right = rows.length;
+    const sample = ({ edge, lane, width, offset }) => {
+      const station = edge === e ? s : (e.sx + e.dx * s - edge.sx) * edge.dx + (e.sz + e.dz * s - edge.sz) * edge.dz;
+      const p = fittedLanePoint(edge, lane, station, {});
+      return { ...p, offset, widthRatio: edge.fittedLanes?.[lane] ? p.width / width : 1 };
+    };
+    if (right > 0 && right < rows.length) {
+      const a = sample(rows[right - 1]), b = sample(rows[right]);
+      const t = (o - a.offset) / (b.offset - a.offset);
+      return [a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t];
+    }
+    const p = sample(rows[right === 0 ? 0 : right - 1]);
+    const extra = (o - p.offset) * p.widthRatio * (rows[right === 0 ? 0 : right - 1].edge === e ? 1 : -1);
+    return [p.x - p.dz * extra, p.z + p.dx * extra];
+  }
   const along = (e, o, w, col, period = 1, duty = 1) => {
     const start = (e.sx - e.x0) * e.dx + (e.sz - e.z0) * e.dz;
     const fast = e.laneDefinition?.fast;
@@ -164,7 +185,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
     const endAt = fast || e.to.shape ? e.span - start : e.len - 0.9;
     if (endAt - startAt < 0.1) return;
     const ends = [at(e, startAt, o), at(e, endAt, o)];
-    lines.push({ e, o, w, col, period, duty, ends, joins: [] });
+    lines.push({ e, o, w, col, period, duty, ends, startAt, endAt, joins: [] });
   };
   const across = (e, s, o0, o1, w, col, period, duty) => strip(...at(e, s, o0), ...at(e, s, o1), w, col, period, duty, 0, 1, e);
   function turnArrows(e) {
@@ -208,6 +229,17 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
   }
 
   for (const [e, back] of roads.values()) {
+    if (e.fittedLanes || back?.fittedLanes) {
+      for (const [forward, opposing] of back ? [[e, back], [back, e]] : [[e]]) {
+        const rows = (edge, dir) => edge.lanes.map((offset, lane) => ({
+          edge, lane, offset: offset * dir,
+          width: edge.laneDefinition?.lanes.find(item => item.offset === offset)?.width ?? 3.4,
+        }));
+        fittedRoads.set(forward, [
+          ...rows(forward, 1), ...(opposing ? rows(opposing, -1) : []),
+        ].sort((a, b) => a.offset - b.offset));
+      }
+    }
     const firstLine = lines.length;
     const definition = e.laneDefinition;
     // Lanes of both directions, measured to the right of e, left to right
@@ -290,7 +322,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
 
   // At a simple bend, corresponding offset lines meet at a bounded miter, without an intersection-sized gap.
   for (const roadsAtBend of bends.values()) {
-    if (roadsAtBend.length !== 2) continue;
+    if (roadsAtBend.length !== 2 || roadsAtBend.some(entry => fittedRoads.has(entry.e))) continue;
     const [a, b] = roadsAtBend;
     const sign = a.end === b.end ? -1 : 1;
     if ((a.e.dx * b.e.dx + a.e.dz * b.e.dz) * sign < 0.5) continue;
@@ -352,7 +384,20 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
         next.phase = ((next.phase % next.period) + next.period) % next.period;
         stack.push(next);
       }
-      drawUnsurveyed(line);
+      if (fittedRoads.has(line.e)) {
+        const { e, o, startAt, endAt } = line;
+        const fitStart = e.laneDefinition?.fast || e.from.shape ? startAt : 0.9;
+        const fitEnd = e.laneDefinition?.fast || e.to.shape ? endAt : e.len - 0.9;
+        const pieces = Math.max(1, Math.ceil((fitEnd - fitStart) / 4));
+        let a = at(e, fitStart, o), phase = line.phase;
+        for (let i = 1; i <= pieces; i++) {
+          const b = at(e, fitStart + (fitEnd - fitStart) * i / pieces, o);
+          const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          drawUnsurveyed({ ...line, ends: [a, b], len, phase });
+          a = b;
+          phase += len * line.flow;
+        }
+      } else drawUnsurveyed(line);
     }
   }
 

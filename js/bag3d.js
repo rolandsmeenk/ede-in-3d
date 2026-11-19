@@ -6,10 +6,10 @@ import { BLOCKS } from './city-config.js';
 import { polygonContains } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
 import { buildingPassageCuts } from './ede-grade.js';
+import { landmarkBagExclusions, landmarkBuildingCuts } from './ede-landmark-sites.js';
 import { getAerialColors, sampleGroundColor, sampleRoofColor } from './aerial-colors.js';
-import { applyBagFacades, loadEdeFacades, meshBagFacadeFeatures, readBagFacadeFeatures } from './ede-facades.js';
-import { buildFacadeMaskAtlas, buildFacadeMaskAtlasIncrementally, createBagFacadeMaterial, projectFacadeUv } from './ede-facade-material.js';
-import { buildFacadePhotos } from './ede-facade-photos.js';
+import { applyBagFacadeChunks, loadEdeFacades, meshBagFacadeFeatures, readBagFacadeFeatures } from './ede-facades.js';
+import { buildFacadeMaskAtlasIncrementally, createBagFacadeMaterial, createFacadeSurfaceTexture, projectFacadeUv } from './ede-facade-material.js';
 import { EDE_BUILDING_BASES } from './ede-building-bases.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
@@ -141,11 +141,16 @@ function outsidePassage(polygon, planes) {
   return fragments;
 }
 
-export function carveBagBuildingPassages(geometry) {
+export function carveBagBuildingPassages(geometry, options) {
+  finishBagWork(carveBagPassageChunks(geometry, options));
+}
+
+function* carveBagPassageChunks(geometry, { removeLandmarks = true, customCuts } = {}) {
   const { position } = geometry.attributes;
   const { index, boundingBox: { min, max } } = geometry;
   const pad = 0.45;
-  const cuts = [...buildingPassageCuts({ minX: min.x - pad, maxX: max.x + pad, minZ: min.z - pad, maxZ: max.z + pad })]
+  const bounds = { minX: min.x - pad, maxX: max.x + pad, minZ: min.z - pad, maxZ: max.z + pad };
+  const cuts = customCuts ? [...customCuts] : [...buildingPassageCuts(bounds)]
     .map(cut => ({
       ...cut, planes: [
         ...cut.planes.map(([nx, nz, c]) => [nx, 0, nz, c - pad * Math.hypot(nx, nz)]),
@@ -153,11 +158,13 @@ export function carveBagBuildingPassages(geometry) {
         ...(cut.openingBaseAt ? [[-cut.ux * cut.slope, 1, -cut.uz * cut.slope, cut.openingBaseAt(0, 0)]] : [])
       ]
     }));
+  if (removeLandmarks) cuts.push(...landmarkBuildingCuts(bounds));
   if (!cuts.length) return;
   const attributes = Object.entries(geometry.attributes).map(([name, attribute]) => ({ name, attribute, extra: [] }));
   let nextVertex = position.count, edited = false;
   const indexOut = [];
   for (let i = 0; i < (index?.count ?? position.count); i += 3) {
+    if (i % 768 === 0) yield;
     const vertices = index ? [index.getX(i), index.getX(i + 1), index.getX(i + 2)] : [i, i + 1, i + 2];
     const [ax, bx, cx] = vertices.map(j => position.getX(j)), [az, bz, cz] = vertices.map(j => position.getZ(j));
     const minX = Math.min(ax, bx, cx), maxX = Math.max(ax, bx, cx);
@@ -265,7 +272,7 @@ function linearColor(hex) {
   return new THREE.Color(hex).toArray();
 }
 
-function colorBagRoofs(geometry, featureIds, useAerial, facadeFeatures) {
+function* colorBagRoofs(geometry, featureIds) {
   const { position, buildingHeight } = geometry.attributes;
   const positions = position.array, heights = buildingHeight.array;
   const index = geometry.index;
@@ -273,6 +280,7 @@ function colorBagRoofs(geometry, featureIds, useAerial, facadeFeatures) {
   const uses = index && new Uint8Array(position.count);
   const roofs = new Map();
   for (let i = 0; i + 2 < count; i += 3) {
+    if (i % 1536 === 0) yield;
     const ia = index ? index.getX(i) : i, ib = index ? index.getX(i + 1) : i + 1, ic = index ? index.getX(i + 2) : i + 2;
     const a = ia * 3, b = ib * 3, c = ic * 3;
     const ux = positions[b] - positions[a], uy = heights[ib] - heights[ia], uz = positions[b + 2] - positions[a + 2];
@@ -293,13 +301,9 @@ function colorBagRoofs(geometry, featureIds, useAerial, facadeFeatures) {
   const colors = geometry.attributes.color.array;
   const splits = new Map();
   let roofIndices;
-  for (const [id, triangles] of roofs) {
-    const appearances = facadeFeatures?.get(id);
-    const observed = appearances?.reduce((best, wall) => (
-      wall.status === 'observed' && wall.roofColor && (!best || wall.confidence > best.confidence) ? wall : best
-    ), null);
-    const fallback = observed?.roofColor ?? appearances?.find(wall => wall.roofColor)?.roofColor;
-    const tint = (useAerial && estimateRoofColor(triangles, positions)) || linearColor(fallback);
+  for (const triangles of roofs.values()) {
+    yield;
+    const tint = estimateRoofColor(triangles, positions);
     if (!tint) continue;
     for (const { i, a, b, c } of triangles) {
       const vertices = [a / 3, b / 3, c / 3];
@@ -319,6 +323,7 @@ function colorBagRoofs(geometry, featureIds, useAerial, facadeFeatures) {
   if (roofIndices) {
     const vertexCount = position.count + splits.size;
     for (const [name, { array, itemSize, normalized }] of Object.entries(geometry.attributes)) {
+      yield;
       const expanded = new array.constructor(vertexCount * itemSize);
       expanded.set(array);
       for (const [source, { vertex, tint }] of splits) {
@@ -332,17 +337,17 @@ function colorBagRoofs(geometry, featureIds, useAerial, facadeFeatures) {
   return geometry;
 }
 
-function correctedBagBases(gltf, matrix, tables) {
+function* correctedBagBases(gltf, matrix, tables, meshes) {
   const byMesh = new Map(), rawById = new Map();
   const point = new THREE.Vector3();
-  gltf.scene.traverse(o => {
-    if (!o.isMesh) return;
+  for (const o of meshes) {
     const matches = meshBagFacadeFeatures(gltf, o, tables);
     const { position, _feature_id_0: featureIds } = o.geometry.attributes;
-    if (!matches?.size || !featureIds) return;
+    if (!matches?.size || !featureIds) continue;
     const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
     const found = new Map();
     for (let i = 0; i < position.count; i++) {
+      if ((i & 1023) === 0) yield;
       const seed = Math.round(featureIds.getX(i));
       const record = matches.get(seed);
       if (!record) continue;
@@ -351,7 +356,7 @@ function correctedBagBases(gltf, matrix, tables) {
       rawById.set(record.bagId, Math.min(rawById.get(record.bagId) ?? Infinity, Math.fround(point.y)));
     }
     if (found.size) byMesh.set(o, found);
-  });
+  }
   for (const table of tables) for (const { bagId } of table.values()) {
     if (!rawById.has(bagId)) throw new Error(`Building elevation feature ${bagId} has no BAG geometry`);
   }
@@ -359,86 +364,124 @@ function correctedBagBases(gltf, matrix, tables) {
 }
 
 // Bakes a loaded tile into one engine-space mesh geometry with per-building colour variation.
-export function bakeTile(gltf, matrix, tables, atlas, baseTables) {
+export function bakeTile(...args) {
+  return finishBagWork(bakeTileChunks(...args));
+}
+
+function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions) {
   const geometries = [];
   const useAerial = getAerialColors();
   if (useAerial) mappedRoofs ??= mappedRoofIndex();
   gltf.scene.updateMatrixWorld(true);
-  // A BAG building can have multiple primitives. Give them a common source bottom before applying the surveyed base.
-  const bases = baseTables && correctedBagBases(gltf, matrix, baseTables);
-  gltf.scene.traverse((o) => {
-    if (!o.isMesh) return;
-    const facadeFeatures = tables && meshBagFacadeFeatures(gltf, o, tables);
-    const meshBases = bases?.byMesh.get(o);
-    const src = o.geometry;
-    const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(full);
-    const pos = src.attributes.position, nor = src.attributes.normal, fid = src.attributes._feature_id_0;
-    const count = pos.count;
-    const positions = new Float32Array(count * 3), normals = new Float32Array(count * 3), colors = new Float32Array(count * 3);
-    const v = new THREE.Vector3(), c = new THREE.Color();
-    const baseByBuilding = new Map();
-    for (let i = 0; i < count; i++) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(full);
-      positions[i * 3] = v.x; positions[i * 3 + 1] = v.y; positions[i * 3 + 2] = v.z;
-      v.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
-      normals[i * 3] = v.x; normals[i * 3 + 1] = v.y; normals[i * 3 + 2] = v.z;
-      const seed = fid ? Math.round(fid.getX(i)) : 0;
-      baseByBuilding.set(seed, Math.min(baseByBuilding.get(seed) ?? Infinity, positions[i * 3 + 1]));
-      const r = hash(seed + 1), s = hash(seed * 7 + 3);
-      if (v.y > 0.35) c.setHSL(0.03 + s * 0.04, 0.12 + r * 0.12, 0.17 + r * 0.1); // roofs: dark tile / slate
-      else if (r < 0.62) c.setHSL(0.045 + s * 0.03, 0.34 + r * 0.2, 0.30 + s * 0.12); // brick
-      else if (r < 0.85) c.setHSL(0.11 + s * 0.04, 0.12 + s * 0.12, 0.52 + r * 0.14); // plaster / stone
-      else c.setHSL(0.08 + s * 0.05, 0.08, 0.40 + s * 0.15);
-      colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
-    }
-    if (meshBases) for (const [seed, { bagId }] of meshBases) baseByBuilding.set(seed, bases.rawById.get(bagId));
-    // Use the low side of each footprint to seat the whole building without bending its roof.
-    const relativeHeights = new Float32Array(count);
-    const groundByBuilding = new Map();
-    for (let i = 0; i < count; i++) {
-      const seed = fid ? Math.round(fid.getX(i)) : 0, j = i * 3;
-      const relativeHeight = positions[j + 1] - baseByBuilding.get(seed);
-      relativeHeights[i] = relativeHeight;
-      // The ECEF-to-local transform tilts a level building base slightly at the map edges.
-      if (relativeHeight <= 0.25) {
-        const ground = terrainHeightAt(positions[j], positions[j + 2]) - relativeHeight;
-        groundByBuilding.set(seed, Math.min(groundByBuilding.get(seed) ?? Infinity, ground));
+  const meshes = [];
+  gltf.scene.traverse(object => { if (object.isMesh) meshes.push(object); });
+  // Give all primitives of a BAG building a common source bottom before shifting its base.
+  const bases = baseTables && (yield* correctedBagBases(gltf, matrix, baseTables, meshes));
+  let completed = false;
+  try {
+    for (const o of meshes) {
+      const facadeFeatures = tables && meshBagFacadeFeatures(gltf, o, tables);
+      const meshBases = bases?.byMesh.get(o);
+      const src = o.geometry;
+      const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(full);
+      const pos = src.attributes.position, nor = src.attributes.normal, fid = src.attributes._feature_id_0;
+      const count = pos.count;
+      const excluded = exclusions && meshBagFacadeFeatures(gltf, o, exclusions);
+      let kept;
+      if (excluded?.size && fid) {
+        const srcCount = src.index?.count ?? count;
+        kept = [];
+        for (let i = 0; i < srcCount; i += 3) {
+          if (i % 768 === 0) yield;
+          const a = src.index?.getX(i) ?? i;
+          const b = src.index?.getX(i + 1) ?? i + 1;
+          const c = src.index?.getX(i + 2) ?? i + 2;
+          if (excluded.has(Math.round(fid.getX(a))) && excluded.has(Math.round(fid.getX(b))) && excluded.has(Math.round(fid.getX(c)))) continue;
+          kept.push(a, b, c);
+        }
+        if (!kept.length) continue;
       }
+      const positions = new Float32Array(count * 3), normals = new Float32Array(count * 3), colors = new Float32Array(count * 3);
+      const v = new THREE.Vector3(), c = new THREE.Color();
+      const baseByBuilding = new Map();
+      for (let i = 0; i < count; i++) {
+        if ((i & 1023) === 0) yield;
+        v.fromBufferAttribute(pos, i).applyMatrix4(full);
+        positions[i * 3] = v.x; positions[i * 3 + 1] = v.y; positions[i * 3 + 2] = v.z;
+        v.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+        normals[i * 3] = v.x; normals[i * 3 + 1] = v.y; normals[i * 3 + 2] = v.z;
+        const seed = fid ? Math.round(fid.getX(i)) : 0;
+        baseByBuilding.set(seed, Math.min(baseByBuilding.get(seed) ?? Infinity, positions[i * 3 + 1]));
+        const r = hash(seed + 1), s = hash(seed * 7 + 3);
+        if (v.y > 0.35) c.setHSL(0.03 + s * 0.04, 0.12 + r * 0.12, 0.17 + r * 0.1); // roofs: dark tile / slate
+        else if (r < 0.62) c.setHSL(0.045 + s * 0.03, 0.34 + r * 0.2, 0.30 + s * 0.12); // brick
+        else if (r < 0.85) c.setHSL(0.11 + s * 0.04, 0.12 + s * 0.12, 0.52 + r * 0.14); // plaster / stone
+        else c.setHSL(0.08 + s * 0.05, 0.08, 0.40 + s * 0.15);
+        colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+      }
+      if (meshBases) for (const [seed, { bagId }] of meshBases) baseByBuilding.set(seed, bases.rawById.get(bagId));
+      // Use the low side of each footprint to seat the whole building without bending its roof.
+      const relativeHeights = new Float32Array(count);
+      const groundByBuilding = new Map();
+      for (let i = 0; i < count; i++) {
+        if ((i & 1023) === 0) yield;
+        const seed = fid ? Math.round(fid.getX(i)) : 0, j = i * 3;
+        const relativeHeight = positions[j + 1] - baseByBuilding.get(seed);
+        relativeHeights[i] = relativeHeight;
+        // The ECEF-to-local transform tilts a level building base slightly at the map edges.
+        if (relativeHeight <= 0.25) {
+          const ground = terrainHeightAt(positions[j], positions[j + 2]) - relativeHeight;
+          groundByBuilding.set(seed, Math.min(groundByBuilding.get(seed) ?? Infinity, ground));
+        }
+      }
+      if (meshBases) for (const [seed, { y }] of meshBases) groundByBuilding.set(seed, y);
+      for (let i = 0; i < count; i++) {
+        if ((i & 1023) === 0) yield;
+        const seed = fid ? Math.round(fid.getX(i)) : 0;
+        positions[i * 3 + 1] = relativeHeights[i] + groundByBuilding.get(seed);
+      }
+      let g = new THREE.BufferGeometry();
+      geometries.push(g);
+      g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      g.setAttribute('buildingHeight', new THREE.BufferAttribute(relativeHeights, 1));
+      const indices = kept ?? src.index?.array;
+      if (indices) {
+        const IndexArray = count > 65535 ? Uint32Array : Uint16Array;
+        g.setIndex(new THREE.BufferAttribute(IndexArray.from(indices), 1));
+      }
+      if (fid && useAerial) yield* colorBagRoofs(g, fid);
+      if (fid && facadeFeatures?.size) {
+        const applied = yield* applyBagFacadeChunks(g, fid, facadeFeatures, groundByBuilding, atlas, projectFacadeUv, linearColor);
+        if (applied) g.userData.facades = applied;
+      }
+      g.computeBoundingBox();
+      yield* carveBagPassageChunks(g);
+      g.computeBoundingSphere();
     }
-    if (meshBases) for (const [seed, { y }] of meshBases) groundByBuilding.set(seed, y);
-    for (let i = 0; i < count; i++) {
-      const seed = fid ? Math.round(fid.getX(i)) : 0;
-      positions[i * 3 + 1] = relativeHeights[i] + groundByBuilding.get(seed);
-    }
-    let g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    g.setAttribute('buildingHeight', new THREE.BufferAttribute(relativeHeights, 1));
-    if (src.index) g.setIndex(src.index.array instanceof Uint32Array || count > 65535 ? new THREE.BufferAttribute(Uint32Array.from(src.index.array), 1) : new THREE.BufferAttribute(Uint16Array.from(src.index.array), 1));
-    if (fid && (useAerial || facadeFeatures?.size)) g = colorBagRoofs(g, fid, useAerial, facadeFeatures);
-    if (fid && facadeFeatures?.size) {
-      const applied = applyBagFacades(g, fid, facadeFeatures, groundByBuilding, atlas, projectFacadeUv, linearColor);
-      if (applied) g.userData.facades = applied;
-    }
-    g.computeBoundingBox();
-    carveBagBuildingPassages(g);
-    g.computeBoundingSphere();
-    geometries.push(g);
-  });
-  return geometries;
+    completed = true;
+    return geometries;
+  } finally {
+    if (!completed) for (const geometry of geometries) geometry.dispose();
+  }
 }
 
 // A BAG tile's oriented bounds can enclose holes, adjacent tiles and missing buildings.
 // Suppress a fallback only when its interior samples are actually covered by BAG surfaces.
 export function coveredFallbackBuildings(geometries, fallback) {
+  return finishBagWork(coveredFallbackChunks(geometries, fallback));
+}
+
+function* coveredFallbackChunks(geometries, fallback) {
   if (!geometries.length || !fallback) return [];
   const cell = 24, bins = new Map();
   const bounds = new THREE.Box3();
   for (const { attributes: { position }, index, boundingBox } of geometries) {
     bounds.union(boundingBox);
     for (let i = 0; i < (index?.count ?? position.count); i += 3) {
+      if (i % 768 === 0) yield;
       const a = index ? index.getX(i) : i, b = index ? index.getX(i + 1) : i + 1, c = index ? index.getX(i + 2) : i + 2;
       const x = position.getX(a), z = position.getZ(a), bx = position.getX(b), bz = position.getZ(b);
       const cx = position.getX(c), cz = position.getZ(c);
@@ -464,6 +507,7 @@ export function coveredFallbackBuildings(geometries, fallback) {
   const radius = Math.hypot(bounds.max.x - center.x, bounds.max.z - center.z);
   const matches = [];
   for (const b of fallback.quadtree.queryRange(center.x, center.z, radius)) {
+    yield;
     if (b.minX < bounds.min.x - 2 || b.maxX > bounds.max.x + 2 || b.minZ < bounds.min.z - 2 || b.maxZ > bounds.max.z + 2) continue;
     const [footprint] = b.footprints;
     const polygon = { outer: footprint.pts, holes: footprint.holes };
@@ -480,26 +524,100 @@ export function coveredFallbackBuildings(geometries, fallback) {
   return matches;
 }
 
-async function bagGeometry(gltf, matrix, facades, atlas, url) {
-  const features = atlas && await readBagFacadeFeatures(gltf, facades.byId).catch(error => {
-    console.warn('[facades] BAG feature IDs unavailable:', error.message);
-    return null;
-  });
-  const corrections = BASES_BY_TILE.get(url);
-  const bases = corrections && await readBagFacadeFeatures(gltf, corrections);
-  if (corrections && new Set(bases.flatMap(table => [...table.values()])).size !== corrections.size) {
-    throw new Error('Surveyed BAG building identifiers are missing. Keep the corrected OSM fallback.');
-  }
-  return bakeTile(gltf, matrix, features, atlas, bases);
+function finishBagWork(work) {
+  let step;
+  do step = work.next(); while (!step.done);
+  return step.value;
 }
 
-function addBagGeometry(group, geometries, material, detailedMaterial, matched, panels) {
+async function finishBagWorkIncrementally(work, stillWanted, pacing) {
+  const sliceTime = 2.5;
+  let start = performance.now(), budget = sliceTime, completed = false;
+  try {
+    for (let step; stillWanted(); ) {
+      step = work.next();
+      if (step.done) {
+        completed = true;
+        pacing.longestMs = Math.max(pacing.longestMs, performance.now() - start);
+        return step.value;
+      }
+      const spent = performance.now() - start;
+      if (spent < budget) continue;
+      pacing.longestMs = Math.max(pacing.longestMs, spent);
+      pacing.yields++;
+      budget = await new Promise(resolve => {
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(deadline => resolve(deadline.didTimeout ? 1.25
+            : Math.min(sliceTime, Math.max(0.35, deadline.timeRemaining() - 0.5))), { timeout: 32 });
+        } else setTimeout(() => resolve(sliceTime), 0);
+      });
+      start = performance.now();
+    }
+    return null;
+  } finally {
+    if (!completed) work.return();
+  }
+}
+
+function disposeFacadeAtlas(atlas) {
+  atlas?.texture.dispose();
+  atlas?.palette.dispose();
+}
+
+async function bagGeometry(gltf, matrix, facades, tile, stillWanted = () => true, pacing) {
+  let features, atlas;
+  const excluded = landmarkBagExclusions(tile.bounds);
+  let byId = facades && await facades.forBounds(tile.bounds);
+  if (excluded.size && byId?.size) {
+    byId = new Map(byId);
+    for (const id of excluded.keys()) byId.delete(id);
+  }
+  if (byId?.size && stillWanted()) {
+    features = await readBagFacadeFeatures(gltf, byId).catch(error => {
+      console.warn('[facades] BAG feature IDs unavailable:', error.message);
+      return null;
+    });
+    const walls = new Set();
+    for (const table of features ?? []) for (const list of table.values()) {
+      for (const wall of list) walls.add(wall);
+    }
+    if (walls.size && stillWanted()) atlas = await buildFacadeMaskAtlasIncrementally([...walls], stillWanted);
+  }
+  if (!stillWanted()) {
+    disposeFacadeAtlas(atlas);
+    return null;
+  }
+  try {
+    const corrections = BASES_BY_TILE.get(tile.url);
+    const bases = corrections && await readBagFacadeFeatures(gltf, corrections);
+    if (corrections && new Set(bases.flatMap(table => [...table.values()])).size !== corrections.size) {
+      throw new Error('Surveyed BAG building identifiers are missing. Keep the corrected OSM fallback.');
+    }
+    const exclusions = excluded.size ? await readBagFacadeFeatures(gltf, excluded) : null;
+    const work = bakeTileChunks(gltf, matrix, atlas ? features : null, atlas, bases, exclusions);
+    const geometries = pacing ? await finishBagWorkIncrementally(work, stillWanted, pacing) : finishBagWork(work);
+    if (!geometries) {
+      disposeFacadeAtlas(atlas);
+      return null;
+    }
+    if (atlas && !geometries.some(geometry => geometry.userData.facades)) {
+      disposeFacadeAtlas(atlas);
+      atlas = null;
+    }
+    return { geometries, atlas };
+  } catch (error) {
+    disposeFacadeAtlas(atlas);
+    throw error;
+  }
+}
+
+function addBagGeometry(group, geometries, material, detailedMaterial) {
+  const matched = new Set();
   let recesses = 0;
   for (const geometry of geometries) {
     const detail = geometry.userData.facades;
     if (detail) {
       for (const wall of detail.matched) matched.add(wall);
-      panels.push(...detail.panels);
       recesses += detail.recesses;
       delete geometry.userData.facades;
     }
@@ -507,44 +625,46 @@ function addBagGeometry(group, geometries, material, detailedMaterial, matched, 
     mesh.castShadow = mesh.receiveShadow = true;
     group.add(mesh);
   }
-  return recesses;
+  return { walls: matched.size, observed: [...matched].filter(wall => wall.status === 'observed').length, recesses };
 }
 
 export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fetchJson, loader } = {}) {
   const ecefMatrix = ecefToLocalMatrix();
   const matrix = gltfToLocalMatrix(ecefMatrix);
-  const [urls, facades] = await Promise.all([
-    selectTiles(ecefMatrix, { fetchJson }),
+  const [tiles, facades] = await Promise.all([
+    selectTileRecords(ecefMatrix, { fetchJson }),
     loadEdeFacades().catch(error => {
       console.warn('[facades] using procedural walls:', error.message);
       return null;
     }),
   ]);
-  if (!urls.length) throw new Error('no 3D BAG tiles overlap the city');
+  if (!tiles.length) throw new Error('no 3D BAG tiles overlap the city');
   const gltfLoader = loader || new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const group = new THREE.Group();
   group.name = 'bag3d-buildings';
   const material = createBagFacadeMaterial();
-  const atlas = facades && buildFacadeMaskAtlas(facades.walls);
-  const detailedMaterial = atlas && createBagFacadeMaterial(atlas.texture);
-  const matched = new Set(), panels = [];
-  let recesses = 0;
-  let next = 0, done = 0;
+  const stats = { walls: 0, observed: 0, recesses: 0, maskTextureBytes: 0, surfaceTextureBytes: 0 };
+  let surface, next = 0, done = 0;
   const worker = async () => {
-    while (next < urls.length) {
-      const url = urls[next++];
-      const gltf = await gltfLoader.loadAsync(url);
-      const geometries = await bagGeometry(gltf, matrix, facades, atlas, url);
-      recesses += addBagGeometry(group, geometries, material, detailedMaterial, matched, panels);
-      onProgress?.(++done, urls.length);
+    while (next < tiles.length) {
+      const tile = tiles[next++];
+      const gltf = await gltfLoader.loadAsync(tile.url);
+      const { geometries, atlas } = await bagGeometry(gltf, matrix, facades, tile);
+      let detailedMaterial;
+      if (atlas) {
+        surface ??= createFacadeSurfaceTexture();
+        detailedMaterial = createBagFacadeMaterial(atlas, surface.texture);
+        stats.maskTextureBytes += atlas.byteLength;
+        stats.surfaceTextureBytes = surface.byteLength;
+      }
+      const measured = addBagGeometry(group, geometries, material, detailedMaterial);
+      for (const key of Object.keys(measured)) stats[key] += measured[key];
+      onProgress?.(++done, tiles.length);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(concurrency, urls.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(concurrency, tiles.length) }, worker));
   scene.add(group);
-  group.userData = { city: 'Ede', source: '3D BAG LoD 2.2', tiles: urls.length,
-    facades: { walls: matched.size, observed: [...matched].filter(wall => wall.status === 'observed').length,
-      recesses, maskTextureBytes: atlas?.byteLength ?? 0 },
-    facadePhotos: buildFacadePhotos(group, panels) };
+  group.userData = { city: 'Ede', source: '3D BAG LoD 2.2', tiles: tiles.length, facades: stats };
   return group;
 }
 
@@ -554,6 +674,7 @@ const STREAM_ACTIVE = 12;
 const STREAM_RESIDENT = 18;
 const STREAM_FETCHES = 2;
 const STREAM_BYTES = 48 * 1024 * 1024;
+const STREAM_MASK_BYTES = 8 * 1024 * 1024;
 const tileDistance = ({ min, max }, { x, z }) => Math.hypot(
   Math.max(min.x - x, 0, x - max.x), Math.max(min.z - z, 0, z - max.z)
 );
@@ -572,23 +693,25 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
   scene.add(group);
   const stats = { catalogue: 0, requested: 0, completed: 0, evicted: 0, failed: 0, resident: 0, inFlight: 0,
     geometryBytes: 0, peakGeometryBytes: 0, sourceBytes: 0, coveredBuildings: 0, lastBuildMs: 0,
-    maskTextureBytes: 0, get photoTextureBytes() {
-      let bytes = 0;
-      for (const { photos } of resident.values()) bytes += photos?.stats.textureBytes ?? 0;
-      return bytes;
-    } };
+    maskTextureBytes: 0, surfaceTextureBytes: 0, facadeWalls: 0, observedWalls: 0, recesses: 0,
+    lastBuildSliceMs: 0, lastBuildYields: 0 };
   const gltfLoader = loader || new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4();
   const current = new THREE.Vector3(), lastPosition = new THREE.Vector3(Infinity, Infinity, Infinity);
   const direction = new THREE.Vector3(), lastDirection = new THREE.Vector3();
   const material = createBagFacadeMaterial();
   const resident = new Map(), fetching = new Map(), buffered = new Map();
-  let tiles, facades, atlas, detailedMaterial, desired = new Map(), enabled = true, disposed = false, building = false;
+  let tiles, facades, surface, desired = new Map(), enabled = true, disposed = false, building = false;
   let catalogueRequested = false, generation = 0;
 
   function removeTile(tile) {
     const record = resident.get(tile);
-    record.photos?.dispose();
+    disposeFacadeAtlas(record.atlas);
+    record.detailedMaterial?.dispose();
+    stats.maskTextureBytes -= record.atlas?.byteLength ?? 0;
+    stats.facadeWalls -= record.measured.walls;
+    stats.observedWalls -= record.measured.observed;
+    stats.recesses -= record.measured.recesses;
     record.group.traverse(mesh => mesh.geometry?.dispose());
     record.group.removeFromParent();
     fallback?.replaceBuildings(record.covered, false);
@@ -611,8 +734,10 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
       stats.failed++;
       console.warn('[bag3d] using OSM buildings:', error);
     });
-    loadEdeFacades().then(value => { if (!disposed) facades = value; })
-      .catch(error => console.warn('[facades] using procedural walls:', error.message));
+    facades = loadEdeFacades().catch(error => {
+      console.warn('[facades] using procedural walls:', error.message);
+      return null;
+    });
   }
 
   function nextView(camera) {
@@ -658,8 +783,9 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     }
   }
 
-  function makeRoom(tile, bytes) {
-    while (resident.size >= STREAM_RESIDENT || stats.geometryBytes + bytes > STREAM_BYTES) {
+  function makeRoom(tile, bytes, maskBytes) {
+    while (resident.size >= STREAM_RESIDENT || stats.geometryBytes + bytes > STREAM_BYTES
+           || stats.maskTextureBytes + maskBytes > STREAM_MASK_BYTES) {
       const candidates = [...resident.keys()].filter(other => !desired.has(other) || desired.get(other) > desired.get(tile));
       candidates.sort((a, b) => tileDistance(b.bounds, current) - tileDistance(a.bounds, current));
       if (!candidates.length) return false;
@@ -677,47 +803,55 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     const start = performance.now();
     const requestedGeneration = generation;
     const stillWanted = () => enabled && requestedGeneration === generation && desired.has(tile);
+    const pacing = { longestMs: 0, yields: 0 };
+    let atlas, geometries, detailedMaterial, added = false;
     try {
       const gltf = await gltfLoader.parseAsync(buffer, new URL('.', tile.url).href);
       if (!stillWanted()) return;
-      const hasDetail = facades?.walls.some(({ a }) => a[0] >= tile.bounds.min.x - 2 && a[0] <= tile.bounds.max.x + 2
-        && a[1] >= tile.bounds.min.z - 2 && a[1] <= tile.bounds.max.z + 2);
-      if (hasDetail && !atlas) {
-        const bakedAtlas = await buildFacadeMaskAtlasIncrementally(facades.walls, stillWanted);
-        if (!stillWanted()) { bakedAtlas?.texture.dispose(); return; }
-        atlas = bakedAtlas;
-        if (atlas) {
-          detailedMaterial = createBagFacadeMaterial(atlas.texture);
-          stats.maskTextureBytes = atlas.byteLength;
-        }
-      }
-      const geometries = await bagGeometry(gltf, matrix, facades, hasDetail ? atlas : null, tile.url);
-      // Let rendering run between geometry construction and the fallback coverage scan.
-      await new Promise(resolve => setTimeout(resolve, 0));
+      const appearance = await bagGeometry(gltf, matrix, await facades, tile, stillWanted, pacing);
+      if (!appearance) return;
+      ({ geometries, atlas } = appearance);
+      const covered = await finishBagWorkIncrementally(coveredFallbackChunks(geometries, fallback), stillWanted, pacing);
+      if (!covered) return;
       const bytes = geometries.reduce((sum, geometry) => sum + (geometry.index?.array.byteLength ?? 0)
         + Object.values(geometry.attributes).reduce((size, attr) => size + attr.array.byteLength, 0), 0);
-      if (!stillWanted() || !makeRoom(tile, bytes)) {
-        geometries.forEach(geometry => geometry.dispose());
+      const maskBytes = atlas?.byteLength ?? 0;
+      if (!stillWanted() || !makeRoom(tile, bytes, maskBytes)) {
         tile.retryAt = performance.now() + 5000;
         return;
       }
-      const tileGroup = new THREE.Group(), panels = [], matched = new Set();
-      const covered = coveredFallbackBuildings(geometries, fallback);
-      addBagGeometry(tileGroup, geometries, material, detailedMaterial, matched, panels);
-      const photos = buildFacadePhotos(tileGroup, panels);
+      if (atlas) {
+        surface ??= createFacadeSurfaceTexture();
+        detailedMaterial = createBagFacadeMaterial(atlas, surface.texture);
+        stats.surfaceTextureBytes = surface.byteLength;
+      }
+      const tileGroup = new THREE.Group();
+      const measured = addBagGeometry(tileGroup, geometries, material, detailedMaterial);
       tileGroup.updateMatrixWorld(true);
       group.add(tileGroup);
       fallback?.replaceBuildings(covered, true);
-      resident.set(tile, { group: tileGroup, photos, covered, bytes });
+      resident.set(tile, { group: tileGroup, atlas, detailedMaterial, measured, covered, bytes });
+      added = true;
       stats.resident = resident.size;
       stats.completed++;
       stats.coveredBuildings += covered.length;
+      stats.facadeWalls += measured.walls;
+      stats.observedWalls += measured.observed;
+      stats.recesses += measured.recesses;
+      stats.maskTextureBytes += maskBytes;
       stats.geometryBytes += bytes;
       stats.peakGeometryBytes = Math.max(stats.peakGeometryBytes, stats.geometryBytes);
       stats.lastBuildMs = performance.now() - start;
+      stats.lastBuildSliceMs = pacing.longestMs;
+      stats.lastBuildYields = pacing.yields;
     } catch (error) {
       failure(tile, error);
     } finally {
+      if (!added) {
+        geometries?.forEach(geometry => geometry.dispose());
+        disposeFacadeAtlas(atlas);
+        detailedMaterial?.dispose();
+      }
       tile.building = building = false;
     }
   }
@@ -731,7 +865,6 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     nextView(camera);
     fetchNearby();
     if (!building && buffered.size) void buildNearest();
-    for (const { photos } of resident.values()) photos?.update(current);
   }
 
   function setEnabled(value) {
@@ -743,10 +876,9 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     desired.clear();
     buffered.clear();
     for (const tile of resident.keys()) removeTile(tile);
-    atlas?.texture.dispose();
-    detailedMaterial?.dispose();
-    atlas = detailedMaterial = null;
-    stats.maskTextureBytes = 0;
+    surface?.texture.dispose();
+    surface = null;
+    stats.surfaceTextureBytes = 0;
   }
 
   function dispose() {

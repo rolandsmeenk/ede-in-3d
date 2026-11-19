@@ -14,10 +14,10 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 from zoneinfo import ZoneInfo
 
-from pyproj import Transformer
 from shapely import STRtree, make_valid, union_all
 from shapely.geometry import LineString, Point, Polygon
 
+from ede_gis import Frame, source_crs, to_rd
 from ede_map import load_scene
 from ede_motorway_infrastructure import (
     Motorway, ROOT, assignments, import_line, line_parts, points, project, read_json, snap, write_json,
@@ -86,9 +86,8 @@ def valid_z(point):
 
 
 def fetch(directory, geographic_bounds):
-    to_rd = Transformer.from_crs(4326, 28992, always_xy=True)
     south, west, north, east = geographic_bounds
-    xs, ys = zip(*(to_rd.transform(lon, lat) for lon in (west, east) for lat in (south, north)))
+    xs, ys = zip(*(to_rd(lon, lat, 'OGC:CRS84') for lon in (west, east) for lat in (south, north)))
     bounds = (math.floor(min(xs)) - 5, math.floor(min(ys)) - 5, math.ceil(max(xs)) + 5, math.ceil(max(ys)) + 5)
     query = urlencode({'f': 'json', 'where': '1=1', 'geometry': ','.join(map(str, bounds)),
                        'geometryType': 'esriGeometryEnvelope', 'inSR': 28992, 'outSR': 28992,
@@ -107,7 +106,7 @@ def fetch(directory, geographic_bounds):
 
 def validate(layer, data):
     if ('error' in data or data.get('exceededTransferLimit') or 'features' not in data or
-            not data.get('hasZ') or data.get('spatialReference', {}).get('wkid') != 28992):
+            not data.get('hasZ') or source_crs(data).to_epsg() != 28992):
         raise ValueError(f'Layer {layer} must be a complete RD New ArcGIS feature set with Z: {data.get("error")}')
 
 
@@ -579,10 +578,7 @@ def main():
     scene = load_scene()
     # These two N781 carriageways feed Ede exit 24 immediately south of the ramps.
     motorway = Motorway(scene, gantry_ways=('w25999022', 'w25999048'))
-    to_wgs = Transformer.from_crs(28992, 4326, always_xy=True)
-
-    def to_scene(x, y):
-        return motorway.frame.project(*to_wgs.transform(x, y))
+    to_scene = Frame(scene['meta']['lonLatAffine']).rd_to_scene
 
     if args.fetch:
         if args.snapshot.suffix == '.gz' or args.snapshot.is_file():
@@ -592,7 +588,7 @@ def main():
         snapshot = snapshot_from_directory(args.snapshot, motorway, to_scene, args.date.isoformat())
     else:
         snapshot = read_json(args.snapshot)
-    if snapshot.get('version') != 1 or snapshot.get('horizontalCrs') != 28992 or snapshot.get('verticalDatum') != 'NAP':
+    if snapshot.get('version') != 1 or source_crs(snapshot).to_epsg() != 28992 or snapshot.get('verticalDatum') != 'NAP':
         raise ValueError('Expected a 1GIS RD New and NAP snapshot')
     if args.save_snapshot:
         write_json(args.save_snapshot, snapshot)

@@ -1,5 +1,6 @@
 // Start an isolated Chrome with --remote-debugging-port=9297 and serve the checkout locally.
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const [output = '/tmp/ede-benchmark.json', origin = 'http://127.0.0.1:8990', port = '9297', ...variants] = process.argv.slice(2);
@@ -10,10 +11,34 @@ const freezeTraffic = process.env.EDE_BENCH_TRAFFIC !== 'active';
 const viewport = { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false };
 const freezeClock = Date.parse('2026-11-19T13:00:00+01:00');
 const suite = process.env.EDE_BENCH_SCENARIOS || 'standard';
+const screenshots = process.env.EDE_BENCH_SCREENSHOTS;
+if (screenshots) await mkdir(screenshots, { recursive: true });
+
+function facadeWalk(name, a, b, distance, lookHeight) {
+  const dx = b[0] - a[0], dz = b[1] - a[1], width = Math.hypot(dx, dz);
+  const tx = dx / width, tz = dz / width;
+  const x = (a[0] + b[0]) / 2, z = (a[1] + b[1]) / 2;
+  const at = (along, out) => [x + tx * along - tz * out, 1.65, z + tz * along + tx * out];
+  return { name, from: at(-distance * 0.8, distance), to: at(distance * 0.6, distance * 0.75), look: [x, lookHeight, z], facade: true };
+}
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = suite === 'town-detail' ? [
+const shots = suite === 'facades' ? [
+  facadeWalk('Kolkakkerweg terraced houses', [-495.26, 678.68], [-492.83, 684.06], 7, 2.6),
+  facadeWalk('Kolkakkerweg apartments', [-468.49, 777.45], [-488.63, 787.81], 13, 3.6),
+  facadeWalk('Torenstraat storefront', [-44.66, -5.50], [-55.49, -10.00], 7, 2.4),
+  facadeWalk('Oude Kerk west entrance', [-24.63, -13.35], [-27.15, -3.66], 9, 4.6),
+  facadeWalk('Shopping street', [-86.95, -23.08], [-99.42, -28.27], 9, 3.0),
+] : suite === 'lane-fits' ? [
+  { name: 'Maanderbroek A12 east', way: 'w750476158', from: [-4256, 2.4, 2138], to: [-4216, 2.4, 2164], look: [-4137, 2, 2216] },
+  { name: 'Maanderbroek A30', from: [-4174, 10, 2190], to: [-4168, 8, 2138], look: [-4166, 1.5, 2083] },
+  { name: 'A12 exit 24', way: 'w723962249', from: [-1386, 2.4, 3481], to: [-1420, 2.4, 3476], look: [-1455, 2.2, 3470] },
+  { name: 'Akulaan turn pocket', from: [149, 4.5, 2289], to: [115, 4.5, 2280], look: [70, 2, 2268] },
+  { name: 'Nachtegaallaan', from: [-800, 3, 779], to: [-762, 3, 770], look: [-724, 2, 759] },
+  { name: 'Frans Halslaan', way: 'w840619077', from: [-1430, 3, 3235], to: [-1460, 3, 3239], look: [-1480, 2, 3243] },
+  { name: 'Albertstunnel', way: 'w6952984', from: [105, 2.4, 2012], to: [101, 2.4, 2041], look: [101, 1.6, 2086] },
+] : suite === 'town-detail' ? [
   { name: 'Oude Kerkplein walk', travel: ['person', -37, 20.02, 1.214] },
   { name: 'Victoriavijver bank walk', travel: ['person', -1553.7, 697.58, 3.025] },
   { name: 'Kolkakkerweg cycle', travel: ['cyclist', -893, 863.2, 1.736] },
@@ -126,7 +151,24 @@ function sampleShot(shot, frames) {
       app.camera('chase');
     } else app.setCamera(...from, ...look);
     if (app.perf) app.perf.setTrafficUpdates(true);
+    const bagGroup = app.scene.getObjectByName('bag3d-buildings');
+    const bagCoversLook = () => Boolean(bagGroup?.children.some(tile =>
+      tile.children.some(mesh => {
+        const box = mesh.geometry?.boundingBox;
+        return box && look[0] >= box.min.x - 1 && look[0] <= box.max.x + 1
+          && look[2] >= box.min.z - 1 && look[2] <= box.max.z + 1;
+      })
+    ));
+    if (shot.facade) {
+      const deadline = performance.now() + 5500;
+      while (!bagCoversLook() && performance.now() < deadline) await frame();
+    }
     await wait(36);
+    const textureBytes = () => {
+      const s = bagGroup?.userData.stats;
+      return (s?.maskTextureBytes ?? 0) + (s?.photoTextureBytes ?? 0) + (s?.surfaceTextureBytes ?? 0);
+    };
+    let facadeTextureBytes = shot.facade ? textureBytes() : undefined;
     const trafficUpdate = app.trafficSystem.update, trainUpdate = app.trainSystem?.update;
     if (app.perf) app.perf.setTrafficUpdates(!freezeTraffic);
     else if (freezeTraffic) {
@@ -151,6 +193,7 @@ function sampleShot(shot, frames) {
       last = now;
       draws.push(app.renderer.info.render.drawCalls);
       triangles.push(app.renderer.info.render.triangles);
+      if (shot.facade && i % 10 === 0) facadeTextureBytes = Math.max(facadeTextureBytes, textureBytes());
     }
     if (shot.travel) controller.resetInput();
     const stats = a => {
@@ -163,10 +206,16 @@ function sampleShot(shot, frames) {
       app.trafficSystem.update = trafficUpdate;
       if (app.trainSystem) app.trainSystem.update = trainUpdate;
     }
-    const bag = app.scene.getObjectByName('bag3d-buildings')?.userData.stats;
+    const bag = bagGroup?.userData.stats;
+    const facadeRequests = shot.facade && performance.getEntriesByType('resource').flatMap(entry => {
+      const path = new URL(entry.name).pathname;
+      return path.startsWith('/assets/ede-facade') ? [path] : [];
+    });
     const travelledMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
     const drivenMetres = shot.travel?.[0] === 'car' ? travelledMetres : undefined;
-    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, travelledMetres, drivenMetres };
+    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, travelledMetres, drivenMetres,
+      ...(shot.facade && { bagCoversLook: bagCoversLook(), facadeTextureBytes,
+        facadeRequests: [...new Set(facadeRequests)], textureCount: app.renderer.info.memory?.textures }) };
   }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic})`);
 }
 
@@ -197,7 +246,14 @@ async function run(search, cache) {
     startup.peakMemory = { ...memory };
     const samples = [];
     if (!startupOnly && cache === 'warm') {
-      for (const shot of shots) samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
+      for (const shot of shots) {
+        samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
+        if (screenshots && suite === 'facades') {
+          const label = shot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          const { data } = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
+          await writeFile(join(screenshots, `${url.port}-${label}.jpg`), Buffer.from(data, 'base64'));
+        }
+      }
     }
     return { search, cache, startup, peakMemory: memory, wireBytes, samples, errors: [...failures] };
   } finally {
@@ -217,6 +273,7 @@ try {
   const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
     if (!location.protocol.startsWith('http')) return;
     localStorage.removeItem('slop-ede-player-state');
+    if (${JSON.stringify(suite)} === 'facades') performance.setResourceTimingBufferSize(1000);
     Date.now = () => ${freezeClock};
     let seed = 0x45de;
     Math.random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);

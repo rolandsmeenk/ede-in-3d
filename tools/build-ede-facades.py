@@ -2,20 +2,27 @@
 """Build observed and inferred wall appearances from a BAG wall catalogue and reviewed observations."""
 
 import argparse
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date
+import gzip
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 from statistics import median
 import tempfile
 
 
-BUILDING_TYPES = {'terraced', 'apartments', 'detached', 'shop'}
+BUILDING_TYPES = {'terraced', 'apartments', 'detached', 'semi-detached', 'shop', 'mixed-use'}
 WALL_TYPES = {'street', 'side', 'rear', 'shared'}
 OPENING_TYPES = ('window', 'door', 'storefront')
+WALL_MATERIALS = {'brick', 'block', 'stone', 'stucco', 'timber', 'concrete'}
+APPEARANCE_COLORS = ('wallColor', 'roofColor', 'frameColor', 'doorColor', 'sillColor', 'glazingColor', 'surroundColor')
+OPENING_DIMENSIONS = {'frame': 0.3, 'sill': 0.3, 'surround': 0.5, 'depth': 3.0, 'arch': 2.0}
+OPENING_DETAILS = ('frame', 'sill', 'surround', 'depth', 'arch', 'panes', 'transom', 'tracery')
+TILE_SIZE = 384
 MIN_BUILDINGS = 3
 MIN_CONFIDENCE = 0.7
 ATTRIBUTION = {
@@ -83,12 +90,30 @@ def checked_opening(item, width, height):
             or min(x, y) < -0.05 or min(w, h) < 0.1 or x + w > width + 0.05 or y + h > height + 0.05):
         raise ValueError(f'Opening outside wall bounds: {out}')
     out.update(x=max(0, x), y=max(0, y), width=min(width - max(0, x), w), height=min(height - max(0, y), h))
-    for name in ('frame', 'sill'):
-        value = item.get(name)
-        if value is not None:
-            if not number(value) or not 0 <= value <= 0.3:
+    for name, maximum in OPENING_DIMENSIONS.items():
+        if name in item:
+            value = item[name]
+            if name == 'arch' and (type(value) is bool or value in ('pointed', 'round')):
+                out[name] = value
+                continue
+            if not number(value) or not 0 <= value <= maximum:
                 raise ValueError(f'Invalid opening {name}: {value}')
             out[name] = value
+    if 'transom' in item:
+        value = item['transom']
+        if not number(value) or not 0.1 <= value <= 0.95:
+            raise ValueError(f'Invalid opening transom fraction: {value}')
+        out['transom'] = value
+    if 'tracery' in item:
+        value = item['tracery']
+        if type(value) is not bool:
+            raise ValueError(f'Invalid opening tracery: {value}')
+        out['tracery'] = value
+    if 'panes' in item:
+        value = item['panes']
+        if type(value) is not int or not 1 <= value <= 12:
+            raise ValueError(f'Invalid opening panes: {value}')
+        out['panes'] = value
     return out
 
 
@@ -124,60 +149,70 @@ def checked_detail(detail, openings):
     return clean
 
 
-def checked_photos(rows, walls, observed):
-    photos = defaultdict(list)
-    for row in rows:
-        identity = key(row)
-        if identity not in observed:
-            raise ValueError(f'Photo atlas requires a reliable observed wall: {identity}')
-        wall = walls[identity]
-        for photo in row['photos']:
-            file, region, rect = [photo[k] for k in ('file', 'range', 'rect')]
-            if (not re.fullmatch(r'ede-facade-[a-z0-9-]+\.webp', file)
-                    or len(region) != 4 or not all(number(v) and 0 <= v <= 1 for v in region)
-                    or region[0] >= region[2] or region[1] >= region[3]
-                    or len(rect) != 4 or not all(number(v) and v >= 0 for v in rect)
-                    or min(rect[2:]) <= 0 or rect[0] + rect[2] > wall_width(wall) + 0.03
-                    or rect[1] + rect[3] > wall['height'] + 0.03):
-                raise ValueError(f'Invalid local photo atlas region for {identity}')
-            if photo.get('license') != ATTRIBUTION['license']:
-                raise ValueError(f'Photo atlas lacks the stated Mapillary license for {identity}')
-            source = checked_source(photo)
-            clean = dict(file=file, range=region, rect=rect, **source, license=photo['license'])
-            if 'recessed' in photo:
-                if type(photo['recessed']) is not bool:
-                    raise ValueError('recessed must be a boolean')
-                clean['recessed'] = photo['recessed']
-            if clean not in photos[identity]:
-                photos[identity].append(clean)
-    return photos
+def resolve_wall(identity, walls, by_bag):
+    if identity in walls:
+        return identity, 0.0
+    bag, segment = identity
+    try:
+        ax, az, bx, bz, base = map(float, segment.split(','))
+    except (ValueError, AttributeError):
+        raise ValueError(f'Observation refers to unknown wall {identity}') from None
+    matches = []
+    for candidate in by_bag[bag]:
+        wall = walls[candidate]
+        da = math.dist((ax, az), wall['a'])
+        db = math.dist((bx, bz), wall['b'])
+        if max(da, db) <= 0.25 and abs(wall.get('baseOffset', 0) - base) <= 0.15:
+            matches.append((da + db, candidate))
+    matches.sort()
+    if not matches or (len(matches) > 1 and matches[1][0] - matches[0][0] < 0.05):
+        raise ValueError(f'Observation has no unambiguous wall match within 0.25 m: {identity}')
+    _, candidate = matches[0]
+    wall = walls[candidate]
+    x, z = wall['a']
+    dx, dz = wall['b'][0] - x, wall['b'][1] - z
+    offset = ((ax - x) * dx + (az - z) * dz) / wall_width(wall)
+    return candidate, offset
 
 
 def checked_observations(rows, walls):
-    by_wall = defaultdict(list)
+    by_wall, by_bag = defaultdict(list), defaultdict(list)
+    for identity in walls:
+        by_bag[identity[0]].append(identity)
     for row in rows:
-        identity = key(row)
-        if identity not in walls:
-            raise ValueError(f'Observation refers to unknown wall {identity}')
         confidence = row['confidence']
         if not number(confidence) or not 0 <= confidence <= 1:
-            raise ValueError(f'Invalid wall confidence for {identity}')
-        if confidence < MIN_CONFIDENCE or walls[identity]['wallType'] == 'shared':
+            raise ValueError(f'Invalid wall confidence for {key(row)}')
+        if confidence < MIN_CONFIDENCE:
             continue
+        identity, offset = resolve_wall(key(row), walls, by_bag)
         wall = walls[identity]
+        if wall['wallType'] == 'shared':
+            continue
         clean = {'confidence': confidence}
-        for name in ('wallColor', 'roofColor'):
+        for name in APPEARANCE_COLORS:
             if value := row.get(name):
                 if not color(value):
                     raise ValueError(f'Invalid {name} for {identity}')
                 clean[name] = value.lower()
+        if 'wallMaterial' in row:
+            value = row['wallMaterial']
+            if value not in WALL_MATERIALS:
+                raise ValueError(f'Invalid wall material for {identity}: {value}')
+            clean['wallMaterial'] = value
         if (spacing := row.get('storeySpacing')) is not None:
             if not number(spacing) or not 1.8 <= spacing <= 6.5:
                 raise ValueError(f'Invalid storey spacing for {identity}')
             clean['storeySpacing'] = spacing
-        if 'openings' in row:
-            clean['openings'] = [checked_opening(item, wall_width(wall), wall['height']) for item in row['openings']]
-        if 'wallColor' not in clean and not clean.get('openings'):
+        if 'occludedKinds' in row:
+            kinds = row['occludedKinds']
+            if not isinstance(kinds, list) or any(kind not in OPENING_TYPES for kind in kinds):
+                raise ValueError(f'Invalid occluded opening kinds for {identity}')
+            clean['occludedKinds'] = sorted(set(kinds))
+        if 'openings' in row and row.get('layoutMeasured', True):
+            inputs = ({**item, 'x': item['x'] + offset} for item in row['openings'])
+            clean['openings'] = [checked_opening(item, wall_width(wall), wall['height']) for item in inputs]
+        if not any(name in clean for name in (*APPEARANCE_COLORS, 'wallMaterial', 'openings')):
             continue
         clean['sources'] = [checked_source(source) for source in row['sources']]
         if not clean['sources']:
@@ -199,12 +234,14 @@ def merge_views(views):
     # Quality decides ambiguous overlaps. Date breaks ties and favours newer alterations.
     ordered = sorted(views, key=lambda v: (v['confidence'], max(
         (s['capturedAt'], s['imageId']) for s in v['sources'])), reverse=True)
-    merged = {k: v for k, v in ordered[0].items() if k not in ('detail', 'openings', 'sources')}
+    merged = {k: v for k, v in ordered[0].items() if k not in ('detail', 'openings', 'sources', 'occludedKinds')}
+    if hidden := set.intersection(*(set(view.get('occludedKinds', ())) for view in ordered)):
+        merged['occludedKinds'] = sorted(hidden)
     openings, sources, detail = [], {}, None
     for view in ordered:
         for source in view['sources']:
             sources.setdefault(source['imageId'], source)
-        for name in ('wallColor', 'roofColor', 'storeySpacing'):
+        for name in (*APPEARANCE_COLORS, 'wallMaterial', 'storeySpacing'):
             if name in view:
                 merged.setdefault(name, view[name])
         for index, opening in enumerate(view.get('openings', ())):
@@ -213,7 +250,7 @@ def merge_views(views):
                 match = opening.copy()
                 openings.append(match)
             elif match['kind'] == opening['kind']:
-                for part in ('frame', 'sill'):
+                for part in OPENING_DETAILS:
                     if part in opening:
                         match.setdefault(part, opening[part])
             if detail is None and view.get('detail', {}).get('opening') == index and match['kind'] == opening['kind']:
@@ -253,12 +290,17 @@ def aggregate(buildings, values):
 def learn(buildings):
     spacing = aggregate(buildings, lambda walls: (w['storeySpacing'] for w in walls if 'storeySpacing' in w))
     palettes = {}
-    for name in ('wallColor', 'roofColor'):
+    for name in APPEARANCE_COLORS:
         votes = [hex_color(median(c[i] for c in values) for i in range(3))
                  for walls in buildings.values()
                  if (values := [rgb(w[name]) for w in walls if name in w])]
         if name == 'wallColor' or len(votes) >= 2:
             palettes[name] = sorted(votes)
+    materials = Counter(
+        Counter(wall['wallMaterial'] for wall in walls if 'wallMaterial' in wall).most_common(1)[0][0]
+        for walls in buildings.values() if any('wallMaterial' in wall for wall in walls)
+    )
+    material = min(materials, key=lambda label: (-materials[label], label)) if materials else None
     if not spacing:
         return None
     samples = {}
@@ -276,7 +318,7 @@ def learn(buildings):
     exemplar = next(iter(buildings.values()))[0]
     if exemplar['wallType'] == 'street':
         # Parked cars and planting commonly hide a doorway while leaving its upstairs windows.
-        target = 'storefront' if exemplar['buildingType'] == 'shop' else 'door'
+        target = 'storefront' if exemplar['buildingType'] in {'shop', 'mixed-use'} else 'door'
         entrances = [item for item in ground_candidates if any(o['kind'] == target for o in item[1])]
         ground_candidates = entrances or ground_candidates
     representative = min(
@@ -327,7 +369,8 @@ def learn(buildings):
         templates[kind] = stats
     width, ground = representative
     return dict(spacing=standard, palettes=palettes, groundWidth=width, ground=ground, upper=upper_profile,
-                groundSizes=templates, buildings=len(buildings))
+                groundSizes=templates, buildings=len(buildings),
+                wallMaterial=material if material is not None and materials[material] >= 2 else None)
 
 
 def infer(wall, profile, palette_seed, row_color=None):
@@ -343,6 +386,7 @@ def infer(wall, profile, palette_seed, row_color=None):
         spacing = min(spacing, (height + base) / count)
     y_scale = spacing / profile['spacing']
     slots = []
+    corner = min(0.35, max(0.12, width * 0.055))
     for opening in profile['ground'] if base < 0.6 else []:
         scale = width / profile['groundWidth']
         center = (opening['x'] + opening['width'] / 2) * scale
@@ -351,15 +395,15 @@ def infer(wall, profile, palette_seed, row_color=None):
         if opening['kind'] == 'storefront':
             size *= min(1.6, max(0.5, scale))
         detail = {k: opening.get(k, typical[k]) for k in ('frame', 'sill') if k in typical}
-        slots.append((center, {**detail, **opening, 'width': size, 'y': max(0, opening['y'] * y_scale - base),
+        slots.append((center, {'kind': opening['kind'], **detail, 'width': size, 'y': max(0, opening['y'] * y_scale - base),
                                'height': (2 * opening['height'] + typical['height']) / 3 * y_scale}))
     openings = []
     slots.sort(key=lambda slot: slot[0])
     for i, (center, opening) in enumerate(slots):
         left = (slots[i - 1][0] + center) / 2 if i else 0
         right = (slots[i + 1][0] + center) / 2 if i + 1 < len(slots) else width
-        x = max(left + 0.07, center - opening['width'] / 2)
-        end = min(right - 0.07, center + opening['width'] / 2)
+        x = max(corner, left + 0.07, center - opening['width'] / 2)
+        end = min(width - corner, right - 0.07, center + opening['width'] / 2)
         h = min(opening['height'], height - opening['y'] - 0.04)
         if end - x >= 0.3 and h >= 0.3:
             openings.append({**opening, 'x': x, 'width': end - x, 'height': h})
@@ -381,7 +425,7 @@ def infer(wall, profile, palette_seed, row_color=None):
             if h < 0.3:
                 break
             for center, size in windows:
-                w = min(size, (min(center, width - center) - 0.07) * 2)
+                w = min(size, (min(center, width - center) - corner) * 2)
                 if w >= 0.3:
                     openings.append(dict(kind='window', x=center - w / 2, y=y, width=w, height=h, **detail))
     selection = stable_number(palette_seed)
@@ -393,6 +437,8 @@ def infer(wall, profile, palette_seed, row_color=None):
         # The same row shares a base tint. A small BAG-stable offset breaks uniformity.
         selected = row_color if name == 'wallColor' and row_color else palette[selection % len(palette)]
         result[name] = hex_color(chan + variation for chan in rgb(selected))
+    if profile['wallMaterial']:
+        result['wallMaterial'] = profile['wallMaterial']
     return dict(**result, openings=openings, storeySpacing=spacing, status='inferred')
 
 
@@ -453,13 +499,20 @@ def choose_holdouts(walls, observed):
 
 def compare(actual, inferred):
     result = {}
-    if 'wallColor' in actual:
+    if 'wallColor' in actual and 'wallColor' in inferred:
         result['srgbColorError'] = round(math.dist(rgb(actual['wallColor']), rgb(inferred['wallColor'])), 2)
+    if 'storeySpacing' in actual:
+        result['storeySpacingErrorM'] = round(abs(actual['storeySpacing'] - inferred['storeySpacing']), 3)
     if not actual.get('layoutMeasured', True):
         return result
     measured = actual.get('storeySpacing', inferred['storeySpacing'])
-    actual_rows = row_openings(actual['openings'], measured)
-    inferred_rows = row_openings(inferred['openings'], inferred['storeySpacing'])
+    hidden = set(actual.get('occludedKinds', ()))
+    if hidden:
+        result['occludedKinds'] = sorted(hidden)
+    visible_actual = [item for item in actual['openings'] if item['kind'] not in hidden]
+    visible_inferred = [item for item in inferred['openings'] if item['kind'] not in hidden]
+    actual_rows = row_openings(visible_actual, measured)
+    inferred_rows = row_openings(visible_inferred, inferred['storeySpacing'])
     a, b = bay_spacing(actual_rows), bay_spacing(inferred_rows)
     if a is not None and b is not None:
         result['windowSpacingErrorM'] = round(abs(a - b), 3)
@@ -469,9 +522,33 @@ def compare(actual, inferred):
     b = sorted(entrance(o) for o in inferred_rows.get(0, []) if o['kind'] == 'door')
     if a and b:
         result['doorAlignmentErrorM'] = round(median(min(math.dist(q, p) for p in b) for q in a), 3)
-    result['observedDoors'], result['inferredDoors'] = len(a), len(b)
-    result['observedWindows'] = sum(o['kind'] == 'window' for o in actual['openings'])
-    result['inferredWindows'] = sum(o['kind'] == 'window' for o in inferred['openings'])
+    if 'door' not in hidden:
+        result['observedDoors'], result['inferredDoors'] = len(a), len(b)
+    if 'window' not in hidden:
+        result['observedWindows'] = sum(o['kind'] == 'window' for o in visible_actual)
+        result['inferredWindows'] = sum(o['kind'] == 'window' for o in visible_inferred)
+        result['windowCountError'] = abs(result['observedWindows'] - result['inferredWindows'])
+    pairs = []
+    for floor, actual_openings in actual_rows.items():
+        for kind in OPENING_TYPES:
+            a = [o for o in actual_openings if o['kind'] == kind]
+            b = [o for o in inferred_rows.get(floor, ()) if o['kind'] == kind]
+            distances = sorted(
+                (math.dist((p['x'] + p['width'] / 2, p['y'] + p['height'] / 2),
+                           (q['x'] + q['width'] / 2, q['y'] + q['height'] / 2)), i, j)
+                for i, p in enumerate(a) for j, q in enumerate(b)
+            )
+            matched_a, matched_b = set(), set()
+            for distance, i, j in distances:
+                if i not in matched_a and j not in matched_b:
+                    matched_a.add(i)
+                    matched_b.add(j)
+                    pairs.append(distance)
+    result['matchedOpenings'] = len(pairs)
+    result['unmatchedObservedOpenings'] = len(visible_actual) - len(pairs)
+    result['unmatchedInferredOpenings'] = len(visible_inferred) - len(pairs)
+    if pairs:
+        result['openingCenterErrorM'] = round(median(pairs), 3)
     return result
 
 
@@ -485,13 +562,7 @@ def rounded(value):
     return value
 
 
-def bake(catalogue, observations, holdout=None, photos=()):
-    walls = checked_walls(catalogue)
-    observed = checked_observations(observations, walls)
-    photos = checked_photos(photos, walls, observed)
-    holdout = choose_holdouts(walls, observed) if holdout is None else set(holdout)
-    if invalid := holdout - {bag for bag, _ in observed}:
-        raise ValueError(f'Held-out BAG ID has no reliable photo: {", ".join(sorted(invalid))}')
+def fitting_context(walls, observed, runs, holdout):
     training = defaultdict(lambda: defaultdict(list))
     for identity, observation in sorted(observed.items()):
         wall = walls[identity]
@@ -505,7 +576,6 @@ def bake(catalogue, observations, holdout=None, photos=()):
         k: profile for k, buildings in training.items()
         if len(buildings) >= MIN_BUILDINGS and (profile := learn(buildings))
     }
-    runs = terrace_runs(walls)
     terrace_colors = defaultdict(lambda: defaultdict(list))
     for identity, observation in observed.items():
         if identity in runs and identity[0] not in holdout and 'wallColor' in observation:
@@ -514,68 +584,146 @@ def bake(catalogue, observations, holdout=None, photos=()):
         run: hex_color(median(median(c[i] for c in samples) for samples in buildings.values()) for i in range(3))
         for run, buildings in terrace_colors.items()
     }
+    return profiles, anchors, training
+
+
+def fit_style(identity, wall, profiles, runs, anchors):
+    if wall['wallType'] == 'shared' or wall_width(wall) < 1.8 or wall['height'] < 1.6:
+        return None
+    group = (wall.get('buildingType'), wall['wallType'])
+    local = (wall.get('neighbourhood'), *group)
+    group_key = local if local in profiles else ('Ede', *group)
+    profile = profiles.get(group_key)
+    if profile is None:
+        return None
+    run = runs.get(identity)
+    style = infer(wall, profile, run or identity[0], anchors.get(run))
+    style['profile'] = '/'.join(group_key)
+    return style
+
+
+def compare_holdout(identity, actual, style):
+    check = dict(bagId=identity[0], wallId=identity[1], sources=actual['sources'])
+    if style:
+        check.update(profile=style['profile'], **compare(actual, style))
+    else:
+        check['fallback'] = 'Fewer than three suitable training buildings or no reliable storey spacing'
+    return check
+
+
+def validate(catalogue, observations, holdout=None):
+    walls = checked_walls(catalogue)
+    observed = checked_observations(observations, walls)
+    runs = terrace_runs(walls)
+    bags = sorted({bag for bag, _ in observed})
+    folds = [{bag} for bag in bags] if holdout is None else [set(holdout)]
+    if invalid := set().union(*folds) - set(bags):
+        raise ValueError(f'Held-out BAG ID has no reliable photo: {", ".join(sorted(invalid))}')
+    validation = []
+    for fold in folds:
+        profiles, anchors, _ = fitting_context(walls, observed, runs, fold)
+        checks = [
+            compare_holdout(identity, actual, fit_style(identity, walls[identity], profiles, runs, anchors))
+            for identity, actual in sorted(observed.items()) if identity[0] in fold
+        ]
+        validation.append(dict(heldOutBuildings=sorted(fold), checks=checks,
+                               profiles={'/'.join(k): v['buildings'] for k, v in sorted(profiles.items())}))
+    return validation
+
+
+def bake(catalogue, observations, holdout=None):
+    walls = checked_walls(catalogue)
+    observed = checked_observations(observations, walls)
+    holdout = choose_holdouts(walls, observed) if holdout is None else set(holdout)
+    if invalid := holdout - {bag for bag, _ in observed}:
+        raise ValueError(f'Held-out BAG ID has no reliable photo: {", ".join(sorted(invalid))}')
+    runs = terrace_runs(walls)
+    profiles, anchors, training = fitting_context(walls, observed, runs, holdout)
     results, checks = [], []
     for identity in sorted(walls):
         wall = walls[identity]
         actual = observed.get(identity)
         evaluate = actual is not None and identity[0] in holdout
+        style = fit_style(identity, wall, profiles, runs, anchors)
         if actual is not None and not evaluate:
             row = wall | actual
-            if identity in photos:
-                row['photos'] = photos[identity]
+            if style and not actual.get('layoutMeasured', True):
+                row = wall | style | actual | {'openings': style['openings'], 'layoutStatus': 'inferred'}
             results.append(row)
-            continue
-        if wall['wallType'] == 'shared':
-            continue
-        group = (wall.get('buildingType'), wall['wallType'])
-        local = (wall.get('neighbourhood'), *group)
-        group_key = local if local in profiles else ('Ede', *group)
-        profile = profiles.get(group_key)
-        style = None
-        if profile and wall_width(wall) >= 1.8 and wall['height'] >= 1.6:
-            run = runs.get(identity)
-            style = infer(wall, profile, run or identity[0], anchors.get(run))
-            style['profile'] = '/'.join(group_key)
+        elif wall['wallType'] == 'shared':
+            results.append(wall | dict(openings=[], status='inferred'))
+        elif style:
             results.append(wall | style)
         if evaluate:
-            check = dict(bagId=identity[0], wallId=identity[1], sources=actual['sources'])
-            if style:
-                check.update(profile=style['profile'], **compare(actual, style))
-            else:
-                check['fallback'] = 'Fewer than three suitable training buildings or no reliable storey spacing'
-            checks.append(check)
-    detailed_bags = {wall['bagId'] for wall in results}
-    for identity in sorted(walls):
-        if identity[0] in detailed_bags and walls[identity]['wallType'] == 'shared':
-            results.append(walls[identity] | dict(openings=[], status='inferred'))
+            checks.append(compare_holdout(identity, actual, style))
+    groups = defaultdict(lambda: defaultdict(set))
+    for identity, wall in walls.items():
+        area, kind = wall.get('neighbourhood') or 'outside-CBS-Ede', wall.get('buildingType') or 'other'
+        for group in ((area, kind), ('Ede', kind)):
+            groups[group]['catalogueBuildings'].add(identity[0])
+            if identity in observed:
+                groups[group]['reviewedBuildings'].add(identity[0])
+    for row in results:
+        area, kind = row.get('neighbourhood') or 'outside-CBS-Ede', row.get('buildingType') or 'other'
+        category = ('shared' if row['wallType'] == 'shared' else row['status']) + 'Buildings'
+        for group in ((area, kind), ('Ede', kind)):
+            groups[group][category].add(row['bagId'])
     report = {
+        'catalogueBuildings': len({bag for bag, _ in walls}),
         'catalogueWalls': len(walls), 'reliableObservedWalls': len(observed),
+        'observationsBelowConfidence': sum(row['confidence'] < MIN_CONFIDENCE for row in observations),
+        'coverage': {
+            '/'.join(group): {name: len(bags) for name, bags in sorted(counts.items())}
+            for group, counts in sorted(groups.items())
+        },
         'heldOutBuildings': sorted(holdout), 'holdoutComparisons': checks,
         'observedWalls': sum(item['status'] == 'observed' for item in results),
-        'inferredWalls': sum('profile' in item for item in results),
+        'inferredWalls': sum(item['status'] != 'observed' and 'profile' in item for item in results),
         'blankSharedWalls': sum(item['wallType'] == 'shared' for item in results),
         'proceduralWalls': len(walls) - len(results),
         'profiles': {'/'.join(k): v['buildings'] for k, v in sorted(profiles.items())},
         'trainingCoverage': {'/'.join(k): len(v) for k, v in sorted(training.items())},
     }
-    return rounded(dict(version=1, attribution=ATTRIBUTION, walls=results)), report
+    return rounded(dict(version=2, attribution=ATTRIBUTION, walls=results)), report
 
 
 def load(path, name):
     value = json.loads(path.read_text())
     if value.get('version') != 1 or not isinstance(value.get(name), list):
         raise ValueError(f'Expected a version 1 {name} array in {path}')
-    return value[name]
+    return value
 
 
 def save(path, value):
-    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as temporary:
+    raw = (json.dumps(value, ensure_ascii=False, separators=(',', ':')) + '\n').encode()
+    if path.suffix == '.gz':
+        raw = gzip.compress(raw, compresslevel=9, mtime=0)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as temporary:
         try:
-            temporary.write(json.dumps(value, ensure_ascii=False, separators=(',', ':')) + '\n')
+            temporary.write(raw)
             temporary.flush()
+            os.chmod(temporary.name, 0o644)
             Path(temporary.name).replace(path)
         finally:
             Path(temporary.name).unlink(missing_ok=True)
+    return len(raw)
+
+
+def tile_assets(path, value):
+    blocks = defaultdict(list)
+    for wall in value['walls']:
+        ix, iz = (math.floor((a + b) / (2 * TILE_SIZE)) for a, b in zip(wall['a'], wall['b']))
+        blocks[ix, iz].append({name: param for name, param in wall.items()
+                               if name not in ('buildingType', 'neighbourhood', 'storeys', 'site')})
+    tiles = {}
+    tile_bytes = 0
+    for (ix, iz), walls in sorted(blocks.items()):
+        name = f'{path.stem}/{ix}_{iz}.json.gz'
+        tile_bytes += save(path.parent / name, {'version': 2, 'walls': walls})
+        tiles[f'{ix},{iz}'] = name
+    index_bytes = save(path, dict(version=2, attribution=value['attribution'], tileSize=TILE_SIZE, tiles=tiles))
+    return {'tiles': len(tiles), 'tileBytes': tile_bytes, 'indexBytes': index_bytes}
 
 
 def main():
@@ -584,18 +732,32 @@ def main():
     parser.add_argument('observations', type=Path)
     parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[1] / 'assets/ede-facades.json')
     parser.add_argument('--report', type=Path, help='Write whole-building holdout errors and profile coverage')
-    parser.add_argument('--photos', type=Path, help='Attach attributed local photo atlas regions to observed walls')
     parser.add_argument('--hold-out', action='append', metavar='BAG_ID', help='Override the automatic BAG ID holdout selection')
     args = parser.parse_args()
     try:
-        asset, report = bake(load(args.catalogue, 'walls'), load(args.observations, 'observations'), args.hold_out,
-                             load(args.photos, 'walls') if args.photos else ())
-        save(args.output, asset)
+        catalogue = load(args.catalogue, 'walls')
+        observations = load(args.observations, 'observations')['observations']
+        asset, report = bake(catalogue['walls'], observations, holdout=())
+        validation = validate(catalogue['walls'], observations, args.hold_out)
+        report['heldOutBuildings'] = sorted({bag for fold in validation for bag in fold['heldOutBuildings']})
+        report['holdoutComparisons'] = [row for fold in validation for row in fold['checks']]
+        report['validationProfiles'] = [
+            {k: fold[k] for k in ('heldOutBuildings', 'profiles')} for fold in validation
+        ]
+        report['metrics'] = {
+            name: {'samples': len(values), 'median': round(median(values), 3), 'max': max(values)}
+            for name in ('windowCountError', 'openingCenterErrorM', 'storeySpacingErrorM', 'srgbColorError')
+            if (values := [row[name] for row in report['holdoutComparisons'] if name in row])
+        }
+        report['neighbourhoodNames'] = catalogue.get('neighbourhoodNames', {})
+        report['catalogueSources'] = catalogue.get('source', {})
+        report['assets'] = tile_assets(args.output, asset)
         if args.report:
             save(args.report, report)
     except (ValueError, KeyError, TypeError, OSError) as error:
         parser.exit(1, f'{error}\n')
-    print(json.dumps(report, ensure_ascii=False))
+    print(json.dumps({key: value for key, value in report.items()
+                      if key not in ('coverage', 'neighbourhoodNames', 'catalogueSources')}, ensure_ascii=False))
 
 
 if __name__ == '__main__':

@@ -1,3 +1,4 @@
+import { fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
 import { CAR } from './road-access.js';
 import { indexLocalRoads } from './traffic-area.js';
 import { gradeWayAt } from './ede-grade.js';
@@ -8,12 +9,10 @@ const mix = (a,b,t) => a + (b-a)*t;
 const angle = (a,b) => Math.atan2(Math.sin(b-a),Math.cos(b-a));
 const distance = (a,b) => Math.hypot(a.x-b.x,a.z-b.z);
 const roadY = (edge,x,z) => gradeWayAt(edge.wayId,x,z,1.2)?.y ?? terrainHeightAt(x,z);
-const roadYaw = edge => Math.atan2(edge.dx,edge.dz);
 
 function lanePoint(edge,lane,s) {
-  const x = edge.sx + edge.dx*s + edge.rx*edge.lanes[lane];
-  const z = edge.sz + edge.dz*s + edge.rz*edge.lanes[lane];
-  return {x,y:roadY(edge,x,z),z,yaw:roadYaw(edge)};
+  const { x, z, dx, dz } = fittedLanePoint(edge, lane, s, {});
+  return { x, y: roadY(edge, x, z), z, yaw: Math.atan2(dx, dz) };
 }
 
 function addCurve(points, a, b) {
@@ -99,10 +98,13 @@ function constrainedApproach(path, network, space, allowDriveway) {
 
 function onLane(edge, point, incoming, maxOffset, mappedGate=false) {
   const lane=edge.ambientLanes.at(-1);
-  const along=(point.x-edge.sx)*edge.dx + (point.z-edge.sz)*edge.dz;
   const inset=mappedGate ? 12 : 2.5;
-  if (!Number.isInteger(lane) || along < -inset || along > edge.len+inset) return null;
-  const side=(point.x-edge.sx)*edge.rx + (point.z-edge.sz)*edge.rz - edge.lanes[lane];
+  if (!Number.isInteger(lane)) return null;
+  const chord = (point.x-edge.sx)*edge.dx + (point.z-edge.sz)*edge.dz;
+  if (chord < -inset || chord > edge.len + inset) return null;
+  const p = projectFittedLane(edge, lane, point.x, point.z, -inset, edge.len + inset, {});
+  const along = p.station;
+  const side = (point.z - p.z) * p.dx - (point.x - p.x) * p.dz;
   if (side < (mappedGate ? -Math.min(8,edge.half+2.5) : -0.65) || side > maxOffset) return null;
   const s=clamp(along + (incoming ? -7.5 : 7.5), 3.5, edge.len-3.5);
   if (s<3.5 || s>edge.len-3.5 || Math.abs(s-along)>(mappedGate?23:13)) return null;

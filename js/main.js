@@ -9,7 +9,7 @@ import { buildLandmarks } from './landmarks.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildStreetDetails } from './street-details.js';
-import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261119-trip-pilot';
+import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261119-fitted-lanes';
 import { loadEdeParking } from './ede-parking.js';
 import { buildRoadPaint } from './road-paint.js';
 import { ThirdPersonControllerManager } from './controllers.js';
@@ -41,6 +41,7 @@ import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js';
 import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
+import { loadEdeFittedLanes } from './ede-lane-geometry.js';
 import { buildEdeDetail, loadEdeDetail } from './ede-detail.js';
 
 // js/main.js
@@ -133,11 +134,12 @@ async function initApp() {
 
   await showLoadingStage('Loading Ede’s map and timetables…');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult] = await Promise.allSettled([
     loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, motorway: enabled('motorwayDetail'),
-      directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null
+      directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null,
+    enabled('laneFits') ? loadEdeFittedLanes() : null
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -259,6 +261,7 @@ async function initApp() {
   const railStop=levelCrossings && (query=>levelCrossings.stopDistance({
     ...query, mode:query.mode===FOOT?'foot':query.mode===BICYCLE?'bike':'motor'
   }));
+  if (laneFitResult.status === 'rejected') console.warn('Ede fitted lanes could not load:', laneFitResult.reason);
   const trafficSystem = createTrafficSystem(scene, cityGrid.sidewalks, [
     ...cityGrid.footprints,
     ...streetDetails.footprints,
@@ -266,7 +269,7 @@ async function initApp() {
     ...allColliders.filter(c => c.obb && !c.kind && (c.minY ?? 0) < 2).map(c => ({ ...c, pedestrianOnly: true }))
   ], streetDetails.signalIntersections, busSchedule, roadTraffic,
     parkingResult.status==='fulfilled' ? parkingResult.value : undefined,
-    {enabled:trafficPilot,streetFeatures,railStop});
+    {enabled:trafficPilot,streetFeatures,railStop,profile:profiling,laneFits:laneFitResult.value});
   if (parkingResult.status==='rejected') console.warn('[parking] inventory unavailable:', parkingResult.reason);
   watchEdeTraffic(roadTraffic);
   markInit('traffic');
@@ -950,13 +953,14 @@ async function initApp() {
       trainSystem?.update(dt,cameraSystem.currentPos,railTime);
       levelCrossings?.update(dt,railTime);
       streetDetails.signalClock.value = trafficClock;
+      profiler?.stage('Rail and signals');
       trafficSystem.update(dt, trafficClock, cameraSystem.currentPos, controllerManager.getActiveEntity(), controllerManager.activeMode, cameraSystem.camera);
+      profiler?.stage('Traffic simulation');
       highwayTraffic.update(dt, cameraSystem.camera, controllerManager.getActiveEntity(), controllerManager.activeMode);
     }
-    profiler?.stage('Traffic, trains and parking');
+    profiler?.stage('Ambient highways');
     if (warmedUp) {
       bagBuildings?.userData.update?.(cameraSystem.camera);
-      bagBuildings?.userData.facadePhotos?.update(cameraSystem.currentPos);
     }
     cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     profiler?.stage('Buildings and façades');

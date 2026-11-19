@@ -1,11 +1,10 @@
 import { EDE_DATA } from './ede-geodata.js';
-import { railHeightAt } from './ede-grade.js';
+import { getRailCorridors, railCorridorHeightAt, railHeightAt, RAIL_TOP } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 
 const WAGENINGEN = 'ede-wageningen';
 const CENTRUM = 'ede-centrum';
 const APPROACH_MARGIN = 120;
-const RAIL_TOP = 0.13;
 
 const eastbound = [
   431666248, 431660809, 458879661, 458879659, 431660820, 643484752,
@@ -124,7 +123,12 @@ function buildAlignment(ids, ways, bounds) {
     return { distance: best.distance, error: Math.sqrt(best.errorSquared) };
   }
 
-  // Interpolate height samples to keep the body continuous at a measured profile's edge.
+  if (lines.every(({ way }) => getRailCorridors().has(way.id))) {
+    return { start, end, project, positionAt, elevationAt: (distance, { x, z }, segment) =>
+      (railCorridorHeightAt(segment.way.id, x, z) ?? terrainHeightAt(x, z)) + RAIL_TOP };
+  }
+
+  // Interpolate the legacy height samples at the edge of a local fitted profile.
   const intervals = Math.ceil((end - start) / 2);
   const elevationStep = (end - start) / intervals;
   const heights = new Float32Array(intervals + 1);
@@ -158,10 +162,10 @@ function trainPath(id, route, direction, platform, alignment, terminal) {
     sample(distance, out = {}) {
       const d = direction === 1 ? start + distance : end - distance;
       const position = clamp(d, start, end);
-      alignment.positionAt(position, out);
+      const segment = alignment.positionAt(position, out);
       alignment.positionAt(Math.max(start, position - 5), before);
       alignment.positionAt(Math.min(end, position + 5), after);
-      out.y = alignment.elevationAt(position);
+      out.y = alignment.elevationAt(position, out, segment);
       out.heading = Math.atan2(direction * (before.x - after.x), direction * (before.z - after.z));
       return out;
     },

@@ -17,8 +17,10 @@ from pathlib import Path
 import runpy
 from statistics import median, quantiles
 
-from shapely import STRtree, orient_polygons, set_precision, union_all
-from shapely.geometry import LineString, box
+from shapely import STRtree, make_valid, orient_polygons, set_precision, transform, union_all
+from shapely.geometry import LineString, box, shape
+
+from ede_gis import Frame, source_crs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,11 +87,13 @@ def fetch(directory, scene, day):
 
 def get_snapshot(directory, scene, area):
     sources, geometries, surfaces = {}, [], []
+    frame = Frame(scene['meta']['lonLatAffine'])
     for name in COLLECTIONS:
         path = directory / f'{name}.geojson'
         document = json.loads(path.read_bytes())
         if document.get('type') != 'FeatureCollection':
             raise ValueError(f'Expected a GeoJSON collection in {path}')
+        crs = source_crs(document)
         latest = {}
         for feature in document['features']:
             props = feature['properties']
@@ -107,7 +111,11 @@ def get_snapshot(directory, scene, area):
             raise ValueError(f'Empty BGT collection {name}')
         for feature in listing:
             props = feature['properties']
-            geometry = BGT['world_geometry'](feature, scene['meta']['lonLatAffine'], area)
+            feature_crs = source_crs(feature, default=crs)
+            geometry = transform(shape(feature['geometry']),
+                                 lambda x, y: frame.to_scene(x, y, feature_crs, axis_order='xy'),
+                                 interleaved=False)
+            geometry = make_valid(geometry).intersection(area)
             tag = ((props.get('plus_functie') or props.get('functie')) or '').lower()
             kind = FUNCTIONS.get(tag)
             if tag in {'verbindingsweg', 'verkeersdrempel'} or tag.startswith('rijbaan '):

@@ -167,11 +167,13 @@ const sharedMat = { name: 'RoadPaintMat', transparent: true };
 const roadPaintSrc = readFileSync(join(__dirname, '../js/road-paint.js'), 'utf8');
 const sceneCullingSrc = readFileSync(join(__dirname, '../js/scene-culling.js'), 'utf8');
 
+let sampleLane;
 const { buildRoadPaint, createRoadPaintChunkBuilder } = loadModule(roadPaintSrc, {
   filename: 'road-paint.js',
   imports: {
     'three/webgpu': THREE,
-    './tsl-materials.js': { createRoadPaintMaterial: () => sharedMat }
+    './tsl-materials.js': { createRoadPaintMaterial: () => sharedMat },
+    './ede-lane-geometry.js': { fittedLanePoint: (...args) => sampleLane(...args) }
   }
 });
 
@@ -196,6 +198,25 @@ test('Ede lane boundaries use resolved offsets and treat advisory and bus bounda
   assert.equal(busBorder[9], 1);
   assert.ok(Math.abs(bikeBorder[2] - 3.8) < 1e-9);
   assert.equal(bikeBorder[9], 0.5);
+});
+
+test('generated lane dividers follow an accepted curved lane band', async () => {
+  const { bindEdeFittedLanes, fittedLanePoint } = await import('../js/ede-lane-geometry.js');
+  sampleLane = fittedLanePoint;
+  const strips = [];
+  const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };
+  const laneDefinition = {
+    lanes: [{ offset: -1.8, width: 3.6 }, { offset: 1.8, width: 3.6 }],
+    centers: [], markings: true, bikes: []
+  };
+  const edge = { from: { id: 0, shape: true }, to: { id: 1, shape: true }, x0: 0, z0: 0, sx: 0, sz: 0,
+    dx: 1, dz: 0, rx: 0, rz: 1, len: 20, span: 20, half: 4, lanes: [-1.8, 1.8], laneDefinition, wayId: 'test' };
+  const lanes = edge.lanes.map(o => [0,0,o,0,3.6, 10,10,o+2,10.2,3.6, 20,20,o,20.4,3.6]);
+  const network = { edges: [edge], paintEdges: [{ ...edge }] };
+  bindEdeFittedLanes(network, { edges: { test: { start: [0,0], lanes } } }, e => e.wayId);
+  buildRoadPaint(new Scene(), network, builder);
+  assert.ok(strips.length >= 5);
+  assert.ok(strips.some(row => row[2] > 1.4 && row[5] > 1.4));
 });
 
 test('surveyed motorway paint replaces only the overlapping divider on its own way', () => {

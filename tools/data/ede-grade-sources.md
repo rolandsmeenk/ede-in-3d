@@ -75,6 +75,19 @@ Six BGT bridge decks follow the half-metre AHN surface model. Their center eleva
 
 The destination footpath on OSM way 1361789451 passes beneath a building at ground level. AHN measures 17.52 and 17.42 m NAP at the exposed portals. DTM has a gap beneath the roof and DSM resolves the roof above it. The opening in the game has an estimated 2.8 m clearance and preserves the mapped foot access. [OpenStreetMap footpath](https://www.openstreetmap.org/way/1361789451) · [AHN elevation models](https://www.ahn.nl/dataroom)
 
+## Continuous railway grades
+
+The rail fitter uses the [PDOK AHN half-metre rasters](https://www.ahn.nl/dataroom) along the mapped tracks. It samples three points across the bed roughly every 5 m, using the terrain model on exposed stretches and the surface model on mapped rail bridges. The [checked-in observations](ede-rail-survey.json) store chainage and height in metres NAP. The source contained zero-Z values on the Valleilijn approach near Witte Hindepark. Those observations, including elevations interpolated to zero, were discarded. Native AHN shows the exposed ballast near 20.8–21.0 m NAP there.
+
+The fit maintains a single elevation at shared track nodes. Surveyed crossing heights, station berths and bridge clearance controls constrain the result. It reduces the weight of isolated raster returns and limits changes in grade. The bake rejects any fitted segment steeper than 3%. The rails, ballast and train positions all use the same baked elevations.
+
+The rebuild uses NumPy and SciPy. To refresh the observation snapshot from PDOK, use a Python environment with Rasterio and pyproj.
+
+```sh
+python3 tools/fetch-ede-ahn-survey.py /tmp/ede-rail-survey \
+  --rail-output tools/data/ede-rail-survey.json
+```
+
 ## Rebuild
 
 ### Follow-up approach and interior fits

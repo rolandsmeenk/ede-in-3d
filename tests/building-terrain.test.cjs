@@ -42,7 +42,7 @@ class Vector3 {
   normalize() { return this; }
 }
 
-function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}, globals = {}, meta = {} } = {}) {
+function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}, globals = {}, meta = {}, landmarks = {} } = {}) {
   return loadModule(read('bag3d.js').replaceAll('export async function', 'async function'), {
     globals,
     imports: {
@@ -61,9 +61,9 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}
       './terrain.js': { terrainHeightAt: (x) => 10 + x / 2 },
       './ede-grade.js': { buildingPassageCuts: () => [], ...grade },
       './ede-building-bases.js': { EDE_BUILDING_BASES: [] },
+      './ede-landmark-sites.js': { landmarkBagExclusions: () => new Map(), landmarkBuildingCuts: () => [], ...landmarks },
       './ede-facades.js': facadeStubs,
       './ede-facade-material.js': facadeStubs,
-      './ede-facade-photos.js': facadeStubs,
       './aerial-colors.js': { getAerialColors: () => false, ...aerial }
     }
   });
@@ -108,7 +108,7 @@ test('BAG starts from fallback, bounds downloads, cancels stale work on a jump, 
   const { createBagBuildingStream, ecefToLocalMatrix, gltfToLocalMatrix } = loadBag({ three: T,
     meta: { bounds: [-200, -200, 2200, 200], lonLatAffine: { lon0: 5.67, lat0: 52.04, x: [0, 68600], z: [0, 0, -111300] } },
     globals: { performance, URL, AbortController, setTimeout, document: { hidden: false }, console },
-    facadeStubs: { loadEdeFacades: async () => null, buildFacadePhotos: () => null, createBagFacadeMaterial: () => new T.MeshBasicMaterial() }
+    facadeStubs: { loadEdeFacades: async () => null, createBagFacadeMaterial: () => new T.MeshBasicMaterial() }
   });
   const toEcef = ecefToLocalMatrix().invert(), toGltf = gltfToLocalMatrix().invert();
   function tile(x, extent, uri) {
@@ -174,6 +174,35 @@ test('BAG starts from fallback, bounds downloads, cancels stale work on a jump, 
   assert.deepEqual(changes.at(-1), [['jump'], false]);
   dispose();
   assert.equal(stream.parent, null);
+});
+
+test('BAG replaces only the named landmark features in a shared tile', () => {
+  const { bakeTile } = loadBag({ facadeStubs: { meshBagFacadeFeatures: (_, mesh, tables) => tables[mesh.table] } });
+  const mesh = { table: 0, isMesh: true, geometry: { attributes: {
+    position: new BufferAttribute([1,0,0, 2,0,0, 2,2,0, 3,0,0, 4,0,0, 4,2,0], 3),
+    normal: new BufferAttribute([0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1], 3),
+    _feature_id_0: new BufferAttribute([6,6,6, 7,7,7], 1),
+  } } };
+  const gltf = { scene: { updateMatrixWorld() {}, traverse(fn) { fn(mesh); } } };
+  const [kept] = bakeTile(gltf, {}, null, null, null, [new Map([[6, true]])]);
+  assert.deepEqual(Array.from(kept.index.array), [3, 4, 5]);
+  assert.equal(bakeTile(gltf, {}, null, null, null, [new Map([[6, true], [7, true]])]).length, 0);
+});
+
+test('BAG removes the old ENKA shaft and keeps geometry outside its mapped footprint', async () => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const landmarks = await import('../js/ede-landmark-sites.js');
+  const { x, z } = landmarks.EDE_MODELED_LANDMARKS.find(site => site.id === 'grote-enka-schoorsteen');
+  const { carveBagBuildingPassages } = loadBag({ three, landmarks });
+  const facade = new three.PlaneGeometry(14, 82).translate(x, 41, z);
+  facade.computeBoundingBox();
+  carveBagBuildingPassages(facade);
+  const mesh = new three.Mesh(facade, new three.MeshBasicMaterial({ side: three.DoubleSide }));
+  const wallAt = (dx, y) => new three.Raycaster(new three.Vector3(x + dx, y, z - 1), new three.Vector3(0, 0, 1))
+    .intersectObject(mesh).length > 0;
+  assert.equal(wallAt(5.25, 3), false);
+  assert.equal(wallAt(5.25, 75), false);
+  assert.equal(wallAt(6, 3), true);
 });
 
 test('BAG clears the Raadhuisstraat portal below its posted soffit and preserves the upper facade', async () => {

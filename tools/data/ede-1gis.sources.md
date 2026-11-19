@@ -40,12 +40,14 @@ The site counts include geometry within 180 m of the indicated view position. Th
 Rebuild with the bundled 529,894-byte survey snapshot and the existing BGT, NWB and grade assets.
 
 ```sh
-uv run --with pyproj --with 'shapely>=2.1' python tools/build-ede-1gis.py --report /tmp/ede-1gis-report.json
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-1gis.py --report /tmp/ede-1gis-report.json
 ```
 
 To refresh the public survey and replace the offline source snapshot, download the latest source at the same RD bounds.
 
 ```sh
-uv run --with pyproj --with 'shapely>=2.1' python tools/build-ede-1gis.py /tmp/ede-1gis --fetch \
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-1gis.py /tmp/ede-1gis --fetch \
   --save-snapshot tools/data/ede-1gis.snapshot.json.gz --report /tmp/ede-1gis-report.json
 ```
+
+The source adapter uses the pinned horizontal transform for refreshes. The lane bake reads the RD New vertices directly. [Offline GIS frame and control checks](ede-gis-v1.md)

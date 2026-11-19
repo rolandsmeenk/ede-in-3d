@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import math
 import re
+import runpy
 import struct
 from pathlib import Path
 
@@ -315,12 +316,38 @@ def reviewed_observation(review, wall, metadata, frames, frame, terrain, crops):
     for opening in review.get("openings", []):
         kind = opening["kind"]
         x, y, w, h = (opening[name] for name in ("x","y","width","height"))
-        details = {key:opening[key] for key in ("frame","sill") if key in opening}
+        details = {key: opening[key] for key in
+                   ("frame", "sill", "surround", "depth", "arch", "panes", "transom", "tracery") if key in opening}
         rect = clip_opening(kind, x, y, x+w, y+h, wall, **details)
         if rect:
             openings.append(rect)
-    extra = {key:review[key] for key in ("detail","roofColor") if key in review}
+    extra = {key: review[key] for key in
+             ("detail", "roofColor", "wallMaterial", "frameColor", "doorColor", "sillColor",
+              "glazingColor", "surroundColor", "layoutMeasured", "occludedKinds") if key in review}
     return observation(wall, review["confidence"], sources, wall_color(patches), openings, **extra)
+
+
+def reviewed_walls(walls, reviews):
+    # Keep the calibrated review coordinates when the same BAG wall moves slightly in a source refresh.
+    reviewed_bags = {review["bagId"] for review in reviews}
+    by_id, by_bag = {}, {bag: [] for bag in reviewed_bags}
+    for wall in walls:
+        bag = wall["bagId"]
+        if bag not in reviewed_bags:
+            continue
+        identity = bag, wall["wallId"]
+        by_id[identity] = wall
+        by_bag[bag].append(identity)
+    resolve_wall = runpy.run_path(str(ROOT / 'tools/build-ede-facades.py'))['resolve_wall']
+    for review in reviews:
+        identity = review["bagId"], review["wallId"]
+        canonical, _ = resolve_wall(identity, by_id, by_bag)
+        wall = by_id[canonical]
+        if canonical != identity:
+            ax, az, bx, bz, base = map(float, identity[1].split(','))
+            wall = {**wall, "wallId": identity[1], "a": [ax, az], "b": [bx, bz],
+                    "width": math.hypot(bx - ax, bz - az), "baseOffset": base}
+        yield review, wall, canonical
 
 
 def main():
@@ -334,7 +361,6 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     walls = read(args.walls)["walls"]
-    by_id = {(wall["bagId"],wall["wallId"]):wall for wall in walls}
     by_osm = {}
     for wall in walls:
         if wall.get("osmId"):
@@ -342,7 +368,8 @@ def main():
     frame = scene_frame()
     metadata = load_metadata(args.metadata)
     reviewed = read(args.review)["reviews"] if args.review else []
-    omit = {(review["bagId"],review["wallId"]) for review in reviewed}
+    matches = list(reviewed_walls(walls, reviewed)) if reviewed else []
+    omit = {canonical for _, _, canonical in matches}
     observations = [obs for run in args.orthofacade for obs in from_orthofacade(run, by_osm, walls, frame, metadata, omit)]
     if reviewed:
         if not args.images:
@@ -350,8 +377,8 @@ def main():
         if args.crops:
             args.crops.mkdir(parents=True, exist_ok=True)
         terrain = Ground()
-        observations.extend(reviewed_observation(r,by_id[(r["bagId"],r["wallId"])],metadata,args.images,frame,terrain,args.crops)
-                            for r in reviewed)
+        observations.extend(reviewed_observation(review, wall, metadata, args.images, frame, terrain, args.crops)
+                            for review, wall, _ in matches)
     if not observations:
         raise SystemExit("No usable wall observations in these inputs")
     observations.sort(key=lambda o: (o["bagId"],o["wallId"],-o["confidence"]))

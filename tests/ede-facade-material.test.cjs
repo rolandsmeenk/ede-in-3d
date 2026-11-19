@@ -8,9 +8,12 @@ class DataTexture {
   constructor(data, width, height) { this.image = { data, width, height }; }
 }
 let turns = 0;
+const facadeSource = readFileSync(join(__dirname, '../js/ede-facades.js'), 'utf8');
+const facade = loadModule(facadeSource.replace(/export async function loadEdeFacades[\s\S]*?\nconst scalarSize/, 'const scalarSize')
+  .replaceAll('export async function', 'async function'));
 const { buildFacadeMaskAtlas, buildFacadeMaskAtlasIncrementally, projectFacadeUv } = loadModule(
   readFileSync(join(__dirname, '../js/ede-facade-material.js'), 'utf8'),
-  { imports: { 'three/webgpu': { DataTexture }, 'three/tsl': {}, './tsl-materials.js': {} },
+  { imports: { 'three/webgpu': { DataTexture }, 'three/tsl': {}, './tsl-materials.js': {}, './ede-facades.js': facade },
     globals: { performance: { now: () => ++turns * 6 }, setTimeout } }
 );
 
@@ -53,4 +56,23 @@ test('streamed wall masks retain the eager texture bytes and stop on cancellatio
   assert.deepEqual(streamed.rects.get(wall), eager.rects.get(wall));
   assert.deepEqual(Buffer.from(streamed.texture.image.data), Buffer.from(eager.texture.image.data));
   assert.equal(await buildFacadeMaskAtlasIncrementally([wall], () => false), null);
+});
+
+test('the mask keeps an arched window corner blank and shows measured panes and transom', () => {
+  const wall = { a: [0, 0], b: [5, 0], minY: 0, height: 4, status: 'observed',
+    wallType: 'street', wallMaterial: 'stone', frameColor: '#252628',
+    openings: [{ kind: 'window', x: 1, y: 0.8, width: 3, height: 2.8, frame: 0.16, panes: 2,
+      transom: 0.5, arch: 'pointed' }] };
+  const atlas = buildFacadeMaskAtlas([wall]);
+  const { data, width, height } = atlas.texture.image;
+  const sample = (x, y) => {
+    const [u, v] = projectFacadeUv(wall, atlas.rects.get(wall), x, y, 0);
+    return Array.from(data.subarray(4 * (Math.floor(u * width) + width * Math.floor(v * height)),
+      4 * (Math.floor(u * width) + width * Math.floor(v * height)) + 4));
+  };
+  assert.deepEqual(sample(1.1, 3.5), [0, 0, 0, 0], 'above the arched corner');
+  assert.ok(sample(1.65, 1.28)[0] > 230, 'glazing between bars');
+  assert.ok(sample(2.48, 1.28)[2] > 180, 'vertical pane division');
+  assert.ok(sample(1.65, 2.20)[2] > 180, 'horizontal transom');
+  assert.equal(atlas.palette.image.data[3], 2, 'stone finish slot');
 });

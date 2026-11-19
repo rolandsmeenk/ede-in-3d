@@ -1,3 +1,4 @@
+import { EDE_MODELED_LANDMARKS, modeledLandmarkFootprints } from './ede-landmark-sites.js';
 import { GEO } from './nyc-geodata.js';
 import { FOOT } from './road-access.js';
 
@@ -46,6 +47,15 @@ function makeBlock(b,id,park=0){
 const BLOCKS=[...EDE_DATA.buildings.filter(b=>!b.part).map((b,i)=>makeBlock(b,i)),...EDE_DATA.parks.map((b,i)=>makeBlock(b,'park:'+i,1))];
 const LANDMARK_BLOCKS=new Set();
 const LANDMARK_SITES=GEO.landmarks;
+for (const site of EDE_MODELED_LANDMARKS) {
+  const [{ outer }] = modeledLandmarkFootprints(site);
+  const xs = outer.map(p => p.x), zs = outer.map(p => p.z);
+  LANDMARK_SITES[site.name] = {
+    x: site.x, z: site.z, h: site.height,
+    w: Math.max(...xs) - Math.min(...xs), d: Math.max(...zs) - Math.min(...zs),
+    ring: outer.flatMap(p => [p.x, p.z]),
+  };
+}
 function getBlockBounds(col,row){return BLOCKS[Number.isInteger(col)?col:0]||{minX:0,maxX:0,minZ:0,maxZ:0,cx:0,cz:0,width:0,depth:0};}
 const avenueNameAt=(a)=>a?.short||a?.name||'';
 const avenueX=()=>0;
@@ -271,14 +281,9 @@ defaultSpawn.x-=Math.cos(defaultSpawn.heading)*1.8;defaultSpawn.z+=Math.sin(defa
 // Legacy material code samples ordered district bands through streetZ; keep distinct thresholds.
 const streetZ=(n=37)=>defaultSpawn.z+(37-Number(n))*25;
 const NYC_LANDMARKS=[
- ['oudekerk','Oude Kerk','Oude Kerk',5.671553,52.0460029,'Centrum','Torenstraat'],
- ['edecentrum','Station Ede Centrum','Ede Centrum',5.6681895,52.0432539,'Centrum','Telefoonweg'],
  ['edewageningen','Station Ede-Wageningen','Ede-Wageningen',5.6741136,52.0274114,'Stationsgebied','Frisopark'],
- ['raadhuis','Raadhuis Ede','Raadhuis',5.6751979,52.0456604,'Centrum','Bergstraat'],
  ['chico-y-chica','Chico y Chica','Chico y Chica',5.673605,52.045626,'Raadhuisplein','Raadhuisplein'],
- ['cultura','Cultura','Cultura',5.6672796,52.0465614,'Centrum','Molenstraat'],
  ['marktplein','Marktplein','Marktplein',5.669702,52.0465652,'Centrum','Marktstraat'],
- ['huis-kernhem','Huis Kernhem','Huis Kernhem',5.6573018,52.0528403,'Kernhem','Kernhemseweg'],
  ['proosdijpark','Proosdijpark','Proosdijpark',5.6496497,52.0398935,'Veldhuizen','Veenderweg'],
  ['openluchttheater','Openluchttheater Ede','Openluchttheater',5.67844,52.04059,'Ede','van Pabstlaan'],
  ['sherman-tank','Sherman Tank','Sherman Tank',5.69175563,52.0414851,'Langenberg','Arnhemseweg'],
@@ -286,12 +291,19 @@ const NYC_LANDMARKS=[
  const site=LANDMARK_SITES[name];
  const {x,z}=site||projectLonLat(lon,lat);
  return {id,name,short,x,z,district,road,lon,lat};
-});
-// The church and sculptures have mapped approaches off the driving network.
+}).concat(EDE_MODELED_LANDMARKS.map(site => ({
+ ...site, short: site.name,
+ lon: AFF.lon0 + (site.x - AFF.x[0]) / AFF.x[1],
+ lat: AFF.lat0 + (site.z - AFF.z[0]) / AFF.z[2],
+})));
+// Specific approaches point toward the entrance or main façade from a mapped street.
 const LANDMARK_APPROACHES={
  oudekerk:[5.670825,52.046130],
  'chico-y-chica':[5.6737293,52.0456570],
  openluchttheater:[5.6782546,52.0398201],
+ astrant:[5.6686318,52.0450327],
+ 'enka-westhal':[5.67843,52.02564],
+ 'pegasus-flat':[5.6488113,52.0240750],
 };
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){
@@ -304,7 +316,14 @@ for(const lm of NYC_LANDMARKS){
  if(!LANDMARK_SITES[lm.name])LANDMARK_SITES[lm.name]={x:lm.x,z:lm.z,w:60,d:60,h:20,ring:[]};
 }
 function getLocationLabel(x,z){
- for(const lm of NYC_LANDMARKS)if(Math.hypot(x-lm.x,z-lm.z)<100)return lm.name;
+ let landmark = null, landmarkDistance = 100;
+ for (const lm of NYC_LANDMARKS) {
+   const distance = Math.hypot(x - lm.x, z - lm.z);
+   if (distance >= landmarkDistance) continue;
+   landmark = lm;
+   landmarkDistance = distance;
+ }
+ if (landmark) return landmark.name;
  const nearby=nearestRoads(x,z,100).filter(q=>q.road.raw);
  if(nearby.length>1&&nearby[1].dist<22)return `${nearby[0].road.name} & ${nearby[1].road.name}`;
  if(nearby.length)return nearby[0].road.name;

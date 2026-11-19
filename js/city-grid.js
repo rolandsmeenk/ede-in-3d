@@ -13,9 +13,9 @@ import {
   createParkPavingMaterial
 } from './tsl-materials.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
-import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
+import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
-import { gradeCuts, gradeWayAt, railHeightAt } from './ede-grade.js';
+import { getRailCorridors, gradeCuts, gradeWayAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
 import { edeTreeSite } from './ede-tree-data.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
@@ -339,7 +339,7 @@ function buildCityGrid(scene, treeInventory, landCover) {
       }
     }
   }
-  const ballastWidth = 2.9, sleeperSpacing = 0.65;
+  const ballastWidth = RAIL_BALLAST_WIDTH;
   const maskSize = 64;
   const mask = new Uint8Array(maskSize ** 2);
   const { smoothstep } = THREE.MathUtils;
@@ -363,8 +363,19 @@ function buildCityGrid(scene, treeInventory, landCover) {
   ballastMat.colorNode = mix(color(0x6c6054), color(0x3f3730), texture(sleeperMask).r);
   const railMat = new THREE.MeshStandardNodeMaterial({ color: 0xb5ada0, metalness: 0.35, roughness: 0.47 });
   let railWays = 0;
+  const railCorridors = getRailCorridors();
   for (const railway of EDE_DATA.railways || []) {
     if (railway.tunnel || railway.pts.length < 4) continue;
+    const fitted = railCorridors.get(railway.id);
+    if (fitted) {
+      for (let i = 0; i < fitted.sections.length; i += 48) {
+        const sections = fitted.sections.slice(i, i + 48);
+        collect(edeRailStrip(sections, ballastWidth / 2, RAIL_BALLAST_TOP), ballastMat);
+        for (const side of [-1, 1]) collect(edeRailStrip(sections, 0.045, RAIL_TOP, side * 1.435 / 2), railMat);
+      }
+      railWays++;
+      continue;
+    }
     const points = edePoints(railway.pts);
     let distance = 0;
     for (let i = 1; i < points.length; i++) {
@@ -393,15 +404,15 @@ function buildCityGrid(scene, treeInventory, landCover) {
       };
 
       // The ballast sits below the road surface at level crossings.
-      const bed = trackStrip(ballastWidth / 2, 0.035);
+      const bed = trackStrip(ballastWidth / 2, RAIL_BALLAST_TOP);
       const positions = bed.getAttribute('position'), coordinates = bed.getAttribute('uv');
       for (let j = 0; j < positions.count; j++) {
         const dx = positions.getX(j) - a.x, dz = positions.getZ(j) - a.z;
         coordinates.setXY(j, (-dx * uz + dz * ux) / ballastWidth + 0.5,
-          (distance + dx * ux + dz * uz) / sleeperSpacing + 0.5);
+          (distance + dx * ux + dz * uz) / RAIL_SLEEPER_SPACING + 0.5);
       }
       collect(bed, ballastMat);
-      for (const side of [-1, 1]) collect(trackStrip(0.045, 0.13, side * 1.435 / 2), railMat);
+      for (const side of [-1, 1]) collect(trackStrip(0.045, RAIL_TOP, side * 1.435 / 2), railMat);
       distance += length;
     }
     if (distance > 0) railWays++;

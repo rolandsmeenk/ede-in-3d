@@ -1,0 +1,1595 @@
+{
+  "version": 1,
+  "crs": "EPSG:28992",
+  "axisOrder": "xy",
+  "source": {
+    "name": "Beeldmateriaal Nederland 2026 high-resolution RGB orthophoto via PDOK",
+    "license": "CC BY 4.0",
+    "year": 2026,
+    "wmsVersion": "1.3.0",
+    "layer": "2026_orthoHR",
+    "coordinateConvention": "Pixel column and row at centre through GetMap RD bounds and pixel dimensions"
+  },
+  "images": [
+    {
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=174549%2C448561%2C174694%2C448666&WIDTH=1450&HEIGHT=1050",
+      "bbox": [
+        174549,
+        448561,
+        174694,
+        448666
+      ],
+      "width": 1450,
+      "height": 1050,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w1156964960"
+      ],
+      "label": "Akulaan westbound turn pockets",
+      "note": "Bus lettering north of the first boundary and three general lanes near the stop line. Parked construction vehicles partly hide the outside curb. Dashed observations join visible paint segments along the same boundary.",
+      "id": "akulaan",
+      "sha256": "f75d127b94be2d2411389fe78161cd10038b998ecb896ff708c16e15bc54a961",
+      "rasterTransform": [
+        0.1,
+        0,
+        174549,
+        0,
+        -0.1,
+        448666
+      ]
+    },
+    {
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=173517%2C449975%2C173700%2C450074&WIDTH=1220&HEIGHT=660",
+      "bbox": [
+        173517,
+        449975,
+        173700,
+        450074
+      ],
+      "width": 1220,
+      "height": 660,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w6953286"
+      ],
+      "label": "Kolkakkerweg unmarked residential street",
+      "note": "The brick carriageway is unmarked across the sampled section; use BGT usable width, keep the footway, parking and junction islands separate.",
+      "id": "kolkakkerweg",
+      "sha256": "15e7cd2a5e5f4a04953f51a5c05e4a5146f593d1598baa2e51e77a4c93d42add",
+      "rasterTransform": [
+        0.15,
+        0,
+        173517,
+        0,
+        -0.15,
+        450074
+      ]
+    },
+    {
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=174554%2C448708%2C174692%2C448968&WIDTH=812&HEIGHT=1529",
+      "bbox": [
+        174554,
+        448708,
+        174692,
+        448968
+      ],
+      "width": 812,
+      "height": 1529,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w6952984",
+        "w1063323754"
+      ],
+      "label": "Albertstunnel and its approaches",
+      "note": "The station and rail deck obscure most of the lower tunnel. Use only visible stripe points on each approach and the fitted lower profile under the deck.",
+      "id": "albertstunnel",
+      "sha256": "62565514bc70a666f51a1304d346d629202896ed5f2960fb1af52a67d7f0c98e",
+      "rasterTransform": [
+        0.16995073891625614,
+        0,
+        174554,
+        0,
+        -0.17004578155657293,
+        448968
+      ]
+    },
+    {
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=170202%2C448573%2C170488%2C448820&WIDTH=1589&HEIGHT=1372",
+      "bbox": [
+        170202,
+        448573,
+        170488,
+        448820
+      ],
+      "width": 1589,
+      "height": 1372,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w6960104",
+        "w493246904",
+        "w750476158"
+      ],
+      "label": "Knooppunt Maanderbroek main deck and A12",
+      "note": "A30 upper deck has two visible lanes. The deck and its shadow interrupt A12 imagery, while block markings begin along the outside of the eastbound roadway toward the connector.",
+      "id": "maanderbroek",
+      "sha256": "a5f57209524cc2520ad8e5306c3ac4692a3c67bf2f66c8f7ec15821772b9ea71",
+      "rasterTransform": [
+        0.17998741346758967,
+        0,
+        170202,
+        0,
+        -0.18002915451895043,
+        448820
+      ]
+    },
+    {
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=170423%2C448440%2C170691%2C448718&WIDTH=1489&HEIGHT=1544",
+      "bbox": [
+        170423,
+        448440,
+        170691,
+        448718
+      ],
+      "width": 1489,
+      "height": 1544,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w6960114",
+        "w6960110",
+        "w493246904",
+        "w380485855"
+      ],
+      "label": "Maanderbroek connector and merge exclusions",
+      "note": "Two lines of paint on the lower motorway enclose a marked exclusion beside the connector. The upper connector projects across the lower lanes; use the identified layer for each.",
+      "id": "maanderbroek-taper",
+      "sha256": "4eac444b4d4553ab8a9d67dcf314e68bbe8c7e74de5667921221d0f705d3d721",
+      "rasterTransform": [
+        0.17998656816655473,
+        0,
+        170423,
+        0,
+        -0.1800518134715026,
+        448718
+      ]
+    },
+    {
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=172985%2C447118%2C173269%2C447368&WIDTH=1578&HEIGHT=1389",
+      "bbox": [
+        172985,
+        447118,
+        173269,
+        447368
+      ],
+      "width": 1578,
+      "height": 1389,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w25551034",
+        "w311310855",
+        "w469675212"
+      ],
+      "label": "A12 exit 24 south approach",
+      "note": "Turn arrows and block lines are visible around the ramp signal approach; queued vehicles obscure portions of the N781 lanes.",
+      "id": "exit24-south",
+      "sha256": "3bbf43b5d373590a40293b3ce027ceb3b7f272edb29d243d6a23d0e33feb8d19",
+      "rasterTransform": [
+        0.17997465145754118,
+        0,
+        172985,
+        0,
+        -0.17998560115190784,
+        447368
+      ]
+    },
+    {
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=172985%2C447259%2C173227%2C447527&WIDTH=1344&HEIGHT=1489",
+      "bbox": [
+        172985,
+        447259,
+        173227,
+        447527
+      ],
+      "width": 1344,
+      "height": 1489,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w6921137",
+        "w25551033",
+        "w723962252",
+        "w723962249",
+        "w469675212"
+      ],
+      "label": "N781 bridge and A12 at De Poortwachter",
+      "note": "Five visible running or turning strips on the upper eastern carriageway and a hatched separator on the western side. The bridge deck masks the lower A12 beneath it.",
+      "id": "exit24",
+      "sha256": "20a18f5813551e63765aeec294efcaae7ac540a98918dc95420605082d3c52f4",
+      "rasterTransform": [
+        0.1800595238095238,
+        0,
+        172985,
+        0,
+        -0.17998656816655473,
+        447527
+      ]
+    },
+    {
+      "id": "nachtegaallaan",
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=173653%2C450060%2C173793%2C450168&WIDTH=1167&HEIGHT=900",
+      "bbox": [
+        173653,
+        450060,
+        173793,
+        450168
+      ],
+      "width": 1167,
+      "height": 900,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w6953282"
+      ],
+      "label": "Nachtegaallaan unmarked residential street",
+      "sha256": "20c4d7f17d21976379e66f8987612b8c6b2265666584d0bf66480f3e65959a99",
+      "rasterTransform": [
+        0.11996572407883462,
+        0.0,
+        173653.0,
+        0.0,
+        -0.12,
+        450168.0
+      ],
+      "note": "Unmarked residential carriageway. Parked vehicles occupy separate south-side spaces rather than the BGT carriageway used by the fit. Tree shadows obscure part of the southern boundary."
+    },
+    {
+      "id": "frans-halslaan",
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=172989%2C447579%2C173147%2C447718&WIDTH=1215&HEIGHT=1069",
+      "bbox": [
+        172989,
+        447579,
+        173147,
+        447718
+      ],
+      "width": 1215,
+      "height": 1069,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w840619077"
+      ],
+      "label": "Frans Halslaan bridge over Doctor Willem Dreeslaan",
+      "sha256": "a4a7a130457577804bedb1fbdc464382fce0b24804c86b5872e97700f92b3546",
+      "rasterTransform": [
+        0.13004115226337448,
+        0.0,
+        172989.0,
+        0.0,
+        -0.13002806361085126,
+        447718.0
+      ],
+      "note": "The upper deck shows a solid central separator and a north curb separating the cycleway. Shadows below the deck obscure the lower road through the structural span."
+    },
+    {
+      "id": "noorder-parallelweg",
+      "url": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A28992&FORMAT=image%2Fjpeg&BBOX=172698%2C449350%2C172833%2C449491&WIDTH=1125&HEIGHT=1175",
+      "bbox": [
+        172698,
+        449350,
+        172833,
+        449491
+      ],
+      "width": 1125,
+      "height": 1175,
+      "crs": "EPSG:28992",
+      "wayIds": [
+        "w6955251"
+      ],
+      "label": "Noorder Parallelweg above Keesomstraat",
+      "sha256": "6555d1e4b85ec15ec288a95473886d338eb606b83f0c32625610b1825faa66cd",
+      "rasterTransform": [
+        0.12,
+        0.0,
+        172698.0,
+        0.0,
+        -0.12,
+        449491.0
+      ],
+      "note": "The upper narrow deck above Keesomstraat is unmarked. The rail span and the Frankeneng road deck cross farther south and are distinct features."
+    }
+  ],
+  "markings": [
+    {
+      "id": "akulaan-bus-divider",
+      "site": "akulaan",
+      "wayIds": [
+        "w1156964960"
+      ],
+      "layer": 0,
+      "kind": "divider",
+      "pixelPoints": [
+        [
+          639.93,
+          422.18
+        ],
+        [
+          694.33,
+          439.23
+        ],
+        [
+          784.84,
+          468.14
+        ],
+        [
+          870.45,
+          495.92
+        ],
+        [
+          953.44,
+          522.08
+        ],
+        [
+          1044.9,
+          551.3
+        ]
+      ],
+      "sourceNote": "Solid approach section separating the north-side bus lane.",
+      "points": [
+        [
+          174613.04,
+          448623.73
+        ],
+        [
+          174618.48,
+          448622.03
+        ],
+        [
+          174627.53,
+          448619.14
+        ],
+        [
+          174636.1,
+          448616.36
+        ],
+        [
+          174644.39,
+          448613.74
+        ],
+        [
+          174653.54,
+          448610.82
+        ]
+      ]
+    },
+    {
+      "id": "akulaan-middle-divider",
+      "site": "akulaan",
+      "wayIds": [
+        "w1156964960"
+      ],
+      "layer": 0,
+      "kind": "divider",
+      "pixelPoints": [
+        [
+          626.56,
+          452.49
+        ],
+        [
+          695.11,
+          474.53
+        ],
+        [
+          783.72,
+          502.79
+        ],
+        [
+          864.72,
+          528.6
+        ],
+        [
+          969.6,
+          561.82
+        ],
+        [
+          1074.3,
+          595.61
+        ],
+        [
+          1169.61,
+          625.92
+        ],
+        [
+          1255.44,
+          653.04
+        ]
+      ],
+      "sourceNote": "White dashed and solid boundary between the two outer turn movements and the central through lane.",
+      "points": [
+        [
+          174611.71,
+          448620.7
+        ],
+        [
+          174618.56,
+          448618.5
+        ],
+        [
+          174627.42,
+          448615.67
+        ],
+        [
+          174635.52,
+          448613.09
+        ],
+        [
+          174646.01,
+          448609.77
+        ],
+        [
+          174656.48,
+          448606.39
+        ],
+        [
+          174666.01,
+          448603.36
+        ],
+        [
+          174674.59,
+          448600.65
+        ]
+      ]
+    },
+    {
+      "id": "akulaan-south-divider",
+      "site": "akulaan",
+      "wayIds": [
+        "w1156964960"
+      ],
+      "layer": 0,
+      "kind": "divider",
+      "pixelPoints": [
+        [
+          617.96,
+          490.54
+        ],
+        [
+          692.2,
+          514.49
+        ],
+        [
+          771.21,
+          539.94
+        ],
+        [
+          857.04,
+          567.06
+        ],
+        [
+          959.02,
+          599.51
+        ],
+        [
+          1063.84,
+          632.92
+        ],
+        [
+          1151.57,
+          660.68
+        ],
+        [
+          1228.62,
+          685.68
+        ]
+      ],
+      "points": [
+        [
+          174610.85,
+          448616.9
+        ],
+        [
+          174618.27,
+          448614.5
+        ],
+        [
+          174626.17,
+          448611.96
+        ],
+        [
+          174634.75,
+          448609.24
+        ],
+        [
+          174644.95,
+          448606.0
+        ],
+        [
+          174655.43,
+          448602.66
+        ],
+        [
+          174664.21,
+          448599.88
+        ],
+        [
+          174671.91,
+          448597.38
+        ]
+      ]
+    },
+    {
+      "id": "akulaan-median-edge",
+      "site": "akulaan",
+      "wayIds": [
+        "w1156964960"
+      ],
+      "layer": 0,
+      "kind": "edge",
+      "pixelPoints": [
+        [
+          608.47,
+          521.85
+        ],
+        [
+          668.33,
+          541.48
+        ],
+        [
+          766.1,
+          573.89
+        ],
+        [
+          868.55,
+          608.08
+        ],
+        [
+          974.35,
+          641.71
+        ],
+        [
+          1057.01,
+          662.59
+        ],
+        [
+          1131.47,
+          676.49
+        ],
+        [
+          1206.87,
+          690.7
+        ],
+        [
+          1250.87,
+          697.93
+        ]
+      ],
+      "side": "left",
+      "sourceNote": "Visible median curb including the left-turn pocket taper. It is curb evidence without a painted edge line.",
+      "points": [
+        [
+          174609.9,
+          448613.77
+        ],
+        [
+          174615.88,
+          448611.8
+        ],
+        [
+          174625.66,
+          448608.56
+        ],
+        [
+          174635.9,
+          448605.14
+        ],
+        [
+          174646.48,
+          448601.78
+        ],
+        [
+          174654.75,
+          448599.69
+        ],
+        [
+          174662.2,
+          448598.3
+        ],
+        [
+          174669.74,
+          448596.88
+        ],
+        [
+          174674.14,
+          448596.16
+        ]
+      ]
+    },
+    {
+      "id": "maanderbroek-a30-deck-divider",
+      "site": "maanderbroek",
+      "wayIds": [
+        "w6960104"
+      ],
+      "layer": 1,
+      "kind": "divider",
+      "pixelPoints": [
+        [
+          721,
+          467
+        ],
+        [
+          718,
+          530
+        ],
+        [
+          714,
+          603
+        ],
+        [
+          712,
+          639
+        ],
+        [
+          714,
+          760
+        ],
+        [
+          719,
+          842
+        ],
+        [
+          725,
+          910
+        ],
+        [
+          735,
+          1026
+        ],
+        [
+          745,
+          1103
+        ],
+        [
+          757,
+          1171
+        ],
+        [
+          765,
+          1200
+        ]
+      ],
+      "sourceNote": "Dashed divider on the A30 deck. The narrow interval with the truck has no visible stripe sample.",
+      "points": [
+        [
+          170331.86,
+          448735.84
+        ],
+        [
+          170331.32,
+          448724.49
+        ],
+        [
+          170330.6,
+          448711.35
+        ],
+        [
+          170330.24,
+          448704.87
+        ],
+        [
+          170330.6,
+          448683.09
+        ],
+        [
+          170331.5,
+          448668.33
+        ],
+        [
+          170332.58,
+          448656.08
+        ],
+        [
+          170334.38,
+          448635.2
+        ],
+        [
+          170336.18,
+          448621.34
+        ],
+        [
+          170338.34,
+          448609.1
+        ],
+        [
+          170339.78,
+          448603.88
+        ]
+      ]
+    },
+    {
+      "id": "maanderbroek-a30-deck-east",
+      "site": "maanderbroek",
+      "wayIds": [
+        "w6960104"
+      ],
+      "layer": 1,
+      "kind": "edge",
+      "pixelPoints": [
+        [
+          747,
+          467
+        ],
+        [
+          743,
+          570
+        ],
+        [
+          737,
+          670
+        ],
+        [
+          738,
+          766
+        ],
+        [
+          742,
+          862
+        ],
+        [
+          750,
+          963
+        ],
+        [
+          762,
+          1067
+        ],
+        [
+          779,
+          1172
+        ],
+        [
+          784,
+          1200
+        ]
+      ],
+      "side": "left",
+      "points": [
+        [
+          170336.54,
+          448735.84
+        ],
+        [
+          170335.82,
+          448717.29
+        ],
+        [
+          170334.74,
+          448699.29
+        ],
+        [
+          170334.92,
+          448682.01
+        ],
+        [
+          170335.64,
+          448664.72
+        ],
+        [
+          170337.08,
+          448646.54
+        ],
+        [
+          170339.24,
+          448627.82
+        ],
+        [
+          170342.3,
+          448608.92
+        ],
+        [
+          170343.2,
+          448603.88
+        ]
+      ]
+    },
+    {
+      "id": "maanderbroek-a30-deck-west",
+      "site": "maanderbroek",
+      "wayIds": [
+        "w6960104"
+      ],
+      "layer": 1,
+      "kind": "edge",
+      "pixelPoints": [
+        [
+          690,
+          467
+        ],
+        [
+          684,
+          570
+        ],
+        [
+          678,
+          670
+        ],
+        [
+          679,
+          766
+        ],
+        [
+          685,
+          866
+        ],
+        [
+          693,
+          964
+        ],
+        [
+          707,
+          1067
+        ],
+        [
+          724,
+          1172
+        ],
+        [
+          730,
+          1200
+        ]
+      ],
+      "side": "right",
+      "points": [
+        [
+          170326.28,
+          448735.84
+        ],
+        [
+          170325.2,
+          448717.29
+        ],
+        [
+          170324.12,
+          448699.29
+        ],
+        [
+          170324.3,
+          448682.01
+        ],
+        [
+          170325.38,
+          448664.0
+        ],
+        [
+          170326.82,
+          448646.36
+        ],
+        [
+          170329.34,
+          448627.82
+        ],
+        [
+          170332.4,
+          448608.92
+        ],
+        [
+          170333.48,
+          448603.88
+        ]
+      ]
+    },
+    {
+      "id": "maanderbroek-a12-east-blocks",
+      "site": "maanderbroek",
+      "wayIds": [
+        "w380485855"
+      ],
+      "layer": 0,
+      "kind": "block",
+      "pixelPoints": [
+        [
+          1121,
+          1041
+        ],
+        [
+          1166,
+          1070
+        ],
+        [
+          1216,
+          1103
+        ],
+        [
+          1260,
+          1133
+        ],
+        [
+          1311,
+          1166
+        ],
+        [
+          1364,
+          1202
+        ],
+        [
+          1416,
+          1236
+        ],
+        [
+          1465,
+          1267
+        ]
+      ],
+      "sourceNote": "Wide blocks at the start of the merge strip. The 1GIS lines take precedence wherever they are available.",
+      "points": [
+        [
+          170403.86,
+          448632.5
+        ],
+        [
+          170411.96,
+          448627.28
+        ],
+        [
+          170420.95,
+          448621.34
+        ],
+        [
+          170428.87,
+          448615.94
+        ],
+        [
+          170438.05,
+          448610.0
+        ],
+        [
+          170447.59,
+          448603.51
+        ],
+        [
+          170456.95,
+          448597.39
+        ],
+        [
+          170465.77,
+          448591.81
+        ]
+      ]
+    },
+    {
+      "id": "maanderbroek-taper-painted-divider-gore",
+      "site": "maanderbroek-taper",
+      "wayIds": [
+        "w6960114",
+        "w493246904"
+      ],
+      "layer": 0,
+      "kind": "exclusion",
+      "pixelPoints": [
+        [
+          1025,
+          998
+        ],
+        [
+          1045,
+          1004
+        ],
+        [
+          1098,
+          1038
+        ],
+        [
+          1178,
+          1089
+        ],
+        [
+          1262,
+          1145
+        ],
+        [
+          1330,
+          1191
+        ],
+        [
+          1283,
+          1164
+        ],
+        [
+          1181,
+          1104
+        ],
+        [
+          1094,
+          1053
+        ],
+        [
+          1042,
+          1021
+        ],
+        [
+          1025,
+          1010
+        ],
+        [
+          1025,
+          998
+        ]
+      ],
+      "closed": true,
+      "sourceNote": "Visible white taper at the merge nose on the lower motorway. The ramp overhead is excluded by layer.",
+      "points": [
+        [
+          170607.58,
+          448538.22
+        ],
+        [
+          170611.18,
+          448537.14
+        ],
+        [
+          170620.72,
+          448531.02
+        ],
+        [
+          170635.11,
+          448521.83
+        ],
+        [
+          170650.23,
+          448511.75
+        ],
+        [
+          170662.47,
+          448503.47
+        ],
+        [
+          170654.01,
+          448508.33
+        ],
+        [
+          170635.65,
+          448519.13
+        ],
+        [
+          170620.0,
+          448528.32
+        ],
+        [
+          170610.64,
+          448534.08
+        ],
+        [
+          170607.58,
+          448536.06
+        ],
+        [
+          170607.58,
+          448538.22
+        ]
+      ]
+    },
+    {
+      "id": "exit24-n781-hatch",
+      "site": "exit24",
+      "wayIds": [
+        "w25551033",
+        "w25551034"
+      ],
+      "layer": 1,
+      "kind": "exclusion",
+      "pixelPoints": [
+        [
+          489,
+          245
+        ],
+        [
+          511,
+          251
+        ],
+        [
+          533,
+          396
+        ],
+        [
+          548,
+          491
+        ],
+        [
+          569,
+          623
+        ],
+        [
+          590,
+          756
+        ],
+        [
+          610,
+          890
+        ],
+        [
+          625,
+          994
+        ],
+        [
+          615,
+          994
+        ],
+        [
+          598,
+          891
+        ],
+        [
+          576,
+          757
+        ],
+        [
+          557,
+          626
+        ],
+        [
+          537,
+          494
+        ],
+        [
+          520,
+          399
+        ],
+        [
+          497,
+          255
+        ],
+        [
+          489,
+          245
+        ]
+      ],
+      "closed": true,
+      "sourceNote": "Hatched strip on the upper western carriageway. Photo evidence covers the bridge section; approaches retain current geometry where the lane count changes.",
+      "points": [
+        [
+          173073.14,
+          447482.81
+        ],
+        [
+          173077.1,
+          447481.73
+        ],
+        [
+          173081.06,
+          447455.64
+        ],
+        [
+          173083.76,
+          447438.54
+        ],
+        [
+          173087.54,
+          447414.78
+        ],
+        [
+          173091.33,
+          447390.84
+        ],
+        [
+          173094.93,
+          447366.72
+        ],
+        [
+          173097.63,
+          447348.0
+        ],
+        [
+          173095.83,
+          447348.0
+        ],
+        [
+          173092.77,
+          447366.54
+        ],
+        [
+          173088.8,
+          447390.66
+        ],
+        [
+          173085.38,
+          447414.24
+        ],
+        [
+          173081.78,
+          447438.0
+        ],
+        [
+          173078.72,
+          447455.1
+        ],
+        [
+          173074.58,
+          447481.01
+        ],
+        [
+          173073.14,
+          447482.81
+        ]
+      ]
+    },
+    {
+      "id": "exit24-a12-ramp-exclusion",
+      "site": "exit24",
+      "wayIds": [
+        "w723962252",
+        "w469675212"
+      ],
+      "layer": 0,
+      "kind": "exclusion",
+      "pixelPoints": [
+        [
+          799,
+          768
+        ],
+        [
+          867,
+          777
+        ],
+        [
+          972,
+          791
+        ],
+        [
+          1073,
+          805
+        ],
+        [
+          1191,
+          823
+        ],
+        [
+          1319,
+          842
+        ],
+        [
+          1319,
+          845
+        ],
+        [
+          1191,
+          828
+        ],
+        [
+          1073,
+          813
+        ],
+        [
+          972,
+          801
+        ],
+        [
+          867,
+          787
+        ],
+        [
+          799,
+          779
+        ],
+        [
+          799,
+          768
+        ]
+      ],
+      "closed": true,
+      "sourceNote": "Continuous white exclusion between the eastbound A12 and the lower ramp, visible east of the bridge only.",
+      "points": [
+        [
+          173128.96,
+          447388.68
+        ],
+        [
+          173141.2,
+          447387.06
+        ],
+        [
+          173160.11,
+          447384.54
+        ],
+        [
+          173178.29,
+          447382.02
+        ],
+        [
+          173199.54,
+          447378.78
+        ],
+        [
+          173222.59,
+          447375.36
+        ],
+        [
+          173222.59,
+          447374.82
+        ],
+        [
+          173199.54,
+          447377.88
+        ],
+        [
+          173178.29,
+          447380.58
+        ],
+        [
+          173160.11,
+          447382.74
+        ],
+        [
+          173141.2,
+          447385.26
+        ],
+        [
+          173128.96,
+          447386.7
+        ],
+        [
+          173128.96,
+          447388.68
+        ]
+      ]
+    },
+    {
+      "id": "albertstunnel-north-east-approach-divider",
+      "site": "albertstunnel",
+      "wayIds": [
+        "w6952971"
+      ],
+      "layer": 0,
+      "kind": "divider",
+      "pixelPoints": [
+        [
+          461,
+          208
+        ],
+        [
+          460,
+          280
+        ],
+        [
+          459,
+          351
+        ],
+        [
+          457,
+          418
+        ],
+        [
+          455,
+          488
+        ],
+        [
+          454,
+          524
+        ]
+      ],
+      "sourceNote": "Visible east carriageway approach only. No stripe is extrapolated under the station roof.",
+      "points": [
+        [
+          174632.43,
+          448932.55
+        ],
+        [
+          174632.26,
+          448920.3
+        ],
+        [
+          174632.09,
+          448908.23
+        ],
+        [
+          174631.75,
+          448896.84
+        ],
+        [
+          174631.41,
+          448884.93
+        ],
+        [
+          174631.24,
+          448878.81
+        ]
+      ]
+    },
+    {
+      "id": "albertstunnel-south-west-approach-divider",
+      "site": "albertstunnel",
+      "wayIds": [
+        "w6952980"
+      ],
+      "layer": 0,
+      "kind": "divider",
+      "pixelPoints": [
+        [
+          349,
+          1019
+        ],
+        [
+          343,
+          1080
+        ],
+        [
+          337,
+          1140
+        ],
+        [
+          329,
+          1216
+        ],
+        [
+          322,
+          1280
+        ],
+        [
+          318,
+          1341
+        ]
+      ],
+      "sourceNote": "Visible west carriageway approach only. The fitted tunnel deck keeps its separate layer.",
+      "points": [
+        [
+          174613.4,
+          448794.64
+        ],
+        [
+          174612.38,
+          448784.27
+        ],
+        [
+          174611.36,
+          448774.06
+        ],
+        [
+          174610.0,
+          448761.14
+        ],
+        [
+          174608.81,
+          448750.26
+        ],
+        [
+          174608.13,
+          448739.88
+        ]
+      ]
+    },
+    {
+      "id": "frans-halslaan-solid-divider",
+      "site": "frans-halslaan",
+      "wayIds": [
+        "w840619077"
+      ],
+      "layer": 1,
+      "kind": "divider",
+      "pixelPoints": [
+        [
+          418,
+          546.8
+        ],
+        [
+          477,
+          539
+        ],
+        [
+          528,
+          532.7
+        ],
+        [
+          612,
+          521.9
+        ],
+        [
+          692,
+          511.4
+        ],
+        [
+          773,
+          500.7
+        ],
+        [
+          793,
+          497.8
+        ]
+      ],
+      "points": [
+        [
+          173043.42,
+          447646.84
+        ],
+        [
+          173051.09,
+          447647.85
+        ],
+        [
+          173057.73,
+          447648.67
+        ],
+        [
+          173068.65,
+          447650.07
+        ],
+        [
+          173079.05,
+          447651.44
+        ],
+        [
+          173089.59,
+          447652.83
+        ],
+        [
+          173092.19,
+          447653.21
+        ]
+      ],
+      "sourceNote": "Observed upper two-way carriageway divider. Keep lower Dr Willem Dreeslaan edges on their own level."
+    },
+    {
+      "id": "frans-halslaan-north-cycle-curb",
+      "site": "frans-halslaan",
+      "wayIds": [
+        "w840619077"
+      ],
+      "layer": 1,
+      "kind": "edge",
+      "pixelPoints": [
+        [
+          411,
+          511.9
+        ],
+        [
+          455,
+          507.2
+        ],
+        [
+          519,
+          498.7
+        ],
+        [
+          597,
+          489
+        ],
+        [
+          669,
+          479.7
+        ],
+        [
+          739,
+          470.7
+        ],
+        [
+          789,
+          464
+        ]
+      ],
+      "points": [
+        [
+          173042.51,
+          447651.37
+        ],
+        [
+          173048.23,
+          447651.98
+        ],
+        [
+          173056.56,
+          447653.09
+        ],
+        [
+          173066.7,
+          447654.35
+        ],
+        [
+          173076.06,
+          447655.56
+        ],
+        [
+          173085.17,
+          447656.73
+        ],
+        [
+          173091.67,
+          447657.6
+        ]
+      ],
+      "sourceNote": "Curb between the motor carriageway and the northern cycle path. Curb evidence rather than paint."
+    }
+  ]
+}

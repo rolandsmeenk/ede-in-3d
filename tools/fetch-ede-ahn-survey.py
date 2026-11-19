@@ -1,9 +1,12 @@
 """Cache native 0.5 m PDOK AHN coverage for the targeted Ede elevation survey."""
 
 import argparse
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 import json
+import math
 from pathlib import Path
+from statistics import median
 import subprocess
 
 from pyproj import Transformer
@@ -49,11 +52,72 @@ def fetch(directory, site, bounds, model):
     return path
 
 
+def rail_survey(directory, output):
+    scene = load_scene()
+    min_x, min_z, max_x, max_z = scene['meta']['bounds']
+    frame = scene['meta']['lonLatAffine']
+    rd = Transformer.from_crs(4326, 28992, always_xy=True)
+    tiles = defaultdict(list)
+    observations = {}
+    for way in scene['railways']:
+        if way.get('tunnel'):
+            continue
+        observations[way['id']] = []
+        chainage = 0
+        points = list(zip(way['pts'][::2], way['pts'][1::2]))
+        for (ax, az), (bx, bz) in zip(points, points[1:]):
+            length = math.hypot(bx - ax, bz - az)
+            if length == 0:
+                continue
+            ux, uz = (bx - ax) / length, (bz - az) / length
+            count = math.ceil(length / 5)
+            for k in range(count + 1):
+                at = length * k / count
+                x, z = ax + ux * at, az + uz * at
+                if not (min_x - 250 <= x <= max_x + 250 and min_z - 250 <= z <= max_z + 250):
+                    continue
+                coords = [rd.transform(frame['lon0'] + (x - uz * offset) / frame['x'][1],
+                                       frame['lat0'] + (z + ux * offset) / frame['z'][2])
+                          for offset in (-0.6, 0, 0.6)]
+                e, n = coords[1]
+                model = 'dsm' if way.get('bridge') else 'dtm'
+                tiles[(int(e // 512) * 512, int(n // 512) * 512, model)].append(
+                    (way['id'], round(chainage + at, 3), coords))
+            chainage += length
+
+    def sample_tile(tile, rows):
+        e, n, model = tile
+        bounds = (e - 4, n - 4, e + 516, n + 516)
+        path = fetch(directory, f'rail-{e}-{n}', bounds, model)
+        with rasterio.open(path) as source:
+            raster = source.read(1, masked=True).filled(float('nan'))
+            for way, distance, coords in rows:
+                pixels = [raster[source.index(x, y)] for x, y in coords]
+                valid = [float(z) for z in pixels if math.isfinite(z) and 5 < z < 70]
+                if valid:
+                    yield way, distance, round(median(valid), 3)
+
+    with ThreadPoolExecutor(max_workers=5) as workers:
+        jobs = [workers.submit(lambda tile, rows: list(sample_tile(tile, rows)), tile, rows)
+                for tile, rows in sorted(tiles.items())]
+        for job in jobs:
+            for way, distance, nap in job.result():
+                observations[way].append((distance, nap))
+    output.write_text(json.dumps(dict(version=1, source=WCS, ways={
+        way: sorted(set(rows)) for way, rows in observations.items()
+    }), separators=(',', ':')) + '\n')
+    print(f'Sampled {sum(map(len, observations.values()))} AHN observations in {len(tiles)} tiles')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
+    parser.add_argument('--rail-output', type=Path, help='Sample the rail corridors into this JSON file')
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
+    if args.rail_output:
+        rail_survey(args.directory, args.rail_output)
+        return
     catalog = json.loads((ROOT / 'tools/data/ede-crossing-sites.json').read_text())
     affine = load_scene()['meta']['lonLatAffine']
     rd = Transformer.from_crs(4326, 28992, always_xy=True)

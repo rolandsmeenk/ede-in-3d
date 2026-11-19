@@ -9,6 +9,7 @@ from pathlib import Path
 import struct
 
 from ede_map import load_scene
+from ede_rail_profiles import fit as fit_rail_profiles, point_on_line, station_at, stations_of, SURVEY
 
 ROOT = Path(__file__).resolve().parents[1]
 PRO_RAIL = 'https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer'
@@ -46,31 +47,6 @@ def project(frame, lon, lat):
     return (lon - frame['lon0']) * frame['x'][1], (lat - frame['lat0']) * frame['z'][2]
 
 
-def point_on_line(points, stations, at):
-    i = min(len(points) - 2, max(0, bisect.bisect_right(stations, at) - 1))
-    a, b = points[i:i + 2]
-    fraction = (at - stations[i]) / (stations[i + 1] - stations[i])
-    return tuple(x + (y - x) * fraction for x, y in zip(a, b))
-
-
-def station_at(points, stations, point):
-    best = (math.inf, 0)
-    for a, b, distance, end in zip(points, points[1:], stations, stations[1:]):
-        length = end - distance
-        dx, dz = (b[0] - a[0]) / length, (b[1] - a[1]) / length
-        x, z = point[0] - a[0], point[1] - a[1]
-        along = max(0, min(length, x * dx + z * dz))
-        best = min(best, (math.hypot(x - along * dx, z - along * dz), distance + along))
-    return best[1]
-
-
-def stations_of(points):
-    stations = [0.]
-    for a, b in zip(points, points[1:]):
-        stations.append(stations[-1] + math.dist(a[:2], b[:2]))
-    return stations
-
-
 def fitting_curve(knots, distance):
     i = min(len(knots) - 2, max(0, bisect.bisect_right(knots, (distance, math.inf)) - 1))
     a, b = knots[i:i + 2]
@@ -89,7 +65,7 @@ def fitting_curve(knots, distance):
     )
 
 
-def build(osm, output, survey_dir):
+def build(osm, output, survey_dir, rail_survey=SURVEY):
     terrain = Terrain()
     level_survey = json.loads((ROOT / 'tools/data/ede-level-crossing-elevations.json').read_text())
     scene = load_scene()
@@ -539,9 +515,12 @@ def build(osm, output, survey_dir):
         way = scene_ways[f'w{way_id}']
         points = list(zip(way['pts'][::2], way['pts'][1::2]))
         ss = stations_of(points)
-        measured = [(*xy((lon, lat)), nap) for lon, lat, nap in surveyed]
+        # Some source segments have missing Z encoded as zero NAP.
+        measured = [(*xy((lon, lat)), nap) for lon, lat, nap in surveyed if 5 < nap < 70]
         measured.extend(rail_crossings.get(way_id, {}).values())
         knots = sorted((station_at(points, ss, (x, z)), nap) for x, z, nap in measured)
+        if len(knots) < 2:
+            continue
         start, end = knots[0][0], knots[-1][0]
         if start < 0.01:
             start = 0
@@ -618,19 +597,20 @@ def build(osm, output, survey_dir):
                            heading=round(math.atan2(after[0] - before[0], after[1] - before[1]), 5)))
         site['qa'] = qa
 
-    output.write_text(json.dumps(dict(version=1, datumNAP=terrain.nap,
-        sources=dict(osm='https://www.openstreetmap.org/copyright', ahn=AHN, bgt=BGT,
-                     proRail=PRO_RAIL, verified='2026-11-18'),
-        sites=sites, railHeights=rail_heights), ensure_ascii=False, separators=(',', ':')) + '\n')
+    result = dict(version=1, datumNAP=terrain.nap, sources=dict(osm='https://www.openstreetmap.org/copyright',
+        ahn=AHN, bgt=BGT, proRail=PRO_RAIL, verified='2026-11-18'), sites=sites, railHeights=rail_heights)
+    result['railCorridors'] = fit_rail_profiles(scene, result, json.loads(rail_survey.read_text()))
+    output.write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':')) + '\n')
     print(f'Wrote {len(sites)} sites, {sum(len(s["profiles"]) for s in sites)} routes and '
-          f'{len(rail_heights)} local rail profiles to {output}')
+          f'{len(result["railCorridors"])} rail alignments to {output}')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('osm', type=Path, help='Ede Overpass snapshot with full OSM way geometry')
     parser.add_argument('--survey-dir', type=Path, help='Local ProRail layer 7 and 9 JSON query responses')
+    parser.add_argument('--rail-survey', type=Path, default=SURVEY)
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-grade.json')
     args = parser.parse_args()
-    build(args.osm, args.output, args.survey_dir)
+    build(args.osm, args.output, args.survey_dir, args.rail_survey)
 

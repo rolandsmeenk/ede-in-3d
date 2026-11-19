@@ -52,6 +52,7 @@ import { buildingPassageOpenings } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleRoofColor } from './aerial-colors.js';
 import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js';
+import { MILL_ADJOINING_FOOTPRINT } from './ede-landmark-sites.js';
 import { EDE_BUILDING_BASES } from './ede-building-bases.js';
 
 const surveyedBuildingBases = new Map(EDE_BUILDING_BASES.map(({ osmId, y }) => [osmId, y]));
@@ -2014,9 +2015,10 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
     }, 0) / 2;
     let built = 0;
     for (const source of EDE_DATA.buildings || []) {
-      if ((LANDMARK_SOURCE_EXCLUSIONS.has(source.id) || LANDMARK_SOURCE_EXCLUSIONS.has(source.osmId))) continue;
+      if (LANDMARK_SOURCE_EXCLUSIONS.has(source.id) || LANDMARK_SOURCE_EXCLUSIONS.has(source.osmId)) continue;
       if (!source.ring || source.ring.length < 6) continue;
-      const poly = edePoints(source.ring), holes = (source.holes || []).map(edePoints);
+      const outline = source.id === 'w271547126' ? MILL_ADJOINING_FOOTPRINT : source.ring;
+      const poly = edePoints(outline), holes = (source.holes || []).map(edePoints);
       const bounds = edeBounds(poly);
       const cx = (bounds.minX + bounds.maxX) / 2, cz = (bounds.minZ + bounds.maxZ) / 2;
       if (cx < ISLAND_BOUNDS.minX - 100 || cx > ISLAND_BOUNDS.maxX + 100 || cz < ISLAND_BOUNDS.minZ - 100 || cz > ISLAND_BOUNDS.maxZ + 100) continue;

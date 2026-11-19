@@ -156,6 +156,58 @@ test('both mainline passenger routes keep a continuous grade through Keesom, Koe
   }
 });
 
+test('the whole rail network stays continuous and the Valleilijn mesh follows the train profile', async () => {
+  const grade = await loadLocalGrade();
+  const gradeAPI = await import('../js/ede-grade.js');
+  const terrain = await import('../js/terrain.js');
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const corridors = gradeAPI.getRailCorridors();
+  const junctions = new Map();
+  for (const way of EDE_DATA.railways.filter(way => !way.tunnel)) {
+    const { points } = corridors.get(way.id);
+    const nodes = new Map(points.map(([x, z, y]) => [`${x},${z}`, y]));
+    for (let i = 0; i < way.pts.length; i += 2) {
+      const key = `${way.pts[i]},${way.pts[i + 1]}`;
+      assert.ok(Number.isFinite(nodes.get(key)), way.id);
+      if (junctions.has(key)) assert.equal(nodes.get(key), junctions.get(key), key);
+      junctions.set(key, nodes.get(key));
+    }
+  }
+
+  const { paths } = await getTracks();
+  for (const route of paths) {
+    let previous = route.sample(0);
+    for (let distance = 1; distance < route.length; distance++) {
+      const point = route.sample(distance);
+      assert.ok(Math.abs(point.y - previous.y) <= 0.031, `${route.id} at ${distance} m`);
+      previous = point;
+    }
+  }
+
+  const { loadModule } = require('./helpers/module.cjs');
+  const THREE = await import('../vendor/three/build/three.webgpu.js');
+  const source = await readFile(path.join(__dirname, '../js/ede-geometry.js'), 'utf8');
+  const { edeRailStrip } = loadModule(source.replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
+    imports: { 'three/webgpu': THREE, './city-config.js': { EDE_DATA }, './terrain.js': terrain, './ede-grade.js': gradeAPI }
+  });
+  const wayId = 'w431533902';
+  const { sections } = corridors.get(wayId);
+  const route = paths.find(route => route.id === 'rs34-south');
+  const geometry = edeRailStrip(sections, 0.045, gradeAPI.RAIL_TOP, 1.435 / 2);
+  const vertices = geometry.getAttribute('position');
+  for (let i = 0; i < sections.length; i++) {
+    const { a, b } = sections[i];
+    for (const [k, center] of [a, b].entries()) {
+      const hit = route.project(center.x, center.z, wayId);
+      const train = route.sample(hit.distance);
+      assert.ok(hit.error < 0.001);
+      assert.ok(Math.abs(train.y - vertices.getY(4 * i + 2 * k)) < 0.0001);
+      assert.ok(Math.abs(train.y + grade.datumNAP - 21) < 0.3);
+    }
+  }
+  geometry.dispose();
+});
+
 test('live observations honor bearing, platform and a previous connected path', async () => {
   const { paths, match } = await getTracks();
   const west = paths.find(path => path.id === 'main-3-west');

@@ -62,6 +62,19 @@
   <link rel="modulepreload" href="./js/ede-shops.js" />
   <link rel="modulepreload" href="./js/fire-escapes.js" />
   <link rel="modulepreload" href="./js/landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-landmark-sites.js" />
+  <link rel="modulepreload" href="./js/ede-concordiamolen.js" />
+  <link rel="modulepreload" href="./js/ede-stingerbol.js" />
+  <link rel="modulepreload" href="./js/ede-mural-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-plantion.js" />
+  <link rel="modulepreload" href="./js/ede-friso-kazerne.js" />
+  <link rel="modulepreload" href="./js/ede-station-landmark.js" />
+  <link rel="modulepreload" href="./js/ede-enka-kerk.js" />
+  <link rel="modulepreload" href="./js/ede-heritage-survey.js" />
+  <link rel="modulepreload" href="./js/ede-heritage-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-historic-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-civic-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-enka-chimneys.js" />
   <link rel="modulepreload" href="./js/street-details.js" />
   <link rel="modulepreload" href="./js/street-props.js" />
   <link rel="modulepreload" href="./js/road-network.js" />
@@ -70,7 +83,7 @@
   <link rel="modulepreload" href="./js/road-paint.js" />
   <link rel="modulepreload" href="./js/ede-street-features.js" />
   <link rel="modulepreload" href="./js/ede-street-features-world.js" />
-  <link rel="modulepreload" href="./js/traffic.js?v=20261119-trip-pilot" />
+  <link rel="modulepreload" href="./js/traffic.js?v=20261119-fitted-lanes" />
   <link rel="modulepreload" href="./js/ede-trips.js" />
   <link rel="modulepreload" href="./js/ede-driving-controls.js" />
   <link rel="modulepreload" href="./js/ede-driving-control-evidence.js" />
@@ -84,6 +97,7 @@
   <link rel="modulepreload" href="./js/ede-road-traffic.js" />
   <link rel="modulepreload" href="./js/ede-motorway-lanes.js" />
   <link rel="modulepreload" href="./js/ede-road-lanes.js" />
+  <link rel="modulepreload" href="./js/ede-lane-geometry.js" />
   <link rel="modulepreload" href="./js/ede-road-surfaces.js" />
   <link rel="modulepreload" href="./js/pedestrian-system.js" />
   <link rel="modulepreload" href="./js/pedestrian-routes.js" />
@@ -102,9 +116,8 @@
   <link rel="modulepreload" href="./js/bag3d.js" />
   <link rel="modulepreload" href="./js/ede-facades.js" />
   <link rel="modulepreload" href="./js/ede-facade-material.js" />
-  <link rel="modulepreload" href="./js/ede-facade-photos.js" />
-  <link rel="modulepreload" href="./js/main.js?v=20261119-town-detail" />
-  <script type="module" src="./js/main.js?v=20261119-town-detail"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261119-landmarks-3" />
+  <script type="module" src="./js/main.js?v=20261119-landmarks-3"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -166,8 +179,8 @@
     <a href="https://docs.3dbag.nl/en/copyright/" target="_blank" rel="noopener noreferrer">© 3DBAG by tudelft3d and 3DGI</a>
     <a href="https://www.ahn.nl/dataroom" target="_blank" rel="noopener noreferrer">Terrain © AHN via PDOK</a>
     <a href="https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566" target="_blank" rel="noopener noreferrer">2025 aerial imagery © Beeldmateriaal.nl via PDOK</a>
-    <a href="https://www.mapillary.com/" target="_blank" rel="noopener noreferrer">Façade imagery via Mapillary</a>
-    <a href="./assets/ede-facade-pilot.LICENSE.md" target="_blank" rel="noopener noreferrer">Façade photo credits</a>
+    <a href="https://www.mapillary.com/" target="_blank" rel="noopener noreferrer">Façade evidence via Mapillary</a>
+    <a href="./assets/ede-facades.SOURCES.md" target="_blank" rel="noopener noreferrer">Façade evidence credits</a>
     <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html" target="_blank" rel="noopener noreferrer">BGT lamp posts via PDOK</a>
     <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/vegetatieobject_punt?f=html" target="_blank" rel="noopener noreferrer">BGT trees via PDOK</a>
     <a href="https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f" target="_blank" rel="noopener noreferrer">Tree inventory by Gemeente Ede</a>
@@ -246,6 +259,17 @@
     <button id="tp-huis-kernhem" class="pop-item tp-btn" data-teleport="huis-kernhem" type="button"><span class="pop-name">Huis Kernhem</span><span class="pop-sub">Kernhemseweg · Kernhem</span></button>
     <button id="tp-proosdijpark" class="pop-item tp-btn" data-teleport="proosdijpark" type="button"><span class="pop-name">Proosdijpark</span><span class="pop-sub">Veenderweg · Veldhuizen</span></button>
     <button id="tp-openluchttheater" class="pop-item tp-btn" data-teleport="openluchttheater" type="button"><span class="pop-name">Openluchttheater Ede</span><span class="pop-sub">Van Pabstlaan</span></button>
+    <button id="tp-concordiamolen" class="pop-item tp-btn" data-teleport="concordiamolen" type="button"><span class="pop-name">Concordiamolen</span><span class="pop-sub">Accesweg · Centrum</span></button>
+    <button id="tp-stingerbol" class="pop-item tp-btn" data-teleport="stingerbol" type="button"><span class="pop-name">Stingerbol</span><span class="pop-sub">Kazerneterrein · Stationsgebied</span></button>
+    <button id="tp-grote-enka-schoorsteen" class="pop-item tp-btn" data-teleport="grote-enka-schoorsteen" type="button"><span class="pop-name">Grote ENKA-schoorsteen</span><span class="pop-sub">Grote Schoorsteenplein · ENKA</span></button>
+    <button id="tp-kleine-enka-schoorsteen" class="pop-item tp-btn" data-teleport="kleine-enka-schoorsteen" type="button"><span class="pop-name">Kleine ENKA-schoorsteen</span><span class="pop-sub">Kleine Schoorsteenplein · ENKA</span></button>
+    <button id="tp-astrant" class="pop-item tp-btn" data-teleport="astrant" type="button"><span class="pop-name">Astrant</span><span class="pop-sub">Kuiperplein</span></button>
+    <button id="tp-pegasus-flat" class="pop-item tp-btn" data-teleport="pegasus-flat" type="button"><span class="pop-name">Pegasusflat</span><span class="pop-sub">Van Eekelenflat · Ede-Zuid</span></button>
+    <button id="tp-plantion" class="pop-item tp-btn" data-teleport="plantion" type="button"><span class="pop-name">Plantion</span><span class="pop-sub">Wellensiekstraat · Ede-West</span></button>
+    <button id="tp-johan-willem-friso" class="pop-item tp-btn" data-teleport="johan-willem-friso" type="button"><span class="pop-name">Johan Willem Friso-kazerne</span><span class="pop-sub">Frisopark · Veluwse Poort</span></button>
+    <button id="tp-enka-westhal" class="pop-item tp-btn" data-teleport="enka-westhal" type="button"><span class="pop-name">ENKA Westhal en Poortgebouw</span><span class="pop-sub">Akulaan · ENKA</span></button>
+    <button id="tp-mauritskazerne" class="pop-item tp-btn" data-teleport="mauritskazerne" type="button"><span class="pop-name">Mauritskazerne</span><span class="pop-sub">Frisopark · Veluwse Poort</span></button>
+    <button id="tp-de-vuurvogel" class="pop-item tp-btn" data-teleport="de-vuurvogel" type="button"><span class="pop-name">De Vuurvogel</span><span class="pop-sub">Nachtegaallaan · Vogelbuurt</span></button>
     <button id="tp-sherman-tank" class="pop-item tp-btn" data-teleport="sherman-tank" type="button"><span class="pop-name">Sherman Tank</span><span class="pop-sub">Arnhemseweg · Langenberg</span></button>
   </div>
 

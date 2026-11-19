@@ -14,6 +14,14 @@ python3 tools/serve-ede.py
 
 Add `--offline` to skip upstream traffic, rail and weather feeds. A plain static server such as `python3 -m http.server 8000` also runs the offline traffic model. Three.js, OpenStreetMap geometry, posted limits, and the timetable are local. The simulator streams LoD 2.2 buildings when 3DBAG is reachable and uses OpenStreetMap footprints otherwise.
 
+## Landmarks
+
+The **Teleport** menu includes Astrant, the Van Eekelenflat, Plantion, the Johan Willem Friso-kazerne and station Ede-Wageningen. Their models use the mapped building plans and surveyed elevations where available.
+
+The historic exterior models include ENKA Westhal and Poortgebouw, Mauritskazerne, Oude Kerk, the old Ede Centrum station, Huis Kernhem and its coach house, De Vuurvogel, Raadhuis Ede and Cultura. See the [exterior references and fitted details](tools/data/ede-landmark-exteriors.md).
+
+Astrant’s yellow-and-charcoal music artwork and the Van Eekelenflat’s winged horse and parachutes are original, generated game illustrations. The real murals are [Muzikanten by Studio Giftig](https://www.bezoek-ede.nl/locaties/4164762835/street-art-muzikanten) and [Pegasus by Nina Valkhoff with SMOK](https://www.woonstede.nl/nieuws/airborne-komt-tot-leven-op-de-van-eekelenflat/).
+
 ## Graphics and profiling
 
 The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and keeps bloom and color grading. Standard enables screen-space reflections and multisample antialiasing. The terrain uses the same 12 m AHN grid in both presets.
@@ -87,7 +95,7 @@ The BGT snapshot provides decks, abutments, railway platforms, walls, pylons, ta
 
 ```sh
 uv run --with 'shapely>=2.1' python tools/build-ede-bgt.py /tmp/ede-bgt --date 2026-11-18 --fetch
-uv run --with 'shapely>=2.1' python tools/build-ede-bgt-roads.py /tmp/ede-bgt-roads --date 2026-11-18 --fetch --report /tmp/ede-bgt-road-report.json
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-bgt-roads.py /tmp/ede-bgt-roads --date 2026-11-18 --fetch --report /tmp/ede-bgt-road-report.json
 ```
 
 Omit `--fetch` to reuse a downloaded snapshot. The road evidence builder samples the generated OSM map, so build a new OSM snapshot before matching it and rebuild the map afterward to apply the evidence. The [crossing profile notes](tools/data/ede-grade-sources.md) give the ProRail refresh queries and record the measured and estimated heights for each modeled crossing. Road and path contact, walls, and the follow camera use those layered surfaces while the rail renderer keeps its OSM alignment. At mapped public level crossings, warnings and barriers share train progress with the simulation. See the [traffic pilot](tools/data/ede-traffic-pilot.md) for timing and coverage.
@@ -119,12 +127,22 @@ Use the map’s Overpass JSON for `osm-road-tags.json`, or extract tags for the 
 
 ```sh
 uv run --with osmium python tools/extract-ede-road-tags.py gelderland.osm.pbf utrecht.osm.pbf > /tmp/osm-road-tags.json
-uv run --with 'shapely>=2.1' python tools/build-ede-bgt-roads.py /tmp/ede-bgt-roads --date 2026-11-18 --fetch --osm /tmp/osm-road-tags.json --report /tmp/ede-bgt-road-report.json
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-bgt-roads.py /tmp/ede-bgt-roads --date 2026-11-18 --fetch --osm /tmp/osm-road-tags.json --report /tmp/ede-bgt-road-report.json
 node tools/build-ede-road-tags.mjs /tmp/osm-road-tags.json
 python3 tools/build-ede-motorway-lanes.py --fetch
 ```
 
 Set `--date` to the BGT snapshot date. The shared lane definition supplies both painted markings and traffic lane centres. It retains turn lanes, bus permissions, and cycle and advisory strips. Accepted A12 and A30 sections link to the original NWB offsets and WEGGEG counts. The [motorway evidence and imagery review](tools/data/ede-motorway-lanes.sources.md) records ambiguous matches and confirmed tapers. Rebuild the reviewed motorway asset offline by omitting `--fetch`.
+
+### Refresh fitted vehicle lanes
+
+The offline bake fits A12 and A30 lanes to 1GIS markings, cross-checks available NWB/WEGGEG lane counts, and fits town lanes to same-level BGT carriageway polygons and reviewed PDOK traces. It retains the routing graph, directed edge keys, lane permissions, and the original along-edge stations. The game uses the compact local asset for vehicle trajectories, junction connectors, and generated paint. Surveyed paint keeps priority.
+
+```sh
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-fitted-lanes.py
+```
+
+The bake reads the checked-in 1GIS and motorway snapshots, the BGT road asset, and the [aerial trace manifest](tools/data/ede-lane-aerial-traces.json). The [GIS frame and controls](tools/data/ede-gis-v1.md) document the pinned PROJ release, RDNAPTRANS2018 grid, axis order, and Oude Kerk export. The [verification report](tools/data/ede-fitted-lanes-verification.md) records the reviewed sites, fallback reasons, and paired browser checks.
 
 ## Refresh traffic signs, speed bumps and crossings
 
@@ -178,7 +196,7 @@ Run `build-ede-shorelines.py --audit --osm` to check the original OSM water poly
 Rijkswaterstaat’s Geografische Areaalregistratie supplies A12 and A30 infrastructure in RD New and metres NAP. The bake matches features to directed carriageways, NWB sections and fitted elevations. Surveyed paint replaces coincident procedural paint on the matching way. The lane graph supplies simulation lanes and access. [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
 
 ```sh
-uv run --with pyproj --with 'shapely>=2.1' python tools/build-ede-1gis.py --report /tmp/ede-1gis-report.json
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-1gis.py --report /tmp/ede-1gis-report.json
 ```
 
 Add `/tmp/ede-1gis --fetch --save-snapshot tools/data/ede-1gis.snapshot.json.gz` to refresh the 1GIS snapshot. [Historical DTB reference](tools/data/ede-dtb-detail.sources.md)
@@ -204,36 +222,32 @@ python3 tools/fetch-ede-aerial.py /tmp/ede-aerial
 python3 tools/build-ede-aerial.py /tmp/ede-aerial/ede-aerial-2025.vrt
 ```
 
-## Refresh the Mapillary façade pilot
+## Refresh Ede’s façade layouts
 
-The pilot uses individual LoD 2.2 wall segments at Kolkakkerweg, on Torenstraat, and at the Oude Kerk west entrance. Reviewed Mapillary views supply measured masonry and openings. The builder groups observations by CBS neighbourhood, building type, and wall type, with one statistical vote per BAG building and Ede-wide profiles for groups with enough coverage. The game fits the layouts to the original BAG meshes and keeps the procedural texture on unsupported walls.
+The offline bake matches reviewed Mapillary views to individual LoD 2.2 walls. It uses CBS neighbourhoods, building types and wall roles to choose layouts for unobserved walls. Each distinct BAG building contributes one vote to a profile. The game uses an individual measurement first, then a supported neighbourhood profile, an Ede-wide profile for the same building type, or procedural shading. Mapped shared walls stay blank.
 
-A shared mask atlas supplies opaque glazing, doors, frames, and sills in the original building batches. The Oude Kerk entrance has a fitted recess and projecting surround. The church and storefront share a photo atlas that loads when the camera approaches. Valid PDOK roof samples take priority over street-image or learned roof colours.
+The game reads façade parameters near the camera alongside the existing BAG tiles. Shared tileable surfaces and material masks draw masonry, glazing, doors, frames and sills. Selected openings, including the Oude Kerk entrance and the Torenstraat storefront, use modeled recesses near the camera. The buildings retain their BAG proportions, and PDOK aerial colour supplies the roof reference. Street imagery stays in the offline review cache. [Mapillary evidence credits](assets/ede-facades.SOURCES.md)
 
-Set `MAPILLARY_TOKEN` to a Mapillary client access token for the imagery refresh. The image cache and reviewed crops stay local. With `uv` on your PATH:
+The catalogue and bake can reuse the checked-in measurements. Omit `--fetch` to reuse the pinned BAG and CBS source cache.
 
 ```sh
-uv run --with 'shapely>=2.1' --with pyproj python tools/catalogue-ede-facade-walls.py \
-  /tmp/ede-facade-bag /tmp/ede-facade-walls.json --fetch
-python3 tools/fetch-ede-facade-views.py tools/data/ede-facade-reviews.json /tmp/ede-facade-images
-uv run --with numpy --with opencv-python python tools/extract-ede-facades.py /tmp/ede-facade-walls.json \
-  --metadata /tmp/ede-facade-images/metadata.json --images /tmp/ede-facade-images \
-  --review tools/data/ede-facade-reviews.json --crops /tmp/ede-facade-crops \
-  --output tools/data/ede-facade-observations.json
-uv run --with pillow python tools/bake-ede-facade-photos.py tools/data/ede-facade-photo-crops.json \
-  /tmp/ede-facade-crops assets/ede-facade-pilot.webp /tmp/ede-facade-photos.json
-python3 tools/build-ede-facades.py /tmp/ede-facade-walls.json tools/data/ede-facade-observations.json \
-  --photos /tmp/ede-facade-photos.json --report /tmp/ede-facade-report.json \
-  --hold-out NL.IMBAG.Pand.0228100000073648
+uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 --with flatgeobuf \
+  python tools/catalogue-ede-facade-walls.py /tmp/ede-facades-catalogue /tmp/ede-facades-walls.json --fetch
+python3 tools/build-ede-facades.py /tmp/ede-facades-walls.json tools/data/ede-facade-observations.json \
+  --report tools/data/ede-facade-coverage.json
 ```
 
-Omit `--fetch` to reuse the BAG and CBS cache. The extractor also reads candidate walls from [orthofacade](https://github.com/louis-e/orthofacade) with `--orthofacade /path/to/orthofacade/out/RUN --metadata /path/to/orthofacade/cache/panos.json`. Review new views and opening bounds before expanding the pilot. The bake report shows coverage and compares inferred layouts against photos of complete held-out BAG buildings. [Photo credits and licence](assets/ede-facade-pilot.LICENSE.md)
+To review new Mapillary views, set `MAPILLARY_TOKEN` in the local shell and add the views and measured opening bounds to the review manifest. The extractor accepts candidate views from [orthofacade](https://github.com/louis-e/orthofacade) through `--orthofacade /path/to/orthofacade/out/RUN` and `--metadata /path/to/orthofacade/cache/panos.json`.
 
-The pilot ships 10 observed walls, 178 inferred terraced street façades, and 10 blank shared walls. Three distinct terraced houses train the neighbourhood and Ede-wide street profiles. Apartment, detached-house and shop observations remain specific to the measured buildings while those groups collect coverage. The modelled Oude Kerk entrance depth is estimated at 0.28 m from the visible surround.
+```sh
+python3 tools/fetch-ede-facade-views.py tools/data/ede-facade-reviews.json /tmp/ede-facade-images
+uv run --with numpy --with opencv-python python tools/extract-ede-facades.py /tmp/ede-facades-walls.json \
+  --metadata /tmp/ede-facade-images/metadata.json --images /tmp/ede-facade-images \
+  --review tools/data/ede-facade-reviews.json --crops /tmp/ede-facade-crops \
+  --output /tmp/ede-facade-observations.json
+```
 
-Separate holdout runs withheld BAG buildings `0228100000073648` and `0228100000073646`. Each inferred the three measured windows and one door. Window-spacing errors were 0.126 m and 0.031 m, and door-position errors were 0.311 m and 0.339 m. Wall-colour distances were 8.37 and 3.0 in sRGB. A third split, `0228100000073661`, had a 0.459 m spacing error and a 72.23 sRGB colour distance. Its photo did not provide a usable door measurement. To repeat the other splits, replace the `--hold-out` ID and set `--output` to a temporary path.
-
-A paired WebGPU run used the same walking-height frontal and oblique cameras with the façade asset enabled and blocked. The 198 wall records matched four BAG batches. The first local frame took 8.90 s without the pilot and 9.05 s with it. The mask atlas and the camera-local photo atlas used 10.5 MB and 2.8 MB of texture memory, respectively. The visible photo tile added one batched draw, and the first shopping approach peaked at 33.3 ms in both runs.
+Review source matches, occlusion, colour and opening measurements before replacing the checked-in observation file. The bake report records profiles, fallback coverage and whole-building holdout results. [Coverage data](tools/data/ede-facade-coverage.json) · [Rendering verification](tools/data/ede-facades-verification.md)
 
 ## Refresh the tree inventory
 
@@ -313,7 +327,7 @@ Explore other cities and community remixes in [Slop Cities](https://github.com/z
 - Ede’s coat of arms is from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_Ede.svg) (public domain).
 - Terrain uses the [AHN ground model via PDOK](https://www.pdok.nl/introductie/-/article/actueel-hoogtebestand-nederland-ahn).
 - Vertex colors are derived from the [2025 Beeldmateriaal.nl aerial orthophoto via PDOK](https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566) under CC BY 4.0.
-- Façade observations use [Mapillary](https://www.mapillary.com/) imagery. The photo adaptations are distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). [Photo credits](assets/ede-facade-pilot.LICENSE.md)
+- Offline façade measurements use Mapillary imagery under CC BY-SA 4.0. [Evidence credits](assets/ede-facades.SOURCES.md)
 - Lamp-post locations are from [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html) (CC0).
 - Civil structures and road surface evidence use [PDOK BGT](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) (CC0). Rail alignment and crossing controls were checked against [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer).
 - Directional access and selected clearance limits use the [Rijkswaterstaat WKD](https://docs.ndw.nu/en/handleidingen/wkd/).

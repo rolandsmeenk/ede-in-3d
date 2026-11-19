@@ -128,6 +128,54 @@
       ],
       "openings": [
         {
+          "kind": "storefront",
+          "x": 0.02,
+          "y": 0.02,
+          "width": 4.14,
+          "height": 6.28,
+          "frame": 0.075
+        },
+        {
+          "kind": "storefront",
+          "x": 4.98,
+          "y": 0.02,
+          "width": 2.43,
+          "height": 3.5,
+          "frame": 0.075,
+          "panes": 3,
+          "transom": 0.65,
+          "depth": 0.16
+        },
+        {
+          "kind": "storefront",
+          "x": 7.41,
+          "y": 2.3,
+          "width": 1.08,
+          "height": 1.22,
+          "frame": 0.075,
+          "depth": 0.16
+        },
+        {
+          "kind": "door",
+          "x": 7.41,
+          "y": 0.02,
+          "width": 1.08,
+          "height": 2.28,
+          "frame": 0.075,
+          "depth": 0.16
+        },
+        {
+          "kind": "storefront",
+          "x": 8.49,
+          "y": 0.02,
+          "width": 3.2,
+          "height": 3.5,
+          "frame": 0.075,
+          "panes": 3,
+          "transom": 0.65,
+          "depth": 0.16
+        },
+        {
           "kind": "window",
           "x": 1.57,
           "y": 7.23,
@@ -189,32 +237,13 @@
           "height": 1.97,
           "frame": 0.07,
           "sill": 0.07
-        },
-        {
-          "kind": "storefront",
-          "x": 0.02,
-          "y": 0.02,
-          "width": 4.14,
-          "height": 6.28,
-          "frame": 0.075
-        },
-        {
-          "kind": "storefront",
-          "x": 4.98,
-          "y": 0.02,
-          "width": 6.73,
-          "height": 3.5,
-          "frame": 0.075
-        },
-        {
-          "kind": "door",
-          "x": 7.53,
-          "y": 0.02,
-          "width": 1.35,
-          "height": 2.29,
-          "frame": 0.075
         }
-      ]
+      ],
+      "wallMaterial": "brick",
+      "frameColor": "#3f4645",
+      "glazingColor": "#40525a",
+      "doorColor": "#303b42",
+      "sillColor": "#99918a"
     },
     {
       "bagId": "NL.IMBAG.Pand.0228100000015551",
@@ -411,7 +440,10 @@
           "y": 0.08,
           "width": 3.3,
           "height": 3.25,
-          "frame": 0.14
+          "frame": 0.14,
+          "panes": 2,
+          "depth": 0.28,
+          "surround": 0.15
         },
         {
           "kind": "window",
@@ -419,14 +451,24 @@
           "y": 3.38,
           "width": 3.62,
           "height": 8.78,
-          "frame": 0.16
+          "frame": 0.16,
+          "arch": "pointed",
+          "panes": 4,
+          "tracery": true,
+          "depth": 0.18,
+          "surround": 0.13
         }
       ],
       "detail": {
         "opening": 0,
         "depth": 0.28,
         "surround": 0.15
-      }
+      },
+      "wallMaterial": "brick",
+      "frameColor": "#756f63",
+      "doorColor": "#302c29",
+      "glazingColor": "#283e50",
+      "surroundColor": "#696761"
     },
     {
       "bagId": "NL.IMBAG.Pand.0228100000051744",

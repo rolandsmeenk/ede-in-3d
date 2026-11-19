@@ -218,13 +218,14 @@ function populationContext() {
     focusX: 0, focusZ: 0, player: { active: false },
     clock: 0, recentlyUsedRoads: null,
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
-    nearEdges: [], nearSignals: [], activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
+    nearEdges: [], nearSignals: [], fittedA: {}, activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
     carSpawns: [], vanSpawns: [], bikeSpawns: [], footSpawns: [], roadTraffic: { isClosed: () => false, demand: () => 1, profile: 1 },
     pickByArea: entries => entries[0]?.segment,
     place: (v, e, lane, s) => Object.assign(v, { edge: e, lane, s })
   };
   context.nearView = trafficFunction('nearView', context);
+  context.lanePoint = trafficFunction('lanePoint', context);
   return context;
 }
 

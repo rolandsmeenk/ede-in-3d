@@ -1,10 +1,14 @@
 import { EDE_DATA } from './ede-geodata.js';
 import { MOTOR } from './road-access.js';
-import { terrainHeightAt } from './terrain.js';
+import { getTerrain, terrainHeightAt } from './terrain.js';
 
 const CELL = 48;
 const RAIL_LOOKUP_REACH = 32;
 const STEP_HEIGHT = 1.7;
+export const RAIL_BALLAST_WIDTH = 2.9;
+export const RAIL_BALLAST_TOP = 0.035;
+export const RAIL_SLEEPER_SPACING = 0.65;
+export const RAIL_TOP = 0.13;
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const cellKey = (x, z) => `${x}/${z}`;
 let world = { sites: [], railHeights: [] };
@@ -15,6 +19,9 @@ let localSurfaceWays = new Map();
 let localSurfaces = [];
 let tracks = new Map();
 let nearbyTracks = new Map();
+let railCorridors = new Map();
+let corridorSpans = new Map();
+let corridorTerrainCuts;
 let cuts = new Map();
 let roofs = new Map();
 let wayCuts = new Map();
@@ -174,7 +181,19 @@ export function setEdeGrade(data) {
     if (profile.points?.length > 1) addWay(nextTracks, profile.wayId, calculateSegments(profile));
     // Cut only the narrow ballast footprint where terrain could bury the rails.
     if (profile.fittedBallast || profile.source?.startsWith('ProRail')) {
-      for (const section of gradeSections({ ...profile, width: 2.9 })) indexCut(nextCuts, sectionCut(section));
+      for (const section of gradeSections({ ...profile, width: RAIL_BALLAST_WIDTH })) indexCut(nextCuts, sectionCut(section));
+    }
+  }
+  const nextCorridors = new Map(), nextCorridorSpans = new Map();
+  for (const profile of data.railCorridors || []) {
+    const sections = gradeSections({ ...profile, width: RAIL_BALLAST_WIDTH }, Infinity);
+    nextCorridors.set(profile.wayId, { ...profile, sections });
+    for (const span of calculateSegments(profile)) {
+      indexCut(nextCorridorSpans, {
+        ...span,
+        minX: Math.min(span.x, span.endX) - 2, maxX: Math.max(span.x, span.endX) + 2,
+        minZ: Math.min(span.z, span.endZ) - 2, maxZ: Math.max(span.z, span.endZ) + 2,
+      });
     }
   }
   const nextNearbyTracks = new Map();
@@ -194,6 +213,9 @@ export function setEdeGrade(data) {
   localSurfaces = nextLocalSurfaces;
   tracks = nextTracks;
   nearbyTracks = nextNearbyTracks;
+  railCorridors = nextCorridors;
+  corridorSpans = nextCorridorSpans;
+  corridorTerrainCuts = undefined;
   cuts = nextCuts;
   roofs = nextRoofs;
   wayCuts = nextWayCuts;
@@ -262,11 +284,12 @@ function platformAt(x, z, referenceY) {
   return null;
 }
 
-function nearestSpan(spans, x, z, { mode, kind, referenceY, reach = 0.3, heading } = {}) {
+function nearestSpan(spans, x, z, { mode, kind, referenceY, reach = 0.3, heading, wayId } = {}) {
   let picked = null, best = Infinity;
   const useMode = modeGroup(mode);
   for (const span of spans) {
     const { profile } = span;
+    if (wayId && wayId !== profile.wayId) continue;
     if (useMode && !profile.modes.includes(useMode)) continue;
     if (kind && profile.site?.kind !== kind) continue;
     const raw = (x - span.x) * span.dx + (z - span.z) * span.dz;
@@ -384,21 +407,36 @@ function railElevation(hit) {
   return y + (terrainHeightAt(x, z) - y) * t * t * (3 - 2 * t);
 }
 
+export const getRailCorridors = () => railCorridors;
+
+export function railCorridorHeightAt(wayId, x, z) {
+  const spans = corridorSpans.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || [];
+  return nearestSpan(spans, x, z, { wayId, reach: 2 })?.y;
+}
+
 export function railHeightAt(wayId, x, z) {
-  return railElevation(nearestSpan(tracks.get(wayId) || [], x, z, { reach: 2 }));
+  return railCorridorHeightAt(wayId, x, z) ??
+    railElevation(nearestSpan(tracks.get(wayId) || [], x, z, { reach: 2 }));
+}
+
+function structureRailElevation(hit) {
+  if (!hit) return undefined;
+  const { span, along } = hit;
+  return railCorridorHeightAt(span.profile.wayId, span.x + along * span.dx, span.z + along * span.dz) ??
+    railElevation(hit);
 }
 
 export function nearbyRailHeightAt(x, z, reach = 5) {
   if (reach <= RAIL_LOOKUP_REACH) {
     const spans = nearbyTracks.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL))) || [];
-    return railElevation(nearestSpan(spans, x, z, { reach }));
+    return structureRailElevation(nearestSpan(spans, x, z, { reach }));
   }
   let nearest = null;
   for (const spans of tracks.values()) {
     const hit = nearestSpan(spans, x, z, { reach });
     if (hit && (!nearest || hit.distance < nearest.distance)) nearest = hit;
   }
-  return railElevation(nearest);
+  return structureRailElevation(nearest);
 }
 
 export function gradeDeckAt(x, z, reach = 0.3) {
@@ -419,7 +457,7 @@ export function gradeSections(entry, spacing = 6) {
   const border = [...covers.flat(), ...(entry.span || [])];
   const centers = [];
   for (const span of spans) {
-    const subdivisions = Math.ceil(span.length / spacing);
+    const subdivisions = Math.max(1, Math.ceil(span.length / spacing));
     const marks = Array.from({ length: subdivisions }, (_, i) => span.at + i * span.length / subdivisions);
     for (const limit of border) if (limit > span.at && limit < span.at + span.length) marks.push(limit);
     for (const distance of [...new Set(marks)].sort((a, b) => a - b)) {
@@ -583,15 +621,42 @@ export function buildingPassageHeadingAt(x, z, y, heading) {
   return Math.cos(heading - axis) >= 0 ? axis : axis + Math.PI;
 }
 
-export function gradeCuts(bounds, wayId) {
-  const outlines = (wayCuts.get(wayId) || []).filter(cut => overlaps(bounds, cut));
-  if (!cuts.size) return outlines;
-  const result = new Set(outlines);
+function collectGradeCuts(index, bounds, result) {
+  if (!index.size) return;
   for (let x = Math.floor(bounds.minX / CELL); x <= Math.floor(bounds.maxX / CELL); x++) {
     for (let z = Math.floor(bounds.minZ / CELL); z <= Math.floor(bounds.maxZ / CELL); z++) {
-      for (const cut of cuts.get(cellKey(x, z)) || []) if (overlaps(bounds, cut)) result.add(cut);
+      for (const cut of index.get(cellKey(x, z)) || []) if (overlaps(bounds, cut)) result.add(cut);
     }
   }
+}
+
+export function gradeCuts(bounds, wayId) {
+  const result = new Set((wayCuts.get(wayId) || []).filter(cut => overlaps(bounds, cut)));
+  collectGradeCuts(cuts, bounds, result);
+  return [...result];
+}
+
+export function terrainGradeCuts(bounds) {
+  const result = new Set(gradeCuts(bounds));
+  const terrain = getTerrain();
+  if (!terrain || !railCorridors.size) return [...result];
+  if (!corridorTerrainCuts) {
+    corridorTerrainCuts = new Map();
+    for (const { bridge, sections } of railCorridors.values()) {
+      if (bridge) continue;
+      for (const section of sections) {
+        const { a, b } = section;
+        const buried = [[a, b], [a.left, b.left], [a.right, b.right]].some(([p, q]) => {
+          return terrainHeightAt(p.x, p.z) - p.y > 0.05 || terrainHeightAt(q.x, q.z) - q.y > 0.05 ||
+            terrainHeightAt((p.x + q.x) / 2, (p.z + q.z) / 2) - (p.y + q.y) / 2 > 0.05;
+        });
+        if (!buried) continue;
+        const cut = sectionCut(section);
+        if (overlaps(terrain, cut)) indexCut(corridorTerrainCuts, cut);
+      }
+    }
+  }
+  collectGradeCuts(corridorTerrainCuts, bounds, result);
   return [...result];
 }
 

@@ -618,6 +618,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
         turnTagsAtEnd: !!run.turnTagsAtEnd[direction] && laneDefinition.lanes.some(lane => lane.turns), headings: run.headings[direction] } : {}),
       osmStart: direction ? run.osmEnd : run.osmStart, osmEnd: direction ? run.osmStart : run.osmEnd,
+      motorway: road?.kind === 'motorway' && (road.ref === 'A12' || road.ref === 'A30'),
+      motorwayLink: road?.kind === 'motorway_link',
       underpass, tunnelType: road?.tunnelType, bridge, boundary, keepShape, wayId: road?.id, layer: road?.layer || 0, limits: road?.limits });
   }
   // A divided road drawn as two one-way roadways between the same two junctions (most of the Bowery) runs both ways
@@ -1207,6 +1209,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     }
   }
   edges.forEach((e, i) => (e.id = i));
+  for (const e of edges) e.motorwayExit = e.motorway && e.moves.length === 0;
   for (const e of edges) e.unmodeledTunnel = !!gradeWays && e.underpass && e.tunnelType !== 'building_passage' && !gradeWays.has(e.wayId);
   for (const [mode, vehicle, lanes, moves] of [
     [CAR, VEHICLE_CLEARANCE.car, 'ambientLanes', 'ambientMoves'],
@@ -1228,6 +1231,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         changed = true;
       }
     } while (changed);
+    openMotorwayLanes(eligible, mode, lanes);
     for (const e of edges) {
       e[moves] = e.moves.filter(move => move.modes & mode).map((move) => ({
         ...move, out: move.out.map((j, i) => e[lanes].includes(i) && move.to[lanes].includes(j) ? j : -1)
@@ -1316,6 +1320,38 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   return { nodes, edges, paintEdges, connector, curvePoint, alternateBusMove, walkable, onSidewalk, isRoadClear,
     turnRestrictionState: EDE_TURN_RESTRICTIONS.step,
     activeTravel: GEO.city === 'Ede' ? buildEdeActiveTravel(GEO.ede, grade, { walkable, sidewalkAt, motorNodes: nodes }) : null };
+}
+
+// A clipped motorway is a directed route from one map edge to another. Keep
+// its lane transitions even though it cannot return to the town component.
+function openMotorwayLanes(eligible, mode, lanes) {
+  const corridor = eligible.filter(edge => edge.motorway || edge.motorwayLink);
+  const reverse = new Map(), open = new Set(), queue = [];
+  const state = (edge, lane) => edge.id * 16 + lane;
+  const seed = key => {
+    if (open.has(key)) return;
+    open.add(key);
+    queue.push(key);
+  };
+  for (const edge of corridor) for (let lane = 0; lane < edge.lanes.length; lane++) {
+    if (!((edge.laneModes?.[lane] ?? mode) & mode)) continue;
+    const key = state(edge, lane);
+    if (edge.motorwayExit) seed(key);
+    for (const move of edge.moves) {
+      const next = move.out[lane];
+      if (!(move.modes & mode) || next < 0) continue;
+      if (move.to[lanes].includes(next)) seed(key);
+      else if (move.to.motorway || move.to.motorwayLink) {
+        const target = state(move.to, next);
+        if (!reverse.has(target)) reverse.set(target, []);
+        reverse.get(target).push(key);
+      }
+    }
+  }
+  for (let i = 0; i < queue.length; i++) for (const key of reverse.get(queue[i]) ?? []) seed(key);
+  for (const edge of corridor) {
+    edge[lanes] = edge.lanes.flatMap((_, lane) => open.has(state(edge, lane)) || edge[lanes].includes(lane) ? [lane] : []);
+  }
 }
 
 // The largest strongly connected set of `list` (a Set), going on from item e to the items next(e)

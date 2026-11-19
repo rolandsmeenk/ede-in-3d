@@ -1,0 +1,137 @@
+import { EDE_DATA } from './ede-geodata.js';
+
+export const EDE_MODELED_LANDMARKS = [
+  { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
+    osmId: 'w1412208401', x: -390.65, z: -101.70, heading: 1.96, height: 36 },
+  { id: 'stingerbol', name: 'Stingerbol', district: 'Stationsgebied', road: 'Bataljonlaan',
+    osmId: 'w271575955', x: 412.20, z: 2007.99, heading: 1.754, height: 20 },
+  { id: 'grote-enka-schoorsteen', name: 'Grote ENKA-schoorsteen', district: 'ENKA', road: 'Grote Schoorsteenplein',
+    osmId: 'w56094542', x: 557.85, z: 2647.70, heading: 0, height: 85 },
+  { id: 'kleine-enka-schoorsteen', name: 'Kleine ENKA-schoorsteen', district: 'ENKA', road: 'Twijnerij',
+    osmId: 'w196375686', x: 601.30, z: 2462.15, heading: 0, height: 53 },
+  { id: 'astrant', name: 'Astrant', district: 'Centrum', road: 'Kuiperplein',
+    osmId: 'w271551819', x: -175.2, z: 92.3, heading: -1.044, height: 8.5, bagCutMargin: 0.25 },
+  { id: 'pegasus-flat', name: 'Pegasusflat · Van Eekelenflat', district: 'Ede-Zuid', road: 'Jan Th. Tooroplaan',
+    osmId: 'w271377198', x: -1559.88, z: 2346.27, heading: 0.121464, height: 40.4, bagCutMargin: 0.25 },
+  { id: 'plantion', name: 'Plantion', district: 'Ede-West', road: 'Wellensiekstraat',
+    osmId: 'w271151642', annexOsmIds: ['w271151018'], x: -3863.85, z: 960.07, heading: 0, height: 42,
+    modelOrigin: { x: -4090, z: 970 }, colliderHeights: [17, 8.5], bagCutMargin: 1.2 },
+  { id: 'johan-willem-friso', name: 'Johan Willem Friso-kazerne', district: 'Veluwse Poort', road: 'Frisopark',
+    osmId: 'w271576736', x: 211.22, z: 1945.85, heading: -1.831, height: 16.44, baseY: 1.71, bagCutMargin: 0.35 },
+  { id: 'enka-westhal', name: 'ENKA Westhal en Poortgebouw', district: 'ENKA', road: 'Akulaan',
+    osmId: 'w271473159', bagIds: ['0228100000062084'], x: 471.2, z: 2287.5, height: 17.32, worldSpace: true },
+  { id: 'mauritskazerne', name: 'Mauritskazerne', district: 'Veluwse Poort', road: 'Frisopark',
+    osmId: 'w271576729', bagIds: ['0228100000004297'], x: 181, z: 1752.3, heading: -1.003285554, height: 16.20, baseY: 1.85 },
+  { id: 'oudekerk', name: 'Oude Kerk', district: 'Centrum', road: 'Torenstraat',
+    osmId: 'w271602340', bagIds: ['0228100000030468'], x: 0, z: 0, height: 48.75, worldSpace: true,
+    excludeOsmIds: ['w968871667','w968871668','w968871669','w968871672','w968871673','w968871674','w968871675','w968871676','w968871677','w968871678'] },
+  { id: 'edecentrum', name: 'Station Ede Centrum', district: 'Centrum', road: 'Telefoonweg',
+    osmId: 'w271573214', annexOsmIds: ['w1067217197'], excludeOsmIds: ['w1300597356'],
+    bagIds: ['0228100000013836', '0228100000091066'], x: -239.2, z: 322.4, height: 13.09, worldSpace: true },
+  { id: 'huis-kernhem', name: 'Huis Kernhem', district: 'Kernhem', road: 'Kernhemseweg',
+    osmId: 'w271586514', annexOsmIds: ['w271586534'], bagIds: ['0228100000058265', '0228100000005589'],
+    x: -973.6, z: -759.5, height: 12.71, worldSpace: true },
+  { id: 'de-vuurvogel', name: 'De Vuurvogel', district: 'Vogelbuurt', road: 'Nachtegaallaan',
+    osmId: 'w271510322', bagIds: ['0228100000040685'], x: -766, z: 790, heading: -2.881, height: 7.02, baseY: -4.15 },
+  { id: 'raadhuis', name: 'Raadhuis Ede', district: 'Centrum', road: 'Bergstraat',
+    osmId: 'w271602720', bagIds: ['0228100000035709'], x: 249.54687, z: 38.12693, height: 29.55, worldSpace: true },
+  { id: 'cultura', name: 'Cultura', district: 'Centrum', road: 'Molenstraat',
+    osmId: 'w271549982', bagIds: ['0228100000002319'], x: -292.57691, z: -62.17194, height: 13, worldSpace: true },
+];
+
+// The mill tower is mapped as a part of the adjacent building in the OSM fallback.
+export const MILL_ADJOINING_FOOTPRINT = [
+  -385.8, -107.4, -382, -108.4, -377.6, -91.2, -378.9, -90.9, -378.9, -90.6,
+  -363, -94.7, -368.4, -115.5, -367.2, -116.6, -367.8, -119, -369.3, -119.4,
+  -370.4, -123.6, -370.8, -124.1, -371.3, -124.3, -371.5, -124.3, -376.1, -123.2,
+  -375.7, -121.6, -395.3, -116.6, -395.7, -116.2, -395.9, -115.9, -396, -115.4,
+  -393.5, -105.9, -389.7, -106.7, -387.2, -105.2
+];
+
+const sources = new Set(EDE_MODELED_LANDMARKS.flatMap(site => [site.osmId, ...(site.annexOsmIds ?? [])]));
+const dome = EDE_MODELED_LANDMARKS[1];
+const groteChimney = EDE_MODELED_LANDMARKS[2];
+const circle = ({ x, z }, radius, sides = 16) => Array.from({ length: sides }, (_, i) => {
+  const angle = i * 2 * Math.PI / sides;
+  return { x: x + radius * Math.cos(angle), z: z + radius * Math.sin(angle) };
+});
+
+const footprintById = new Map();
+for (const { id, ring } of EDE_DATA.buildings) {
+  if (!sources.has(id) || !ring?.length) continue;
+  const outer = [];
+  for (let i = 0; i < ring.length; i += 2) outer.push({ x: ring[i], z: ring[i + 1] });
+  footprintById.set(id, { outer, holes: [] });
+}
+
+export function modeledLandmarkFootprints(site) {
+  const primary = footprintById.get(site.osmId) ?? { outer: circle(site, 4), holes: [] };
+  return [primary, ...(site.annexOsmIds ?? []).map(id => footprintById.get(id)).filter(Boolean)];
+}
+
+function cutFor(vertices, margin) {
+  const center = vertices.reduce((p, v) => ({ x: p.x + v.x / vertices.length, z: p.z + v.z / vertices.length }), { x: 0, z: 0 });
+  const planes = vertices.map((a, i) => {
+    const b = vertices[(i + 1) % vertices.length];
+    const nx = a.z - b.z, nz = b.x - a.x;
+    const sign = nx * (center.x - a.x) + nz * (center.z - a.z) >= 0 ? 1 : -1;
+    return [nx * sign, 0, nz * sign, (nx * a.x + nz * a.z) * sign - margin * Math.hypot(nx, nz)];
+  });
+  return {
+    minX: Math.min(...vertices.map(p => p.x)) - margin, maxX: Math.max(...vertices.map(p => p.x)) + margin,
+    minZ: Math.min(...vertices.map(p => p.z)) - margin, maxZ: Math.max(...vertices.map(p => p.z)) + margin,
+    planes,
+  };
+}
+
+// Replacements occupy isolated mapped buildings. Keep cuts bounded to each surveyed plan.
+function convexHull(points) {
+  const ordered = [...points].sort((a, b) => a.x - b.x || a.z - b.z);
+  const turn = (a, b, c) => (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+  function half(points) {
+    const chain = [];
+    for (const point of points) {
+      while (chain.length >= 2 && turn(chain.at(-2), chain.at(-1), point) <= 0) chain.pop();
+      chain.push(point);
+    }
+    return chain.slice(0, -1);
+  }
+  return [...half(ordered), ...half(ordered.reverse())];
+}
+
+const bagCuts = [
+  // Clip the mill tower within the shared BAG feature, leaving the rest of the attached building.
+  cutFor([
+    { x: -389.70, z: -106.70 }, { x: -393.70, z: -105.90 }, { x: -395.70, z: -102.50 },
+    { x: -394.70, z: -98.70 }, { x: -391.30, z: -96.70 }, { x: -387.50, z: -97.60 },
+    { x: -385.60, z: -101.00 }, { x: -386.50, z: -104.80 },
+  ], 0.32),
+  cutFor(circle(dome, 11.45), 0.1),
+  // The tall shaft also appears as a straight extrusion in the live 3DBAG tile.
+  cutFor(circle(groteChimney, 5.5, 24), 0),
+  ...EDE_MODELED_LANDMARKS.filter(site => site.bagCutMargin !== undefined).map(site => {
+    const points = modeledLandmarkFootprints(site).flatMap(footprint => footprint.outer);
+    return cutFor(convexHull(points), site.bagCutMargin);
+  }),
+];
+
+// Match whole BAG features for attached and concave sites so the neighboring buildings survive.
+const bagReplacements = EDE_MODELED_LANDMARKS.filter(site => site.bagIds?.length).map(site => {
+  const points = modeledLandmarkFootprints(site).flatMap(footprint => footprint.outer);
+  return { ids: site.bagIds, minX: Math.min(...points.map(p => p.x)), maxX: Math.max(...points.map(p => p.x)),
+    minZ: Math.min(...points.map(p => p.z)), maxZ: Math.max(...points.map(p => p.z)) };
+});
+
+export function landmarkBagExclusions({ min, max }) {
+  const ids = new Map();
+  for (const replacement of bagReplacements) {
+    if (min.x > replacement.maxX + 2 || max.x < replacement.minX - 2 ||
+        min.z > replacement.maxZ + 2 || max.z < replacement.minZ - 2) continue;
+    for (const id of replacement.ids) ids.set(id, true);
+  }
+  return ids;
+}
+
+export function landmarkBuildingCuts({ minX, maxX, minZ, maxZ }) {
+  return bagCuts.filter(cut => minX <= cut.maxX && maxX >= cut.minX && minZ <= cut.maxZ && maxZ >= cut.minZ);
+}

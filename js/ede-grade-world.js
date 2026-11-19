@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { buildingPassageSideSpans, getEdeGrade, getEdeBuildingPassages, gradeDeckAt, gradeSections } from './ede-grade.js';
+import { buildingPassageSideSpans, getEdeGrade, getEdeBuildingPassages, getRailCorridors, gradeDeckAt, gradeSections, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleGroundColor } from './aerial-colors.js';
 import { EDE_PAVING_STYLE, gradePavement, osmRoadMaterial } from './ede-road-surfaces.js';
@@ -171,9 +171,16 @@ export function buildEdeGradeWorld(scene) {
     lineCollider(shift(a), shift(b), Math.min(baseA.y, baseB.y), Math.max(a.y, b.y) + 0.68, halfWidth);
   }
 
+  const railCorridors = getRailCorridors();
+  for (const { bridge, sections } of railCorridors.values()) {
+    if (bridge) continue;
+    for (const section of sections) connectEdges(section, ballast, RAIL_BALLAST_TOP);
+  }
   for (const profile of railHeights || []) {
-    if (!profile.fittedBallast) continue;
-    for (const section of gradeSections({ ...profile, width: 2.9 })) connectEdges(section, ballast, 0.035, true);
+    if (!profile.fittedBallast || railCorridors.has(profile.wayId)) continue;
+    for (const section of gradeSections({ ...profile, width: RAIL_BALLAST_WIDTH })) {
+      connectEdges(section, ballast, RAIL_BALLAST_TOP, true);
+    }
   }
 
   let mappedGradeSections = 0, fallbackGradeSections = 0;

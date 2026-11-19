@@ -1,3 +1,4 @@
+import { fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
 import { roadEdgeKey } from './road-network.js';
 import { busProgressAt } from './ede-bus-schedule.js';
 import { BUS } from './road-access.js';
@@ -61,8 +62,10 @@ export function prepareEdeBusPaths(schedule, edges, alternateMove) {
       const stops = (slice.stops || []).map(({ index, leg, at }) => {
         const { road, lane } = legs[leg];
         const stop = variant.stops[index];
-        const side = (stop.x - road.sx) * road.rx + (stop.z - road.sz) * road.rz - road.lanes[lane];
-        return { index, leg, at: clamp(at, 0, road.len), side, stop };
+        const station = clamp(at, 0, road.len);
+        const p = fittedLanePoint(road, lane, station, {});
+        const side = (stop.z - p.z) * p.dx - (stop.x - p.x) * p.dz;
+        return { index, leg, at: station, side, stop };
       });
       paths.set(slice, { legs, stops });
     }
@@ -114,20 +117,20 @@ function projectBus(run, vehicle, paths, previous) {
   const upper = stop?.distance;
   const heading = vehicle.bearing * Math.PI / 180;
   let best;
+  const projection = {};
   for (const section of run.runs) {
     const path = paths.get(section.slice);
     if (!path) continue;
     for (const leg of path.legs) {
       const { road, lane, from, to, start, end } = leg;
-      const x = vehicle.x - road.sx - road.rx * road.lanes[lane];
-      const z = vehicle.z - road.sz - road.rz * road.lanes[lane];
-      const along = clamp(x * road.dx + z * road.dz, from, to);
-      const error = Math.hypot(x - road.dx * along, z - road.dz * along);
+      const p = projectFittedLane(road, lane, vehicle.x, vehicle.z, from, to, projection);
+      const along = p.station;
+      const error = Math.hypot(vehicle.x - p.x, vehicle.z - p.z);
       if (error > MAX_PROJECTION_ERROR) continue;
       const distance = to === from ? start : start + (end - start) * (along - from) / (to - from);
       let score = error;
       if (Number.isFinite(heading) && vehicle.status !== 1) {
-        score += 18 * (1 - road.dx * Math.sin(heading) + road.dz * Math.cos(heading));
+        score += 18 * (1 - p.dx * Math.sin(heading) + p.dz * Math.cos(heading));
       }
       if (lower !== undefined) score += 0.6 * Math.max(0, lower - distance - 30);
       if (upper !== undefined) score += 0.6 * Math.max(0, distance - upper - 30);
