@@ -17,7 +17,7 @@ import { motorwayLanesAt } from './ede-motorway-lanes.js';
 
 // Drivable road graph derived from the ground layout that city-grid.js actually builds: avenue corridors
 // between the raised curbs, cross-street gaps between curb rows, lanes that keep clear of medians, plazas
-// and steam stacks, intersections (signalized where street-details.js mounts signal heads) and the
+// and street furniture, intersections (signalized where street-details.js mounts signal heads) and the
 // lane-to-lane curves used to drive straight through them or turn.
 //
 // Conventions: north = -z, east = +x. Every directed edge has a unit direction (dx, dz) and a right normal

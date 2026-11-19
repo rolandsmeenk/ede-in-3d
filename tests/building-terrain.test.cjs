@@ -60,6 +60,7 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}
       './building-collision.js': loadModule(read('building-collision.js')),
       './terrain.js': { terrainHeightAt: (x) => 10 + x / 2 },
       './ede-grade.js': { buildingPassageCuts: () => [], ...grade },
+      './ede-building-bases.js': { EDE_BUILDING_BASES: [] },
       './ede-facades.js': facadeStubs,
       './ede-facade-material.js': facadeStubs,
       './ede-facade-photos.js': facadeStubs,
@@ -67,6 +68,27 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}
     }
   });
 }
+
+test('one surveyed building base shifts every BAG primitive and leaves neighbouring features alone', () => {
+  const record = { bagId: '0228100000073270', y: 0.20 };
+  const { bakeTile } = loadBag({ facadeStubs: { meshBagFacadeFeatures: (_, mesh, tables) => tables[mesh.table] } });
+  const mesh = (table, rows, features) => ({ table, isMesh: true, geometry: { attributes: {
+    position: new BufferAttribute(rows, 3), normal: new BufferAttribute(rows.map(() => 1), 3),
+    _feature_id_0: new BufferAttribute(features, 1)
+  } } });
+  const pieces = [mesh(0, [4, 101, 1, 4, 105, 1, 14, 500, 5], [2, 2, 7]),
+    mesh(1, [4, 106, 1, 4, 108, 1, 14, 508, 5], [8, 8, 7])];
+  const gltf = { scene: { updateMatrixWorld() {}, traverse(fn) { pieces.forEach(fn); } } };
+  const original = bakeTile(gltf, {});
+  const corrected = bakeTile(gltf, {}, null, null, [new Map([[2, record]]), new Map([[8, record]])]);
+  const target = [[0.2, 4.2], [5.2, 7.2]];
+  corrected.forEach(({ attributes }, i) => {
+    for (let j = 0; j < 2; j++) {
+      assert.ok(Math.abs(attributes.position.getY(j) - target[i][j]) < 1e-5);
+    }
+    assert.equal(attributes.position.getY(2), original[i].attributes.position.getY(2));
+  });
+});
 
 test('BAG coverage requires building geometry rather than the tile bounds', async () => {
   const T = await import('../vendor/three/build/three.webgpu.js');
@@ -287,6 +309,7 @@ test('OSM roofs use their mapped tint on the slopes and the existing color on ga
   const source = read('buildings.js');
   const imports = Object.fromEntries(Array.from(source.matchAll(/from '([^']+)';/g), ([, specifier]) => [specifier, {}]));
   imports['three/webgpu'] = { BufferAttribute };
+  imports['./ede-building-bases.js'] = { EDE_BUILDING_BASES: [] };
   let sampledId;
   const tint = [0.25, 0.125, 0.125], fallback = [0.125, 0.25, 0.375];
   imports['./aerial-colors.js'] = {

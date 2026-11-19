@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { EDE_DATA } from './city-config.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
-import { clipEdeGround, gradeCuts } from './ede-grade.js';
+import { clipEdeGround, gradeCuts, localGradeSurface } from './ede-grade.js';
 
 // Geometry adapters only: rendering stays in the upstream WebGPU/TSL systems.
 export const EDE_RENDER_CELL = 750;
@@ -187,6 +187,8 @@ function clipSurface(points, signedDistance) {
   return result;
 }
 
+const overlaps = (a, b) => a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
+
 // Split planar overlays across both the grid lines and the cell diagonal, so
 // their offsets stay above the same triangles used by rendering and physics.
 function emitSurface(polygon, positions, lift = 0) {
@@ -197,26 +199,45 @@ function emitSurface(polygon, positions, lift = 0) {
   }
 }
 
-export function drapeEdeSurface(geometry, cutGrade = false, wayId) {
+export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false) {
   const field = getTerrain();
   if (!field || !geometry) return geometry;
   const { step, minX, minZ, columns, rows } = field;
   const position = geometry.getAttribute('position'), index = geometry.index;
   if (!position.count) return geometry;
   const lift = position.getY(0), positions = [];
+  const candidate = wayId && localGradeSurface(wayId);
+  let local;
   let cuts = [];
-  if (cutGrade) {
+  if (cutGrade || candidate || mappedPavement) {
     geometry.computeBoundingBox();
     const { min, max } = geometry.boundingBox;
-    cuts = gradeCuts({ minX: min.x, maxX: max.x, minZ: min.z, maxZ: max.z }, wayId);
+    const bounds = { minX: min.x, maxX: max.x, minZ: min.z, maxZ: max.z };
+    if (cutGrade) cuts = gradeCuts(bounds, wayId);
+    local = candidate || (mappedPavement && localGradeSurface(null, bounds));
+    if (local && !overlaps(bounds, local)) local = null;
   }
-  const emit = polygon => {
+  const emitCoarse = polygon => {
     if (!cuts.length) {
       emitSurface(polygon, positions, lift);
       return;
     }
     const surface = polygon.map(p => ({ ...p, y: terrainHeightAt(p.x, p.z) + lift }));
     for (const part of clipEdeGround(surface, cuts)) emitSurface(part, positions);
+  };
+  const emit = !local ? emitCoarse : polygon => {
+    if (!overlaps(edeBounds(polygon), local)) return emitCoarse(polygon);
+    // Preserve the original pavement outline and split only across the fitted portion.
+    let pieces = [polygon];
+    for (const [nx, nz, c] of local.planes) {
+      const d = p => p.x * nx + p.z * nz - c;
+      pieces = pieces.flatMap(piece => piece.some(p => d(p) > 1e-7) && piece.some(p => d(p) < -1e-7)
+        ? [clipSurface(piece, d), clipSurface(piece, p => -d(p))] : [piece]);
+    }
+    for (const piece of pieces) {
+      const surface = piece.map(p => ({ ...p, y: local.heightAt(p.x, p.z) + lift }));
+      for (const part of cuts.length ? clipEdeGround(surface, cuts) : [surface]) emitSurface(part, positions);
+    }
   };
   const visit = polygon => {
     if (polygon.length < 3) return;

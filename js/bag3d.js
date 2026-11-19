@@ -10,10 +10,17 @@ import { getAerialColors, sampleGroundColor, sampleRoofColor } from './aerial-co
 import { applyBagFacades, loadEdeFacades, meshBagFacadeFeatures, readBagFacadeFeatures } from './ede-facades.js';
 import { buildFacadeMaskAtlas, buildFacadeMaskAtlasIncrementally, createBagFacadeMaterial, projectFacadeUv } from './ede-facade-material.js';
 import { buildFacadePhotos } from './ede-facade-photos.js';
+import { EDE_BUILDING_BASES } from './ede-building-bases.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
 // https://3dbag.nl — tiles are glTF with node matrices in ECEF (glTF axes: x = X, y = Z, z = -Y).
 const BAG_BASE = 'https://3dbag.fsn1.your-objectstorage.com/v20250903/cesium3dtiles/lod22/';
+const BASES_BY_TILE = new Map();
+for (const record of EDE_BUILDING_BASES) {
+  const url = BAG_BASE + record.tile;
+  if (!BASES_BY_TILE.has(url)) BASES_BY_TILE.set(url, new Map());
+  BASES_BY_TILE.get(url).set(record.bagId, record);
+}
 const AFF = GEO.ede.meta.lonLatAffine;
 const [MIN_X, MIN_Z, MAX_X, MAX_Z] = GEO.ede.meta.bounds;
 
@@ -325,15 +332,44 @@ function colorBagRoofs(geometry, featureIds, useAerial, facadeFeatures) {
   return geometry;
 }
 
+function correctedBagBases(gltf, matrix, tables) {
+  const byMesh = new Map(), rawById = new Map();
+  const point = new THREE.Vector3();
+  gltf.scene.traverse(o => {
+    if (!o.isMesh) return;
+    const matches = meshBagFacadeFeatures(gltf, o, tables);
+    const { position, _feature_id_0: featureIds } = o.geometry.attributes;
+    if (!matches?.size || !featureIds) return;
+    const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
+    const found = new Map();
+    for (let i = 0; i < position.count; i++) {
+      const seed = Math.round(featureIds.getX(i));
+      const record = matches.get(seed);
+      if (!record) continue;
+      found.set(seed, record);
+      point.fromBufferAttribute(position, i).applyMatrix4(full);
+      rawById.set(record.bagId, Math.min(rawById.get(record.bagId) ?? Infinity, Math.fround(point.y)));
+    }
+    if (found.size) byMesh.set(o, found);
+  });
+  for (const table of tables) for (const { bagId } of table.values()) {
+    if (!rawById.has(bagId)) throw new Error(`Building elevation feature ${bagId} has no BAG geometry`);
+  }
+  return { byMesh, rawById };
+}
+
 // Bakes a loaded tile into one engine-space mesh geometry with per-building colour variation.
-export function bakeTile(gltf, matrix, tables, atlas) {
+export function bakeTile(gltf, matrix, tables, atlas, baseTables) {
   const geometries = [];
   const useAerial = getAerialColors();
   if (useAerial) mappedRoofs ??= mappedRoofIndex();
   gltf.scene.updateMatrixWorld(true);
+  // A BAG building can have multiple primitives. Give them a common source bottom before applying the surveyed base.
+  const bases = baseTables && correctedBagBases(gltf, matrix, baseTables);
   gltf.scene.traverse((o) => {
     if (!o.isMesh) return;
     const facadeFeatures = tables && meshBagFacadeFeatures(gltf, o, tables);
+    const meshBases = bases?.byMesh.get(o);
     const src = o.geometry;
     const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(full);
@@ -356,6 +392,7 @@ export function bakeTile(gltf, matrix, tables, atlas) {
       else c.setHSL(0.08 + s * 0.05, 0.08, 0.40 + s * 0.15);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
+    if (meshBases) for (const [seed, { bagId }] of meshBases) baseByBuilding.set(seed, bases.rawById.get(bagId));
     // Use the low side of each footprint to seat the whole building without bending its roof.
     const relativeHeights = new Float32Array(count);
     const groundByBuilding = new Map();
@@ -369,6 +406,7 @@ export function bakeTile(gltf, matrix, tables, atlas) {
         groundByBuilding.set(seed, Math.min(groundByBuilding.get(seed) ?? Infinity, ground));
       }
     }
+    if (meshBases) for (const [seed, { y }] of meshBases) groundByBuilding.set(seed, y);
     for (let i = 0; i < count; i++) {
       const seed = fid ? Math.round(fid.getX(i)) : 0;
       positions[i * 3 + 1] = relativeHeights[i] + groundByBuilding.get(seed);
@@ -442,12 +480,17 @@ export function coveredFallbackBuildings(geometries, fallback) {
   return matches;
 }
 
-async function bagGeometry(gltf, matrix, facades, atlas) {
+async function bagGeometry(gltf, matrix, facades, atlas, url) {
   const features = atlas && await readBagFacadeFeatures(gltf, facades.byId).catch(error => {
     console.warn('[facades] BAG feature IDs unavailable:', error.message);
     return null;
   });
-  return bakeTile(gltf, matrix, features, atlas);
+  const corrections = BASES_BY_TILE.get(url);
+  const bases = corrections && await readBagFacadeFeatures(gltf, corrections);
+  if (corrections && new Set(bases.flatMap(table => [...table.values()])).size !== corrections.size) {
+    throw new Error('Surveyed BAG building identifiers are missing. Keep the corrected OSM fallback.');
+  }
+  return bakeTile(gltf, matrix, features, atlas, bases);
 }
 
 function addBagGeometry(group, geometries, material, detailedMaterial, matched, panels) {
@@ -491,7 +534,7 @@ export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fet
     while (next < urls.length) {
       const url = urls[next++];
       const gltf = await gltfLoader.loadAsync(url);
-      const geometries = await bagGeometry(gltf, matrix, facades, atlas);
+      const geometries = await bagGeometry(gltf, matrix, facades, atlas, url);
       recesses += addBagGeometry(group, geometries, material, detailedMaterial, matched, panels);
       onProgress?.(++done, urls.length);
     }
@@ -648,7 +691,7 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
           stats.maskTextureBytes = atlas.byteLength;
         }
       }
-      const geometries = await bagGeometry(gltf, matrix, facades, hasDetail ? atlas : null);
+      const geometries = await bagGeometry(gltf, matrix, facades, hasDetail ? atlas : null, tile.url);
       // Let rendering run between geometry construction and the fallback coverage scan.
       await new Promise(resolve => setTimeout(resolve, 0));
       const bytes = geometries.reduce((sum, geometry) => sum + (geometry.index?.array.byteLength ?? 0)

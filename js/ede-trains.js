@@ -10,19 +10,35 @@ const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 function carriageGeometry(length, livery, cab) {
   const parts = [];
   function box(w, h, d, x, y, z, color) {
-    const geometry = new THREE.BoxGeometry(w, h, d).translate(x, y, z);
-    const count = geometry.getAttribute('position').count;
-    const paint = new THREE.Color(color);
-    const rgb = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) paint.toArray(rgb, 3 * i);
+    const gradient = typeof color === 'function';
+    const geometry = new THREE.BoxGeometry(w, h, d, 1, 1, gradient ? Math.ceil(d / 1.5) : 1).translate(x, y, z);
+    const position = geometry.getAttribute('position');
+    const paint = new THREE.Color();
+    if (!gradient) paint.setHex(color);
+    const rgb = new Float32Array(position.count * 3);
+    for (let i = 0; i < position.count; i++) {
+      if (gradient) color(position.getZ(i), paint);
+      paint.toArray(rgb, 3 * i);
+    }
     geometry.setAttribute('color', new THREE.BufferAttribute(rgb, 3));
     parts.push(geometry);
   }
 
-  const { body, belt, doors, tall } = livery;
+  const { body, belt, doors, tall, gradient } = livery;
   const height = tall ? 3.7 : 3.05, end = length / 2;
   const metal = 0x343b46, glass = 0x203445;
-  box(2.92, height, length - (cab ? 1.8 : 0.44), 0, 0.78 + height / 2, cab ? 0.55 : 0, body);
+  let bodyPaint = body;
+  if (gradient) {
+    const [purple, blue, green] = gradient;
+    bodyPaint = (z, color) => {
+      // Both cabs run from purple at the nose to green at their coupling.
+      const progress = clamp(z / length + 0.5, 0, 1);
+      if (!cab) color.copy(green).lerp(blue, 1 - Math.abs(2 * progress - 1));
+      else if (progress < 0.52) color.copy(purple).lerp(blue, progress / 0.52);
+      else color.copy(blue).lerp(green, (progress - 0.52) / 0.48);
+    };
+  }
+  box(2.92, height, length - (cab ? 1.8 : 0.44), 0, 0.78 + height / 2, cab ? 0.55 : 0, bodyPaint);
   box(2.68, 0.3, length - 1.8, 0, height + 0.92, cab ? 0.35 : 0, metal);
   box(2.35, 0.35, length - 1.1, 0, 0.63, 0, metal);
   for (const z of [-length * 0.36, length * 0.36]) {
@@ -30,7 +46,10 @@ function carriageGeometry(length, livery, cab) {
   }
 
   for (const side of [-1, 1]) {
-    box(0.05, 0.94, length - 2.65, side * 1.47, tall ? 3.56 : 2.75, 0.32, belt);
+    if (belt !== undefined) {
+      box(0.05, tall ? 2.33 : livery.nose ? 1.16 : 0.94, length - 2.65, side * 1.47,
+        tall ? 2.78 : 2.75, 0.32, belt);
+    }
     for (let z = -end + 3.8; z < end - 2.9; z += 2.05) {
       box(0.055, 0.61, 1.51, side * 1.5, tall ? 3.56 : 2.76, z, glass);
       if (tall) box(0.055, 0.58, 1.51, side * 1.5, 1.97, z, glass);
@@ -41,7 +60,7 @@ function carriageGeometry(length, livery, cab) {
     }
   }
   if (cab) {
-    box(2.57, height - 0.4, 1.45, 0, 0.78 + (height - 0.4) / 2, -end + 1.18, body);
+    box(2.57, height - 0.4, 1.45, 0, 0.78 + (height - 0.4) / 2, -end + 1.18, livery.nose ?? bodyPaint);
     box(2.36, 0.85, 0.09, 0, tall ? 3.56 : 2.94, -end + 0.40, glass);
     for (const x of [-0.88, 0.88]) box(0.32, 0.18, 0.10, x, 1.52, -end + 0.39, 0xfff5c4);
   }
@@ -51,12 +70,14 @@ function carriageGeometry(length, livery, cab) {
 }
 
 function makeTrainModels() {
+  const nsYellow = 0xffc917, nsBlue = 0x003082;
   const definitions = {
-    intercity: { length: 23.7, cars: 4, body: 0xfac71f, belt: 0x114767, doors: 0x215873, tall: true },
-    sprinter: { length: 17.7, cars: 4, body: 0xe3e8ed, belt: 0x195181, doors: 0xe8b61d },
+    intercity: { length: 23.7, cars: 4, body: nsYellow, belt: nsBlue, doors: nsBlue, tall: true },
+    sprinter: { length: 17.7, cars: 4, body: 0xf3f5f6, belt: 0x0862a8, doors: nsYellow, nose: nsYellow },
     international: { length: 24.5, cars: 5, body: 0xe1e6eb, belt: 0xaa243a, doors: 0xb1b7bd },
     nightjet: { length: 24.5, cars: 4, body: 0x293d65, belt: 0x963949, doors: 0x42577d },
-    rs34: { length: 19.1, cars: 3, body: 0xe6e9ec, belt: 0x254a68, doors: 0x2b8a97 }
+    rs34: { length: 19.1, cars: 3, doors: 0xb7c2cb,
+      gradient: [0x6343a9, 0x087eb7, 0x30ae9b].map(color => new THREE.Color(color)) }
   };
   for (const model of Object.values(definitions)) {
     model.coach = carriageGeometry(model.length, model, false);

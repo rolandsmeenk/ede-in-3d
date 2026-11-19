@@ -14,6 +14,32 @@ test('nearby rail lookup preserves reach and track order across cell boundaries'
   assert.equal(nearbyRailHeightAt(48, 89, 40), 6);
 });
 
+test('native AHN crossing approaches tie into the terrain and retain concealed clearance', async () => {
+  const { readFileSync } = require('node:fs');
+  const { join } = require('node:path');
+  const { setEdeGrade, gradeWayAt, gradeProfileAt } = await import('../js/ede-grade.js');
+  const grade = JSON.parse(readFileSync(join(__dirname, '../assets/ede-grade.json'), 'utf8'));
+  setEdeGrade(grade);
+
+  const northApproach = [[213.5, -722.5, 23.41], [179.6, -689.03, 21.53], [162.5, -672.2, 20.58]];
+  for (const [x, z, nap] of northApproach) {
+    assert.ok(Math.abs(gradeWayAt('w24994849', x, z).y + grade.datumNAP - nap) < 0.06);
+  }
+  const cycle = gradeProfileAt(106.28, -614.85, 'cyclist', undefined, -2.5);
+  assert.equal(cycle.id, 'bospoorttunnel-lower-w24994852');
+  assert.ok(Math.abs(cycle.roof - cycle.y - 2.1) < 0.01);
+
+  for (const [way, x, z, nap] of [
+    ['w25546152', -1458.53, 3188.7, 10.31], ['w262752272', -1448.93, 3189.56, 10.32],
+    ['w25546152', -1456.8, 3199.57, 10.348], ['w262752272', -1446.96, 3201.92, 10.38],
+  ]) {
+    assert.ok(Math.abs(gradeWayAt(way, x, z).y + grade.datumNAP - nap) < 0.03);
+  }
+  const profiles = new Map(grade.sites.flatMap(site => site.profiles.map(p => [p.id, p.points])));
+  assert.deepEqual(profiles.get('stadspoort-25546154').at(-1), profiles.get('frans-halslaan-lower-w6921141')[0]);
+  assert.deepEqual(profiles.get('stadspoort-25546157')[0], profiles.get('frans-halslaan-lower-w6921140').at(-1));
+});
+
 test('surveyed approaches exclude canopy returns and preserve the lower Langekamppad', async () => {
   const { readFileSync } = require('node:fs');
   const { join } = require('node:path');

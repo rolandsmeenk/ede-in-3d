@@ -36,6 +36,15 @@ test('the player starts on Driehoek and the Oude Kerk teleport faces the church 
   assert.ok(alignment > 0.999, 'face the church');
 });
 
+test('the Openluchttheater teleport lands on Van Pabstlaan facing the venue', () => {
+  const point = TELEPORT_LOCATIONS.openluchttheater;
+  const venue = LANDMARK_SITES['Openluchttheater Ede'];
+  const dx = venue.x - point.x, dz = venue.z - point.z;
+  assert.match(point.name, /^van Pabstlaan$/i);
+  assert.ok(Math.hypot(dx, dz) < 100);
+  assert.equal(point.heading, Math.atan2(dx, dz));
+});
+
 test('preset and map teleports share arrival resets and mark the resolved landing point', () => {
   const main = read('js/main.js');
   const start = main.indexOf('  function teleportTo(');

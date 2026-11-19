@@ -211,6 +211,7 @@ export function buildEdeGradeWorld(scene) {
   let mappedGradeSections = 0, fallbackGradeSections = 0;
   const gradeMaterials = {};
   for (const site of sites) {
+    if (site.kind === 'surface') continue; // Local corrections are drawn in the original pavement batch.
     if (site.kind === 'level') addCrossing(site);
     if (site.kind === 'underpass') addUnderpass(site);
     if (site.kind === 'bridge' && site.excavation) addRailCut(site.excavation);

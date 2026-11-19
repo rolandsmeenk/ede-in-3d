@@ -11,6 +11,8 @@ let world = { sites: [], railHeights: [] };
 let segments = new Map();
 let profiles = new Map();
 let ways = new Map();
+let localSurfaceWays = new Map();
+let localSurfaces = [];
 let tracks = new Map();
 let nearbyTracks = new Map();
 let cuts = new Map();
@@ -107,6 +109,8 @@ function stationRailExtensions(profiles) {
 
 export function setEdeGrade(data) {
   const nextSegments = new Map(), nextProfiles = new Map(), nextWays = new Map(), nextTracks = new Map();
+  const nextLocalSurfaceWays = new Map();
+  const nextLocalSurfaces = [];
   const nextCuts = new Map(), nextRoofs = new Map();
   const nextWayCuts = new Map();
   const nextFittedPassages = new Map();
@@ -115,11 +119,19 @@ export function setEdeGrade(data) {
       if (!(entry.width > 0) || !entry.points.every(point => point.length === 3 && point.every(Number.isFinite))) {
         throw new Error(`Invalid grade profile ${entry.id}`);
       }
+      if (site.kind === 'surface' && !(entry.shoulder > 0 && entry.shoulder <= entry.width / 2)) {
+        throw new Error(`Invalid surface shoulder for ${entry.id}`);
+      }
       const profile = { ...entry, site, half: entry.width / 2, covers: coveredRanges(entry) };
       const spans = calculateSegments(profile);
       nextProfiles.set(profile.id, spans);
       for (const id of entry.wayIds || []) addWay(nextWays, id, spans);
-      const outline = gradeSections(entry).map(sectionCut);
+      if (site.kind === 'surface' && spans.length) {
+        const surface = describeLocalSurface(spans);
+        nextLocalSurfaces.push(surface);
+        for (const id of entry.wayIds || []) nextLocalSurfaceWays.set(id, surface);
+      }
+      const outline = site.kind === 'surface' ? [] : gradeSections(entry).map(sectionCut);
       if (entry.cutBuildings) {
         for (const section of gradeSections(entry, 3)) {
           if (section.covered) {
@@ -178,6 +190,8 @@ export function setEdeGrade(data) {
   segments = nextSegments;
   profiles = nextProfiles;
   ways = nextWays;
+  localSurfaceWays = nextLocalSurfaceWays;
+  localSurfaces = nextLocalSurfaces;
   tracks = nextTracks;
   nearbyTracks = nextNearbyTracks;
   cuts = nextCuts;
@@ -187,10 +201,23 @@ export function setEdeGrade(data) {
   return data;
 }
 
-export async function loadEdeGrade() {
-  const response = await fetch(new URL('../assets/ede-grade.json', import.meta.url));
-  if (!response.ok) throw new Error(`Ede grade data returned HTTP ${response.status}`);
-  return setEdeGrade(await response.json());
+export async function loadEdeGrade({ localSurfaces = true } = {}) {
+  async function read(path) {
+    const response = await fetch(new URL(path, import.meta.url));
+    if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
+    return response.json();
+  }
+  const [data, corrections] = await Promise.all([
+    read('../assets/ede-grade.json'),
+    localSurfaces ? read('../assets/ede-ahn-surfaces.json').catch(error => {
+      console.warn('[grade] using coarse surfaces for exposed approaches:', error.message);
+      return null;
+    }) : null,
+  ]);
+  if (corrections?.version === 1 && Array.isArray(corrections.sites)) {
+    data.sites = [...data.sites, ...corrections.sites];
+  }
+  return setEdeGrade(data);
 }
 
 export const getEdeGrade = () => world;
@@ -247,7 +274,13 @@ function nearestSpan(spans, x, z, { mode, kind, referenceY, reach = 0.3, heading
     const lateral = -(x - span.x) * span.dz + (z - span.z) * span.dx;
     const distance = Math.hypot(raw - along, lateral);
     if (distance > (profile.half ?? 0) + reach) continue;
-    const y = span.y + (span.endY - span.y) * along / span.length;
+    const localSurface = profile.site?.kind === 'surface';
+    if (localSurface && (raw < -0.001 || raw > span.length + 0.001 || Math.abs(lateral) >= profile.half)) continue;
+    let y = span.y + (span.endY - span.y) * along / span.length;
+    if (localSurface) {
+      const weight = clamp((profile.half - Math.abs(lateral)) / profile.shoulder, 0, 1);
+      y = terrainHeightAt(x, z) + y * weight;
+    }
     const delta = Number.isFinite(referenceY) ? Math.abs(referenceY - y) : 0;
     if (delta > STEP_HEIGHT) continue;
     const alignment = Number.isFinite(heading) ? Math.abs(Math.sin(heading) * span.dx + Math.cos(heading) * span.dz) : 1;
@@ -310,6 +343,35 @@ export function gradeGroundHeightAt(x, z, referenceY) {
 
 export function gradeWayAt(wayId, x, z, extra = 0.3) {
   return nearestSpan(ways.get(wayId) || [], x, z, { reach: extra });
+}
+
+function describeLocalSurface(spans) {
+  const points = spans.flatMap(span => [{ x: span.x, z: span.z }, { x: span.endX, z: span.endZ }]);
+  const bounds = boundsOf(points);
+  const pad = Math.max(...spans.map(span => span.profile.half));
+  const planes = [];
+  const { x, z, dx, dz, profile } = spans[0];
+  for (const across of [-profile.half, profile.shoulder - profile.half,
+    profile.half - profile.shoulder, profile.half]) {
+    planes.push([-dz, dx, -dz * x + dx * z + across]);
+  }
+  for (const span of spans) {
+    const count = Math.ceil(span.length / 1.1);
+    for (let i = 0; i < count; i++) {
+      planes.push([span.dx, span.dz, span.dx * span.x + span.dz * span.z + span.length * i / count]);
+    }
+  }
+  const last = spans.at(-1);
+  planes.push([last.dx, last.dz, last.dx * last.endX + last.dz * last.endZ]);
+  return { minX: bounds.minX - pad, maxX: bounds.maxX + pad, minZ: bounds.minZ - pad, maxZ: bounds.maxZ + pad,
+    planes, heightAt: (x, z) => nearestSpan(spans, x, z)?.y ?? terrainHeightAt(x, z) };
+}
+
+export function localGradeSurface(wayId, bounds) {
+  if (wayId) return localSurfaceWays.get(wayId);
+  for (const surface of localSurfaces) {
+    if (overlaps(bounds, surface)) return surface;
+  }
 }
 
 function railElevation(hit) {

@@ -9,10 +9,19 @@ const startupOnly = process.env.EDE_BENCH_STARTUP_ONLY === '1';
 const freezeTraffic = process.env.EDE_BENCH_TRAFFIC !== 'active';
 const viewport = { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false };
 const freezeClock = Date.parse('2026-11-19T13:00:00+01:00');
+const suite = process.env.EDE_BENCH_SCENARIOS === 'ahn' ? 'ahn' : 'standard';
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
-const shots = [
-  { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] },
+const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
+const shots = suite === 'ahn' ? [
+  { name: 'bospoorttunnel', from: [153, 3, -623], to: [119, 2.5, -632], look: [106, 0.8, -615] },
+  { name: 'stadspoort', from: [-1462, 3, 3178], to: [-1458, 2.5, 3145], look: [-1457, 1.2, 3116] },
+  station,
+  { name: 'raadhuisstraat', from: [169, 2.5, -10], to: [173, 2.5, 12], look: [177, 1.4, 28] },
+  { name: 'albertstunnel drive', drive: [104.1, 2042, -0.09, -6.69] },
+  { name: 'camera jump', from: [85, 4, 2119], to: [173, 2.5, 12], look: [177, 1.4, 28], jump: true },
+] : [
+  station,
   { name: 'kuiperplein', from: [-246, 4, 108], to: [-218, 4, 92], look: [-192, 2, 108] },
   { name: 'kolkakkerweg', from: [-910, 3, 866], to: [-831, 3, 854], look: [-754, 2, 842] },
   { name: 'helicopter', from: [-665, 148, 406], to: [-156, 166, 114], look: [8, 8, -16] },
@@ -74,9 +83,15 @@ function sampleShot(shot, frames) {
     const frame = () => new Promise(requestAnimationFrame);
     const ground = ([x, y, z]) => [x, y + terrainHeightAt(x, z), z];
     const wait = async count => { for (let i = 0; i < count; i++) await frame(); };
-    const from = ground(shot.from), to = ground(shot.to), look = ground(shot.look);
+    const controller = app.controllerManager;
+    const from = shot.from && ground(shot.from), to = shot.to && ground(shot.to), look = shot.look && ground(shot.look);
     app.time('midday');
-    app.setCamera(...from, ...look);
+    if (shot.drive) {
+      app.mode('car');
+      controller.teleportActiveTo(...shot.drive);
+      app.cameraSystem.resetForTeleport();
+      app.camera('chase');
+    } else app.setCamera(...from, ...look);
     if (app.perf) app.perf.setTrafficUpdates(true);
     await wait(36);
     const trafficUpdate = app.trafficSystem.update, trainUpdate = app.trainSystem?.update;
@@ -88,17 +103,23 @@ function sampleShot(shot, frames) {
     app.perf?.reset();
     const times = [], draws = [], triangles = [];
     let last = await frame();
-    for (let i = 1; i <= frames; i++) {
-      const t = shot.jump ? 1 : i / frames;
-      const xyz = from.map((p, k) => p + (to[k] - p) * t);
-      if (shot.jump && i === 1) app.setCamera(...to, ...look);
-      else app.cameraSystem.fixedPos.set(...xyz);
+    const start = shot.drive && controller.getActiveEntity().position.clone();
+    const sampleCount = shot.drive ? frames * 2 : frames;
+    if (shot.drive) controller.setTouchInput('forward', 0.75);
+    for (let i = 1; i <= sampleCount; i++) {
+      if (!shot.drive) {
+        const t = shot.jump ? 1 : i / sampleCount;
+        const xyz = from.map((p, k) => p + (to[k] - p) * t);
+        if (shot.jump && i === 1) app.setCamera(...to, ...look);
+        else app.cameraSystem.fixedPos.set(...xyz);
+      }
       const now = await frame();
       times.push(now - last);
       last = now;
       draws.push(app.renderer.info.render.drawCalls);
       triangles.push(app.renderer.info.render.triangles);
     }
+    if (shot.drive) controller.resetInput();
     const stats = a => {
       a.sort((a, b) => a - b);
       return { median: a[Math.ceil(a.length * 0.5) - 1], p95: a[Math.ceil(a.length * 0.95) - 1], max: a.at(-1) };
@@ -110,14 +131,16 @@ function sampleShot(shot, frames) {
       if (app.trainSystem) app.trainSystem.update = trainUpdate;
     }
     const bag = app.scene.getObjectByName('bag3d-buildings')?.userData.stats;
-    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag };
+    const drivenMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
+    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, drivenMetres };
   }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic})`);
 }
 
 async function run(search, cache) {
   if (cache === 'cold') await send('Network.clearBrowserCache');
-  const url = new URL(origin);
-  url.search = search;
+  const absolute = /^https?:\/\//.test(search);
+  const url = new URL(absolute ? search : origin);
+  if (!absolute) url.search = search;
   if (url.searchParams.get('perf') === '1') url.searchParams.set('bench', '1');
   await send('Page.navigate', { url: 'about:blank' });
   wireBytes = 0;
@@ -169,7 +192,7 @@ try {
       for (const cache of ['cold', 'warm']) {
         const result = await run(search, cache);
         results.push({ trial, ...result });
-        await writeFile(output, JSON.stringify({ viewport, freezeClock, freezeTraffic, results }, null, 2));
+        await writeFile(output, JSON.stringify({ suite, viewport, freezeClock, freezeTraffic, results }, null, 2));
         console.log(`${search || 'default'} ${cache} ${Math.round(result.startup.ms)} ms`, result.samples.map(s => [s.name, s.frameMs.median, s.frameMs.p95]));
       }
     }

@@ -24,7 +24,7 @@ def build():
     point_at = GRADE['point_on_line']
     distance_along = GRADE['stations_of']
 
-    def profile(id, ids, core, window, stations_nap, *, width=None, ends=(None, None), **fields):
+    def profile(id, ids, core, window, stations_nap, *, width=None, ends=(None, None), joins=(None, None), **fields):
         # Stations are measured from the start of the core OSM way, in its mapped direction.
         points, origin, spans = [], None, []
         length = 0
@@ -45,12 +45,18 @@ def build():
 
         stations = [s - origin for s in distance_along(points)]
         start, end = max(stations[0], window[0]), min(stations[-1], window[1])
+        if joins[0]:
+            start = GRADE['station_at'](points, stations, joins[0][:2])
+        if joins[1]:
+            end = GRADE['station_at'](points, stations, joins[1][:2])
         assert start < end, id
-        ties = [(s, terrain.at(point_at(points, stations, s)) if nap is None else nap)
-                for s, nap in zip((start, end), ends)]
+        ties = [(s, join[2] + terrain.nap if join else terrain.at(point_at(points, stations, s)) if nap is None else nap)
+                for s, nap, join in zip((start, end), ends, joins)]
         knots = sorted([*ties, *((s, nap) for s, nap in stations_nap if start + 0.05 < s < end - 0.05)])
         assert all(a[0] < b[0] for a, b in zip(knots, knots[1:])), (id, knots)
-        marks = {math.floor(start) + d for d in range(1, math.ceil(end - start) + 1, 2)}
+        dense_start = max(start, window[0]) if joins[0] else start
+        dense_end = min(end, window[1]) if joins[1] else end
+        marks = {math.floor(dense_start) + d for d in range(1, math.ceil(dense_end - dense_start) + 1, 2)}
         marks.update(stations)
         marks.update(s for s, _ in knots)
         for key in ('covered', 'span'):
@@ -71,6 +77,10 @@ def build():
             shape = [round(x, 2), round(z, 2), round(GRADE['fitting_curve'](knots, s) - terrain.nap, 3)]
             if not result or math.dist(shape[:2], result[-1][:2]) > 0.04:
                 result.append(shape)
+        if joins[0]:
+            result[0] = joins[0]
+        if joins[1]:
+            result[-1] = joins[1]
         return dict(id=id, points=result, width=width or way['width'],
                     wayIds=[key for key, a, b in spans if a - origin < end and start < b - origin],
                     modes=[mode for mask, mode in ((7, 'motor'), (8, 'bike'), (16, 'foot')) if mode_mask & mask],
@@ -121,6 +131,15 @@ def build():
         [(0, 15.78), (12, 15.88), (38, 15.91), (66, 15.91), (82, 15.65), (90, 15.34)],
         width=4.5, span=(0, 91.3), covered=(0, 91.3), clearance=3.1, cutBuildings=True, surface='paving_stones')
     stadspoort_lower = []
+    # Continue the native approach into Frans Halslaan at one shared
+    # endpoint on each carriageway, avoiding overlapping grade surfaces.
+    crossing_fits = json.loads((ROOT / 'tools/data/ede-crossing-fits.json').read_text())
+    frans = {p['id']: p['points'] for site in crossing_fits['sites'] if site['id'] == 'frans-halslaan-lower'
+             for p in site['profiles']}
+    stadspoort_south = {
+        25546154: ((None, frans['frans-halslaan-lower-w6921141'][0]), [(74, 10.31)]),
+        25546157: ((frans['frans-halslaan-lower-w6921140'][-1], None), [(-43, 10.32)]),
+    }
     for core, ids, extent, covered, near, far, approaching, departing, width, clearance in [
         (25546150, [1055722527, 25546150, 25546151], (-42, 74), (0, 35), 11.86, 11.89, 11.89, 12.01, 2.6, 3.35),
         (25546154, [6921139, 25546154, 25546152], (-49, 74), (0, 31.8), 10.16, 10.16, 10.67, 10.26, 7.7, 5.04),
@@ -128,9 +147,11 @@ def build():
         (25546158, [24831845, 25546158, 25546159], (-32, 90), (16, 48.4), 11.85, 11.84, 11.84, 11.87, 2.6, 3.35),
     ]:
         lo, hi = covered
+        joins, southern_controls = stadspoort_south.get(core, ((None, None), []))
         stadspoort_lower.append(profile(f'stadspoort-{core}', ids, core, extent,
             [(extent[0] + 10, approaching), (lo - 5, near), (lo, near), (hi, far), (hi + 5, far),
-             (extent[1] - 12, departing)], width=width, covered=covered, clearance=clearance, cutBuildings=True))
+             (extent[1] - 12, departing), *southern_controls], width=width, covered=covered, clearance=clearance,
+             cutBuildings=True, joins=joins))
 
     parklaan_evidence = dict(bgt=['G0228.7a08be34c7c84b6eaf9bf1d382c4f3af'], engineering=PARKLAAN,
         heights='AHN 0.5 m pavement on the A12 and exposed Hoekelumselaan approaches. '
@@ -155,7 +176,8 @@ def build():
              parking_evidence, cutCoveredTerrain=True, surfacesOnly=True),
         site('stadspoort-upper', 'Stadspoort shopping passage', 'bridge', [stadspoort_upper], stadspoort_evidence),
         site('stadspoort-lower', 'Doctor W. Dreeslaan beneath Stadspoort', 'underpass', stadspoort_lower,
-             stadspoort_evidence, cutCoveredTerrain=True, surfacesOnly=True),
+             {**stadspoort_evidence, 'southApproach': 'PDOK AHN DTM and DSM 0.5 m exposed observations, joined to the Frans Halslaan profiles on ways w25546152 and w262752272.'},
+             cutCoveredTerrain=True, surfacesOnly=True),
         site('parklaan-a12-upper', 'A12 pavement above the Parklaan', 'bridge', parklaan_upper, parklaan_evidence),
         site('parklaan-a12-lower', 'Parklaan beneath the A12', 'underpass', [parklaan_lower], parklaan_evidence, cutCoveredTerrain=True),
     ])

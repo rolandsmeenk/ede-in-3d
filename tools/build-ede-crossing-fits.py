@@ -104,6 +104,32 @@ def interval(line, stations, outlines, padding):
     return max(0, min(stations) - padding), min(line.length, max(stations) + padding)
 
 
+def bospoort_north_controls(line, start, portal, portal_height, grid, dtm, dsm, elevation):
+    # The path lies immediately below a retaining wall. The lower tread is
+    # visible off-centre in both models. Central cells can pick up the wall.
+    stations = range(math.ceil(start) + 12, math.floor(portal) - 10, 12)
+    controls = [(start, grid.at(line.interpolate(start).coords[0]))]
+    for s in stations:
+        a, b = (line.interpolate(s + delta) for delta in (-0.8, 0.8))
+        dx, dz = b.x - a.x, b.y - a.y
+        length = math.hypot(dx, dz)
+        observations = []
+        for along in (-0.8, 0, 0.8):
+            p = line.interpolate(s + along)
+            for lateral in (-0.65, -0.40, -0.20):
+                point = Point(p.x - lateral * dz / length, p.y + lateral * dx / length)
+                ground, top = elevation(dtm, point), elevation(dsm, point)
+                if ground is not None and top is not None and abs(ground - top) <= 0.20:
+                    observations.append(ground)
+        if len(observations) < 5 or max(observations) - min(observations) > 0.22:
+            raise ValueError(f'Bospoort ramp observation at {s:.1f} m is unresolved')
+        controls.append((s, median(observations)))
+    controls.append((portal, portal_height))
+    if any(not 0 <= (ya - yb) / (b - a) <= 0.08 for (a, ya), (b, yb) in zip(controls, controls[1:])):
+        raise ValueError('Bospoort northern ramp fails monotonic grade check')
+    return controls
+
+
 def build(survey_directory):
     scene = GRADE['load_scene']()
     grid = GRADE['Terrain']()
@@ -265,7 +291,23 @@ def build(survey_directory):
                         return points
 
                     profile_id = f"{site['id']}-{role}-{way_id}"
-                    span = [round(a - start, 2), round(b - start, 2)]
+                    profile_start = start
+                    points = sample_profile(start, end)
+                    if profile_id == 'bospoorttunnel-lower-w24994852':
+                        # Join at the north approach's previous OSM node, where
+                        # the 12 m terrain and native tread agree at 23.4 m NAP.
+                        profile_start = next(lo for key, lo, _ in parts if key == 'w24994849')
+                        native = bospoort_north_controls(line, profile_start, a, GRADE['fitting_curve'](knots, a),
+                                                         grid, dtm, dsm, elevation)
+                        # Stabilize the covered floor and keep the existing covered
+                        # profile geometry. Smooth controls need only the approach
+                        # knots, centreline bends and midpoint samples.
+                        approach = sorted({*[s for s, _ in native if s < a],
+                                           *[(left[0] + right[0]) / 2 for left, right in zip(native, native[1:])],
+                                           *[s for s in stations if profile_start < s < a]})
+                        points = [[round(p.x, 2), round(p.y, 2), round(GRADE['fitting_curve'](native, s) - grid.nap, 3)]
+                                  for s in approach for p in [line.interpolate(s)]] + sample_profile(a, end)
+                    span = [round(a - profile_start, 2), round(b - profile_start, 2)]
                     if rail:
                         item = {'railProfiles': [
                             dict(wayId=key, points=sample_profile(max(start, lo), min(end, hi)),
@@ -275,7 +317,7 @@ def build(survey_directory):
                         ]}
                     else:
                         used = [key for key, lo, hi in parts if lo < end and start < hi]
-                        item = dict(id=profile_id, points=sample_profile(start, end), wayIds=used, modes=mode_names(ways[way_id]),
+                        item = dict(id=profile_id, points=points, wayIds=used, modes=mode_names(ways[way_id]),
                                     width=modeled_width(ways[way_id], widths),
                                     **({'span': span} if role == 'upper' else {'covered': span}))
                     built[role][way_id] = item, knots
@@ -310,6 +352,9 @@ def build(survey_directory):
                 fits.append(dict(id=site['id'] + '-upper', name=site['name'] + ' upper routes', kind='bridge',
                                  profiles=roads['upper'], evidence=evidence))
             if site['id'] != 'parkweidepad-zuid':  # The existing lower profile includes four separate surveyed roof intervals.
+                if site['id'] == 'bospoorttunnel':
+                    evidence = {**evidence, 'northApproach': 'Matched DTM and DSM samples from the lower tread at the retaining wall. '
+                                'Native measurements extend the profile to the previous OSM node. The covered station range remains fixed.'}
                 fits.append(dict(id=site['id'] + '-lower', name=site['name'] + ' lower routes', kind='underpass',
                                  profiles=roads['lower'], cutCoveredTerrain=True, surfacesOnly=len(roads['lower']) > 1,
                                  evidence=evidence, auditRailHeights=tracks))
@@ -337,6 +382,22 @@ def build(survey_directory):
                                         span=[round(west_a - start, 2), round(west_b - start, 2)])]))
     else:
         issues.append(['westtunnel', way_id, 'Deck observations outside station envelope'])
+
+    # The south approaches of Stadspoort meet these north approaches of
+    # Frans Halslaan. Remove the old, overlapping ties back to coarse ground.
+    # The retained endpoints are on the matched native pavement near z=3200.
+    frans = next(fit for fit in fits if fit['id'] == 'frans-halslaan-lower')
+    for profile in frans['profiles']:
+        if profile['id'] == 'frans-halslaan-lower-w6921141':
+            points = profile['points']
+            join = min(range(len(points)), key=lambda i: abs(points[i][1] - 3199.57))
+            removed = GRADE['stations_of'](points[:join + 1])[-1]
+            profile['points'] = points[join:]
+            profile['covered'] = [round(station - removed, 2) for station in profile['covered']]
+        elif profile['id'] == 'frans-halslaan-lower-w6921140':
+            points = profile['points']
+            join = min(range(len(points)), key=lambda i: abs(points[i][1] - 3201.92))
+            profile['points'] = points[:join + 1]
     return {'version': 1, 'sites': fits, 'issues': issues}
 
 

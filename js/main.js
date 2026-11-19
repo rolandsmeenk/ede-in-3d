@@ -155,7 +155,7 @@ async function initApp() {
   markInit('map assets and timetables');
 
   // 3. Build the city, buildings, street details and traffic
-  await showLoadingStage('Building streets, parks and waterfronts...');
+  await showLoadingStage('Building streets, parks and water…');
   const cityGrid = buildCityGrid(scene, treeResult.status === 'fulfilled' ? treeResult.value : undefined);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');

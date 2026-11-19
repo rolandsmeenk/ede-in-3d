@@ -44,7 +44,7 @@ import {
   WALL_KINDS
 } from './tsl-materials.js';
 import { GEO } from './nyc-geodata.js';
-import { fdrViaduct, pavedPlazaRects, parkTreeSites, sidewalkBlocks } from './city-grid.js';
+import { pavedPlazaRects, parkTreeSites, sidewalkBlocks } from './city-grid.js';
 import { edePoints, edeBounds, edePolygonGeometry, nearestEdeRoad, edeSpatialGroups, edeGeometryGroups } from './ede-geometry.js';
 import { createShopSigns } from './shop-signs.js';
 import { solidWallSpans } from './passages.js';
@@ -52,6 +52,9 @@ import { buildingPassageOpenings } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleRoofColor } from './aerial-colors.js';
 import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js';
+import { EDE_BUILDING_BASES } from './ede-building-bases.js';
+
+const surveyedBuildingBases = new Map(EDE_BUILDING_BASES.map(({ osmId, y }) => [osmId, y]));
 
 // Building massing follows each block's lots and frontage frames. Footprints combine non-overlapping boxes.
 // A spatial quadtree streams cornices, rooftop equipment, fire escapes and storefront details around the player.
@@ -462,8 +465,6 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
       box(ta - hl, ta + hl, (s.width + s.anchorage[1]) * 0.5 + 3);
     }
   }
-  // ... nor under the South Street Viaduct and its Battery Park Underpass portal (laid out by city-grid.js)
-  for (const o of (fdrViaduct && fdrViaduct.boxes) || []) bridgeCorridors.push(o);
   // Separating-axis test of the rect [x0, x1] x [z0, z1] (of the current frame) against every corridor box
   function hitsBridgeCorridor(x0, x1, z0, z1) {
     const hx = (x1 - x0) * 0.5;
@@ -2021,7 +2022,9 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
       if (cx < ISLAND_BOUNDS.minX - 100 || cx > ISLAND_BOUNDS.maxX + 100 || cz < ISLAND_BOUNDS.minZ - 100 || cz > ISLAND_BOUNDS.maxZ + 100) continue;
       if (LANDMARK_EXCLUSIONS.some(r => cx > r.minX && cx < r.maxX && cz > r.minZ && cz < r.maxZ)) continue;
       if (Math.abs(signedArea(poly)) < 7) continue;
-      const ground = terrainHeightAt(cx, cz);
+      const coarseGround = terrainHeightAt(cx, cz);
+      const ground = surveyedBuildingBases.get(source.id) ?? coarseGround;
+      const groundCorrection = ground - coarseGround;
       buildingGrounds.set(source, ground);
       const base = Math.max(0, source.minHeight || 0);
       const height = Math.max(base + 0.15, source.h || (source.levels || 6) * 3.4);
@@ -2062,7 +2065,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
             // Extend the bottom of the wall to close any gap on the low side of the footprint.
             const steps = Math.ceil(length / 4);
             for (let j = 0; j <= steps; j++) {
-              wallBottom = Math.min(wallBottom, terrainHeightAt(a.x + dx * j / steps, a.z + dz * j / steps));
+              wallBottom = Math.min(wallBottom, terrainHeightAt(a.x + dx * j / steps, a.z + dz * j / steps) + groundCorrection);
             }
           }
           const wallTop = ground + eave;

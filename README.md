@@ -79,6 +79,8 @@ python3 tools/build-ede-terrain.py /tmp/ede-ahn-rd.tif
 
 Existing OSM street, cycleway, park and water outlines follow the terrain. Fitted bridges and tunnels have their own travel surfaces. The browser loads the local terrain asset and can fall back to level ground if the file is unavailable.
 
+The [targeted AHN survey](tools/data/ede-ahn-pilot.md) shows how to refresh the native 0.5 m DTM and DSM inputs for the elevation pilot. The game loads the resulting small profiles and building base records locally. Use **Teleport → Openluchttheater Ede** to visit the theatre from Van Pabstlaan.
+
 ## Refresh structures and grade-separated routes
 
 The BGT snapshot provides decks, abutments, railway platforms, walls, pylons, tanks, open sheds and turbines. The builder joins related geometry, clips to the map extent and filters overlapping BAG/OSM structures. A second build matches BGT surfaces and widths to OSM ways at the same relative level. The road build combines that physical evidence with directional access tags and WKD.

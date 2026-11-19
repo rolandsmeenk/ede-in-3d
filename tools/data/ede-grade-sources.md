@@ -77,7 +77,14 @@ The destination footpath on OSM way 1361789451 passes beneath a building at grou
 
 Exposed AHN DTM places the Langekamppad at 8.60 m NAP east of the A30 deck and 8.58 m west of it. Its profile interpolates the hidden floor and estimates 9.1 m of clearance. This parallel path has its own strip beside the railway. On the upper routes at Somatunnel, Bospoorttunnel and Parkweidepad Zuid, the fitting step rejects DSM canopy returns that disagree with the exposed approaches and measured deck.
 
+At Bospoorttunnel, native half-metre DTM and DSM agree on the lower tread of the northern walking and cycling ramp. The off-centre samples reject the retaining-wall returns that previously produced a hump. The revised profile ties in at the OSM approach node at 23.41 m NAP and joins the existing concealed floor. The concealed soffit and the 2.10 m simulated clearance still need a field survey. On the two motor approaches south of Stadspoort, native pavement samples support the new joins with the adjacent Frans Halslaan profiles at 10.348 and 10.380 m NAP. Each carriageway has one common endpoint. The shopping passage and its concealed floor and soffit remain fitted. [Native AHN WCS](https://service.pdok.nl/rws/ahn/wcs/v1_0?service=WCS&request=GetCapabilities)
+
+At Ede-Wageningen, the rail profiles use ProRail. The AHN returns for much of Westtunnel and Oosttunnel follow the construction apron, tracks or roof rather than the floor. The lower station paths, parking ramps and soffits still need as-built heights. At Raadhuisstraat, the exposed approaches sampled within about 0.17 m of the existing terrain. DTM has a gap under the Stadhuis and the DSM reads the roof. The passage uses its mapped 4.2 m limit. [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer) · [OSM Raadhuisstraat passage](https://www.openstreetmap.org/way/274278314)
+
+Regenerate the surveyed crossings before the interior fits so their shared approach endpoints use the same elevations. The survey directory needs the native GeoTIFF pairs for the full crossing catalogue used by the builder.
+
 ```sh
+uv run --with shapely --with rasterio --with pyproj python tools/build-ede-crossing-fits.py /tmp/ede-crossing-survey
 python3 tools/build-ede-interior-fits.py
 python3 tools/build-ede-discovered-crossing-fits.py
 ```

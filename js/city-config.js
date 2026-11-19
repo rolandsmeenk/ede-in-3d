@@ -230,6 +230,7 @@ const NYC_LANDMARKS=[
  ['marktplein','Marktplein','Marktplein',5.669702,52.0465652,'Centrum','Marktstraat'],
  ['huis-kernhem','Huis Kernhem','Huis Kernhem',5.6573018,52.0528403,'Kernhem','Kernhemseweg'],
  ['proosdijpark','Proosdijpark','Proosdijpark',5.6496497,52.0398935,'Veldhuizen','Veenderweg'],
+ ['openluchttheater','Openluchttheater Ede','Openluchttheater',5.67844,52.04059,'Ede','van Pabstlaan'],
  ['sherman-tank','Sherman Tank','Sherman Tank',5.69175563,52.0414851,'Langenberg','Arnhemseweg'],
 ].map(([id,name,short,lon,lat,district,road])=>{
  const site=LANDMARK_SITES[name];
@@ -240,6 +241,7 @@ const NYC_LANDMARKS=[
 const LANDMARK_APPROACHES={
  oudekerk:[5.670825,52.046130],
  'chico-y-chica':[5.6737293,52.0456570],
+ openluchttheater:[5.6782546,52.0398201],
 };
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){

@@ -12,11 +12,10 @@ import {
   fromOldFrame,
   CENTRAL_PARK_BOUNDS as CPB,
   BLOCKS,
-  LANDMARK_SITES,
   EDE_DATA,
   waterAt
 } from './city-config.js';
-import { cityUniforms, createSteamMaterial, createTreeGrateMaterial, createGodRayMaterial } from './tsl-materials.js';
+import { cityUniforms, createTreeGrateMaterial, createGodRayMaterial } from './tsl-materials.js';
 import { createTreeField } from './trees.js';
 import { pavedPlazaRects, centralParkClearings, parkTreeSites, sidewalkBlocks, parkLampSites, edeStreetSites } from './city-grid.js';
 import { bryantParkLawn } from './landmarks.js';
@@ -609,171 +608,16 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
   }
 
   // =========================================================================
-  // 3. CON EDISON ORANGE/WHITE STRIPED STEAM STACKS, NYCDOT SAWHORSE BARRICADES
-  //    & BILLOWING WIND-DRIFTED VOLUMETRIC STEAM CLOUD TRAILS (REFERENCE PHOTO!)
-  // =========================================================================
-  const steamLocations = EDE_DATA ? [] : [
-    { x: 6.4,   z: 96,   windX: -1.0, windZ: -0.18 }, // 5th Ave & 37th St (Buffer zone clear of green bike lane!)
-    { x: -7.5,  z: 148,  windX: 0.95, windZ: -0.22 }, // 5th Ave near 34th St (Empire State Building)
-    { x: 6.4,   z: 48,   windX: -1.0, windZ: 0.15  }, // 5th Ave & 40th St (NYPL / Bryant Park)
-    { x: -8.0,  z: -18,  windX: 0.92, windZ: -0.20 }, // 5th Ave & 43rd St
-    { x: -206,  z: -32,  windX: 0.95, windZ: 0.22  }, // Broadway / Times Square
-    { x: -228,  z: -98,  windX: 1.0,  windZ: -0.15 }, // 7th Ave & 45th St
-    { x: -102,  z: 22,   windX: -0.9, windZ: 0.20  }, // 6th Ave & Bryant Park
-    { x: 118,   z: -12,  windX: -1.0, windZ: -0.15 }, // Park Ave & 42nd St (Grand Central)
-    { x: 212,   z: -26,  windX: 0.92, windZ: 0.18  }, // Lexington Ave & 42nd St (Chrysler Building)
-    { x: 228,   z: -195, windX: -0.9, windZ: 0.16  }, // Lexington Ave & 51st St
-    { x: -118,  z: -148, windX: 0.95, windZ: -0.18 }, // 6th Ave & 48th St (Rockefeller Center)
-    { x: 6.4,   z: 285,  windX: -0.9, windZ: -0.22 }, // 5th Ave & 26th St (Flatiron)
-    { x: 6.4,   z: 615,  windX: -0.9, windZ: 0.18  }, // 5th Ave & Washington Square
-    { x: -212,  z: 1255, windX: 0.95, windZ: -0.20 }  // One WTC / Financial District
-  ];
-  // (authored on the former compressed grid: carried onto the real streets; the Financial District one by One WTC)
-  for (const st of steamLocations) {
-    const wtc = LANDMARK_SITES['One World Trade Center'];
-    const at = st.z > 1000 && wtc ? { x: wtc.x + 48, z: wtc.z - 40 } : fromOldFrame(st.x, st.z);
-    st.x = at.x;
-    st.z = at.z;
-  }
-
-  const steamOrangeMat = new THREE.MeshStandardNodeMaterial({
-    color: 0xff5518, // High-visibility ConEd safety orange
-    roughness: 0.42
-  });
-  const steamWhiteMat = new THREE.MeshStandardNodeMaterial({
-    color: 0xf4f6f8,
-    roughness: 0.45
-  });
-  const steamMat = createSteamMaterial();
-  const puffsPerStack = 36;
-  const totalSteamSprites = steamLocations.length * puffsPerStack;
-  const smokeOriginArr = new Float32Array(totalSteamSprites * 3);
-  const smokeWindArr = new Float32Array(totalSteamSprites * 3);
-  const smokeParamsArr = new Float32Array(totalSteamSprites * 4);
-  let spriteCursor = 0;
-
-  const orangeMatrices = [];
-  const whiteMatrices = [];
-  const barricadeOrangeMatrices = [];
-  const barricadeWhiteMatrices = [];
-
-  for (let sIdx = 0; sIdx < steamLocations.length; sIdx++) {
-    const { x: sx, z: sz, windX, windZ } = steamLocations[sIdx];
-    addFootprint(sx, sz, 2, 2); // stack + sawhorse barricades
-
-    // 5-Band Alternating Orange & White Candy-Cane ConEd Steam Stack (height = 2.85m)
-    for (let b = 0; b < 5; b++) {
-      const bandH = 0.56;
-      const by = 0.28 + b * bandH;
-      const rScale = 0.36 - b * 0.025;
-      dummy.position.set(sx, by, sz);
-      dummy.rotation.set(0, 0, 0);
-      dummy.scale.set(rScale, bandH, rScale);
-      dummy.updateMatrix();
-      if (b % 2 === 0) {
-        orangeMatrices.push(dummy.matrix.clone());
-      } else {
-        whiteMatrices.push(dummy.matrix.clone());
-      }
-    }
-
-    // 4-Sided NYCDOT Orange-and-White Striped Wooden Sawhorse Barricades around base of stack
-    const bHalf = 0.92;
-    const sides = [
-      { ox: 0, oz: bHalf, rotY: 0 },
-      { ox: 0, oz: -bHalf, rotY: 0 },
-      { ox: bHalf, oz: 0, rotY: Math.PI * 0.5 },
-      { ox: -bHalf, oz: 0, rotY: Math.PI * 0.5 }
-    ];
-    for (const side of sides) {
-      // Barricade vertical legs
-      for (const legOff of [-0.72, 0.72]) {
-        const lx = sx + side.ox + (side.rotY === 0 ? legOff : 0);
-        const lz = sz + side.oz + (side.rotY !== 0 ? legOff : 0);
-        dummy.position.set(lx, 0.48, lz);
-        dummy.rotation.set(0, side.rotY, 0);
-        dummy.scale.set(0.08, 0.96, 0.08);
-        dummy.updateMatrix();
-        barricadeWhiteMatrices.push(dummy.matrix.clone());
-      }
-      // Top & middle striped horizontal rails
-      for (const railY of [0.82, 0.46]) {
-        for (let seg = -2; seg <= 2; seg++) {
-          const segOff = seg * 0.34;
-          const rx = sx + side.ox + (side.rotY === 0 ? segOff : 0);
-          const rz = sz + side.oz + (side.rotY !== 0 ? segOff : 0);
-          dummy.position.set(rx, railY, rz);
-          dummy.rotation.set(0, side.rotY, 0);
-          dummy.scale.set(0.34, 0.16, 0.06);
-          dummy.updateMatrix();
-          if (Math.abs(seg) % 2 === 0) {
-            barricadeOrangeMatrices.push(dummy.matrix.clone());
-          } else {
-            barricadeWhiteMatrices.push(dummy.matrix.clone());
-          }
-        }
-      }
-    }
-
-    // 36 Camera-Facing Volumetric Smoke Sprites per ConEd Steam Stack (SpriteNodeMaterial)
-    for (let p = 0; p < puffsPerStack; p++) {
-      const idx3 = spriteCursor * 3;
-      const idx4 = spriteCursor * 4;
-      const phaseOffset = (p + ((sIdx * 0.37) % 1.0)) / puffsPerStack;
-      const spinDir = p % 2 === 0 ? 1.0 : -1.0;
-      const spinSpeed = spinDir * (0.28 + ((p * 0.19 + sIdx * 0.13) % 0.45));
-      const curlSeed = (p * 1.73 + sIdx * 2.41) % (Math.PI * 2);
-      const scaleMul = 0.86 + ((p * 0.31 + sIdx * 0.17) % 0.36);
-
-      smokeOriginArr[idx3] = sx;
-      smokeOriginArr[idx3 + 1] = 2.75;
-      smokeOriginArr[idx3 + 2] = sz;
-
-      smokeWindArr[idx3] = windX;
-      smokeWindArr[idx3 + 1] = 7.4;
-      smokeWindArr[idx3 + 2] = windZ;
-
-      smokeParamsArr[idx4] = phaseOffset;
-      smokeParamsArr[idx4 + 1] = spinSpeed;
-      smokeParamsArr[idx4 + 2] = curlSeed;
-      smokeParamsArr[idx4 + 3] = scaleMul;
-      spriteCursor++;
-    }
-  }
-
-  addMatrixArrayInstanced(unitCyl, steamOrangeMat, orangeMatrices);
-  addMatrixArrayInstanced(unitCyl, steamWhiteMat, whiteMatrices);
-  addMatrixArrayInstanced(unitBox, steamOrangeMat, barricadeOrangeMatrices);
-  addMatrixArrayInstanced(unitBox, steamWhiteMat, barricadeWhiteMatrices);
-
-  const steamSpriteGeo = new THREE.PlaneGeometry(1, 1);
-  steamSpriteGeo.setAttribute('aSmokeOrigin', new THREE.InstancedBufferAttribute(smokeOriginArr, 3));
-  steamSpriteGeo.setAttribute('aSmokeWind', new THREE.InstancedBufferAttribute(smokeWindArr, 3));
-  steamSpriteGeo.setAttribute('aSmokeParams', new THREE.InstancedBufferAttribute(smokeParamsArr, 4));
-  const steamInstancedSprites = new THREE.Mesh(steamSpriteGeo, steamMat);
-  steamInstancedSprites.count = totalSteamSprites;
-  steamInstancedSprites.frustumCulled = false;
-  steamInstancedSprites.renderOrder = 2;
-  if (totalSteamSprites) group.add(steamInstancedSprites);
-
-  // =========================================================================
-  // 6. FIRE HYDRANTS & USPS BLUE MAILBOXES ALONG CURBS (INSTANCED)
+  // 6. FIRE HYDRANTS ALONG CURBS (INSTANCED)
   // =========================================================================
   const hydrantPositions = [];
-  const mailboxPositions = [];
-  if (EDE_DATA) for (let i = 5; i < edeStreetSites.length; i += 23) {
-    const s = edeStreetSites[i];
-    if (!waterAt(s.x, s.z)) mailboxPositions.push([s.x - s.ux * 2, s.z - s.uz * 2]);
-  }
   for (const ave of AVENUES) {
     for (let row = 0; row < STREETS.length - 1; row++) {
       const zMid = (STREETS[row].z + STREETS[row + 1].z) * 0.5;
       const h1 = [ave.x - ave.width * 0.5 - 0.8, zMid - 16];
       const h2 = [ave.x + ave.width * 0.5 + 0.8, zMid + 16];
-      const mb = [ave.x + ave.width * 0.5 + 1.2, zMid - 22];
       if (isOnSidewalk(h1[0], h1[1], 0.45)) hydrantPositions.push(h1);
       if (isOnSidewalk(h2[0], h2[1], 0.45)) hydrantPositions.push(h2);
-      if (isOnSidewalk(mb[0], mb[1], 0.45)) mailboxPositions.push(mb);
     }
   }
 
@@ -789,18 +633,6 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
   });
   hydrantInst.instanceMatrix.needsUpdate = true;
   if (hydrantPositions.length) group.add(hydrantInst);
-
-  const uspsMat = new THREE.MeshStandardNodeMaterial({ color: EDE_DATA ? 0xe4b92e : 0x183c7a, roughness: 0.45, metalness: 0.35 });
-  const mailboxInst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.65, 1.25, 0.65), uspsMat, Math.max(1, mailboxPositions.length));
-  mailboxInst.count = mailboxPositions.length;
-  mailboxPositions.forEach(([mx, mz], i) => {
-    dummy.position.set(mx, terrainHeightAt(mx, mz) + 0.84, mz);
-    dummy.scale.set(1, 1, 1);
-    dummy.updateMatrix();
-    mailboxInst.setMatrixAt(i, dummy.matrix);
-  });
-  mailboxInst.instanceMatrix.needsUpdate = true;
-  if (mailboxPositions.length) group.add(mailboxInst);
 
   // =========================================================================
   // 7. LUSH TREES: PARKS & PLAZAS, CENTRAL PARK WOODLANDS, AVENUE & CROSS-STREET TREES
