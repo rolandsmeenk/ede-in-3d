@@ -100,7 +100,7 @@ function createWalkSignalMaterial(clock) {
   return mat;
 }
 
-function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
+function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLampMounts) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeStreetDetails' : 'ManhattanStreetDetails';
 
@@ -110,7 +110,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
 
   // Ground footprints of street furniture that traffic and pedestrians must keep clear of
   const footprints = [];
-  const addFootprint = (x, z, w, d, pedestrianOnly = false) => footprints.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, pedestrianOnly });
+  const addFootprint = (x, z, w, d, pedestrianOnly = false, layer) => footprints.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, pedestrianOnly, layer });
 
   // Signal clock (seconds), set every frame by main.js
   const signalClock = uniform(0);
@@ -191,13 +191,13 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
   // Only nearby poles can conflict, even with street furniture across the whole island.
   const POLE_CELL = 8;
   const poleCells = new Map();
-  function addPole(x, z, width) {
+  function addPole(x, z, width, layer) {
     const key = Math.floor(x / POLE_CELL) + ',' + Math.floor(z / POLE_CELL);
     let cell = poleCells.get(key);
     if (!cell) poleCells.set(key, cell = []);
     cell.push({ x, z });
     // Poles stand on curbs: pedestrians avoid them, but they must not narrow the inferred road gaps.
-    addFootprint(x, z, width, width, true);
+    addFootprint(x, z, width, width, true, layer);
   }
 
   const plazaRects = pavedPlazaRects || [];
@@ -502,29 +502,40 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
       const { x, z } = s;
       let { nx, nz, ux, uz, name } = s;
       if (mappedLamps) {
-        // BGT locates the pole. Use the nearest road only to orient its arm.
-        const road = nearestEdeRoad(x, z, 25);
-        ux = road?.ux ?? 0;
-        uz = road?.uz ?? 1;
-        const side = road && ((road.x - x) * -uz + (road.z - z) * ux) < 0 ? -1 : 1;
-        nx = -uz * side;
-        nz = ux * side;
+        // A side-mounted street blade follows the arm's baked road alignment.
+        const road = s.baseY === undefined || i % 4 === 0 ? nearestEdeRoad(x, z, 25, undefined, s.layer) : null;
         name = road?.road.name;
+        if (s.baseY === undefined) {
+          ux = road?.ux ?? 0;
+          uz = road?.uz ?? 1;
+          const side = road && ((road.x - x) * -uz + (road.z - z) * ux) < 0 ? -1 : 1;
+          nx = -uz * side;
+          nz = ux * side;
+        } else {
+          ux = nz;
+          uz = -nx;
+        }
       } else {
         if (waterAt(x, z) && !s.road.bridge) continue;
         const block = blockAt(x, z);
         if (block && !block.sidewalk && !block.id?.toString().startsWith('sidewalk') && block.source && !block.park) continue;
       }
-      const ground = terrainHeightAt(x, z);
-      setMatrix(poleMatrices, x, ground + 4.1, z, 0.11, 8.2, 0.11);
+      const ground = s.baseY ?? terrainHeightAt(x, z);
+      const headY = ground + (s.height ?? 8.2);
+      const mount = gantryLampMounts?.get(s);
+      const lampX = mount?.x ?? x, lampZ = mount?.z ?? z;
+      const poleBase = mount?.top ?? ground;
+      const poleHeight = headY - poleBase;
+      if (poleHeight > 0) setMatrix(poleMatrices, lampX, poleBase + poleHeight / 2, lampZ, 0.11, poleHeight, 0.11);
       const yaw = Math.atan2(-nz, nx);
-      setMatrix(armMatrices, x + nx * 1.1, ground + 8.08, z + nz * 1.1, 2.2, 0.085, 0.085, yaw);
-      setMatrix(lampHeadMatrices, x + nx * 2.1, ground + 8.1, z + nz * 2.1, 1, 1, 1, yaw);
-      cobraLampSites.push({ x: x + nx * 2.1, y: ground + 8.04, z: z + nz * 2.1, tx: x + nx * 3.5, tz: z + nz * 3.5 });
-      addPole(x, z, 0.11);
+      setMatrix(armMatrices, lampX + nx * 1.1, headY - 0.12, lampZ + nz * 1.1, 2.2, 0.085, 0.085, yaw);
+      setMatrix(lampHeadMatrices, lampX + nx * 2.1, headY - 0.10, lampZ + nz * 2.1, 1, s.led ? 0.55 : 1, 1, yaw);
+      cobraLampSites.push({ x: lampX + nx * 2.1, y: headY - 0.16, z: lampZ + nz * 2.1,
+        tx: lampX + nx * 3.5, ty: s.targetY, tz: lampZ + nz * 3.5, layer: s.layer, color: s.led ? 0xfff3e0 : 0xffe8c2 });
+      addPole(lampX, lampZ, 0.11, s.layer);
       if (name && i % 4 === 0 && (edeSignMatrices.has(name) || edeSignMatrices.size < 70 || centreStreetSigns.has(name))) {
         if (!edeSignMatrices.has(name)) edeSignMatrices.set(name, []);
-        setMatrix(edeSignMatrices.get(name), x, ground + 3.25, z, 1.8, 0.33, 0.055, -Math.atan2(uz, ux));
+        setMatrix(edeSignMatrices.get(name), lampX, ground + 3.25, lampZ, 1.8, 0.33, 0.055, -Math.atan2(uz, ux));
       }
     }
     const signalKeys = new Set();
@@ -936,7 +947,8 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
       for (let iz = Math.floor((cz - range) / LIGHT_CELL); iz <= Math.floor((cz + range) / LIGHT_CELL); iz++) {
         for (const s of cells.get(ix + ',' + iz) || []) {
           const dx = s.x - cx, dz = s.z - cz;
-          const d2 = dx * dx + dz * dz + cy * cy;
+          const vertical = s.layer && Number.isFinite(s.ty) ? 2 * (cy - s.ty) : cy;
+          const d2 = dx * dx + dz * dz + vertical * vertical;
           if (d2 > range * range) continue;
           const effDist = Math.sqrt(d2) + Math.max(0, 6.0 - dx * fwdX - dz * fwdZ) * 2.8;
           if (effDist >= range) continue;
@@ -985,9 +997,12 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
       const s = activeCobras[i];
       const fade = smoothFade(s._effDist, cobraCutoff * 0.62, cobraCutoff);
       const spot = streetlightSpotPool[i];
+      const targetY = s.ty ?? terrainHeightAt(s.tx, s.tz);
       spot.position.set(s.x, s.y, s.z);
-      spot.target.position.set(s.tx, terrainHeightAt(s.tx, s.tz), s.tz);
+      spot.target.position.set(s.tx, targetY, s.tz);
       spot.target.updateMatrixWorld();
+      spot.color.setHex(s.color ?? 0xffe8c2);
+      spot.distance = s.layer > 0 ? Math.min(25, Math.hypot(s.tx - s.x, targetY - s.y, s.tz - s.z) + 2.6) : 25;
       spot.intensity = 88.0 * lampScale * fade;
     }
     for (let i = spotUsed; i < STREETLIGHT_SPOT_POOL; i++) {

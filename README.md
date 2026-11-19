@@ -90,7 +90,7 @@ uv run --with 'shapely>=2.1' python tools/build-ede-bgt.py /tmp/ede-bgt --date 2
 uv run --with 'shapely>=2.1' python tools/build-ede-bgt-roads.py /tmp/ede-bgt-roads --date 2026-11-18 --fetch --report /tmp/ede-bgt-road-report.json
 ```
 
-Omit `--fetch` to reuse a downloaded snapshot. The road evidence builder samples the generated OSM map, so build a new OSM snapshot before matching it and rebuild the map afterward to apply the evidence. The [crossing profile notes](tools/data/ede-grade-sources.md) give the ProRail refresh queries and record the measured and estimated heights for each modeled crossing. Road and path contact, walls, and the follow camera use those layered surfaces while the rail renderer keeps its OSM alignment. Level crossing equipment is modeled in its open position.
+Omit `--fetch` to reuse a downloaded snapshot. The road evidence builder samples the generated OSM map, so build a new OSM snapshot before matching it and rebuild the map afterward to apply the evidence. The [crossing profile notes](tools/data/ede-grade-sources.md) give the ProRail refresh queries and record the measured and estimated heights for each modeled crossing. Road and path contact, walls, and the follow camera use those layered surfaces while the rail renderer keeps its OSM alignment. At mapped public level crossings, warnings and barriers share train progress with the simulation. See the [traffic pilot](tools/data/ede-traffic-pilot.md) for timing and coverage.
 
 ### Verify bridges, tunnels and passages
 
@@ -145,7 +145,7 @@ uv run --with 'shapely>=2.1' python tools/build-ede-street-features.py \
   /tmp/ede-street/signs.json /tmp/ede-street/surfaces.json
 ```
 
-Add `--fetch` to the sign importer for the latest placed signs. Reuse the downloaded inputs to rebuild offline. The resulting `assets/ede-street-features.json.gz` is loaded locally. Each road or path reference gives a directed key, layer, mode mask, confidence, and a distance or interval in metres from the directed edge's start. The mask uses 1 for car, 2 for van, 4 for bus, 8 for bicycle, and 16 for foot. `forRoad(edge)`, `forPath(track, direction, mode)`, and `forEdge(key)` return features in travel order. A single feature can have several references. Uncertain and unmatched records retain their raw evidence and review reason. The renderer uses these records for geometry only. The existing simulation still handles access, speed, and yielding.
+Add `--fetch` to the sign importer for the latest placed signs. Reuse the downloaded inputs to rebuild offline. The resulting `assets/ede-street-features.json.gz` is loaded locally. Each road or path reference gives a directed key, layer, mode mask, confidence, and a distance or interval in metres from the directed edge's start. The mask uses 1 for car, 2 for van, 4 for bus, 8 for bicycle, and 16 for foot. `forRoad(edge)`, `forPath(track, direction, mode)`, and `forEdge(key)` return features in travel order. A single feature can have several references. Uncertain and unmatched records retain their raw evidence and review reason. The renderer draws those features. The [traffic pilot](tools/data/ede-traffic-pilot.md) also uses verified directed references for hump speed, stop lines, give-way approaches and zebras.
 
 Measured footprints supply length and width where available. OSM-only hump, short bump, raised table, and cushion length defaults are 3.5, 1.2, 7, and 2.5 m, with modelled heights of 8, 6, 8, and 7 cm respectively. Tables use short linear ramps and humps use a rounded longitudinal profile. The same profile sets the stripe height on a raised zebra. [NDW Drempels](https://verkeersveiligheid.ndw.nu/dataset/drempels) · [WKD pedestrian crossings](https://verkeersveiligheid.ndw.nu/dataset/voetgangersoversteekplaatsen) · [NDW open-data terms](https://docs.ndw.nu/algemeen/data-gebruiksvoorwaarden/)
 
@@ -154,6 +154,25 @@ The snapshot contains 6,345 sign locations, 966 humps and tables, and 201 crossi
 Review is needed for 248 sign matches and 109 partial crossing matches. The asset also retains 2,016 signs, 66 raised surfaces, and five crossings whose positions lack a reliable directed edge association. Common cases are a sign between approaches, different relative layer codes in NWB and OSM, or an unlinked sidewalk endpoint.
 
 The review covered the C3 sign on Notaris Fischerstraat, the raised zebra on Klinkenbergerweg, both carriageways at the signal-controlled refuge on Kastelenlaan, and the 4.2 m clearance sign at Keesomtunnel. In a headless Chromium WebGPU run, the layer added about 8–40 draw calls in the tested views. Median frame times generally stayed in the same 16.7 or 33.3 ms refresh interval. The final sign and supplementary-text atlases used 17.9 MiB of texture memory and building the layer took 209 ms.
+
+## Refresh BGT street detail and 1GIS motorway infrastructure
+
+The street detail bake uses active BGT vegetation, boundary, furniture, bollard, and water-edge records. It checks them against mapped gates, paths, driveways, existing trees and civil structures. Shelters keep their surveyed location and link to an existing stop where the match and boarding clearance agree. Rijkswaterstaat’s Geografische Areaalregistratie supplies A12 and A30 infrastructure in RD New and metres NAP. The bake matches features to directed carriageways, NWB sections and fitted elevations. Surveyed paint replaces coincident procedural paint on the matching way. The lane graph still supplies simulation lanes and access. [PDOK BGT](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
+
+```sh
+uv run --with 'shapely>=2.1' python tools/build-ede-bgt-detail.py /tmp/ede-bgt-detail --date 2026-11-19 --coverage expanded --fetch
+uv run --with pyproj --with 'shapely>=2.1' python tools/build-ede-1gis.py --report /tmp/ede-1gis-report.json
+```
+
+Omit `--fetch` from the BGT command to rebuild from the local downloads, using their original snapshot date. Add `/tmp/ede-1gis --fetch --save-snapshot tools/data/ede-1gis.snapshot.json.gz` to refresh the 1GIS snapshot. The DTB source notes describe the former import and its benchmark. [Historical DTB reference](tools/data/ede-dtb-detail.sources.md)
+
+NBd provides the destinations and drawing references for the blue motorway direction signs. 1GIS supplies mounting evidence and NDW supplies standard signs and supplementary plates. [NBd exports](https://downloads.rijkswaterstaatdata.nl/bewegwijzering/) · [NDW Verkeersborden](https://docs.ndw.nu/en/data-uitwisseling/interface-beschrijvingen/verkeersborden-api/v5/)
+
+```sh
+uv run --with 'pillow>=12.1' python tools/build-ede-nbd-signs.py /tmp/ede-nbd /tmp/ede-1gis --date 2026-11-18 --fetch
+```
+
+The game loads the baked assets locally in the Oude Kerk scene frame. Props use spatially tiled instances. Long barriers and directional sign faces use batched geometry. For a performance comparison, open the game with `?perf=1` and set `detail=off`, `bgtDetail=off`, `motorwayDetail=off`, or `nbdSigns=off`. [Motorway pilot verification](tools/data/ede-1gis-verification.md)
 
 ## Refresh the aerial colors
 
@@ -213,10 +232,11 @@ The builder requires GDAL on your PATH. The optional OpenStreetMap snapshot is p
 ## Refresh the lamp-post inventory
 
 ```sh
-python3 tools/build-ede-lamps.py
+uv run --with 'shapely>=2.1' python tools/build-ede-lamps.py --gis /tmp/ede-1gis/6.json \
+  --save-bgt /tmp/ede-lamps-bgt.json.gz --report tools/data/ede-lamps.review.json.gz
 ```
 
-The checked-in asset contains active PDOK BGT lamp posts within the game map. Pole bases follow AHN terrain, and the lamp models use a standard height and face the nearest road where possible.
+The checked-in lamp asset joins the active PDOK BGT inventory to compatible 1GIS light points. Bridge lamps use the same level and fitted surface for their base, mounting direction, light target and pedestrian footprint. Reuse the saved BGT file with `--bgt` and keep the same layer 6 snapshot for an offline rebuild. [Lamp matching and De Poortwachter audit](tools/data/ede-lamps.sources.md)
 
 ## Refresh the bus routes
 
@@ -231,7 +251,7 @@ node tools/build-ede-bus-routes.mjs /tmp/ede-gtfs.json /tmp/ede-bus-graph.json a
 
 The match report lists gaps by variant, including coordinates and affected boarding points. Matching uses actual graph turns, with separate edges for the mapped busways and selected underpasses. Buses are hidden inside tunnels whose interiors are outside the terrain model. Sections with no reliable connected lane are omitted from the driving simulation.
 
-The November 2026 snapshot contains 79 variants, 62 of which enter the playable map. All 125 GTFS boarding locations in the scene are marked. See the match report for the current list of stops and route sections that lack a reliable lane.
+The November 2026 snapshot contains 81 variants, 64 of which enter the playable map. Of the 125 marked GTFS boarding locations, 121 have a reliable driving-lane match. See the [junction and route audit](tools/data/ede-junction-route-audit.md) for checks at the station forecourt, Oosttunnel and Stadspoort.
 
 ## Parking simulation
 

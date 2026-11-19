@@ -199,6 +199,21 @@ test('Ede lane boundaries use resolved offsets and treat advisory and bus bounda
   assert.equal(bikeBorder[9], 0.5);
 });
 
+test('surveyed motorway paint replaces only the overlapping divider on its own way', () => {
+  const strips = [];
+  const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };
+  const laneDefinition = { lanes: [{ offset: -1.8, width: 3.6 }, { offset: 1.8, width: 3.6 }],
+    centers: [], markings: true, fast: true, bikes: [] };
+  const edge = { from: { id: 0, shape: true }, to: { id: 1, shape: true }, x0: 0, z0: 0, sx: 0, sz: 0,
+    dx: 1, dz: 0, rx: 0, rz: 1, len: 20, span: 20, half: 4, laneDefinition, wayId: 'upper' };
+  const lower = { ...edge, from: { id: 2, shape: true }, to: { id: 3, shape: true }, wayId: 'lower' };
+  const mark = { wayId: 'upper', points: [[4, 0.2], [10, 0.2]], width: 0.2, period: 8, duty: 0.3 };
+  buildRoadPaint(new Scene(), { paintEdges: [edge, lower] }, builder, undefined, undefined, { surveyed: [mark] });
+  assert.deepEqual(strips.filter(s => s[12] === edge && s[2] === 0).map(s => [s[0], s[3]]), [[0, 4], [10, 20]]);
+  assert.deepEqual(strips.filter(s => s[12] === lower && s[2] === 0).map(s => [s[0], s[3]]), [[0, 20]]);
+  assert.equal(strips.filter(s => s[12] === mark)[0][8], 8);
+});
+
 test('buildRoadPaint chunks markings into compact spatial cells with shared pipeline and padded bounds', () => {
   const makeEdge = (id0, id1, x0, z, len) => ({
     from: { id: id0, shape: false },
@@ -400,6 +415,10 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
   const m1 = createRoadPaintMaterial();
   const m2 = createRoadPaintMaterial();
   assert.equal(m1, m2, 'createRoadPaintMaterial returns a single cached material instance');
+  assert.equal(m1.mrtNode, undefined, 'Fast paint only writes the color attachment');
+  const ssrPaint = createRoadPaintMaterial(true);
+  assert.equal(ssrPaint.mrtNode, sandbox._transparentEffectMRT);
+  assert.equal(createRoadPaintMaterial(true), ssrPaint);
 
   // Dry midday (uRoadWetness = 0.08) at 120 m (> 70 m): zero noise2D evaluations for both wear and puddles
   env.wetness = 0.08;

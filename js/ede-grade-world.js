@@ -28,7 +28,6 @@ export function buildEdeGradeWorld(scene) {
   const bank = material(0x8d8e86);
   const ballast = material(0x6c6054);
   const roof = material(0x9b9d96);
-  const red = material(0xaa292b), white = material(0xf6efdc), black = material(0x303233);
   const asphaltTint = new THREE.Color(0x4c4e4b);
   const cycleTint = new THREE.Color(0x8f534c);
   const footTint = new THREE.Color(0x8a8680);
@@ -172,37 +171,6 @@ export function buildEdeGradeWorld(scene) {
     lineCollider(shift(a), shift(b), Math.min(baseA.y, baseB.y), Math.max(a.y, b.y) + 0.68, halfWidth);
   }
 
-  function box(mat, x, y, z, sx, sy, sz, yaw) {
-    const geometry = new THREE.BoxGeometry(sx, sy, sz).rotateY(yaw).translate(x, y, z);
-    const { positions } = batch(mat, x, z);
-    const p = geometry.attributes.position;
-    for (const i of geometry.index.array) positions.push(p.getX(i), p.getY(i), p.getZ(i));
-    geometry.dispose();
-  }
-
-  function addCrossing(site) {
-    const controls = Array.isArray(site.controls) ? site.controls : site.controls ? [site.controls] : [];
-    for (const control of controls) {
-      const { x, z, heading = 0, width = 7 } = control;
-      const dx = Math.sin(heading), dz = Math.cos(heading);
-      for (const side of [-1, 1]) {
-        const right = width / 2 + 0.65;
-        const back = control.trackSpan ? control.trackSpan / 2 + 3 : 6.5;
-        const px = x + (-dz * right - dx * back) * side;
-        const pz = z + (dx * right - dz * back) * side;
-        const y = terrainHeightAt(px, pz);
-        box(white, px, y + 1.2, pz, 0.15, 2.4, 0.15, heading);
-        box(black, px, y + 1.9, pz, 0.65, 0.31, 0.24, heading);
-        for (const offset of [-0.18, 0.18]) {
-          box(red, px - dz * offset - dx * side * 0.13, y + 1.91,
-            pz + dx * offset - dz * side * 0.13, 0.16, 0.16, 0.04, heading);
-        }
-        for (let i = 0; i < 8; i++) box(i % 2 ? white : red, px - dx * 0.3 * side,
-          y + 1 + 0.43 * i, pz - dz * 0.3 * side, 0.095, 0.44, 0.095, heading);
-      }
-    }
-  }
-
   for (const profile of railHeights || []) {
     if (!profile.fittedBallast) continue;
     for (const section of gradeSections({ ...profile, width: 2.9 })) connectEdges(section, ballast, 0.035, true);
@@ -212,7 +180,6 @@ export function buildEdeGradeWorld(scene) {
   const gradeMaterials = {};
   for (const site of sites) {
     if (site.kind === 'surface') continue; // Local corrections are drawn in the original pavement batch.
-    if (site.kind === 'level') addCrossing(site);
     if (site.kind === 'underpass') addUnderpass(site);
     if (site.kind === 'bridge' && site.excavation) addRailCut(site.excavation);
     for (const profile of site.profiles || []) {

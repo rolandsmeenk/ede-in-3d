@@ -7,6 +7,24 @@ export const TRAIN_STATUS = Object.freeze({ gps: 'GPS', live: 'estimated from li
 const MAX_SPEED = 52, BRAKING = 0.85, ACCELERATION = 0.48;
 const UPDATE_AGE = 180, MAX_DELAY = 6 * 3600, KEEP_FOR = 36 * 3600;
 const PREDICTION_STEP = 0.5;
+const CAR_GAP = 0.3;
+export const TRAIN_CONSISTS = {
+  intercity: { length: 23.7, cars: 4 }, sprinter: { length: 17.7, cars: 4 },
+  international: { length: 24.5, cars: 5 }, nightjet: { length: 24.5, cars: 4 },
+  rs34: { length: 19.1, cars: 3 }
+};
+export function trainModel(trip) {
+  if (trip.operator === 'RRReis') return 'rs34';
+  if (/sprinter/i.test(trip.serviceType)) return 'sprinter';
+  if (/nightjet/i.test(trip.serviceType)) return 'nightjet';
+  if (/ice/i.test(trip.serviceType)) return 'international';
+  return 'intercity';
+}
+
+export function trainCarOffset(model, i) {
+  return ((model.cars - 1) / 2 - i) * (model.length + CAR_GAP);
+}
+
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(value)) && new Date(value).toISOString().startsWith(value);
@@ -91,8 +109,9 @@ export function createEdeTrainTraffic(timetable, tracks, { predictionSeconds = 3
   predictionSeconds = Number.isFinite(predictionSeconds) ? clamp(predictionSeconds, 5, 90) : 32;
   const schedule = createEdeTrainSchedule(timetable);
   const fixes = new Map(), updates = new Map(), lastFixByNumber = new Map(), preparedPlans = new Map();
+  const progress = new Map();
   const { paths } = tracks;
-  let plans = [];
+  let plans = [], preparedAt = -Infinity, advancedAt = -Infinity;
 
   function acceptSnapshot(snapshot, now = Date.now() / 1000) {
     if (snapshot?.version !== 1) return;
@@ -130,6 +149,7 @@ export function createEdeTrainTraffic(timetable, tracks, { predictionSeconds = 3
   }
 
   function prepare(at) {
+    preparedAt = at;
     const candidates = new Map();
     for (const entry of schedule.entries(at)) {
       if (at >= entry.first - 25 * 60 && at <= entry.last + 25 * 60) candidates.set(entry.key, entry);
@@ -188,7 +208,60 @@ export function createEdeTrainTraffic(timetable, tracks, { predictionSeconds = 3
     return plan.fix ? gpsPosition(plan.fix, at) : timetablePosition(plan, at - (plan.offset ?? 0));
   }
 
-  return { acceptSnapshot, prepare, position, get plans() { return plans; } };
+  function advance(dt, at) {
+    if (at < preparedAt || at - preparedAt >= 0.75 || plans.some(plan => plan.fix?.expiry <= at)) prepare(at);
+    const reset = at < advancedAt || at - advancedAt > 2;
+    advancedAt = at;
+    if (reset) progress.clear();
+    const seen = new Set();
+    for (let plan of plans) {
+      let target = position(plan, at);
+      if (!target) continue;
+      let train = progress.get(plan.key) ?? progress.get(plan.turnFrom);
+      if (!train) {
+        train = { distance: target.distance, speed: target.speed };
+      } else if (train.plan.path !== plan.path) {
+        const previous = train.plan.path.sample(train.distance);
+        const transfer = plan.path.project(previous.x, previous.z);
+        const previousTarget = transfer.error > 1.25 && position(train.plan, at);
+        if (previousTarget) {
+          plan = train.plan;
+          target = previousTarget;
+        } else {
+          train.distance = transfer.error <= 1.25 ? transfer.distance : target.distance;
+          if (train.plan.path.direction !== plan.path.direction) train.speed = 0;
+        }
+      }
+      if (train.plan?.key !== plan.key) progress.delete(train.plan?.key);
+      train.plan = plan;
+      train.target = target;
+      const wanted = clamp(target.speed + (target.distance - train.distance) / 2.5, 0, MAX_SPEED);
+      train.speed = clamp(wanted, Math.max(0, train.speed - dt), train.speed + 0.58 * dt);
+      if (train.distance < target.limit) train.distance = Math.min(target.limit, train.distance + train.speed * dt);
+      progress.set(plan.key, train);
+      seen.add(plan.key);
+    }
+    for (const key of progress.keys()) if (!seen.has(key)) progress.delete(key);
+  }
+
+  function forecast(train, at, seconds) {
+    const end = Math.min(at + seconds, train.plan.end - 0.01);
+    const target = position(train.plan, end);
+    if (!target) return train.distance;
+    // Carry the current smoothing offset into the prediction so it follows the rendered train.
+    const predicted = target.distance + (at + seconds - end) * target.speed;
+    return Math.max(train.distance, Math.min(target.limit, predicted + train.distance - train.target.distance));
+  }
+
+  function* upcoming(at, seconds) {
+    for (const plan of plans) {
+      if (plan.fix || plan.start <= at || plan.start > at + seconds || progress.has(plan.key)) continue;
+      const target = position(plan, plan.start);
+      if (target) yield { plan, distance: target.distance, target };
+    }
+  }
+
+  return { acceptSnapshot, prepare, position, advance, forecast, upcoming, progress, get plans() { return plans; } };
 }
 
 export function watchEdeTrains(traffic) {

@@ -1,3 +1,4 @@
+import { CAR } from './road-access.js';
 import { indexLocalRoads } from './traffic-area.js';
 import { gradeWayAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
@@ -309,15 +310,16 @@ export function createParkingAccess(network, aisles = []) {
   };
 }
 
-export function findParkingArrival(vehicle, linksByEdge, { available, closed, maxEdges=42, maxDepth=4 } = {}) {
+export function findParkingArrival(vehicle, linksByEdge, { available, closed, allowedArea, turn, maxEdges=42, maxDepth=4 } = {}) {
   if (!vehicle.edge || vehicle.conn || vehicle.edge.unmodeledTunnel) return null;
-  const queue=[{edge:vehicle.edge,lane:vehicle.lane,previous:null,move:null,depth:0}];
-  const seen=new Set([`${vehicle.edge.id}/${vehicle.lane}`]);
+  const queue=[{edge:vehicle.edge,lane:vehicle.lane,previous:null,move:null,depth:0,restriction:vehicle.turnHistory}];
+  const seen=new Set([`${vehicle.edge.id}/${vehicle.lane}/${vehicle.turnHistory?.key??''}`]);
   const blockedAreas=new Set();
   for (let i=0;i<queue.length && i<maxEdges;i++) {
     const node=queue[i];
     if (closed?.(node.edge)) continue;
     for (const item of linksByEdge.get(node.edge) ?? []) {
+      if (allowedArea && item.space.areaId!==allowedArea) continue;
       const { entrance }=item.link;
       if (entrance.lane!==node.lane || (!node.depth && entrance.s-vehicle.s<Math.max(7,vehicle.speed*1.25))) continue;
       if (!available(item)) {
@@ -332,10 +334,13 @@ export function findParkingArrival(vehicle, linksByEdge, { available, closed, ma
     if (node.depth>=maxDepth) continue;
     for (const move of node.edge.ambientMoves ?? []) {
       const lane=move.out[node.lane];
-      const key=`${move.to.id}/${lane}`;
-      if (lane<0 || seen.has(key) || queue.length>=maxEdges || closed?.(move.to)) continue;
+      if (lane<0 || queue.length>=maxEdges || closed?.(move.to)) continue;
+      const restriction=turn?.(node.restriction,move,CAR);
+      if (restriction===null) continue;
+      const key=`${move.to.id}/${lane}/${restriction?.key??''}`;
+      if (seen.has(key)) continue;
       seen.add(key);
-      queue.push({edge:move.to,lane,previous:node,move,depth:node.depth+1});
+      queue.push({edge:move.to,lane,previous:node,move,depth:node.depth+1,restriction});
     }
   }
   return null;

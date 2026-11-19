@@ -1822,16 +1822,18 @@ function createRoadSurfaceMaterial(aerial = false, grade = false) {
  * so distant markings fade out smoothly instead of breaking up and flickering. Worn, and dark & glossy in puddles.
  */
 let _roadPaintMaterial = null;
+let _roadPaintMrtMaterial = null;
 
-function createRoadPaintMaterial() {
-  if (_roadPaintMaterial) return _roadPaintMaterial;
+function createRoadPaintMaterial(preserveGBuffer = false) {
+  const cached = preserveGBuffer ? _roadPaintMrtMaterial : _roadPaintMaterial;
+  if (cached) return cached;
   const mat = new THREE.MeshStandardNodeMaterial({
     vertexColors: true,
     transparent: true,
     depthWrite: false,
     metalness: 0.0
   });
-  mat.mrtNode = _transparentEffectMRT; // SSR keeps seeing the asphalt (and its puddles) underneath
+  if (preserveGBuffer) mat.mrtNode = _transparentEffectMRT;
 
   const paint = attribute('paint', 'vec3');
   const side = attribute('side', 'vec2');
@@ -1881,7 +1883,8 @@ function createRoadPaintMaterial() {
   mat.roughnessNode = mix(mix(float(0.62), float(0.42), film), float(0.2), puddle);
   mat.aoNode = canyonSkyAONode();
 
-  _roadPaintMaterial = mat;
+  if (preserveGBuffer) _roadPaintMrtMaterial = mat;
+  else _roadPaintMaterial = mat;
   return mat;
 }
 

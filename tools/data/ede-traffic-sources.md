@@ -60,9 +60,11 @@ The local server decodes the OVapi VehiclePositions feed, filters for exact impo
 
 A live browser check received 32 flow observations, 23 observed speeds, eight closure records and seven Ede bus positions from the local server. A fresh OVapi position activated one line 103 bus to Ede Station on its matched route.
 
-The same schedule and live trip share one actor. Fresh observations guide speed toward predicted progress along the route while stop dwell, local traffic and closures still govern movement. An active bus clears its current edge or waits at a closure on its route. New buses activate within 350 m of the camera and recycle beyond 430 m. The city’s offline timetable is bundled with the game.
+The same schedule and live trip share one actor. Fresh observations guide speed toward predicted progress along the route while stop dwell, local traffic and closures still govern movement. An active bus clears its current edge and tries a bounded legal detour back to a connected route lane before its next boarding stop. It waits when no such route is available. New buses activate within 350 m of the camera and recycle beyond 430 m. The city’s offline timetable is bundled with the game.
 
 ## Local population and timings
+
+The [traffic pilot](ede-traffic-pilot.md) documents the current destination sampling, verified controls and level crossings. The historical measurements below predate the pilot.
 
 Directed lane area inside the camera radius determines car demand. NDW count estimates adjust the weight of the represented direction. Cycle and walking spawns are weighted by the nearby usable path and plaza area. The engine refreshes the nearby spatial queries when the camera has moved 35 m. It caps normal spawn attempts at three each for cars, bicycles and pedestrians per frame. After a jump the caps are eight each for cars and bicycles and twelve for pedestrians. Offscreen margins absorb normal replenishment. The same actor pools serve both offline and live play.
 

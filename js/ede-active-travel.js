@@ -1,6 +1,7 @@
 import { BICYCLE, FOOT, MOTOR } from './road-access.js';
 import { EDE_SHOPS } from './ede-shops.js';
 import { edeBikeFacilities } from './ede-road-lanes.js';
+import { EDE_TURN_RESTRICTIONS } from './ede-turn-restrictions.js';
 
 const CELL = 64;
 const CONNECTOR_LIMIT = 24;
@@ -55,11 +56,11 @@ function polygonContains(ring, x, z) {
 function footPoint(x, z, points) {
   let closest = [x, z], distance = 6;
   for (let i = 1; i < points.length; i++) {
-    const [ax, az] = points[i - 1], [bx, bz] = points[i], dx = bx - ax, dz = bz - az;
+    const [ax, az, ay] = points[i - 1], [bx, bz, by] = points[i], dx = bx - ax, dz = bz - az;
     const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
     const d = Math.hypot(x - ax - t * dx, z - az - t * dz);
     if (d >= distance) continue;
-    closest = [ax + t * dx, az + t * dz];
+    closest = [ax + t * dx, az + t * dz, ay + t * (by - ay)];
     distance = d;
   }
   return closest;
@@ -68,11 +69,12 @@ function footPoint(x, z, points) {
 export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidewalkAt = () => null, motorNodes = [] } = {}) {
   if (!data?.activeGraph) return null;
   const { nodes, links, controls = {} } = data.activeGraph;
-  const profiles = new Set(), separateFootways = new Map();
+  const profiles = new Map(), separateFootways = new Map();
   for (const site of grade?.sites || []) {
     for (const profile of site.profiles) {
       for (const id of profile.wayIds || []) {
-        profiles.add(id);
+        if (!profiles.has(id)) profiles.set(id, []);
+        profiles.get(id).push(profile);
         if (profile.modes.length === 1 && profile.modes[0] === 'foot') separateFootways.set(id, profile);
       }
     }
@@ -97,7 +99,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
     const n = Math.ceil(t.len);
     for (let i = 0; i <= n; i++) {
       const x = t.ax + t.ux * t.len * i / n, z = t.az + t.uz * t.len * i / n;
-      if (!inside(x, z) || !walkable(x - pad, x + pad, z - pad, z + pad)) return false;
+      if (!inside(x, z) || !walkable(x - pad, x + pad, z - pad, z + pad, t.layer)) return false;
     }
     return true;
   }
@@ -156,6 +158,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
   }
 
   function build(mode) {
+    const modeName = mode === FOOT ? 'foot' : 'bike';
     const tracks = [], ports = new Map(), mappedPorts = [];
     const addPort = (node, track, end) => {
       if (!ports.has(node)) ports.set(node, []);
@@ -259,11 +262,32 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
       }
     }
 
-    function connectPorts(a, ea, b, eb, shared) {
-      if (a === b || a.layer !== b.layer && (!shared || !(a.structure || b.structure))) return;
+    function connectPorts(a, ea, b, eb, node) {
+      const shared = node !== undefined;
+      if (a === b) return;
+      const aProfiles = profiles.get(a.wayId)?.filter(profile => profile.modes.includes(modeName));
+      const bProfiles = profiles.get(b.wayId)?.filter(profile => profile.modes.includes(modeName));
+      if (a.layer !== b.layer) {
+        const sameProfile = aProfiles?.some(profile => bProfiles?.includes(profile));
+        if (!shared || !(a.structure || b.structure || sameProfile)) return;
+        if (a.kind === 'steps' && !aProfiles?.length || b.kind === 'steps' && !bProfiles?.length) return;
+      }
+      if (shared) {
+        const x = nodes[node * 2], z = nodes[node * 2 + 1];
+        const via = EDE_TURN_RESTRICTIONS.nodeAt(a.wayId, x, z);
+        if (via) {
+          const at = EDE_TURN_RESTRICTIONS.nodeAt(b.wayId, x, z);
+          if (!EDE_TURN_RESTRICTIONS.allowed([a.wayId, via, b.wayId, at, ea === eb], mode)) return;
+        }
+      }
       const [x, z] = endPoint(a, ea), [bx, bz] = endPoint(b, eb);
       const gap = Math.hypot(bx - x, bz - z);
       if (gap > (mode === FOOT ? shared ? 8 : 3.5 : shared ? 9 : 0.12)) return;
+      if (aProfiles?.length && bProfiles?.length) {
+        const aHeights = aProfiles.map(profile => footPoint(x, z, profile.points)[2]).filter(Number.isFinite);
+        const bHeights = bProfiles.map(profile => footPoint(bx, bz, profile.points)[2]).filter(Number.isFinite);
+        if (aHeights.length && bHeights.length && !aHeights.some(y => bHeights.some(other => Math.abs(y - other) < 0.65 + gap * 0.2))) return;
+      }
       if (a.wayId === b.wayId && a.offset * b.offset < 0) return;
       if (gap < 0.05) return connect(a, ea, b, eb);
       const t = trackBetween([x, z], [bx, bz], { wayId: a.wayId, layer: a.layer, sidewalk: a.sidewalk && b.sidewalk,
@@ -281,7 +305,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
         for (const { track: b, end: eb } of list) {
           if (mode !== FOOT || !surveyed?.osmId || a.wayId !== b.wayId || !a.sidewalk || !b.sidewalk ||
             a.offset * b.offset >= 0 || a.layer !== b.layer) {
-            connectPorts(a, ea, b, eb, true);
+            connectPorts(a, ea, b, eb, node);
             continue;
           }
           const start = endPoint(a, ea), finish = endPoint(b, eb), forward = a.offset < 0;
@@ -329,13 +353,13 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
       const first = itinerary[0], last = itinerary.at(-1);
       for (const { track, end } of ports.get(from)) {
         if (!track.exclusive || track.structure || track.layer !== first.layer) continue;
-        connectPorts(track, end, first, 0, true);
-        connectPorts(first, 0, track, end, true);
+        connectPorts(track, end, first, 0, from);
+        connectPorts(first, 0, track, end, from);
       }
       for (const { track, end } of ports.get(to)) {
         if (!track.exclusive || track.structure || track.layer !== last.layer) continue;
-        connectPorts(track, end, last, 1, true);
-        connectPorts(last, 1, track, end, true);
+        connectPorts(track, end, last, 1, to);
+        connectPorts(last, 1, track, end, to);
       }
     }
 
@@ -363,7 +387,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
             const [bx, bz] = endPoint(port.track, port.end);
             if (track.sidewalk && port.track.sidewalk && sidewalkAt(x, z) !== sidewalkAt(bx, bz)) continue;
           }
-          connectPorts(track, end, port.track, port.end, false);
+          connectPorts(track, end, port.track, port.end);
         }
       }
 

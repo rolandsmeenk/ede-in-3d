@@ -39,6 +39,8 @@ test('measurements and temporary controls stay directional, smooth, and expire i
   assert.equal(Math.round(traffic.limit(west) * 3.6), 70);
   assert.equal(traffic.isClosed(west), true);
   assert.equal(traffic.isClosed(east), false);
+  assert.equal(traffic.hasObservedFlow(east), true);
+  assert.equal(traffic.hasObservedFlow(west), false);
   assert.equal(traffic.cruise(east, 12), 12);
   now += 10000;
   traffic.refresh();
@@ -49,6 +51,7 @@ test('measurements and temporary controls stay directional, smooth, and expire i
   traffic.refresh();
   assert.equal(Math.round(traffic.limit(east) * 3.6), 50);
   assert.equal(traffic.isClosed(west), false);
+  assert.equal(traffic.hasObservedFlow(east), false);
   const retiringSpeed = traffic.cruise(east, 12);
   for (let i = 0; i < 15; i++) { now += 10000; traffic.refresh(); }
   assert.ok(retiringSpeed < 12);

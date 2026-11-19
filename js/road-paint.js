@@ -15,7 +15,7 @@ const WIDEN_SPHERE_PAD = 16; // createRoadPaintMaterial widens thin distant stri
 
 // Spatial chunk builder shared by Manhattan street markings and perimeter highway markings (js/city-grid.js), so
 // off-screen and distant (> 1.65 km) road paint is culled instead of transforming all 12.5 km of vertices every frame.
-function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDistance = PAINT_CULL_DISTANCE, heightAt } = {}) {
+function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDistance = PAINT_CULL_DISTANCE, heightAt, preserveGBuffer } = {}) {
   const cells = new Map();
 
   function pushQuad(ax, ay, az, bx, by, bz, sx, sz, col, period, duty, u0, u1, edge) {
@@ -66,7 +66,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
   function build() {
     const group = new THREE.Group();
     group.name = name;
-    const material = createRoadPaintMaterial();
+    const material = createRoadPaintMaterial(preserveGBuffer);
     let first = null;
 
     for (const cell of cells.values()) {
@@ -104,14 +104,56 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
   return { strip3D, build };
 }
 
-function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replacesZebra) {
-  const builder = sharedBuilder || createRoadPaintChunkBuilder('RoadMarkings', { heightAt });
+function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replacesZebra, { surveyed = [], preserveGBuffer } = {}) {
+  const builder = sharedBuilder || createRoadPaintChunkBuilder('RoadMarkings', { heightAt, preserveGBuffer });
   const lines = [];
   const bends = new Map();
+  const surveyByWay = new Map();
 
   // Flat strip w wide from a to b, with a dash pattern (period, duty cycle) running along it
   function strip(ax, az, bx, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1, edge) {
     builder.strip3D(ax, HEIGHT, az, bx, HEIGHT, bz, w, col, period, duty, phase, flow, edge);
+  }
+
+  for (const mark of surveyed) {
+    if (!mark.wayId || mark.points?.length < 2 || !mark.points?.every(p => p.length === 2 && p.every(Number.isFinite))) continue;
+    if (!surveyByWay.has(mark.wayId)) surveyByWay.set(mark.wayId, []);
+    const way = surveyByWay.get(mark.wayId);
+    let phase = mark.phase ?? 0;
+    for (let i = 1; i < mark.points.length; i++) {
+      const a = mark.points[i - 1], b = mark.points[i];
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (length < 0.05) continue;
+      strip(...a, ...b, mark.width ?? 0.16, WHITE, mark.period ?? 1, mark.duty ?? 1, phase, 1, mark);
+      phase += length;
+      way.push([a, b, length]);
+    }
+  }
+
+  function drawUnsurveyed(line) {
+    const { ends: [[x, z], [x1, z1]], len, w, col, period, duty, phase, flow, e } = line;
+    const survey = e.laneDefinition?.fast && surveyByWay.get(e.wayId);
+    if (!survey?.length || len < 0.05) {
+      strip(x, z, x1, z1, w, col, period, duty, phase, flow, e);
+      return;
+    }
+    const dx = (x1 - x) / len, dz = (z1 - z) / len;
+    const project = ([px, pz]) => (px - x) * dx + (pz - z) * dz;
+    const offset = ([px, pz]) => (px - x) * dz - (pz - z) * dx;
+    const covered = [];
+    for (const [a, b, length] of survey) {
+      const from = project(a), to = project(b);
+      if (Math.abs(to - from) < length * 0.8 || Math.max(Math.abs(offset(a)), Math.abs(offset(b))) > 1.25) continue;
+      const lo = Math.max(0, Math.min(from, to)), hi = Math.min(len, Math.max(from, to));
+      if (hi - lo > 0.05) covered.push([lo, hi]);
+    }
+    let cursor = 0;
+    const draw = (a, b) => strip(x + dx * a, z + dz * a, x + dx * b, z + dz * b, w, col, period, duty, phase + a * flow, flow, e);
+    for (const [lo, hi] of covered.sort((a, b) => a[0] - b[0])) {
+      if (lo > cursor) draw(cursor, lo);
+      cursor = Math.max(cursor, hi);
+    }
+    if (cursor < len) draw(cursor, len);
   }
 
   // Edges run between stop lines; s is measured from the start one and o to the right of the centre line
@@ -318,7 +360,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replaces
         next.phase = ((next.phase % next.period) + next.period) % next.period;
         stack.push(next);
       }
-      strip(...line.ends[0], ...line.ends[1], line.w, line.col, line.period, line.duty, line.phase, line.flow, line.e);
+      drawUnsurveyed(line);
     }
   }
 

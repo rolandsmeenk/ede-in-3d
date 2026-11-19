@@ -9,16 +9,32 @@ const startupOnly = process.env.EDE_BENCH_STARTUP_ONLY === '1';
 const freezeTraffic = process.env.EDE_BENCH_TRAFFIC !== 'active';
 const viewport = { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false };
 const freezeClock = Date.parse('2026-11-19T13:00:00+01:00');
-const suite = process.env.EDE_BENCH_SCENARIOS === 'ahn' ? 'ahn' : 'standard';
+const suite = process.env.EDE_BENCH_SCENARIOS || 'standard';
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = suite === 'ahn' ? [
+const shots = suite === 'motorway' ? [
+  { name: 'Maanderbroek A12 east', way: 'w750476158', from: [-4256, 2.4, 2138], to: [-4216, 2.4, 2164], look: [-4137, 2, 2216] },
+  { name: 'Maanderbroek A12 west', way: 'w493246904', from: [-3976, 2.4, 2303], to: [-4016, 2.4, 2278], look: [-4122, 2, 2209] },
+  { name: 'De Poortwachter upper north', way: 'w6921137', from: [-1397, 2.2, 3534], to: [-1402, 2.2, 3503], look: [-1409, 2, 3452] },
+  { name: 'De Poortwachter upper south', way: 'w25551033', from: [-1429, 2.2, 3455], to: [-1424, 2.2, 3486], look: [-1415, 2, 3548], time: 'midnight' },
+  { name: 'De Poortwachter lower east', way: 'w723962252', from: [-1450, 2.2, 3487], to: [-1419, 2.2, 3491], look: [-1375, 2, 3498] },
+  { name: 'De Poortwachter lower west', way: 'w723962249', from: [-1386, 2.2, 3481], to: [-1418, 2.2, 3477], look: [-1446, 2, 3472], time: 'midnight' },
+  { name: 'A12 Ede exit approach', way: 'w1212023125', from: [-1434, 2.4, 3664], to: [-1404, 2.4, 3666], look: [-1396, 2.2, 3666] },
+  { name: 'A12 Ede exit on-ramp', way: 'w1121900829', from: [-1403, 2.4, 3650], to: [-1432, 2.4, 3649], look: [-1455, 2.2, 3648] },
+  { name: 'A30 Ede-Noord south', way: 'w6960119', from: [-3599, 2.4, 39], to: [-3602, 2.4, 85], look: [-3604, 2.2, 114] },
+  { name: 'A30 Ede-Noord north', way: 'w6960136', from: [-3590, 2.4, 92], to: [-3587, 2.4, 47], look: [-3585, 2.2, 24] },
+] : suite === 'detail' ? [
+  { name: 'Oude Kerkplein walk', travel: ['person', -37, 20.02, 1.214] },
+  { name: 'Kolkakkerweg cycle', travel: ['cyclist', -893, 863.2, 1.736] },
+  { name: 'A30 Maanderbroek drive', travel: ['car', -4173.75, 2155, -0.04, -7.35] },
+  { name: 'A12 Edeseweg drive', travel: ['car', 125, 3709.5, -1.72, 0.63] },
+] : suite === 'ahn' ? [
   { name: 'bospoorttunnel', from: [153, 3, -623], to: [119, 2.5, -632], look: [106, 0.8, -615] },
   { name: 'stadspoort', from: [-1462, 3, 3178], to: [-1458, 2.5, 3145], look: [-1457, 1.2, 3116] },
   station,
   { name: 'raadhuisstraat', from: [169, 2.5, -10], to: [173, 2.5, 12], look: [177, 1.4, 28] },
-  { name: 'albertstunnel drive', drive: [104.1, 2042, -0.09, -6.69] },
+  { name: 'albertstunnel drive', travel: ['car', 104.1, 2042, -0.09, -6.69] },
   { name: 'camera jump', from: [85, 4, 2119], to: [173, 2.5, 12], look: [177, 1.4, 28], jump: true },
 ] : [
   station,
@@ -65,11 +81,16 @@ async function evaluate(expression) {
 
 async function playable() {
   for (let i = 0; i < 360; i++) {
-    const state = await evaluate(`window.__slopwaw?.ready ? {
-      ms: __slopwaw.firstFrameAt, stages: __slopwaw.init, backend: __slopwaw.backend,
-      quality: __slopwaw.graphics?.quality,
-      bagMeshes: __slopwaw.scene.getObjectByName('bag3d-buildings')?.children.length ?? 0
-    } : null`);
+    const state = await evaluate(`(() => {
+      const app = window.__slopwaw;
+      if (!app?.ready) return null;
+      const detail = app.importedDetail?.stats;
+      return {
+        ms: app.firstFrameAt, stages: app.init, backend: app.backend, quality: app.graphics?.quality,
+        bagMeshes: app.scene.getObjectByName('bag3d-buildings')?.children.length ?? 0,
+        detail: detail && { bgt: detail.bgt, motorway: detail['1gis'] ?? detail.dtb, signs: detail.nbd, unresolved: detail.unresolved.length },
+      };
+    })()`);
     if (state) return state;
     await delay(250);
   }
@@ -80,15 +101,17 @@ function sampleShot(shot, frames) {
   return evaluate(`(${async (shot, frames, freezeTraffic) => {
     const app = window.__slopwaw;
     const { terrainHeightAt } = await import('./js/terrain.js');
+    const { gradeWayAt } = await import('./js/ede-grade.js');
     const frame = () => new Promise(requestAnimationFrame);
-    const ground = ([x, y, z]) => [x, y + terrainHeightAt(x, z), z];
+    const ground = ([x, y, z]) => [x, y + ((shot.way && gradeWayAt(shot.way, x, z, 18)?.y) ?? terrainHeightAt(x, z)), z];
     const wait = async count => { for (let i = 0; i < count; i++) await frame(); };
     const controller = app.controllerManager;
     const from = shot.from && ground(shot.from), to = shot.to && ground(shot.to), look = shot.look && ground(shot.look);
-    app.time('midday');
-    if (shot.drive) {
-      app.mode('car');
-      controller.teleportActiveTo(...shot.drive);
+    app.time(shot.time || 'midday');
+    if (shot.travel) {
+      const [mode, ...destination] = shot.travel;
+      app.mode(mode);
+      controller.teleportActiveTo(...destination);
       app.cameraSystem.resetForTeleport();
       app.camera('chase');
     } else app.setCamera(...from, ...look);
@@ -103,11 +126,11 @@ function sampleShot(shot, frames) {
     app.perf?.reset();
     const times = [], draws = [], triangles = [];
     let last = await frame();
-    const start = shot.drive && controller.getActiveEntity().position.clone();
-    const sampleCount = shot.drive ? frames * 2 : frames;
-    if (shot.drive) controller.setTouchInput('forward', 0.75);
+    const start = shot.travel && controller.getActiveEntity().position.clone();
+    const sampleCount = shot.travel ? frames * 2 : frames;
+    if (shot.travel) controller.setTouchInput('forward', 0.75);
     for (let i = 1; i <= sampleCount; i++) {
-      if (!shot.drive) {
+      if (!shot.travel) {
         const t = shot.jump ? 1 : i / sampleCount;
         const xyz = from.map((p, k) => p + (to[k] - p) * t);
         if (shot.jump && i === 1) app.setCamera(...to, ...look);
@@ -119,7 +142,7 @@ function sampleShot(shot, frames) {
       draws.push(app.renderer.info.render.drawCalls);
       triangles.push(app.renderer.info.render.triangles);
     }
-    if (shot.drive) controller.resetInput();
+    if (shot.travel) controller.resetInput();
     const stats = a => {
       a.sort((a, b) => a - b);
       return { median: a[Math.ceil(a.length * 0.5) - 1], p95: a[Math.ceil(a.length * 0.95) - 1], max: a.at(-1) };
@@ -131,8 +154,9 @@ function sampleShot(shot, frames) {
       if (app.trainSystem) app.trainSystem.update = trainUpdate;
     }
     const bag = app.scene.getObjectByName('bag3d-buildings')?.userData.stats;
-    const drivenMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
-    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, drivenMetres };
+    const travelledMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
+    const drivenMetres = shot.travel?.[0] === 'car' ? travelledMetres : undefined;
+    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, travelledMetres, drivenMetres };
   }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic})`);
 }
 

@@ -109,10 +109,10 @@ function buildAlignment(ids, ways, bounds) {
     return segment;
   }
 
-  function project(x, z) {
+  function project(x, z, wayId) {
     let best = { distance: start, errorSquared: Infinity };
     for (const segment of segments) {
-      if (segment.endDistance < start || segment.distance > end) continue;
+      if (segment.endDistance < start || segment.distance > end || (wayId && segment.way.id !== wayId)) continue;
       const t = clamp(
         ((x - segment.x) * segment.dx + (z - segment.z) * segment.dz) / (segment.span ** 2),
         Math.max(0, (start - segment.distance) / segment.span),
@@ -165,8 +165,8 @@ function trainPath(id, route, direction, platform, alignment, terminal) {
       out.heading = Math.atan2(direction * (before.x - after.x), direction * (before.z - after.z));
       return out;
     },
-    project(x, z) {
-      const hit = alignment.project(x, z);
+    project(x, z, wayId) {
+      const hit = alignment.project(x, z, wayId);
       return { distance: fromAlignment(hit.distance), error: hit.error };
     }
   };

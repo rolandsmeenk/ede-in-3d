@@ -1,15 +1,21 @@
 import { roadEdgeKey } from './road-network.js';
 import { busProgressAt } from './ede-bus-schedule.js';
 import { BUS } from './road-access.js';
+import { EDE_TURN_RESTRICTIONS } from './ede-turn-restrictions.js';
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
 function assignBusLanes(legs, alternateMove) {
+  let restriction;
+  for (let i = 1; i < legs.length; i++) {
+    const move = legs[i - 1].road?.moves.find(move => move.to === legs[i].road);
+    if (!move || !(restriction = EDE_TURN_RESTRICTIONS.step(restriction, move, BUS))) return false;
+  }
   let next = null;
   for (let i = legs.length - 1; i >= 0; i--) {
     const { road, lane } = legs[i];
     if (!road) return false;
-    const moves = next && road.moves.filter(move => move.to === legs[i + 1].road);
+    const moves = next && road.moves.filter(move => move.to === legs[i + 1].road && (move.modes ?? BUS) & BUS);
     const choices = road.lanes.map((_, index) => {
       if (!((road.laneModes?.[index] ?? road.modes ?? BUS) & BUS)) return null;
       const cost = Math.abs(index - lane);

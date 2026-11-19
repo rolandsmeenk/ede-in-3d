@@ -120,7 +120,7 @@ function intersectionHarness() {
     driver: { b: 3 }, half: 2.25, wait: 0, commit: null, isPolice: false };
   const state = { phase: 'red', occupied: false, pedestrians: false, space: true, conflict: false, closed: false };
   const context = {
-    LOOKAHEAD: 70,
+    LOOKAHEAD: 70, controls: null, legalTurn: () => true,
     roadTraffic: { isClosed: edge => state.closed && edge === exit },
     phaseOf: () => state.phase,
     canStopBefore: () => true,
@@ -216,7 +216,7 @@ function populationContext() {
     hasView: true, camX: 0, camY: 10, camZ: 0, visible: () => true,
     terrainHeightAt: () => 0, roadGround: () => 0,
     focusX: 0, focusZ: 0, player: { active: false },
-    clock: 0,
+    clock: 0, recentlyUsedRoads: null,
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
     nearEdges: [], nearSignals: [], activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
@@ -258,6 +258,33 @@ test('cars replenish the road ahead while nearby visible spawning stays blocked'
   edge.sz = 140;
   context.visible = () => false;
   assert.equal(spawnVehicle(car, 100, 350, true), true);
+});
+
+test('spawn diversity leaves count-calibrated directions on the original weighted draw', () => {
+  const context = populationContext();
+  const local = straightEdge(125), second = straightEdge(140);
+  let draw = 0, measured = new Set();
+  Object.assign(context, {
+    clock: 100,
+    recentlyUsedRoads: new WeakMap([[local, 90]]),
+    pickByArea: () => draw++ ? second : local,
+    roadTraffic: { isClosed: () => false, hasObservedFlow: edge => measured.has(edge) }
+  });
+  const spawn = trafficFunction('spawnVehicle', context);
+  const car = { half: 2.25 };
+  assert.ok(spawn(car, 0, 350, false));
+  assert.equal(car.edge, second);
+
+  measured = new Set([local]);
+  draw = 0;
+  assert.ok(spawn(car, 0, 350, false));
+  assert.equal(car.edge, local);
+  assert.equal(draw, 1);
+
+  measured = new Set([second]);
+  draw = 0;
+  assert.ok(spawn(car, 0, 350, false));
+  assert.equal(car.edge, local);
 });
 
 test('pedestrians replenish visible sidewalks ahead without appearing nearby', () => {

@@ -1,10 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildEdeTrainTracks } from './ede-train-tracks.js';
-import { createEdeTrainTraffic, watchEdeTrains } from './ede-train-traffic.js';
+import { createEdeTrainTraffic, TRAIN_CONSISTS, trainCarOffset, trainModel, watchEdeTrains } from './ede-train-traffic.js';
 
 const POOL_SIZE = 8, ENTER = 720, LEAVE = 900;
-const MAX_SPEED = 52;
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 function carriageGeometry(length, livery, cab) {
@@ -72,11 +71,11 @@ function carriageGeometry(length, livery, cab) {
 function makeTrainModels() {
   const nsYellow = 0xffc917, nsBlue = 0x003082;
   const definitions = {
-    intercity: { length: 23.7, cars: 4, body: nsYellow, belt: nsBlue, doors: nsBlue, tall: true },
-    sprinter: { length: 17.7, cars: 4, body: 0xf3f5f6, belt: 0x0862a8, doors: nsYellow, nose: nsYellow },
-    international: { length: 24.5, cars: 5, body: 0xe1e6eb, belt: 0xaa243a, doors: 0xb1b7bd },
-    nightjet: { length: 24.5, cars: 4, body: 0x293d65, belt: 0x963949, doors: 0x42577d },
-    rs34: { length: 19.1, cars: 3, doors: 0xb7c2cb,
+    intercity: { ...TRAIN_CONSISTS.intercity, body: nsYellow, belt: nsBlue, doors: nsBlue, tall: true },
+    sprinter: { ...TRAIN_CONSISTS.sprinter, body: 0xf3f5f6, belt: 0x0862a8, doors: nsYellow, nose: nsYellow },
+    international: { ...TRAIN_CONSISTS.international, body: 0xe1e6eb, belt: 0xaa243a, doors: 0xb1b7bd },
+    nightjet: { ...TRAIN_CONSISTS.nightjet, body: 0x293d65, belt: 0x963949, doors: 0x42577d },
+    rs34: { ...TRAIN_CONSISTS.rs34, doors: 0xb7c2cb,
       gradient: [0x6343a9, 0x087eb7, 0x30ae9b].map(color => new THREE.Color(color)) }
   };
   for (const model of Object.values(definitions)) {
@@ -84,14 +83,6 @@ function makeTrainModels() {
     model.cab = carriageGeometry(model.length, model, true);
   }
   return definitions;
-}
-
-function modelFor(trip, models) {
-  if (trip.operator === 'RRReis') return models.rs34;
-  if (/sprinter/i.test(trip.serviceType)) return models.sprinter;
-  if (/nightjet/i.test(trip.serviceType)) return models.nightjet;
-  if (/ice/i.test(trip.serviceType)) return models.international;
-  return models.intercity;
 }
 
 function makeActor(group, material, initial) {
@@ -107,11 +98,11 @@ function makeActor(group, material, initial) {
     return mesh;
   });
   group.add(root);
-  return { root, cars, plan: null, distance: 0, speed: 0 };
+  return { root, cars, key: null, train: null };
 }
 
 function configure(actor, plan, models) {
-  const model = modelFor(plan.trip, models);
+  const model = models[trainModel(plan.trip)];
   if (actor.model === model) return;
   actor.model = model;
   for (let i = 0; i < actor.cars.length; i++) {
@@ -131,32 +122,23 @@ export function createEdeTrainSystem(scene, timetable, hud, options) {
   scene.add(group);
   const pool = Array.from({ length: POOL_SIZE }, () => makeActor(group, material, models.intercity));
   const active = new Map();
-  const focus = new THREE.Vector3(Infinity, 0, Infinity);
   const front = {}, rear = {}, location = {};
-  let hudText = '', preparedAt = -Infinity;
+  let hudText = '', syncedAt = -Infinity;
 
   function retire(key, actor) {
     active.delete(key);
-    actor.plan = null;
+    actor.key = actor.train = null;
     actor.root.visible = false;
   }
 
-  function sync() {
-    if (document.hidden || !Number.isFinite(focus.x)) return;
-    const at = Date.now() / 1000;
-    if (at < preparedAt || at - preparedAt >= 0.75 || traffic.plans.some(plan => plan.fix?.expiry <= at)) {
-      traffic.prepare(at);
-      preparedAt = at;
-    }
-
+  function sync(focus) {
     const nearby = [];
-    for (const plan of traffic.plans) {
-      const target = traffic.position(plan, at);
-      if (!target) continue;
+    for (const train of traffic.progress.values()) {
+      const { plan } = train;
       const actor = active.get(plan.key) ?? active.get(plan.turnFrom);
-      const position = actor ? actor.plan.path.sample(actor.distance, location) : plan.path.sample(target.distance, location);
+      const position = plan.path.sample(train.distance, location);
       const ds = (position.x - focus.x) ** 2 + (position.z - focus.z) ** 2;
-      if (ds < (actor ? LEAVE : ENTER) ** 2) nearby.push({ plan, target, ds, actor });
+      if (ds < (actor ? LEAVE : ENTER) ** 2) nearby.push({ train, ds, actor });
     }
     nearby.sort((a, b) => a.ds - b.ds);
     nearby.length = Math.min(nearby.length, POOL_SIZE);
@@ -166,33 +148,19 @@ export function createEdeTrainSystem(scene, timetable, hud, options) {
     }
 
     for (const row of nearby) {
-      const { plan, target } = row;
-      let actor = row.actor;
-      if (!actor) {
-        actor = pool.find(item => !item.plan);
-        if (!actor) continue;
-        actor.distance = target.distance;
-        actor.speed = target.speed;
-      } else if (actor.plan.path !== plan.path) {
-        const previous = actor.plan.path.sample(actor.distance, location);
-        const transfer = plan.path.project(previous.x, previous.z);
-        // A changed assignment may use a common stem or the same terminal berth.
-        if (transfer.error > 1.25) {
-          if (!traffic.position(actor.plan, at)) retire(actor.plan.key, actor);
-          continue;
-        }
-        actor.distance = transfer.distance;
-        if (actor.plan.path.direction !== plan.path.direction) actor.speed = 0;
-      }
-      if (actor.plan?.key !== plan.key) active.delete(actor.plan?.key);
-      actor.plan = plan;
-      actor.target = target;
+      const { train } = row;
+      const { plan } = train;
+      const actor = row.actor ?? pool.find(item => !item.train);
+      if (!actor) continue;
+      if (actor.key !== plan.key) active.delete(actor.key);
+      actor.key = plan.key;
+      actor.train = train;
       configure(actor, plan, models);
       active.set(plan.key, actor);
       actor.root.visible = true;
     }
 
-    const closest = nearby.find(row => row.ds < 310 ** 2 && active.get(row.plan.key)?.plan === row.plan);
+    const closest = nearby.find(row => row.ds < 310 ** 2 && active.get(row.train.plan.key)?.train === row.train)?.train;
     const platform = closest?.target.platform;
     const trip = closest?.plan.trip;
     const label = trip?.operator === 'RRReis' ? 'RS34' : /^(ICE|Nightjet)$/i.test(trip?.serviceType) ? trip.serviceType : 'NS';
@@ -205,22 +173,14 @@ export function createEdeTrainSystem(scene, timetable, hud, options) {
     }
   }
 
-  function positionActor(actor, dt, at) {
-    const { plan, model, cars } = actor;
-    const target = traffic.position(plan, at);
-    if (!target) return;
-    actor.target = target;
-    const remaining = target.distance - actor.distance;
-    const wanted = clamp(target.speed + remaining / 2.5, 0, MAX_SPEED);
-    actor.speed = clamp(wanted, Math.max(0, actor.speed - dt), actor.speed + 0.58 * dt);
-    if (actor.distance < target.limit) {
-      actor.distance = Math.min(target.limit, actor.distance + actor.speed * dt);
-    }
+  function positionActor(actor) {
+    const { train, model, cars } = actor;
+    const { plan, distance } = train;
     const limit = plan.path.length;
     const wheelbase = model.length * 0.34;
     for (let i = 0; i < model.cars; i++) {
       const cart = cars[i];
-      const center = actor.distance + ((model.cars - 1) / 2 - i) * (model.length + 0.3);
+      const center = distance + trainCarOffset(model, i);
       cart.visible = center >= 0 && center <= limit;
       if (!cart.visible) continue;
       plan.path.sample(center + wheelbase, front);
@@ -234,18 +194,23 @@ export function createEdeTrainSystem(scene, timetable, hud, options) {
     }
   }
 
-  setInterval(sync, 250);
   watchEdeTrains(traffic);
   return {
     group, traffic, tracks, pool,
-    update(dt, camera) {
-      focus.copy(camera);
-      const at = Date.now() / 1000;
-      for (const actor of active.values()) positionActor(actor, dt, at);
+    update(dt, camera, at = Date.now() / 1000) {
+      traffic.advance(dt, at);
+      if (at < syncedAt || at - syncedAt >= 0.25) {
+        syncedAt = at;
+        sync(camera);
+      }
+      for (const [key, actor] of active) {
+        if (traffic.progress.get(actor.train.plan.key) === actor.train) positionActor(actor);
+        else retire(key, actor);
+      }
     },
     get active() { return [...active].map(([key, actor]) => ({
-      key, status: actor.plan.status, path: actor.plan.path.id, updateAt: actor.plan.updateAt,
-      distance: actor.distance, speed: actor.speed, platform: actor.target.platform, root: actor.root
+      key, status: actor.train.plan.status, path: actor.train.plan.path.id, updateAt: actor.train.plan.updateAt,
+      distance: actor.train.distance, speed: actor.train.speed, platform: actor.train.target.platform, root: actor.root
     })); }
   };
 }

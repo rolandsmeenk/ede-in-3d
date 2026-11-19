@@ -246,7 +246,7 @@ export function createEdeParking(parent,base,styles,network,data,closed) {
     v.parkingTrip=null;
     needsSync=true;
   }
-  function routeArrival(v,clock) {
+  function routeArrival(v,clock,allowedArea) {
     if (!enabled || !linksByEdge.size || clock<nextArrival || active.size>=MAX_TRIPS ||
         v.bodyType!=='sedan' || v.isPolice || v.parkingStyle==null || v.parkingTrip) return false;
     nextArrival=clock+0.9;
@@ -254,7 +254,7 @@ export function createEdeParking(parent,base,styles,network,data,closed) {
     const picked=findParkingArrival(v,linksByEdge,{
       available:item=>!cooling.has(item.space.id) && !spotBusy(item,'arrival') &&
         demand.getSpaceState(item.space.id,at)?.status==='vacant',
-      closed
+      closed, allowedArea, turn:network.turnRestrictionState
     });
     if (!picked) return false;
     const {item,route}=picked;

@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { abs, color, float, fract, mix, smoothstep, uv } from 'three/tsl';
+import { color, mix, texture } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ISLAND_BOUNDS, blockAt, EDE_DATA, nearestRoads, pointInPoly, waterAt } from './city-config.js';
 import {
@@ -337,11 +337,28 @@ function buildCityGrid(scene, treeInventory) {
       }
     }
   }
+  const ballastWidth = 2.9, sleeperSpacing = 0.65;
+  const maskSize = 64;
+  const mask = new Uint8Array(maskSize ** 2);
+  const { smoothstep } = THREE.MathUtils;
+  for (let y = 0; y < maskSize; y++) {
+    const phase = Math.abs((y + 0.5) / maskSize - 0.5);
+    const sleeper = 1 - smoothstep(phase, 0.12, 0.23);
+    for (let x = 0; x < maskSize; x++) {
+      const across = Math.abs(((x + 0.5) / maskSize - 0.5) * ballastWidth);
+      mask[y * maskSize + x] = Math.round(255 * sleeper * (1 - smoothstep(across, 1.18, 1.28)));
+    }
+  }
+  // Repeat along the track without wrapping the ballast edges across its width.
+  const sleeperMask = new THREE.DataTexture(mask, maskSize, maskSize, THREE.RedFormat);
+  sleeperMask.wrapT = THREE.RepeatWrapping;
+  sleeperMask.magFilter = THREE.LinearFilter;
+  sleeperMask.minFilter = THREE.LinearMipmapLinearFilter;
+  sleeperMask.generateMipmaps = true;
+  sleeperMask.anisotropy = 8;
+  sleeperMask.needsUpdate = true;
   const ballastMat = new THREE.MeshStandardNodeMaterial({ roughness: 0.94 });
-  const sleeperPhase = abs(fract(uv().y.div(0.65).add(0.5)).sub(0.5));
-  const sleeper = float(1).sub(smoothstep(0.12, 0.23, sleeperPhase))
-    .mul(float(1).sub(smoothstep(1.18, 1.28, abs(uv().x))));
-  ballastMat.colorNode = mix(color(0x6c6054), color(0x3f3730), sleeper);
+  ballastMat.colorNode = mix(color(0x6c6054), color(0x3f3730), texture(sleeperMask).r);
   const railMat = new THREE.MeshStandardNodeMaterial({ color: 0xb5ada0, metalness: 0.35, roughness: 0.47 });
   let railWays = 0;
   for (const railway of EDE_DATA.railways || []) {
@@ -374,11 +391,12 @@ function buildCityGrid(scene, treeInventory) {
       };
 
       // The ballast sits below the road surface at level crossings.
-      const bed = trackStrip(1.45, 0.035);
+      const bed = trackStrip(ballastWidth / 2, 0.035);
       const positions = bed.getAttribute('position'), coordinates = bed.getAttribute('uv');
       for (let j = 0; j < positions.count; j++) {
         const dx = positions.getX(j) - a.x, dz = positions.getZ(j) - a.z;
-        coordinates.setXY(j, -dx * uz + dz * ux, distance + dx * ux + dz * uz);
+        coordinates.setXY(j, (-dx * uz + dz * ux) / ballastWidth + 0.5,
+          (distance + dx * ux + dz * uz) / sleeperSpacing + 0.5);
       }
       collect(bed, ballastMat);
       for (const side of [-1, 1]) collect(trackStrip(0.045, 0.13, side * 1.435 / 2), railMat);

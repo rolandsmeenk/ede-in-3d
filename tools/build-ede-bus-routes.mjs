@@ -2,6 +2,8 @@
 // Usage: node tools/build-ede-bus-routes.mjs GTFS_JSON ROAD_GRAPH_JSON [ASSET_JSON] [REPORT_JSON]
 import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { EDE_TURN_RESTRICTIONS } from '../js/ede-turn-restrictions.js';
+import { BUS } from '../js/road-access.js';
 
 const STEP = 8; // metres between shape observations
 const REACH = 21; // maximum deviation from the operator's shape, in metres
@@ -135,8 +137,10 @@ function directedLanes(graph) {
   }
   for (const lanes of byId.values()) {
     for (const lane of lanes) for (const move of lane.edge.moves) {
-      const next = byId.get(move.to)?.[move.out[lane.index]];
-      if (lane.range?.[1] >= lane.span - EPS && next?.range?.[0] <= EPS) lane.turns.push(next);
+      for (const index of [move.out[lane.index], ...(move.alternatives?.[lane.index] || [])]) {
+        const next = byId.get(move.to)?.[index];
+        if (lane.range?.[1] >= lane.span - EPS && next?.range?.[0] <= EPS) lane.turns.push({ next, move });
+      }
     }
   }
   function nearby(observation) {
@@ -176,8 +180,9 @@ function roadTransitions(from, targets, a, b, reach = REACH) {
   const dx = ex - x, dz = ez - z, d2 = dx * dx + dz * dz;
   const interval = b.s - a.s, limit = interval * 2.4 + 9;
   const out = new Map();
-  const queue = [{ lane: from.lane, start: from.t, length: 0, steps: [] }];
+  const queue = [{ lane: from.lane, start: from.t, length: 0, steps: [], restriction: from.restriction }];
   const visited = new Set();
+  const key = (lane, restriction) => lane.edge.id + '/' + lane.index + '/' + (restriction?.key || '');
   const deviation = (lane, t) => {
     const ax = lane.x0 + lane.dx * t - x, az = lane.z0 + lane.dz * t - z;
     const f = d2 > EPS ? clamp((ax * dx + az * dz) / d2, 0, 1) : 0;
@@ -185,19 +190,24 @@ function roadTransitions(from, targets, a, b, reach = REACH) {
   };
   while (queue.length) {
     queue.sort((p, q) => q.length - p.length);
-    const { lane, start, length, steps } = queue.pop();
-    if (visited.has(lane)) continue;
-    visited.add(lane);
+    const { lane, start, length, steps, restriction } = queue.pop();
+    const visit = key(lane, restriction);
+    if (visited.has(visit)) continue;
+    visited.add(visit);
     for (const target of targets) {
       if (target.lane !== lane || target.t < start - EPS || length + target.t - start > limit) continue;
       if (deviation(lane, start) > reach || deviation(lane, target.t) > reach) continue;
       const next = { lane, from: start, to: target.t };
-      out.set(target, { steps: [...steps, next], cost: Math.abs(length + target.t - start - interval) * 0.8 });
+      if (!out.has(target)) out.set(target, []);
+      out.get(target).push({ steps: [...steps, next], restriction, cost: Math.abs(length + target.t - start - interval) * 0.8 });
     }
     const toNode = length + lane.span - start;
     if (toNode > limit || deviation(lane, start) > reach || deviation(lane, lane.span) > reach) continue;
-    for (const next of lane.turns) {
-      if (!visited.has(next)) queue.push({ lane: next, start: 0, length: toNode, steps: [...steps, { lane, from: start, to: lane.span }] });
+    for (const { next, move } of lane.turns) {
+      const state = EDE_TURN_RESTRICTIONS.step(restriction, move, BUS);
+      if (state && !visited.has(key(next, state))) queue.push({
+        lane: next, start: 0, length: toNode, steps: [...steps, { lane, from: start, to: lane.span }], restriction: state
+      });
     }
   }
   return out;
@@ -223,17 +233,19 @@ function matchRange(shape, roads, stops, start, end) {
     const candidates = roads.nearby(observation);
     const best = previous.reduce((p, q) => p.score <= q.score ? p : q, { score: Infinity });
     const missing = previous.find(p => !p.candidate);
-    const row = candidates.map(candidate => ({ candidate, s, score: candidate.cost + (i ? best.score + 34 : 0), prev: i ? best : null }));
+    const choices = new Map(candidates.map(candidate => [candidate, new Map([
+      ['', { candidate, s, score: candidate.cost + (i ? best.score + 34 : 0), prev: i ? best : null }]
+    ])]));
     for (const prev of previous) {
       if (!prev.candidate) continue;
-      const links = roadTransitions(prev.candidate, candidates, prior, observation);
-      for (const next of row) {
-        const link = links.get(next.candidate);
-        if (!link) continue;
-        const score = prev.score + next.candidate.cost + link.cost;
-        if (score < next.score) Object.assign(next, { score, prev, steps: link.steps });
+      const links = roadTransitions({ ...prev.candidate, restriction: prev.restriction }, candidates, prior, observation);
+      for (const [candidate, alternatives] of links) for (const { steps, restriction, cost } of alternatives) {
+        const states = choices.get(candidate), key = restriction?.key || '';
+        const score = prev.score + candidate.cost + cost;
+        if (score < (states.get(key)?.score ?? Infinity)) states.set(key, { candidate, s, score, prev, steps, restriction });
       }
     }
+    const row = [...choices.values()].flatMap(states => [...states.values()]);
     row.push({ s, score: 29 + (stop ? 14 : 0) + (i ? Math.min(best.score + 12, missing.score) : 0), prev: i && missing.score <= best.score + 12 ? missing : i ? best : null });
     previous = row;
     prior = observation;
@@ -281,16 +293,29 @@ function stitchShortGaps(shape, roads, paths) {
     const lane = roads.byId.get(leg.edge)[leg.lane];
     return { lane, t: clamp(lane.clearStart + at, 0, lane.span) };
   };
+  function legal(legs) {
+    let prior, restriction;
+    for (const leg of legs) {
+      const { lane } = position(leg, leg.from);
+      if (prior && prior !== lane) {
+        const turn = prior.turns.find(turn => turn.next === lane);
+        if (!turn || !(restriction = EDE_TURN_RESTRICTIONS.step(restriction, turn.move, BUS))) return false;
+      }
+      prior = lane;
+    }
+    return true;
+  }
   for (const path of paths) {
     const current = slices.at(-1), last = current?.legs.at(-1), first = path.legs[0];
     const gap = last ? first.start - last.end : Infinity;
-    if (gap > 0 && gap <= 20) {
+    if (gap > 0 && gap <= 3 * STEP) {
       const a = { s: last.end, point: shape.at(last.end) }, b = { s: first.start, point: shape.at(first.start) };
       const target = position(first, first.from);
-      const route = roadTransitions(position(last, last.to), [target], a, b, 14).get(target);
-      if (route) {
-        const middle = routeSlices([{ ...b, prev: a, steps: route.steps }]);
-        current.legs.push(...middle.flatMap(s => s.legs), ...path.legs);
+      const routes = roadTransitions(position(last, last.to), [target], a, b, 14).get(target) || [];
+      const middle = routes.map(({ steps }) => routeSlices([{ ...b, prev: a, steps }]).flatMap(s => s.legs))
+        .find(legs => legal([...current.legs, ...legs, ...path.legs]));
+      if (middle) {
+        current.legs.push(...middle, ...path.legs);
         continue;
       }
     }

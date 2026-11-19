@@ -292,10 +292,10 @@ function nearestSpan(spans, x, z, { mode, kind, referenceY, reach = 0.3, heading
   return picked;
 }
 
-export function gradeProfileAt(x, z, mode, heading, referenceY, profileId) {
+export function gradeProfileAt(x, z, mode, heading, referenceY, profileId, reach = 0.3) {
   const cell = segments.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL)));
   const explicit = profileId && (profiles.get(profileId) || ways.get(profileId));
-  const hit = nearestSpan(explicit || cell || [], x, z, { mode, heading, referenceY });
+  const hit = nearestSpan(explicit || cell || [], x, z, { mode, heading, referenceY, reach });
   if (!hit) {
     if (modeGroup(mode) === 'foot' && !profileId) {
       const platform = platformAt(x, z, referenceY);

@@ -168,14 +168,14 @@ function setupSceneCulling(scene, roots, shadow = null) {
   for (const root of roots) {
     root.traverse((o) => {
       if (!isStaticMesh(o) || o.userData.mutableFallback) return;
-      if (!o.isInstancedMesh) {
-        if (o.userData.cullDistance > 0) {
-          if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
-          const sphere = o.geometry.boundingSphere.clone().applyMatrix4(o.matrixWorld);
-          pushCulled(o, sphere, o.userData.cullDistance);
-        }
+      if (o.userData.cullDistance > 0 && (!o.isInstancedMesh || o.userData.spatialTile)) {
+        if (o.isInstancedMesh && !o.boundingSphere) o.computeBoundingSphere();
+        if (!o.isInstancedMesh && !o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        const bounds = o.isInstancedMesh ? o.boundingSphere : o.geometry.boundingSphere;
+        pushCulled(o, bounds.clone().applyMatrix4(o.matrixWorld), o.userData.cullDistance);
         return;
       }
+      if (!o.isInstancedMesh) return;
       if (o.count < 64 || o.count !== o.instanceMatrix.count) return;
       if (o.count * triangleCount(o.geometry) < 40000) return;
       if (!o.boundingSphere) o.computeBoundingSphere();

@@ -1,6 +1,7 @@
 import { blockAt } from './city-config.js';
 import { terrainHeightAt } from './terrain.js';
 import { createPedestrianRoutes } from './pedestrian-routes.js';
+import { FOOT } from './road-access.js';
 import { PersonCrowd, PersonRig, PEDESTRIAN_DIVE_DURATION } from './pedestrians.js';
 
 // Local pedestrian population: connected walks, curb queues, conversations and player avoidance.
@@ -12,7 +13,7 @@ const PED_SPAWN_DISTANCE = 150;
 const PED_AVOID_INTERVAL = 0.12;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearFoot, pickFoot, mappedGround, mayCross, mayCrossMapped, walkOn, visible, nearView }) {
+function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearFoot, pickFoot, mappedGround, mayCross, mayCrossMapped, walkOn, visible, nearView, trips, railStop }) {
   let clock = 0;
   let focusX = 0, focusZ = 140;
   let hasView = false;
@@ -415,6 +416,12 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     const brake = avoiding ? PED_ESCAPE_BRAKE : PED_BRAKE;
     if (p.pause > 0) p.pause = Math.max(0, p.pause - dt);
     const ahead = p.dir > 0 ? p.len - p.t : p.t;
+    const trip=p.destinationTrip;
+    if (trip?.goal.track===p.route && (p.t-trip.goal.at)*p.dir>=-0.8 && !p.node) {
+      trips.finished('foot',trip);
+      p.destinationTrip=null;
+      p.pause=Math.max(p.pause,2+Math.random()*3);
+    }
     const gdx = p.x - p.goalX, gdz = p.z - p.goalZ;
     const goalDistanceSq = gdx * gdx + gdz * gdz;
     if (clock >= p.goalTime || goalDistanceSq < (p.towardPlace ? 9 : 625)) {
@@ -428,7 +435,14 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
       p.goalTime = clock + 120 + Math.random() * 180;
     }
     if (!p.nextRoute && p.route && ahead < 4) {
-      p.nextRoute = pedRoutes.next(p.route, p.dir, p.goalX, p.goalZ);
+      const trip=p.destinationTrip, step=trip?.steps[trip.index];
+      if (step?.from===p.route && step.dir===p.dir) {
+        p.nextRoute=step.legs;
+        trip.index++;
+      } else {
+        if (step) p.destinationTrip=null;
+        p.nextRoute=pedRoutes.next(p.route,p.dir,p.goalX,p.goalZ);
+      }
       p.nextLeg = 0;
       if (!p.node && p.nextRoute) atCurb(p);
     }
@@ -439,7 +453,10 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
     let vMax = avoiding ? p.avoidSpeed : p.pause > 0 || p.conversation ? 0 : p.speed;
     if (dodging || diving) p.v = vMax = 0;
     if (!p.nextRoute) vMax = Math.min(vMax, Math.sqrt(2 * brake * ahead));
-    let room = Infinity;
+    const rail=railStop && p.route?.mapped ? railStop({
+      x:p.x,y:p.y,z:p.z,dx:p.ux*p.dir,dz:p.uz*p.dir,wayId:p.route.wayId,layer:p.route.layer,mode:FOOT
+    }) : Infinity;
+    let room=Math.max(0,rail-0.32);
     if (!p.node && p.nextRoute) {
       // A queue can reach back onto the sidewalk. Keep clear before entering its track, including short corner
       // segments; actual separation matters where the approach meets the crossing at an angle.
@@ -490,7 +507,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
         // React to WALK independently of the queue or vehicles still clearing the crossing.
         canCross = walk && (avoiding || clock >= p.walkAt) && (p.route?.crossing || crossingClear(p));
       }
-      room = s <= kerb(p) + 1e-6 && !canCross ? Math.max(0, kerb(p) - s) : Infinity;
+      if (s <= kerb(p) + 1e-6 && !canCross) room = Math.min(room, Math.max(0, kerb(p) - s));
       for (const q of p.node.curb) {
         if (q === p || q.node !== p.node || q.side !== p.side || q.dir !== p.dir || Math.abs(q.line - p.line) > 0.55) continue;
         const gap = curbProgress(q) - s;
@@ -704,7 +721,11 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
       pedCursor = (pedCursor + 1) % NUM_PEDS;
       if (p.placed) continue;
       pedBudget--;
-      if (spawnPed(p, jump ? 0 : 60, jump ? NEAR_RADIUS : 280, !jump)) placed++;
+      if (spawnPed(p,jump?0:60,jump?NEAR_RADIUS:280,!jump)) {
+        p.destinationTrip=trips && Math.random()<0.8 ? trips.active('foot',p.route,p.dir,p.t) : null;
+        if (p.destinationTrip) p.dir=p.destinationTrip.startDir;
+        placed++;
+      }
     }
     for (let i = 0; i < NUM_PEDS; i++) {
       const p = peds[i];

@@ -338,5 +338,5 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   }
   group.userData = { counts, source: source.url, date: source.date };
   scene.add(group);
-  return { group, colliders, counts, platforms, weatherCovers };
+  return { group, colliders, counts, platforms, weatherCovers, deckProfiles };
 }

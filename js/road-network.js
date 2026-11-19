@@ -14,6 +14,7 @@ import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad } from './road-access
 import { buildEdeActiveTravel } from './ede-active-travel.js';
 import { resolveEdeRoadLanes, permittedTurn, shareTurn } from './ede-road-lanes.js';
 import { motorwayLanesAt } from './ede-motorway-lanes.js';
+import { EDE_TURN_RESTRICTIONS } from './ede-turn-restrictions.js';
 
 // Drivable road graph derived from the ground layout that city-grid.js actually builds: avenue corridors
 // between the raised curbs, cross-street gaps between curb rows, lanes that keep clear of medians, plazas
@@ -92,7 +93,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   }
 
   const blocked = (minX, maxX, minZ, maxZ) => !onLand(minX, maxX, minZ, maxZ) || query(minX, maxX, minZ, maxZ, (r) => !r.pedestrianOnly);
-  const walkable = (minX, maxX, minZ, maxZ) => onLand(minX, maxX, minZ, maxZ) && !query(minX, maxX, minZ, maxZ, (r) => !r.curb);
+  const walkable = (minX, maxX, minZ, maxZ, layer = 0) => onLand(minX, maxX, minZ, maxZ) &&
+    !query(minX, maxX, minZ, maxZ, r => !r.curb && (r.layer == null || r.layer === layer));
   const onSidewalk = (x, z) => GEO.city === 'Ede' ? !!sidewalkAt(x,z) : query(x, x, z, z, (r) => r.curb);
   // The same test for the centreline streets (4b), which follow the real streets: the rectangles standing in for
   // irregular sidewalks may reach a little past their curbs, a whole park's bounds take in the streets around it and a
@@ -350,9 +352,20 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     const parent = pos.map((_, i) => i);
     const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
     const portals = new Set(links.filter((l) => l.road?.bridge || l.road?.tunnel).flatMap((l) => [l.a, l.b]));
+    const restrictedJunctions = new Set();
+    for (const l of links) {
+      l.osmStart = EDE_TURN_RESTRICTIONS.nodeAt(l.road?.id, pos[l.a].x, pos[l.a].z);
+      l.osmEnd = EDE_TURN_RESTRICTIONS.nodeAt(l.road?.id, pos[l.b].x, pos[l.b].z);
+      if (l.osmStart) restrictedJunctions.add(l.a);
+      if (l.osmEnd) restrictedJunctions.add(l.b);
+    }
     for (const l of links) {
       if (portals.has(l.a) || portals.has(l.b)) l.keepShape = true;
-      if (!l.keepShape && l.len < 14) parent[find(l.a)] = find(l.b);
+      if (!l.keepShape && l.len < 14) {
+        // Collapsing a restricted junction can bypass its explicit from/via/to path.
+        if (restrictedJunctions.has(l.a) || restrictedJunctions.has(l.b)) l.keepShape = true;
+        else parent[find(l.a)] = find(l.b);
+      }
     }
     const sum = new Map();
     const counted = new Set();
@@ -511,6 +524,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
           start === 0 && atWayEnd(l.pts[0], 0)];
         const a = l.pts[start], b = l.pts[end];
         runs.push({ ...l, ...lanes, definitions, turnTagsAtEnd, from, to, original, source, keepShape: l.keepShape || !!source,
+          osmStart: start === 0 ? l.osmStart : undefined, osmEnd: end === pts.length - 1 ? l.osmEnd : undefined,
           sourceCenter: { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 },
           headings: [[heading(start, start + 1), heading(end - 1, end)], [heading(end, end - 1), heading(start + 1, start)]] });
       }
@@ -603,6 +617,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       ...(laneDefinition ? { laneDefinition, driveLanes: usable.map(i => laneDefinition.lanes[i]), direction,
         graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
         turnTagsAtEnd: !!run.turnTagsAtEnd[direction] && laneDefinition.lanes.some(lane => lane.turns), headings: run.headings[direction] } : {}),
+      osmStart: direction ? run.osmEnd : run.osmStart, osmEnd: direction ? run.osmStart : run.osmEnd,
       underpass, tunnelType: road?.tunnelType, bridge, boundary, keepShape, wayId: road?.id, layer: road?.layer || 0, limits: road?.limits });
   }
   // A divided road drawn as two one-way roadways between the same two junctions (most of the Bowery) runs both ways
@@ -705,8 +720,11 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     }
     edges = edges.filter((e) => e.lanes.length);
   }
-  const canTurn = (e, f) => f.to !== e.from && ((e.modes ?? MOTOR) & (f.modes ?? MOTOR)) && e.dx * f.dx + e.dz * f.dz >=
-    (e.keepShape && f.keepShape && !e.boundary && !f.boundary ? -0.93 : -0.5);
+  const osmTurn = (e, f) => e.osmEnd || EDE_TURN_RESTRICTIONS.viaWays.has(e.wayId)
+    ? [e.wayId, e.osmEnd, f.wayId, f.osmStart, e.direction !== f.direction] : undefined;
+  const canTurn = (e, f, turn = osmTurn(e, f)) => f.to !== e.from && e.dx * f.dx + e.dz * f.dz >=
+    (e.keepShape && f.keepShape && !e.boundary && !f.boundary ? -0.93 : -0.5)
+    && EDE_TURN_RESTRICTIONS.allowed(turn, (e.modes ?? MOTOR) & (f.modes ?? MOTOR));
   // Edges no vehicle could both reach and leave (dead ends, and roads reached only from them) are dropped once the
   // moves are known (7.); know them already, so that no road keeps clear of a dead one merging with it or forking off it
   {
@@ -914,8 +932,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     return m.unbranched || m.tagTurns.some(turn => permittedTurn(lane, turn, m.tagCross));
   }
   const compatibleLanes = (e, i, f, j) => (e.laneModes?.[i] ?? e.modes ?? MOTOR) & (f.laneModes?.[j] ?? f.modes ?? MOTOR);
-  function pathClear(e, i, f, j) {
-    if (!compatibleLanes(e, i, f, j)) return false;
+  function pathClear(e, i, f, j, modes) {
+    if (!(compatibleLanes(e, i, f, j) & modes)) return false;
     if (e.underpass || f.underpass || e.bridge || f.bridge) return true;
     const c = makeCurve(e, i, f, j);
     const p = { x: 0, z: 0, dx: 0, dz: 0 };
@@ -948,7 +966,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   // Let lane i of e make move m into lane j of its edge (clamped to the lanes there), if the way is clear
   function link(e, m, i, j) {
     j = Math.max(0, Math.min(m.to.lanes.length - 1, j));
-    if (m.out[i] < 0 && turnAllowed(e, m, i, j) && inOrder(e, m, i, j) && pathClear(e, i, m.to, j)) m.out[i] = j;
+    if (m.out[i] < 0 && turnAllowed(e, m, i, j) && inOrder(e, m, i, j) && pathClear(e, i, m.to, j, m.modes)) m.out[i] = j;
     return m.out[i] >= 0;
   }
   function serveEveryLane(e) {
@@ -968,7 +986,9 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   for (const e of edges) {
     const n = e.lanes.length;
     for (const f of e.to.out) {
-      if (!canTurn(e, f)) continue;
+      const turn = osmTurn(e, f);
+      const modes = canTurn(e, f, turn);
+      if (!modes) continue;
       const cross = e.dx * f.dz - e.dz * f.dx;
       const continuation = e.to.shape && e.wayId === f.wayId;
       let tags;
@@ -979,7 +999,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         tags = { tagCross, tagDot: adx * bdx + adz * bdz, tagTurns: [tagCross > 0.5 ? 'R' : tagCross < -0.5 ? 'L' : 'S'] };
       }
       e.moves.push({ to: f, turn: !continuation && cross > 0.5 ? 'R' : !continuation && cross < -0.5 ? 'L' : 'S',
-        cross, ...tags, out: new Array(n).fill(-1) });
+        cross, ...tags, modes, osmTurn: turn, out: new Array(n).fill(-1) });
     }
     // the straightest first: where a road forks, the branch going most nearly straight on keeps most of its lanes
     const ahead = (m) => e.dx * m.to.dx + e.dz * m.to.dz;
@@ -1150,7 +1170,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
 
   // 7. Keep the largest strongly connected set of edges so no vehicle can ever reach a dead end
   const kept = largestComponent(edges, (e) => e.moves.map((m) => m.to));
-  for (const e of edges) if (e.boundary || ((e.modes ?? MOTOR) & BUS) && e.moves.some(m => (m.to.modes ?? MOTOR) & BUS)) kept.add(e);
+  for (const e of edges) if (e.boundary || e.moves.some(m => m.modes & BUS)) kept.add(e);
   const genShortKept = edges.filter((e) => e.general).length;
   const genLost = edges.filter((e) => e.general && !kept.has(e));
   edges = edges.filter((e) => kept.has(e));
@@ -1179,7 +1199,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       moves.sort((a, b) => Number(b.turn === 'S') - Number(a.turn === 'S'));
       for (const m of moves) {
         const nearest = nearestLane(e, i, m.to);
-        const choices = m.to.lanes.map((_, j) => j).filter(j => turnAllowed(e, m, i, j) && compatibleLanes(e, i, m.to, j));
+        const choices = m.to.lanes.map((_, j) => j).filter(j => turnAllowed(e, m, i, j) && (compatibleLanes(e, i, m.to, j) & m.modes));
         if (!choices.length) continue;
         m.out[i] = choices.reduce((best, j) => Math.abs(j - nearest) < Math.abs(best - nearest) ? j : best);
         break;
@@ -1195,20 +1215,21 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     const eligible = edges.filter(e => !e.boundary && !e.unmodeledTunnel && ((e.modes ?? MOTOR) & mode) && fitsRoad(vehicle, e.limits, mode));
     for (const e of edges) e[lanes] = [];
     for (const e of eligible) e[lanes] = e.lanes.flatMap((_, i) => (e.laneModes?.[i] ?? mode) & mode ? [i] : []);
-    const live = largestComponent(eligible, (e) => e.moves.filter(m => e[lanes].some(i => m.to[lanes].includes(m.out[i]))).map(m => m.to));
+    const onward = (e, i) => e.moves.some(m => (m.modes & mode) && m.to[lanes].includes(m.out[i]));
+    const live = largestComponent(eligible, (e) => e.moves.filter(m => (m.modes & mode) && e[lanes].some(i => m.to[lanes].includes(m.out[i]))).map(m => m.to));
     for (const e of eligible) if (!live.has(e)) e[lanes] = [];
     let changed;
     do {
       changed = false;
       for (const e of edges) {
-        const open = e[lanes].filter((i) => e.moves.some((m) => m.to[lanes].includes(m.out[i])));
+        const open = e[lanes].filter(i => onward(e, i));
         if (open.length === e[lanes].length) continue;
         e[lanes] = open;
         changed = true;
       }
     } while (changed);
     for (const e of edges) {
-      e[moves] = e.moves.map((move) => ({
+      e[moves] = e.moves.filter(move => move.modes & mode).map((move) => ({
         ...move, out: move.out.map((j, i) => e[lanes].includes(i) && move.to[lanes].includes(j) ? j : -1)
       })).filter((move) => move.out.some((j) => j >= 0));
     }
@@ -1275,13 +1296,13 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   const busMoves = new WeakMap();
   function alternateBusMove(e, move, i, j) {
     const f = move.to;
-    if (!(compatibleLanes(e, i, f, j) & BUS) || !turnAllowed(e, move, i, j)) return null;
+    if (!(compatibleLanes(e, i, f, j) & move.modes & BUS) || !turnAllowed(e, move, i, j)) return null;
     let lanes = busMoves.get(move);
     if (!lanes) busMoves.set(move, (lanes = new Map()));
     const key = i * 16 + j;
     if (!lanes.has(key)) {
       let alternative = null;
-      if (pathClear(e, i, f, j)) {
+      if (pathClear(e, i, f, j, BUS)) {
         const out = move.out.slice();
         out[i] = j;
         alternative = { ...move, out };
@@ -1293,6 +1314,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
 
   const isRoadClear = (x, z, clear = 0.15) => !blockedOnStreet(x, z, clear);
   return { nodes, edges, paintEdges, connector, curvePoint, alternateBusMove, walkable, onSidewalk, isRoadClear,
+    turnRestrictionState: EDE_TURN_RESTRICTIONS.step,
     activeTravel: GEO.city === 'Ede' ? buildEdeActiveTravel(GEO.ede, grade, { walkable, sidewalkAt, motorNodes: nodes }) : null };
 }
 

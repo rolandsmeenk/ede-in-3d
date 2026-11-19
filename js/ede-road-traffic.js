@@ -160,6 +160,10 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
     onBusFeed(handler) { busFeedHandler = handler; },
     get profile() { return profile; },
     isClosed: edge => states.get(edge)?.closed === true,
+    hasObservedFlow: edge => {
+      const flow = accepted.get(states.get(edge))?.flowPerHour;
+      return Number.isFinite(flow) && flow >= 0;
+    },
     limit: edge => {
       const state = states.get(edge);
       return state ? Math.min(state.limit, state.temporary) : Infinity;
