@@ -4,6 +4,30 @@ Explore Ede in 3D, from Oude Kerk and Marktplein to Kernhem, Rietkampen, Maander
 
 Forked from [Slop Utrecht](https://github.com/bertt/slop-utrecht), based on [Slop New York](https://github.com/mrdoob/slop-newyork).
 
+## Highlights
+
+| Ede town centre and Oude Kerk | ENKA Westhal and Poortgebouw |
+| --- | --- |
+| ![The tower and spire of Oude Kerk above Ede town centre](assets/screenshots/oude-kerk.webp) | ![The ENKA factory’s sawtooth roofs with its two chimneys in the background](assets/screenshots/enka-westhal.webp) |
+| **Station Ede-Wageningen** | **Huis Kernhem** |
+| ![View along the tracks beneath the timber canopy at Ede-Wageningen station](assets/screenshots/ede-wageningen.webp) | ![Tree-lined path to the main entrance of Huis Kernhem](assets/screenshots/huis-kernhem.webp) |
+
+## Data sources at a glance
+
+Most map layers are built offline and bundled with the game. Nearby 3DBAG tiles stream when available, with local building footprints as a fallback. Optional live feeds update traffic, public transport, parking and weather.
+
+| Layer | What it contributes | Sources |
+| --- | --- | --- |
+| Base map and routing | Street and path connections, parks, waterways, tracks and fallback building footprints | [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) |
+| Terrain and surface colours | Ground elevations, local height checks and colour samples for roofs, roads and land cover | [AHN via PDOK](https://www.ahn.nl/dataroom) · [2025 aerial imagery via PDOK](https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566) |
+| Buildings and façades | LoD 2.2 building shapes, offline façade measurements and neighbourhood profiles | [3DBAG](https://docs.3dbag.nl/en/) · [Mapillary evidence credits](assets/ede-facades.SOURCES.md) · [CBS neighbourhood boundaries](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025) |
+| Streets and greenery | Surveyed road surfaces, bridges, platforms, shorelines, street furniture, lamps and trees | [PDOK BGT](https://www.pdok.nl/introductie/-/article/basisregistratie-grootschalige-topografie-bgt-) · [Municipal tree inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) |
+| Motorways and traffic rules | Road sections, lane counts, infrastructure, access restrictions, signs, speed bumps and crossings | [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer) · [NWB and WEGGEG](tools/data/ede-motorway-lanes.sources.md) · [NDW and WKD](tools/data/ede-traffic-sources.md) · [NBd direction signs](https://downloads.rijkswaterstaatdata.nl/bewegwijzering/) |
+| Rail and buses | Rail alignment checks, local timetables, boarding points and live service updates | [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer) · [OVapi](https://gtfs.ovapi.nl/nl/) · [NDOV](https://govi.nu/realtime.html) · [RRReis Ede](https://www.rrreis.nl/reisinformatie/haltes-dienstverlening/dienstregeling-bus/regio-ede) |
+| Live conditions | Road speeds and closures, authorised garage occupancy feeds and local weather | [NDW live traffic](https://opendata.ndw.nu/) · [Nationaal Parkeer Register](https://www.nationaalparkeerregister.nl/downloads/certificaten-en-aanvraagformulieren) · [Open-Meteo](https://open-meteo.com/en/docs) |
+
+See [License and data](#license-and-data) for attribution and the sections below for refresh commands.
+
 ## Run locally
 
 Run the local server and open [localhost:8000](http://localhost:8000). Live road data matching uses Node.js 22 or later.
