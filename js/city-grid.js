@@ -18,6 +18,7 @@ import { getTerrain, terrainHeightAt } from './terrain.js';
 import { getRailCorridors, gradeCuts, gradeWayAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
 import { edeTreeSite } from './ede-tree-data.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
+import { addAsphaltLanes } from './ede-asphalt-lanes.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
 
 // Live construction data consumed by the building and street-detail builders after buildCityGrid().
@@ -51,7 +52,7 @@ function buildCityGrid(scene, treeInventory, landCover) {
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
   const aerial = !!getAerialColors();
-  const roadMat = createRoadSurfaceMaterial(aerial);
+  const roadMat = createRoadSurfaceMaterial(aerial, false, true);
   roadMat.name = 'Ede asphalt';
   const sidewalkMat = createSidewalkMaterial(aerial ? 0.4 : 0);
   const terrainMat = terrain && landCover ? createEdeGroundMaterial(aerial, landCover)
@@ -65,15 +66,16 @@ function buildCityGrid(scene, treeInventory, landCover) {
   const polygon = (ring, holes, y, wayId) => drapeEdeSurface(edePolygonGeometry(ring, holes, y), true, wayId);
   const strip = (a, b, half, y, offset, wayId) => drapeEdeSurface(edeStrip(a, b, half, y, offset), true, wayId);
   const collections = new Map();
-  const collect = (geometry, material, segment) => {
+  const collect = (geometry, material, segment, trackLayer) => {
     if (!geometry?.getAttribute('position')?.count) return;
+    if (material === roadMat) geometry = addAsphaltLanes(geometry, segment, trackLayer);
     if (aerial && aerialMaterials.has(material)) setAerialSurfaceColors(geometry, segment, material === roadMat);
     if (!collections.has(material)) collections.set(material, []);
     collections.get(material).push(geometry);
   };
-  function collectPaving(geometry, material, angle, segment) {
+  function collectPaving(geometry, material, angle, segment, trackLayer) {
     if (material === 'asphalt') {
-      collect(geometry, roadMat, segment);
+      collect(geometry, roadMat, segment, trackLayer);
       return;
     }
     const position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
@@ -139,11 +141,12 @@ function buildCityGrid(scene, treeInventory, landCover) {
   }
 
   let mappedPavingCount = 0;
-  for (const { layer, material, angle, polygons } of getEdeRoadSurfaces().surfaces) {
+  for (const { layer, material, angle, polygons, function: use } of getEdeRoadSurfaces().surfaces) {
     if (layer !== 0) continue;
+    const motor = use.startsWith('rijbaan ') || ['ov-baan', 'verbindingsweg', 'overweg', 'verkeersdrempel', 'woonerf'].includes(use);
     for (const [outer, ...holes] of polygons) {
       const geometry = drapeEdeSurface(edePolygonGeometry(edePoints(outer), holes.map(edePoints), 0.065), true, undefined, true);
-      collectPaving(geometry, material, angle);
+      collectPaving(geometry, material, angle, undefined, motor ? layer : undefined);
       mappedPavingCount++;
     }
   }

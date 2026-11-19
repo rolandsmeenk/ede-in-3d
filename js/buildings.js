@@ -55,6 +55,13 @@ import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js'
 import { MILL_ADJOINING_FOOTPRINT } from './ede-landmark-sites.js';
 import { EDE_BUILDING_BASES } from './ede-building-bases.js';
 
+// Match the exposed end walls while their streamed BAG tile is unavailable.
+const muralWallSeats = new Map([
+  ['w271377146', [-7.60, 37.05]], ['w272136058', [-8.32, 28.48]],
+  ['w272136478', [-8.32, 11.66]], ['w272136366', [-8.12, 11.64]],
+  ['w271548522', [-8.03, 11.20]], ['w271550192', [-7.48, 11.20]],
+  ['w271604288', [-1.25, 4.24]],
+]);
 const surveyedBuildingBases = new Map(EDE_BUILDING_BASES.map(({ osmId, y }) => [osmId, y]));
 
 // Building massing follows each block's lots and frontage frames. Footprints combine non-overlapping boxes.
@@ -2025,11 +2032,12 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
       if (LANDMARK_EXCLUSIONS.some(r => cx > r.minX && cx < r.maxX && cz > r.minZ && cz < r.maxZ)) continue;
       if (Math.abs(signedArea(poly)) < 7) continue;
       const coarseGround = terrainHeightAt(cx, cz);
-      const ground = surveyedBuildingBases.get(source.id) ?? coarseGround;
+      const seat = muralWallSeats.get(source.id);
+      const ground = seat?.[0] ?? surveyedBuildingBases.get(source.id) ?? coarseGround;
       const groundCorrection = ground - coarseGround;
       buildingGrounds.set(source, ground);
       const base = Math.max(0, source.minHeight || 0);
-      const height = Math.max(base + 0.15, source.h || (source.levels || 6) * 3.4);
+      const height = Math.max(base + 0.15, seat?.[1] || source.h || (source.levels || 6) * 3.4);
       const roofHeight = Math.max(0, Math.min(source.roofHeight || 0, height * 0.4));
       const pitched = roofHeight > 0.6 && poly.length === 4 && !holes.length && ['gabled', 'hipped', 'half-hipped', 'pyramidal'].includes(source.roofShape);
       const eave = pitched ? Math.max(base + 0.5, height - roofHeight) : height;
@@ -2059,9 +2067,11 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
           // courtyard normals point into the hole instead.
           const normalSign = ringIndex ? -direction : direction;
           const nx = dz / length * normalSign, nz = -dx / length * normalSign;
-          const road = !updated && ringIndex === 0 && length > 6 && base < 0.5 ? nearestEdeRoad(x + nx * 3, z + nz * 3, 35) : null;
+          // Tuin van veren is painted on the windowless south elevation.
+          const muralRear = source.id === 'w1361985664' && !ringIndex && nz > 0.9;
+          const road = !muralRear && !updated && ringIndex === 0 && length > 6 && base < 0.5 ? nearestEdeRoad(x + nx * 3, z + nz * 3, 35) : null;
           const shop = !updated && road && road.distance < road.width / 2 + 13 && !['church', 'cathedral', 'school', 'university', 'civic'].includes(source.kind);
-          const face = ringIndex ? WALL_KINDS.rear : shop ? WALL_KINDS.shop : WALL_KINDS.entry;
+          const face = muralRear ? WALL_KINDS.blankStone : ringIndex ? WALL_KINDS.rear : shop ? WALL_KINDS.shop : WALL_KINDS.entry;
           let wallBottom = ground + base;
           if (base === 0) {
             // Extend the bottom of the wall to close any gap on the low side of the footprint.
@@ -2109,7 +2119,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
               }
             }
           }
-          if (!bag && !modern && height > 7 && length > 1.5) {
+          if (!bag && !muralRear && !modern && height > 7 && length > 1.5) {
             detail.cornices.push({ x, z, y: ground + eave, w: length + 0.2, h: 0.44, d: 0.85, ry });
             if (height > 13) detail.cornices.push({ x, z, y: ground + 4.4, w: length + 0.12, h: 0.22, d: 0.62, ry });
           }
@@ -2777,6 +2787,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
     quadtree,
     allBlocks,
     replaceBuildings,
+    isFallbackVisible: id => !bag && !(replacements?.get(id)?.tiles > 0),
     update,
     updateLights
   };

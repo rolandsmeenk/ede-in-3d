@@ -8,6 +8,11 @@ const PALETTE = {
   tank: 0xb7b9b6, shed: 0x777f81, footing: 0x85847c, steel: 0x797f80, turbine: 0xe1e2de,
 };
 
+// The fitted Hall of Fame backing model includes these two retaining approaches.
+const REPLACED_WALLS = new Set([
+  'L0002.80e3a26ba49b4f55bcb97658316d4005', 'L0002.f11210899e044752ab4109bbccedc279',
+]);
+
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 export async function loadEdeBgt() {
@@ -238,6 +243,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
 
   for (const feature of structures) {
     const { kind, layer, ids, polygons } = feature;
+    if (ids.every(id => REPLACED_WALLS.has(id))) continue;
     const rings = polygons.map(polygon => polygon.map(edePoints));
     if (kind === 'pylon') {
       tower(feature, rings);

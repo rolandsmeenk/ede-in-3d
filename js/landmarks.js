@@ -13,6 +13,9 @@ import { createEdeStationLandmark } from './ede-station-landmark.js';
 import { createEnkaWesthal, createOudeKerk } from './ede-enka-kerk.js';
 import { createMauritskazerne, createVuurvogel } from './ede-heritage-landmarks.js';
 import { createEdeCentrumStation, createHuisKernhem } from './ede-historic-landmarks.js';
+import { createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
+import { createRiedelSilos, createKappaDocie } from './ede-riedel-silos.js';
+import { buildMuralWalls } from './ede-mural-surfaces.js';
 import { createRaadhuis, createCultura } from './ede-civic-landmarks.js';
 
 // The engine's hand-built New York monuments are removed. Legacy exports keep the upstream controllers working.
@@ -86,12 +89,20 @@ export function buildLandmarks(scene) {
     'de-vuurvogel': createVuurvogel,
     raadhuis: createRaadhuis,
     cultura: createCultura,
+    'riedel-silos': createRiedelSilos,
+    'kappa-docie': createKappaDocie,
+    stadspoort: createStadspoort,
+    'pathe-ede': createPatheEde,
   };
   for (const site of EDE_MODELED_LANDMARKS) {
     const footprints = modeledLandmarkFootprints(site);
     const model = models[site.id](footprints);
     model.name = site.name;
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
+  }
+  for (const model of buildMuralWalls()) {
+    group.add(model);
+    colliders.push(...model.userData.colliders);
   }
   const station = createEdeStationLandmark();
   group.add(station);

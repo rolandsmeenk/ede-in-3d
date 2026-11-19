@@ -2452,7 +2452,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       bus.busStopIndex = entry.stop;
       bus.busAtStop = null;
       bus.off = 0;
-      bus.variant = Number(run.variant.line) >= 100 ? 1 : 0;
+      // Line 303 is the mapped comfortRRReis service.
+      bus.comfortLivery = Number(run.variant.line) === 303 ? 1 : 0;
       bus.signRow = signVariants.get(run.variant.id);
       bus.liveCruise = run.live ? busTrackingSpeed(busRouteDistance(path, entry.leg, entry.at), run) : undefined;
       place(bus, road, lane, entry.at);
@@ -2662,7 +2663,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     busBodyInst.setMatrixAt(i, dummy.matrix);
     busHeaderInst.setMatrixAt(i, dummy.matrix);
     writeLampState(b, busStates.array, i * 4);
-    busStates.array[i * 4 + 3] = (b.variant ?? i) + 1;
+    busStates.array[i * 4 + 3] = b.comfortLivery;
     busSigns.array[i] = b.signRow;
 
     const dxCam = b.x - camX, dyCam = b.y - camY, dzCam = b.z - camZ;

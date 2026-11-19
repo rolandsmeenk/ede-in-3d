@@ -1,0 +1,423 @@
+[
+  {
+    "id": "astrant",
+    "name": "Astrant · Muzikanten",
+    "artist": "Studio Giftig",
+    "referenceDate": "2024-11 Studio Giftig portfolio upload; image capture date unlisted",
+    "sources": [
+      "https://studiogiftig.nl/portfolio_page/astrant-astrant-piemel-in-je-hand/",
+      "https://www.bezoek-ede.nl/locaties/4164762835/street-art-muzikanten"
+    ],
+    "surfaces": [
+      {
+        "anchor": "OSM w271551819 / west brick wing",
+        "texture": "centre/astrant.webp",
+        "corners": [
+          [
+            -186.40016844284577,
+            -1.28183330774,
+            84.95529116629656
+          ],
+          [
+            -181.47808343113547,
+            -1.28183330774,
+            93.41798454001021
+          ],
+          [
+            -181.47808343113547,
+            5.1781666922600005,
+            93.41798454001021
+          ],
+          [
+            -186.40016844284577,
+            5.1781666922600005,
+            84.95529116629656
+          ]
+        ],
+        "uv": [
+          0,
+          0,
+          0.496,
+          1
+        ]
+      },
+      {
+        "anchor": "OSM w271551819 / east brick wing",
+        "texture": "centre/astrant.webp",
+        "corners": [
+          [
+            -177.9757719478267,
+            -1.2218333077399999,
+            96.81812251866394
+          ],
+          [
+            -172.6916949842848,
+            -1.2218333077399999,
+            105.90319987900412
+          ],
+          [
+            -172.6916949842848,
+            3.8881666922600004,
+            105.90319987900412
+          ],
+          [
+            -177.9757719478267,
+            3.8881666922600004,
+            96.81812251866394
+          ]
+        ],
+        "uv": [
+          0.504,
+          0,
+          1,
+          1
+        ]
+      }
+    ],
+    "notes": "Standalone reconstruction from the studio photos. The existing glazing, entry steps, sign and collision geometry are separate.",
+    "verificationPositions": [
+      [
+        -197,
+        104
+      ],
+      [
+        -196,
+        126
+      ]
+    ],
+    "artwork": "Approved standalone generated reconstruction from the studio photos"
+  },
+  {
+    "id": "pegasus-flat",
+    "name": "Pegasus (Airborne) · Van Eekelenflat",
+    "artist": "Nina Valkhoff, assisted by SMOK",
+    "referenceDate": "2022 mural; Street Art Cities gallery published 2023-11-23",
+    "sources": [
+      "https://streetartcities.com/markers/8483d395-cd9c-4f84-b6f5-5c6f202067ad",
+      "https://www.woonstede.nl/nieuws/airborne-komt-tot-leven-op-de-van-eekelenflat/"
+    ],
+    "surfaces": [
+      {
+        "anchor": "OSM w271377198 / modeled south end wall",
+        "texture": "centre/pegasus.webp",
+        "corners": [
+          [
+            -1559.02372341257,
+            -5.5466751599999995,
+            2398.677369857739
+          ],
+          [
+            -1548.104767966228,
+            -5.5466751599999995,
+            2397.3445488041825
+          ],
+          [
+            -1548.104767966228,
+            27.45332484,
+            2397.3445488041825
+          ],
+          [
+            -1559.02372341257,
+            27.45332484,
+            2398.677369857739
+          ]
+        ]
+      }
+    ],
+    "notes": "Standalone reconstruction at the published 11 × 33 m dimensions on the existing model.",
+    "reach": 420,
+    "verificationPositions": [
+      [
+        -1531,
+        2431
+      ],
+      [
+        -1579,
+        2446
+      ]
+    ],
+    "artwork": "Approved standalone generated reconstruction based on the 2022 design and Street Art Cities photos"
+  },
+  {
+    "id": "guide-to-moorland",
+    "name": "Guide to Moorland · Gids naar de heide",
+    "artist": "Klaas Lageweg",
+    "referenceDate": "Bezoek Ede reference; capture date unlisted",
+    "sources": [
+      "https://www.bezoek-ede.nl/locaties/749768991/street-art-guide-to-moorland-gids-naar-de-heide"
+    ],
+    "surfaces": [
+      {
+        "anchor": "BAG 0228100000070566 / Marktsteeg long wall",
+        "texture": "centre/guide-to-moorland.webp",
+        "corners": [
+          [
+            -111.9023695862764,
+            -1.1,
+            71.60972940653399
+          ],
+          [
+            -119.06114958627639,
+            -1.1,
+            75.22348940653399
+          ],
+          [
+            -119.06114958627639,
+            2.74,
+            75.22348940653399
+          ],
+          [
+            -111.9023695862764,
+            2.74,
+            71.60972940653399
+          ]
+        ],
+        "fallbackCorners": [
+          [
+            -112.19996352834143,
+            -1.1,
+            71.56099801164211
+          ],
+          [
+            -119.46796352834143,
+            -1.1,
+            75.2041980116421
+          ],
+          [
+            -119.46796352834143,
+            2.74,
+            75.2041980116421
+          ],
+          [
+            -112.19996352834143,
+            2.74,
+            71.56099801164211
+          ]
+        ]
+      }
+    ],
+    "notes": "Paint-only extract from the public reference. Downpipes and the seam of the painted opening are masked out.",
+    "fallbackBuilding": "w271604288",
+    "verificationPositions": [
+      [
+        -121,
+        67.7
+      ],
+      [
+        -110,
+        68.1
+      ]
+    ],
+    "artwork": "Reference-photo paint extract with occlusions masked"
+  },
+  {
+    "id": "leeuwen",
+    "name": "Leeuwen · Marktstraat",
+    "artist": "Nina Paintina",
+    "referenceDate": "Bezoek Ede reference; capture date unlisted",
+    "sources": [
+      "https://www.bezoek-ede.nl/locaties/735925510/street-art-leeuwen"
+    ],
+    "surfaces": [
+      {
+        "anchor": "Marktstraat, De Wiek / utility cabinet panel 1",
+        "texture": "centre/leeuwen.webp",
+        "corners": [
+          [
+            -164.94713414991853,
+            -1.632,
+            -44.42812701579635
+          ],
+          [
+            -165.14509414991855,
+            -1.632,
+            -46.023567015796345
+          ],
+          [
+            -165.14509414991855,
+            0.6379999999999999,
+            -46.023567015796345
+          ],
+          [
+            -164.94713414991853,
+            0.6379999999999999,
+            -44.42812701579635
+          ]
+        ],
+        "uv": [
+          0.001,
+          0,
+          0.199,
+          1
+        ]
+      },
+      {
+        "anchor": "Marktstraat, De Wiek / utility cabinet panel 2",
+        "texture": "centre/leeuwen.webp",
+        "corners": [
+          [
+            -165.14913414991852,
+            -1.632,
+            -46.05612701579635
+          ],
+          [
+            -165.34709414991855,
+            -1.632,
+            -47.651567015796346
+          ],
+          [
+            -165.34709414991855,
+            0.6379999999999999,
+            -47.651567015796346
+          ],
+          [
+            -165.14913414991852,
+            0.6379999999999999,
+            -46.05612701579635
+          ]
+        ],
+        "uv": [
+          0.201,
+          0,
+          0.399,
+          1
+        ]
+      },
+      {
+        "anchor": "Marktstraat, De Wiek / utility cabinet panel 3",
+        "texture": "centre/leeuwen.webp",
+        "corners": [
+          [
+            -165.35113414991852,
+            -1.632,
+            -47.68412701579635
+          ],
+          [
+            -165.54909414991855,
+            -1.632,
+            -49.279567015796346
+          ],
+          [
+            -165.54909414991855,
+            0.6379999999999999,
+            -49.279567015796346
+          ],
+          [
+            -165.35113414991852,
+            0.6379999999999999,
+            -47.68412701579635
+          ]
+        ],
+        "uv": [
+          0.401,
+          0,
+          0.599,
+          1
+        ]
+      },
+      {
+        "anchor": "Marktstraat, De Wiek / utility cabinet panel 4",
+        "texture": "centre/leeuwen.webp",
+        "corners": [
+          [
+            -165.55313414991852,
+            -1.632,
+            -49.31212701579635
+          ],
+          [
+            -165.75109414991854,
+            -1.632,
+            -50.907567015796346
+          ],
+          [
+            -165.75109414991854,
+            0.6379999999999999,
+            -50.907567015796346
+          ],
+          [
+            -165.55313414991852,
+            0.6379999999999999,
+            -49.31212701579635
+          ]
+        ],
+        "uv": [
+          0.601,
+          0,
+          0.799,
+          1
+        ]
+      },
+      {
+        "anchor": "Marktstraat, De Wiek / utility cabinet panel 5",
+        "texture": "centre/leeuwen.webp",
+        "corners": [
+          [
+            -165.75513414991852,
+            -1.632,
+            -50.94012701579635
+          ],
+          [
+            -165.95309414991854,
+            -1.632,
+            -52.535567015796346
+          ],
+          [
+            -165.95309414991854,
+            0.6379999999999999,
+            -52.535567015796346
+          ],
+          [
+            -165.75513414991852,
+            0.6379999999999999,
+            -50.94012701579635
+          ]
+        ],
+        "uv": [
+          0.801,
+          0,
+          0.999,
+          1
+        ]
+      }
+    ],
+    "notes": "Paint-only extract from the photographed cabinet. Its handles and panel seams are masked out. The precise height and reference capture date are unavailable.",
+    "walls": [
+      {
+        "anchor": "Marktstraat / utility cabinet",
+        "corners": [
+          [
+            -164.96,
+            -1.722,
+            -44.41
+          ],
+          [
+            -165.97,
+            -1.722,
+            -52.55
+          ],
+          [
+            -165.97,
+            0.718,
+            -52.55
+          ],
+          [
+            -164.96,
+            0.718,
+            -44.41
+          ]
+        ]
+      }
+    ],
+    "verificationPositions": [
+      [
+        -158,
+        -49
+      ],
+      [
+        -157,
+        -40
+      ]
+    ],
+    "artwork": "Reference-photo paint extract with occlusions masked"
+  }
+]

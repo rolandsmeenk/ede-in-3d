@@ -21,6 +21,7 @@ Most map layers are built offline and bundled with the game. Nearby 3DBAG tiles 
 | Base map and routing | Street and path connections, parks, waterways, tracks and fallback building footprints | [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) |
 | Terrain and surface colours | Ground elevations, local height checks and colour samples for roofs, roads and land cover | [AHN via PDOK](https://www.ahn.nl/dataroom) · [2025 aerial imagery via PDOK](https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566) |
 | Buildings and façades | LoD 2.2 building shapes, offline façade measurements and neighbourhood profiles | [3DBAG](https://docs.3dbag.nl/en/) · [Mapillary evidence credits](assets/ede-facades.SOURCES.md) · [CBS neighbourhood boundaries](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025) |
+| Street art | Wall assignments, real-reference paint decals and two approved painted reconstructions | [Mural sources and wall assignments](tools/data/ede-murals.md) |
 | Streets and greenery | Surveyed road surfaces, bridges, platforms, shorelines, street furniture, lamps and trees | [PDOK BGT](https://www.pdok.nl/introductie/-/article/basisregistratie-grootschalige-topografie-bgt-) · [Municipal tree inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) |
 | Motorways and traffic rules | Road sections, lane counts, infrastructure, access restrictions, signs, speed bumps and crossings | [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer) · [NWB and WEGGEG](tools/data/ede-motorway-lanes.sources.md) · [NDW and WKD](tools/data/ede-traffic-sources.md) · [NBd direction signs](https://downloads.rijkswaterstaatdata.nl/bewegwijzering/) |
 | Rail and buses | Rail alignment checks, local timetables, boarding points and live service updates | [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer) · [OVapi](https://gtfs.ovapi.nl/nl/) · [NDOV](https://govi.nu/realtime.html) · [RRReis Ede](https://www.rrreis.nl/reisinformatie/haltes-dienstverlening/dienstregeling-bus/regio-ede) |
@@ -44,7 +45,15 @@ The **Teleport** menu includes Astrant, the Van Eekelenflat, Plantion, the Johan
 
 The historic exterior models include ENKA Westhal and Poortgebouw, Mauritskazerne, Oude Kerk, the old Ede Centrum station, Huis Kernhem and its coach house, De Vuurvogel, Raadhuis Ede and Cultura. See the [exterior references and fitted details](tools/data/ede-landmark-exteriors.md).
 
-Astrant’s yellow-and-charcoal music artwork and the Van Eekelenflat’s winged horse and parachutes are original, generated game illustrations. The real murals are [Muzikanten by Studio Giftig](https://www.bezoek-ede.nl/locaties/4164762835/street-art-muzikanten) and [Pegasus by Nina Valkhoff with SMOK](https://www.woonstede.nl/nieuws/airborne-komt-tot-leven-op-de-van-eekelenflat/).
+Stadspoort and Pathé Ede have custom exteriors based on surveyed building shapes and public exterior references. Use the Teleport menu to visit the shopping-centre entrance, cinema, Riedel silos, or Kappa Docie. Stadspoort’s upper walking passage and the lower roads and paths use their fitted grade profiles.
+
+Street art streams near the camera as separate paint decals. Most decals use painted portions of real reference photos. Astrant and the Van Eekelenflat use approved reconstructions of Studio Giftig’s *Muzikanten* and Nina Valkhoff’s *Pegasus (Airborne)*. The buildings and tunnel walls use procedural materials and modeled geometry. See the [mural catalogue, sources and coverage](tools/data/ede-murals.md).
+
+After updating the offline wall assignments or WebP assets, run:
+
+```sh
+node tools/build-ede-murals.mjs
+```
 
 ## Graphics and profiling
 
@@ -52,7 +61,7 @@ The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and 
 
 Append `?perf=1` to collect a rolling frame history. Open the browser console and run `await __slopwaw.perf.report()` for median and p95 frame time, subsystem CPU time, and render pass statistics. Pass `{frames: true}` for individual samples. GPU times are available on WebGPU devices with timestamp queries. `__slopwaw.perf.reset()` starts a fresh sample.
 
-In profiling mode, append any of `shadows`, `ssr`, `bloom`, `msaa`, `buildingDetail`, `vegetation`, `trafficDraw` and `trafficUpdates` with `=on` or `=off` to override one setting. `scale=0.75` tests a lower internal resolution, and `bag=eager` restores the original all-tiles startup path for comparison. You can freeze existing traffic with `__slopwaw.perf.setTrafficUpdates(false)` and independently hide it with `__slopwaw.perf.setTrafficDraw(false)`.
+In profiling mode, append any of `shadows`, `ssr`, `bloom`, `msaa`, `buildingDetail`, `vegetation`, `murals`, `trafficDraw` and `trafficUpdates` with `=on` or `=off` to override one setting. `scale=0.75` tests a lower internal resolution, and `bag=eager` restores the original all-tiles startup path for comparison. You can freeze existing traffic with `__slopwaw.perf.setTrafficUpdates(false)` and independently hide it with `__slopwaw.perf.setTrafficDraw(false)`.
 
 On the test device, serve the game locally and start a separate Chrome profile with `--remote-debugging-port=9297`. The script replays the station, Kuiperplein, Kolkakkerweg, helicopter and camera-jump views at 1600 × 900. Use the offline server to fix external traffic, weather and parking observations. The public 3DBAG tiles remain enabled. The script fixes the random seed, simulation timestep and service clock. It reports network bytes from DevTools and sampled V8 heap plus backing storage. Browser/GPU process memory is a separate metric.
 

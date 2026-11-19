@@ -18,15 +18,14 @@ import {
   step,
   smoothstep,
   length,
-  fwidth,
-  instanceIndex
+  fwidth
 } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LoftGeometry } from 'three/addons/geometries/LoftGeometry.js';
 import { part, mirrorSection, roundedBox } from './vehicles.js';
 import { CAR_PARTS, buildBodyLoft, carBodyHalfWidthAt } from './cars.js';
 
-// A 40-ft low-floor MTA bus lofted with the car body machinery: rounded plan-view corners, a raked windshield, a
+// A 40-ft low-floor bus lofted with the car body machinery: rounded plan-view corners, a raked windshield, a
 // tight roof radius and arches over the wheels; bumpers, the folded front bike rack, stalk mirrors and the roof AC &
 // battery pods are separate pieces of the same mesh (partId). Windows, doors, livery & lamps are painted by
 // createLoftedBusMaterial(); destination signs are textured panels (buildBusSignGeometry).
@@ -301,18 +300,7 @@ function createBusWheelMaterial() {
 
 let _busLoftedMat = null;
 
-/**
- * Creates the TSL procedural material for MTA New Flyer Xcelsior XD40/XE40 buses:
- * - Black wraparound front windshield & destination-sign mask with 5 amber roof brow marker LEDs, wipers & MTA badge
- * - Swept Xcelsior LED projector headlamp clusters, front/rear NY plates, 4-lamp vertical circular rear LED columns,
- *   stamped upper-rear air intake louvers & rear ad frame
- * - Framed side window band with upper transom bar, interior passenger seats, yellow vertical grab stanchions & ceiling
- *   lighting (illuminated at night), plus glazed dual-leaf curb-side front & rear doors
- * - Per-instance livery variety (zero extra draw calls via `busState.w` or `instanceIndex`):
- *   0/default: Current MTA NYC Transit Blue/Gold livery (deep royal blue, yellow-gold rear cap, gold/cyan upper swoop & speed lines)
- *   1: MTA +Select Bus Service+ (SBS) livery (vivid turquoise/cyan lower body & front fascia, royal blue upper, gold swoop)
- *   2: Classic MTA White & Blue Stripe livery (pearl white body, vivid blue belt stripe & cyan ribbon)
- */
+// Shared bus material. The fourth instance channel selects regular or comfortRRReis paint.
 function createLoftedBusMaterial() {
   if (_busLoftedMat) return _busLoftedMat;
   const s = BUS_SPEC;
@@ -372,26 +360,14 @@ function createLoftedBusMaterial() {
     };
   };
 
-  // Decode per-instance variant once in the vertex stage: state.w - 1 when provided by traffic.js (> 0.5), else instanceIndex
-  const rawIdx = mix(float(instanceIndex), max(float(0.0), state.w.sub(1.0)), step(0.5, state.w));
-  const slot4 = fract(rawIdx.mul(0.25)).mul(4.0);
-  const vVariant = varying(
-    vertexStage(
-      vec2(
-        step(0.5, slot4).mul(step(slot4, 1.5)), // x = isSBS (slot 1, 25%)
-        step(2.5, slot4) // y = isLegacy (slot 3, 25%); slots 0 & 2 (50%) = Current MTA Blue/Gold
-      )
-    )
-  );
-  const isSBS = vVariant.x;
-  const isLegacy = vVariant.y;
+  const isComfort = varying(vertexStage(state.w));
 
   const front = smoothstep(0.15, 0.42, n.z).mul(smoothstep(s.zFront - 0.98, s.zFront - 0.9, p.z)).mul(isBody);
   const rear = smoothstep(0.15, 0.42, n.z.negate()).mul(smoothstep(s.zRear + 0.98, s.zRear + 0.9, p.z)).mul(isBody);
   const side = smoothstep(0.45, 0.72, abs(n.x)).mul(isSkin);
   const curb = step(p.x, 0.0);
 
-  // 1. Front mask: unified black Xcelsior windshield + destination sign surround, split windshield glass & wipers
+  // 1. Wraparound windshield, destination sign surround and wipers
   const frontMaskEdge = rBoxEdge(p.x, p.y.sub(1.97), 1.22, 0.8, 0.15, invX, invY);
   const frontMask = cov(frontMaskEdge.d, frontMaskEdge.inv).mul(front);
   const frontGlassOuter = boxMask(p.x, p.y.sub(1.8), 1.15, 0.56, invX, invY).mul(frontMask);
@@ -410,8 +386,7 @@ function createLoftedBusMaterial() {
     covAt(0.025, length(vec2(ax.sub(0.98).mul(0.65), p.y.sub(2.79).mul(1.4))), invXY)
   ).mul(front);
 
-  // 2. Xcelsior Rear Face: solid engine/cooling hood, upper-left (+x) 2x3 air louvers, upper-right (-x) route sign bezel,
-  // 3 centered red ID lamps, transit ad frame, engine door seam & 4-lamp circular corner stacks
+  // 2. Rear cooling hood with louvers, route sign and lamps
   const rearSignBox = boxMask(p.x.add(0.45), p.y.sub(2.58), 0.31, 0.14, invX, invY).mul(rear);
   const rearLouverArea = boxMask(p.x.sub(0.42), p.y.sub(2.58), 0.44, 0.14, invX, invY)
     .mul(covUp(0.024, abs(p.x.sub(0.42)), invX))
@@ -425,9 +400,6 @@ function createLoftedBusMaterial() {
     covAt(0.02, length(vec2(min(ax, abs(ax.sub(0.14))).mul(0.7), p.y.sub(2.79).mul(1.4))), invXY),
     covAt(0.023, length(vec2(ax.sub(0.96).mul(0.65), p.y.sub(2.74).mul(1.4))), invXY)
   ).mul(rear);
-  const rearAd = boxEdge(p.x, p.y.sub(1.82), 0.63, 0.21, invX, invY);
-  const rearAdInner = cov(rearAd.d, rearAd.inv).mul(rear);
-  const rearAdFrame = covAt(0.03, rearAd.d, rearAd.inv).mul(rear);
   const rearSeam = max(
     band(p.y.sub(1.42), 0.008, invY).mul(smoothstep(0.95, 0.93, ax)),
     band(ax.sub(0.92), 0.008, invX).mul(smoothstep(0.58, 0.62, p.y)).mul(smoothstep(2.77, 2.73, p.y))
@@ -485,78 +457,36 @@ function createLoftedBusMaterial() {
     .mul(covUp(0.35, p.y, invY))
     .mul(side);
 
-  // 4. Three Authentic MTA Liveries (Current Blue/Gold, Select Bus Service Cyan/Blue, Legacy White/Blue)
-  const shadeY = smoothstep(0.34, 1.25, p.y).mul(0.16).add(0.84);
-  const mtaRoyalBlue = color(0x16358a);
-  const mtaSkyBlue = color(0x1a88e0);
-  const sbsCyan = color(0x1fb8d0);
-  const mtaGold = color(0xf0b21a);
-  const mtaWhite = color(0xedf1f6);
+  // 4. RRReis white fleet paint and the larger comfortRRReis gradient panels.
+  const white = color(0xf5f5f4);
+  const violet = color(0x4f287b);
+  const blue = color(0x0086d6);
+  const green = color(0x00965e);
 
-  // Upper-front gold & sky-blue swoop arc (from z = 0.8..4.55 above the windows); filtered across its slope
-  const uArc = p.z.sub(2.65).div(1.95);
-  const arcTopY = float(2.86).sub(uArc.mul(uArc).mul(0.38));
-  const invArc = float(1.0).div(fwY.add(abs(uArc).mul(0.39).mul(fwZ)));
-  const inUpperArcZ = smoothstep(0.65, 0.85, p.z).mul(smoothstep(4.65, 4.45, p.z)).mul(covUp(2.42, p.y, invY)).mul(side);
-  const upperGoldArc = band(p.y.sub(arcTopY).add(0.0375), 0.0375, invArc).mul(inUpperArcZ);
-  const upperSkyFill = covAt(-0.075, p.y.sub(arcTopY), invArc).mul(inUpperArcZ);
+  const dot = (z, y, radius) => covAt(radius, length(vec2(p.z.sub(z), p.y.sub(y))), invZY);
+  const stripeY = p.y.sub(p.z.add(5.05).mul(0.11).add(0.83));
+  const stripeInv = float(1.0).div(fwY.add(fwZ.mul(0.11)));
+  const link = band(stripeY, 0.045, stripeInv)
+    .mul(covUp(-5.05, p.z, invZ)).mul(covAt(-2.64, p.z, invZ));
+  const rearDots = mix(violet, blue, smoothstep(-4.8, -4.25, p.z));
+  const accent = mix(rearDots, green, smoothstep(-3.6, -2.95, p.z));
+  const rearMarks = max(link, max(dot(-5.05, 0.83, 0.28),
+    max(dot(-4.04, 0.96, 0.22), dot(-2.64, 1.095, 0.27))));
+  const regular = mix(mix(white, accent, rearMarks.mul(side)), blue, dot(2.35, 0.96, 0.13).mul(side));
 
-  // Lower-mid gold & sky-blue diagonal ribbon (rising cleanly between the rear door z = -1.02 and front speed lines z = 0.8)
-  const diagY = p.y.sub(p.z.add(0.9).mul(0.28));
-  const invDiag = float(1.0).div(fwY.add(fwZ.mul(0.28)));
-  const inMidDiag = smoothstep(0.38, 0.42, p.y)
-    .mul(smoothstep(1.22, 1.18, p.y))
-    .mul(smoothstep(-1.06, -1.02, p.z))
-    .mul(side)
-    .mul(one.sub(doorFrame));
-  const midGoldBand = band(diagY.sub(0.8), 0.11, invDiag).mul(inMidDiag);
-  const midSkyBand = band(diagY.sub(0.6), 0.09, invDiag).mul(inMidDiag);
-
-  // Front lower speed-line stripes (sky blue) & rear corner speed-line stripes (gold) — faded to average once the
-  // footprint across the stripes (mostly vertical) exceeds them
-  const frontWave = smoothstep(0.36, 0.56, fract(p.y.add(float(5.5).sub(p.z).mul(0.11)).mul(13.0)));
-  const frontSpeedLines = mix(float(0.55), frontWave, detailFade(fwY.add(fwZ.mul(0.11))))
-    .mul(smoothstep(0.8, 2.4, p.z))
-    .mul(smoothstep(5.55, 5.35, p.z))
-    .mul(smoothstep(0.4, 0.43, p.y))
-    .mul(smoothstep(1.2, 1.16, p.y))
-    .mul(side)
-    .mul(one.sub(isSBS));
-  const rearWave = smoothstep(0.38, 0.58, fract(p.y.sub(p.z.sub(s.zRear).mul(0.26)).mul(10.5)));
-  const rearSpeedLines = mix(float(0.52), rearWave, detailFade(fwY.add(fwZ.mul(0.26))))
-    .mul(smoothstep(-3.3, -4.3, p.z))
-    .mul(smoothstep(0.4, 0.43, p.y))
-    .mul(smoothstep(2.4, 2.2, p.y))
-    .mul(side);
-
-  // Assemble Current (2016+) & SBS livery
-  const lowerBelt = covAt(1.2, p.y, invY).mul(max(side, front));
-  let modernLivery = mix(mtaRoyalBlue, sbsCyan, isSBS.mul(lowerBelt));
-  modernLivery = mix(modernLivery, mix(mtaSkyBlue, sbsCyan, isSBS), max(upperSkyFill, max(midSkyBand, frontSpeedLines)));
-  modernLivery = mix(modernLivery, mtaGold, max(max(upperGoldArc, midGoldBand), rearSpeedLines));
-  modernLivery = mix(modernLivery, color(0xeaa818), rear);
-
-  // Assemble Classic / Legacy White & Blue Stripe livery
-  const blueStripe = band(p.y.sub(1.04), 0.145, invY);
-  const cyanRibbon = band(p.y.sub(0.8325), 0.0125, invY);
-  const legacyLivery = mix(mix(mtaWhite, color(0x0055b3), blueStripe), color(0x00a4e4), cyanRibbon);
+  const comfortProgress = float(2.0).sub(p.z).add(float(1.55).sub(p.y).mul(0.7)).div(8.3);
+  const comfortColor = mix(mix(violet, blue, smoothstep(0.18, 0.58, comfortProgress)),
+    green, smoothstep(0.58, 0.88, comfortProgress));
+  const sidePanel = rBoxEdge(p.z.add(2.15), p.y.sub(1.57), 3.92, 1.02, 0.46, invZ, invY);
+  const rearPanel = rBoxEdge(p.x, p.y.sub(1.42), 1.27, 0.93, 0.23, invX, invY);
+  const panels = max(cov(sidePanel.d, sidePanel.inv).mul(side), cov(rearPanel.d, rearPanel.inv).mul(rear));
+  const comfort = mix(white, comfortColor, panels);
 
   const skirt = covAt(0.415, p.y, invY);
-  const livery = mix(mix(modernLivery, legacyLivery, isLegacy), color(0x181c22), skirt).mul(shadeY);
+  const shadeY = smoothstep(0.34, 1.25, p.y).mul(0.16).add(0.84);
+  const livery = mix(mix(regular, comfort, isComfort), color(0x181c22), skirt).mul(shadeY);
 
-  // Front MTA circular badge, SBS front lettering band, wheelchair icon & front/rear NY license plates
-  const dMta = length(vec2(p.x, p.y.sub(0.95)));
-  const mtaOuter = covAt(0.102, dMta, invXY).mul(front);
-  const mtaBlueCut = smoothstep(-0.015, -0.035, p.x.add(p.y.sub(0.95).mul(0.22))).add(
-    mix(float(0.48), smoothstep(0.42, 0.62, fract(p.x.add(p.y.mul(0.25)).mul(16.0))), fineFade(fwX))
-      .mul(band(p.y.sub(0.95), 0.042, invY))
-      .mul(smoothstep(-0.03, -0.01, p.x))
-  );
-  const mtaDisc = mtaOuter.mul(one.sub(clamp(mtaBlueCut, 0.0, 1.0).mul(0.88)));
-  const sbsFrontBand = boxMask(p.x, p.y.sub(0.78), 0.48, 0.032, invX, invY)
-    .mul(mix(float(0.65), smoothstep(0.28, 0.45, fract(p.x.mul(14.0))), fineFade(fwX)))
-    .mul(front)
-    .mul(isSBS);
+  // Accessibility sticker and reflective yellow plates.
   const wheelchairBadge = boxMask(p.z.sub(5.52), p.y.sub(0.98), 0.065, 0.075, invZ, invY).mul(doorSide);
   const frontPlate = boxMask(p.x.sub(0.88), p.y.sub(1.02), 0.14, 0.065, invX, invY).mul(front);
   const rearPlateEdge = boxEdge(p.x, p.y.sub(0.76), 0.155, 0.07, invX, invY);
@@ -565,7 +495,6 @@ function createLoftedBusMaterial() {
   const plate = max(frontPlate, rearPlate);
   const plateText = mix(float(0.55), smoothstep(0.35, 0.55, fract(p.x.mul(22.0))), fineFade(fwX))
     .mul(max(band(p.y.sub(0.76), 0.035, invY), band(p.y.sub(1.02), 0.03, invY)));
-  const rearBumperStickers = boxMask(ax.sub(0.61), p.y.sub(0.68), 0.19, 0.055, invX, invY).mul(rear);
 
   // 5. Lamps: swept Xcelsior wedge headlamps (folded pair) + lower amber turn; 4-lamp vertical circular rear stack (folded)
   const lampTiltY = p.y.sub(float(0.74).add(ax.sub(0.76).mul(0.14)));
@@ -601,11 +530,7 @@ function createLoftedBusMaterial() {
   let body = mix(livery, color(0x12161b), max(seal, max(archFlareMask, max(rearSeam, rearPlateRecess))));
   body = mix(body, color(0x181c22).mul(slats), sideRearGrille);
   body = mix(body, color(0x282418).mul(rearUpperSlats), rearLouverArea);
-  body = mix(body, color(0x1c222b), rearAdFrame);
-  body = mix(body, color(0x162e48), rearAdInner);
-  body = mix(body, color(0xf2f6fa), max(mtaDisc, sbsFrontBand));
   body = mix(body, color(0x1258b8), wheelchairBadge);
-  body = mix(body, color(0x143884), rearBumperStickers);
   body = mix(body, color(0x12151a), max(pod, rearBezel));
   body = mix(body, color(0xf2f8ff), max(headLamp, drlStrip));
   body = mix(body, color(0xff9d14), max(turnFront, max(browMarker, sideMarkers)));

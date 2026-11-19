@@ -6,6 +6,7 @@ import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
 import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
 import { buildLandmarks } from './landmarks.js';
+import { createEdeMurals } from './ede-murals.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildStreetDetails } from './street-details.js';
@@ -220,6 +221,7 @@ async function initApp() {
   }
   await showLoadingStage('Generating building facades...');
   const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag });
+  const murals = createEdeMurals(scene, { enabled: enabled('murals'), isFallbackVisible: cityBlocks.isFallbackVisible });
   if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks });
   markInit('blocks');
   const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
@@ -961,9 +963,10 @@ async function initApp() {
     profiler?.stage('Ambient highways');
     if (warmedUp) {
       bagBuildings?.userData.update?.(cameraSystem.camera);
+      murals.update(cameraSystem.camera.position, now);
     }
     cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
-    profiler?.stage('Buildings and façades');
+    profiler?.stage('Buildings, façades and murals');
     if (graphics.vegetation) streetDetails.treeField.update(cameraSystem.camera.position);
     profiler?.stage('Vegetation');
     if (!document.hidden && now >= nextPlayerSave) {
@@ -1028,8 +1031,9 @@ async function initApp() {
             setTrafficUpdates(enabled) { trafficUpdates = Boolean(enabled); },
             setTrafficDraw,
             setBuildingDetail: bagBuildings?.userData.setEnabled,
+            setMurals: murals.setEnabled,
           },
-          get weather() { return liveWeather.state; }, streetFeatures, importedDetail,
+          get weather() { return liveWeather.state; }, streetFeatures, importedDetail, murals: murals.statistics,
           teleport(key) { const l = TELEPORT_LOCATIONS[key]; return teleportTo(l.x, l.z, l.heading); },
           teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },
           mode(m) { selectMode(m); },

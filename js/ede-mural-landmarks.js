@@ -38,32 +38,6 @@ function buildingBatch() {
   };
 }
 
-function mural(url, background, panels) {
-  const planes = panels.map(({ left, right, low, high, z, u0 = 0, u1 = 1 }) => {
-    const plane = new THREE.PlaneGeometry(right - left, high - low)
-      .translate((left + right) / 2, (low + high) / 2, z);
-    const uv = plane.getAttribute('uv');
-    for (let i = 0; i < uv.count; i++) uv.setX(i, THREE.MathUtils.lerp(u0, u1, uv.getX(i)));
-    return plane;
-  });
-  const geometry = mergeGeometries(planes);
-  for (const plane of planes) plane.dispose();
-  const material = new THREE.MeshStandardMaterial({ color: background, roughness: 0.94 });
-  const paint = new THREE.Mesh(geometry, material);
-  paint.name = 'Painted facade';
-  paint.receiveShadow = true;
-  paint.onBeforeRender = () => {
-    delete paint.onBeforeRender;
-    new THREE.TextureLoader().load(url.href, map => {
-      map.colorSpace = THREE.SRGBColorSpace;
-      material.map = map;
-      material.color.set(0xffffff);
-      material.needsUpdate = true;
-    });
-  };
-  return paint;
-}
-
 function astrantSign() {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -110,10 +84,7 @@ export function createAstrant() {
   const sign = astrantSign();
   sign.position.set(4.69, 4.32, 4.693);
   sign.receiveShadow = true;
-  group.add(batch.mesh(), mural(new URL('../assets/ede-astrant-mural.webp', import.meta.url), charcoal, [
-    { left: -11.98, right: -2.19, low: 0.57, high: 7.03, z: 5.989, u0: 0, u1: 0.43 },
-    { left: 2.51, right: 13.02, low: 0.63, high: 5.74, z: 4.671, u0: 0.50, u1: 1 },
-  ]), sign);
+  group.add(batch.mesh(), sign);
   return group;
 }
 
@@ -149,8 +120,6 @@ export function createPegasusFlat() {
     batch.facade(13.34, 2.75 + floor * 2.87, -14.2, 3.1, 1.69, 1, glass[(floor + 1) % glass.length]);
   }
 
-  group.add(batch.mesh(), mural(new URL('../assets/ede-pegasus-mural.webp', import.meta.url), 0x79a6c0, [
-    { left: -5.50, right: 5.50, low: 3.40, high: 36.40, z: 52.125 },
-  ]));
+  group.add(batch.mesh());
   return group;
 }

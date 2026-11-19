@@ -37,6 +37,15 @@ export const EDE_MODELED_LANDMARKS = [
     osmId: 'w271602720', bagIds: ['0228100000035709'], x: 249.54687, z: 38.12693, height: 29.55, worldSpace: true },
   { id: 'cultura', name: 'Cultura', district: 'Centrum', road: 'Molenstraat',
     osmId: 'w271549982', bagIds: ['0228100000002319'], x: -292.57691, z: -62.17194, height: 13, worldSpace: true },
+  { id: 'riedel-silos', name: 'Riedel-silo’s', district: 'Frankeneng', road: 'Frankeneng',
+    osmId: 'w271378505', bagIds: ['0228100000068828'], x: -1590.4, z: 1584.7, height: 18.7, worldSpace: true },
+  { id: 'kappa-docie', name: 'Kappa Docie', district: 'Stationsgebied', road: 'Stationsweg',
+    osmId: 'w271512171', bagIds: ['0228100000069623'], x: 45.9, z: 1940, height: 3.74, worldSpace: true },
+  { id: 'stadspoort', name: 'Winkelcentrum Stadspoort', district: 'Rietkampen', road: 'Doctor Willem Dreeslaan',
+    osmId: 'w271376070', bagIds: ['0228100000029361'], x: -1470.2, z: 3130.6, height: 15.3, worldSpace: true },
+  { id: 'pathe-ede', name: 'Pathé Ede', district: 'Rietkampen', road: 'Laan der Verenigde Naties',
+    osmId: 'w56105004', bagIds: ['0228100000046614'], x: -1590, z: 3369, height: 16.8, worldSpace: true },
+
 ];
 
 // The mill tower is mapped as a part of the adjacent building in the OSM fallback.

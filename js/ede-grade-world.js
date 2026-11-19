@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { buildingPassageSideSpans, getEdeGrade, getEdeBuildingPassages, getRailCorridors, gradeDeckAt, gradeSections, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleGroundColor } from './aerial-colors.js';
+import { addAsphaltLanes } from './ede-asphalt-lanes.js';
 import { EDE_PAVING_STYLE, gradePavement, osmRoadMaterial } from './ede-road-surfaces.js';
 import { createEdePavingMaterial, createRoadSurfaceMaterial } from './tsl-materials.js';
 
@@ -20,7 +21,7 @@ export function buildEdeGradeWorld(scene) {
   const road = material(0xffffff, { vertexColors: true });
   const bike = material(0xffffff, { vertexColors: true });
   const foot = material(0xffffff, { vertexColors: true });
-  const mappedAsphalt = createRoadSurfaceMaterial(true, true);
+  const mappedAsphalt = createRoadSurfaceMaterial(true, true, true);
   const mappedPaving = createEdePavingMaterial(true, true);
   mappedAsphalt.side = mappedPaving.side = THREE.DoubleSide;
   mappedAsphalt.name = 'Ede fitted asphalt';
@@ -32,14 +33,14 @@ export function buildEdeGradeWorld(scene) {
   const cycleTint = new THREE.Color(0x8f534c);
   const footTint = new THREE.Color(0x8a8680);
 
-  function batch(mat, x, z) {
-    const key = `${mat.id}/${Math.floor(x / CELL)}/${Math.floor(z / CELL)}`;
-    if (!batches.has(key)) batches.set(key, { mat, positions: [], colors: [], exposure: [], uv: [], styles: [] });
+  function batch(mat, x, z, trackLayer) {
+    const key = `${mat.id}/${Math.floor(x / CELL)}/${Math.floor(z / CELL)}/${trackLayer ?? ''}`;
+    if (!batches.has(key)) batches.set(key, { mat, trackLayer, positions: [], colors: [], exposure: [], uv: [], styles: [] });
     return batches.get(key);
   }
 
-  function quad(mat, vertices, tint, exposed = false, paving) {
-    const { positions, colors, exposure, uv, styles } = batch(mat, vertices[0].x, vertices[0].z);
+  function quad(mat, vertices, tint, exposed = false, paving, trackLayer) {
+    const { positions, colors, exposure, uv, styles } = batch(mat, vertices[0].x, vertices[0].z, trackLayer);
     const sample = [0, 0, 0];
     const cs = Math.cos(paving?.angle ?? 0), sn = Math.sin(paving?.angle ?? 0);
     for (const i of [0, 1, 2, 0, 2, 3]) {
@@ -60,10 +61,10 @@ export function buildEdeGradeWorld(scene) {
   }
 
   const height = (p, y) => ({ x: p.x, z: p.z, y });
-  function strip(section, material, offset, tint, exposed, paving) {
+  function strip(section, material, offset, tint, exposed, paving, trackLayer) {
     const { a, b } = section;
     const points = [a.left, a.right, b.right, b.left].map(p => height(p, p.y + offset));
-    quad(material, points, tint, exposed, paving);
+    quad(material, points, tint, exposed, paving, trackLayer);
   }
 
   function lineCollider(a, b, minY, maxY, halfWidth = 0.16) {
@@ -208,7 +209,9 @@ export function buildEdeGradeWorld(scene) {
           ? { material: levelMaterial, angle: Math.atan2(b.z - a.z, b.x - a.x) }
           : gradeLayer && gradePavement(section, gradeLayer, motor ? 'motor' : cycling ? 'cycle' : 'foot');
         if (paving) {
-          strip(section, paving.material === 'asphalt' ? mappedAsphalt : mappedPaving, 0.055, tint, !section.covered, paving);
+          const asphalt = paving.material === 'asphalt';
+          strip(section, asphalt ? mappedAsphalt : mappedPaving, 0.055, tint, !section.covered, paving,
+            asphalt && motor ? gradeLayer : undefined);
           mappedGradeSections++;
           gradeMaterials[paving.material] = (gradeMaterials[paving.material] ?? 0) + 1;
         } else {
@@ -228,7 +231,7 @@ export function buildEdeGradeWorld(scene) {
     }
   }
   const pipelines = new Map();
-  for (const { mat, positions, colors, exposure, uv, styles } of batches.values()) {
+  for (const { mat, positions, colors, exposure, uv, styles, trackLayer } of batches.values()) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     if (colors.length) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, exposure.length ? 4 : 3));
@@ -238,6 +241,7 @@ export function buildEdeGradeWorld(scene) {
       geometry.setAttribute('pavingStyle', new THREE.Float32BufferAttribute(styles, 1));
     }
     geometry.computeVertexNormals();
+    if (mat === mappedAsphalt) addAsphaltLanes(geometry, undefined, trackLayer);
     const mesh = new THREE.Mesh(geometry, mat);
     mesh.receiveShadow = true;
     mesh.castShadow = mat === bank || mat === roof;

@@ -496,7 +496,7 @@ const CULTURA = [
   ],
 ];
 
-function polygonNormal(points) {
+export function polygonNormal(points) {
   const normal = new THREE.Vector3();
   for (let i = 0; i < points.length; i++) {
     const [ax, ay, az] = points[i], [bx, by, bz] = points[(i + 1) % points.length];
@@ -507,7 +507,7 @@ function polygonNormal(points) {
   return normal.normalize();
 }
 
-class CivicBatch {
+export class CivicBatch {
   geometry = new THREE.BufferGeometry();
   vertices = [];
   colors = [];
@@ -569,7 +569,7 @@ class CivicBatch {
   }
 }
 
-function along(a, b, t) {
+export function along(a, b, t) {
   return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
 }
 
@@ -578,17 +578,17 @@ function edgeQuad(batch, a, b, lo, hi, color, sheen = 0) {
   batch.quad([a.x, lo, a.z], [b.x, lo, b.z], [b.x, hi, b.z], [a.x, hi, a.z], color, sheen);
 }
 
-function offsetEdge(a, b, normal, offset) {
+export function offsetEdge(a, b, normal, offset) {
   return [a, b].map(p => ({ x: p.x + normal.x * offset, z: p.z + normal.z * offset }));
 }
 
-function facePanel(batch, a, b, n, u, v, lo, hi, color, offset = 0.02, sheen = 0) {
+export function facePanel(batch, a, b, n, u, v, lo, hi, color, offset = 0.02, sheen = 0) {
   const [p, q] = offsetEdge(along(a, b, u), along(a, b, v), n, offset);
   if (-(q.z - p.z) * n.x + (q.x - p.x) * n.z < 0) edgeQuad(batch, q, p, lo, hi, color, sheen);
   else edgeQuad(batch, p, q, lo, hi, color, sheen);
 }
 
-function wallExtent(points, normal) {
+export function wallExtent(points, normal) {
   const dx = normal.z, dz = -normal.x;
   let a, b, lo, hi;
   for (const [x, , z] of points) {
@@ -599,7 +599,7 @@ function wallExtent(points, normal) {
   return { a, b, width: hi - lo };
 }
 
-function wallColliders(a, b, low, high, thickness = 0.30) {
+export function wallColliders(a, b, low, high, thickness = 0.30) {
   if (high <= low) return [];
   const dx = b.x - a.x, dz = b.z - a.z, width = Math.hypot(dx, dz);
   if (width < 0.08) return [];
@@ -625,7 +625,7 @@ function wallColliders(a, b, low, high, thickness = 0.30) {
   return result;
 }
 
-function makeGroup(name, batch, colliders, passage = false) {
+export function makeGroup(name, batch, colliders, passage = false) {
   const group = new THREE.Group();
   group.name = name;
   group.add(batch.mesh({ passage }));
@@ -753,7 +753,7 @@ function frontArc(a, b) {
   return Math.abs(Math.hypot(x, z) - culturaRadius) < 0.125 && angle >= arcStart && angle <= arcEnd + 0.025;
 }
 
-function civicSigns(labels) {
+export function civicSigns(labels) {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = 1024; canvas.height = 512;
