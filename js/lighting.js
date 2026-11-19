@@ -143,6 +143,9 @@ class LightingSystem {
     this.scene = scene;
     this.activePresetId = 'golden';
     this.live = false;
+    this.weather = null;
+    this.hadWeather = false;
+    this.weatherBakeTimer = null;
 
     // Register SunLight with either supported Three.js light-node API.
     if (SunLight.registerNode) {
@@ -260,6 +263,8 @@ class LightingSystem {
       renderTarget: this.envRenderTarget
     });
     this.scene.environment = this.envRenderTarget.texture;
+    this.bakedCloudCoverage = this.sky.cloudCoverage.value;
+    this.bakedCloudDensity = this.sky.cloudDensity.value;
     this.sky.showSunDisc.value = 1;
     this.scene.add(this.sky);
   }
@@ -291,27 +296,21 @@ class LightingSystem {
 
   applyValues(p) {
     this.activePresetId = p.id;
+    this.basePreset = p;
 
     this.sunLight.color.setHex(p.sunColor);
-    this.sunLight.intensity = p.sunIntensity;
     this.sunLight.position.copy(p.sunDir);
     this.sunLight.updateMatrixWorld();
 
     this.hemiLight.color.setHex(p.hemiSky);
     this.hemiLight.groundColor.setHex(p.hemiGround);
-    this.hemiLight.intensity = p.hemiIntensity;
-
     this.scene.fog.color.setHex(p.fogColor);
-    this.scene.fog.density = p.fogDensity;
-    if (this.uFogDensity) this.uFogDensity.value = p.fogDensity;
 
     // Update physical Preetham SkyMesh uniforms
     this.sky.turbidity.value = p.turbidity;
     this.sky.rayleigh.value = p.rayleigh;
     this.sky.mieCoefficient.value = p.mieCoefficient;
     this.sky.mieDirectionalG.value = p.mieDirectionalG;
-    this.sky.cloudCoverage.value = p.cloudCoverage;
-    this.sky.cloudDensity.value = p.cloudDensity;
     this.sky.sunPosition.value.copy(p.sunDir);
     this.uSkyExposure.value = p.skyExposure;
     this.uNightFactor.value = p.nightFactor;
@@ -321,14 +320,50 @@ class LightingSystem {
     cityUniforms.uSkyHorizonColor.value.setHex(p.skyHorizon);
     cityUniforms.uSkySunDir.value.copy(p.sunDir);
     cityUniforms.uInteriorGlow.value = p.interiorGlow;
-    cityUniforms.uRoadWetness.value = p.roadWetness;
     cityUniforms.uCanyonBounce.value = p.canyonBounce;
 
     this.scene.environmentIntensity = p.envIntensity;
+    this.applyWeather();
     this.bakeEnvironmentMap();
   }
 
-  update(focusPos) {
+  applyWeather() {
+    const p = this.basePreset;
+    const weight = this.weather?.blend ?? 0;
+    const cloud = this.weather?.cloud ?? 0;
+    const fog = (this.weather?.fog ?? 0) * weight;
+    const { lerp } = THREE.MathUtils;
+
+    this.sunLight.intensity = p.sunIntensity * (1 - (0.64 * cloud) * weight - 0.17 * fog);
+    this.hemiLight.intensity = p.hemiIntensity * lerp(1, 0.96 + 0.10 * cloud, weight);
+    this.sky.cloudCoverage.value = lerp(p.cloudCoverage, cloud, weight);
+    this.sky.cloudDensity.value = lerp(p.cloudDensity, 0.22 + 0.68 * cloud, weight);
+
+    const density = lerp(p.fogDensity, 0.0024, fog);
+    this.scene.fog.density = density;
+    if (this.uFogDensity) this.uFogDensity.value = density;
+    cityUniforms.uRoadWetness.value = lerp(p.roadWetness, this.weather?.wetness ?? 0, weight);
+  }
+
+  queueWeatherBake() {
+    if (!this.pmremGenerator || this.weatherBakeTimer !== null) return;
+    const changed = () => Math.abs(this.bakedCloudCoverage - this.sky.cloudCoverage.value) > 0.002 ||
+      Math.abs(this.bakedCloudDensity - this.sky.cloudDensity.value) > 0.002;
+    if (!changed()) return;
+    // Refresh sky reflections and aerial fog after a blend without baking at the frame cadence.
+    this.weatherBakeTimer = setTimeout(() => {
+      this.weatherBakeTimer = null;
+      if (changed()) this.bakeEnvironmentMap();
+    }, 2400);
+  }
+
+  update(focusPos, weather) {
+    if (weather?.blend || this.hadWeather) {
+      this.weather = weather;
+      this.applyWeather();
+      this.queueWeatherBake();
+      this.hadWeather = Boolean(weather?.blend);
+    }
     // SunLightShadow automatically fits & texel-snaps its 2 cascades to the view camera frustum
     // every frame inside SunShadowNode.renderShadow(), splitting [near, far] halfway between a uniform and a
     // logarithmic split (the near cascade ends at ~far / 4). Keep far at 300 m at street level so the near cascade

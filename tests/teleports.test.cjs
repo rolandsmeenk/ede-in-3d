@@ -24,12 +24,14 @@ test('every teleport button has a destination on a real roadway in Ede', () => {
   }
 });
 
-test('the player starts on Driehoek and the Oude Kerk teleport faces the church', () => {
+test('the player starts on Driehoek and the Oude Kerk teleport faces the church from Torenstraat', () => {
   assert.equal(defaultSpawn.name, 'Driehoek');
   const point = TELEPORT_LOCATIONS.oudekerk;
+  assert.equal(point.name, 'Torenstraat');
+  assert.ok(nearestRoads(point.x, point.z, 10).some(({ road, dist }) => road.name === point.name && dist < road.w / 2));
   const church = LANDMARK_SITES['Oude Kerk'];
   const distance = Math.hypot(church.x - point.x, church.z - point.z);
-  assert.ok(distance > 10 && distance < 400, 'leave space for the church view');
+  assert.ok(distance > 35 && distance < 65 && point.x < church.x, 'arrive west of the tower with room to see it');
   const alignment = ((church.x - point.x) * Math.sin(point.heading) + (church.z - point.z) * Math.cos(point.heading)) / distance;
   assert.ok(alignment > 0.999, 'face the church');
 });

@@ -181,65 +181,94 @@ function buildEdeCityGrid(scene, treeInventory) {
     'tertiary', 'tertiary_link', 'residential', 'unclassified']);
   const isSharedSurface = s => s.road.kind === 'living_street' || (s.road.kind === 'service' && /platz/i.test(s.road.name || ''));
   const isCarriageway = s => carriagewayKinds.has(s.road.kind) && !isSharedSurface(s);
-  const carriagewayIndex = new Map();
   const indexCell = 48;
-  for (const s of roadSegments) {
-    if (!isCarriageway(s)) continue;
-    const pad = s.width / 2 + 1;
-    for (let x = Math.floor((Math.min(s.a.x, s.b.x) - pad) / indexCell); x <= Math.floor((Math.max(s.a.x, s.b.x) + pad) / indexCell); x++) {
-      for (let z = Math.floor((Math.min(s.a.z, s.b.z) - pad) / indexCell); z <= Math.floor((Math.max(s.a.z, s.b.z) + pad) / indexCell); z++) {
-        const key = `${x}/${z}`;
-        if (!carriagewayIndex.has(key)) carriagewayIndex.set(key, []);
-        carriagewayIndex.get(key).push(s);
-      }
+  const pavementIndex = new Map();
+  const pavementBySegment = new Map();
+  const sameGrade = (a, b) => a.bridge === b.bridge && (a.road.layer ?? 0) === (b.road.layer ?? 0);
+  function* pavementCells({ minX, maxX, minZ, maxZ }, pad = 0) {
+    for (let x = Math.floor((minX - pad) / indexCell); x <= Math.floor((maxX + pad) / indexCell); x++) {
+      for (let z = Math.floor((minZ - pad) / indexCell); z <= Math.floor((maxZ + pad) / indexCell); z++) yield `${x}/${z}`;
     }
   }
-  const nearbyCarriageways = (a, b, pad = 0) => {
+
+  function addPavement(segment, kind, half, offset = 0) {
+    const { a, b, ux, uz, len, road } = segment;
+    const nx = -uz, nz = ux;
+    const ring = [
+      { x: a.x + nx * (offset - half), z: a.z + nz * (offset - half) },
+      { x: b.x + nx * (offset - half), z: b.z + nz * (offset - half) },
+      { x: b.x + nx * (offset + half), z: b.z + nz * (offset + half) },
+      { x: a.x + nx * (offset + half), z: a.z + nz * (offset + half) }
+    ];
+    // Four half-planes of this rectangle, with the inside on the positive side.
+    const along = a.x * ux + a.z * uz, across = a.x * nx + a.z * nz + offset;
+    const planes = [[ux, uz, along], [-ux, -uz, -along - len],
+      [nx, nz, across - half], [-nx, -nz, -across - half]];
+    const bounds = edeBounds(ring);
+    const priority = kind === 'path' ? Number(road.kind === 'cycleway') : segment.width;
+    const pavement = { segment, kind, ring, planes, bounds, priority };
+    for (const key of pavementCells(bounds)) {
+      if (!pavementIndex.has(key)) pavementIndex.set(key, new Set());
+      pavementIndex.get(key).add(pavement);
+    }
+    return pavement;
+  }
+
+  for (const [order, segment] of roadSegments.entries()) {
+    const { width, road } = segment;
+    const carriageway = isCarriageway(segment);
+    const surfaces = [carriageway
+      ? addPavement(segment, 'road', width / 2)
+      : addPavement(segment, 'path', Math.max(0.75, width / 2))];
+    if (carriageway && curbedKinds.has(road.kind)) {
+      for (const side of [-1, 1]) surfaces.push(addPavement(segment, 'sidewalk', 1.4, side * (width / 2 + 1.4)));
+    }
+    for (const surface of surfaces) surface.order = order;
+    pavementBySegment.set(segment, surfaces);
+  }
+
+  function nearbyPavement(bounds, pad = 0) {
     const found = new Set();
-    for (let x = Math.floor((Math.min(a.x, b.x) - pad) / indexCell); x <= Math.floor((Math.max(a.x, b.x) + pad) / indexCell); x++) {
-      for (let z = Math.floor((Math.min(a.z, b.z) - pad) / indexCell); z <= Math.floor((Math.max(a.z, b.z) + pad) / indexCell); z++) {
-        for (const road of carriagewayIndex.get(`${x}/${z}`) || []) found.add(road);
+    for (const key of pavementCells(bounds, pad)) {
+      for (const surface of pavementIndex.get(key) || []) {
+        const b = surface.bounds;
+        if (b.maxX + pad < bounds.minX || b.minX - pad > bounds.maxX
+            || b.maxZ + pad < bounds.minZ || b.minZ - pad > bounds.maxZ) continue;
+        found.add(surface);
       }
     }
     return found;
-  };
-  // Four half-planes of a real carriageway segment, all with inside >= 0.
-  const roadPlanes = (s, pad = 0) => {
-    const nx = -s.uz, nz = s.ux, along = s.a.x * s.ux + s.a.z * s.uz, across = s.a.x * nx + s.a.z * nz;
-    return [[s.ux, s.uz, along - pad], [-s.ux, -s.uz, -along - s.len - pad],
-      [nx, nz, across - s.width / 2 - pad], [-nx, -nz, -across - s.width / 2 - pad]];
-  };
-  const stripPoints = (s, half, offset = 0) => {
-    const nx = -s.uz, nz = s.ux;
-    return [
-      { x: s.a.x + nx * (offset - half), z: s.a.z + nz * (offset - half) },
-      { x: s.b.x + nx * (offset - half), z: s.b.z + nz * (offset - half) },
-      { x: s.b.x + nx * (offset + half), z: s.b.z + nz * (offset + half) },
-      { x: s.a.x + nx * (offset + half), z: s.a.z + nz * (offset + half) },
-    ];
-  };
-  const outsideRoads = (polygon, roads, source) => {
-    const area = pts => Math.abs(pts.reduce((sum, a, i) => {
-      const b = pts[(i + 1) % pts.length]; return sum + a.x * b.z - b.x * a.z;
-    }, 0)) * 0.5;
-    let fragments = [polygon];
-    for (const road of roads) {
-      if (road === source || road.bridge !== source.bridge) continue;
+  }
+
+  const polygonArea = pts => Math.abs(pts.reduce((sum, a, i) => {
+    const b = pts[(i + 1) % pts.length];
+    return sum + a.x * b.z - b.x * a.z;
+  }, 0)) * 0.5;
+
+  function visiblePavement(surface) {
+    let fragments = [surface.ring];
+    for (const other of nearbyPavement(surface.bounds, 0.03)) {
+      if (other.segment === surface.segment || !sameGrade(surface.segment, other.segment)) continue;
+      const roadAbove = surface.kind !== 'road' && other.kind === 'road';
+      // Prefer wider roads and cycle paths at junctions. Input order breaks ties.
+      const overlapsPeer = surface.kind === other.kind && (other.priority > surface.priority
+        || (other.priority === surface.priority && other.order < surface.order));
+      if (!roadAbove && !overlapsPeer) continue;
+      const pad = roadAbove ? 0.03 : 0;
+      const minArea = roadAbove ? 0.015 : 0.00001;
       const outside = [];
-      const planes = roadPlanes(road, 0.03);
       for (let fragment of fragments) {
         let intersection = fragment;
-        for (const [nx, nz, c] of planes) {
-          intersection = clipPolygonHalfPlane(intersection, nx, nz, c);
+        for (const [nx, nz, c] of other.planes) {
+          intersection = clipPolygonHalfPlane(intersection, nx, nz, c - pad);
           if (intersection.length < 3) break;
         }
-        // An unrelated nearby road's infinite half-planes must not subdivide a
-        // path that never enters its finite carriageway rectangle.
-        if (intersection.length < 3 || area(intersection) < 0.015) { outside.push(fragment); continue; }
-        for (const [nx, nz, c] of planes) {
-          const piece = clipPolygonHalfPlane(fragment, -nx, -nz, -c);
-          if (piece.length >= 3 && area(piece) > 0.015) outside.push(piece);
-          fragment = clipPolygonHalfPlane(fragment, nx, nz, c);
+        // An unrelated rectangle's infinite planes should never split another surface.
+        if (intersection.length < 3 || polygonArea(intersection) < minArea) { outside.push(fragment); continue; }
+        for (const [nx, nz, c] of other.planes) {
+          const piece = clipPolygonHalfPlane(fragment, -nx, -nz, pad - c);
+          if (piece.length >= 3 && polygonArea(piece) > minArea) outside.push(piece);
+          fragment = clipPolygonHalfPlane(fragment, nx, nz, c - pad);
           if (fragment.length < 3) break;
         }
       }
@@ -247,18 +276,19 @@ function buildEdeCityGrid(scene, treeInventory) {
       if (!fragments.length) break;
     }
     return fragments;
-  };
+  }
+
   // Clip a curb's centreline out of every other carriageway. Unlike a fixed
   // inset per OSM segment, this opens actual junctions and preserves continuous
   // curb runs along simple bends and arbitrarily split street centre lines.
   const curbIntervals = (a, b, source, roads) => {
     let intervals = [[0, 1]];
     const dx = b.x - a.x, dz = b.z - a.z;
-    for (const road of roads) {
-      if (road === source || road.bridge !== source.bridge) continue;
+    for (const { segment, kind, planes } of roads) {
+      if (kind !== 'road' || segment === source || !sameGrade(segment, source)) continue;
       let lo = 0, hi = 1;
-      for (const [nx, nz, c] of roadPlanes(road, 0.24)) {
-        const start = nx * a.x + nz * a.z - c, rate = nx * dx + nz * dz;
+      for (const [nx, nz, c] of planes) {
+        const start = nx * a.x + nz * a.z - c + 0.24, rate = nx * dx + nz * dz;
         if (Math.abs(rate) < 1e-9) { if (start < 0) { lo = 1; hi = 0; break; } }
         else if (rate > 0) lo = Math.max(lo, -start / rate);
         else hi = Math.min(hi, -start / rate);
@@ -293,36 +323,30 @@ function buildEdeCityGrid(scene, treeInventory) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     collect(g, paintMat);
   };
+  const pavementHeight = { road: 0.06, path: 0.055, sidewalk: 0.025 };
   const streetSiteKeys = new Set();
   for (const s of roadSegments) {
     const width = s.width;
-    const y = 0.06;
-    if (!isCarriageway(s)) {
-      const half = Math.max(0.75, width * 0.5);
-      const pieces = outsideRoads(stripPoints(s, half), nearbyCarriageways(s.a, s.b, half), s);
-      for (const piece of pieces) {
+    for (const surface of pavementBySegment.get(s)) {
+      const pieces = visiblePavement(surface);
+      if (!pieces.length) continue;
+      const geometries = pieces.map(piece => edePolygonGeometry(piece, [], pavementHeight[surface.kind]));
+      // Keep each segment batched even when clipping splits it into several fragments.
+      const joined = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
+      if (geometries.length > 1) geometries.forEach(geometry => geometry.dispose());
+      const geometry = drapeEdeSurface(joined, true, s.road.id);
+      if (surface.kind === 'road') collect(geometry, roadMat, s);
+      else if (surface.kind === 'sidewalk') {
+        collect(geometry, sidewalkMat);
+        clippedSidewalkPieces += pieces.length;
+      } else {
         const cycleway = s.road.kind === 'cycleway';
-        const geometry = polygon(piece, [], 0.055, s.road.id);
         setPavingStyle(geometry, cycleway ? 0 : 2);
         collect(geometry, pavingMat, cycleway ? s : null);
-        clippedPedestrianPieces++;
-      }
-      continue;
-    }
-    if (curbedKinds.has(s.road.kind)) {
-      // Sidewalks are two separate shoulder polygons, never a full-width slab
-      // through the road. Their pavement, as well as their kerb, is cut back at
-      // every intersecting carriageway (including turns and service accesses).
-      const neighbors = nearbyCarriageways(s.a, s.b, width / 2 + 2.8);
-      for (const side of [-1, 1]) {
-        const shoulder = stripPoints(s, 1.4, side * (width / 2 + 1.4));
-        for (const piece of outsideRoads(shoulder, neighbors, s)) {
-          collect(polygon(piece, [], 0.025, s.road.id), sidewalkMat);
-          clippedSidewalkPieces++;
-        }
+        clippedPedestrianPieces += pieces.length;
       }
     }
-    collect(strip(s.a, s.b, width / 2, y, 0, s.road.id), roadMat, s);
+    if (!isCarriageway(s)) continue;
     const nx = -s.uz, nz = s.ux;
     if (width >= 7 && !s.road.oneway && s.road.kind !== 'service') paintStrip(s, 0, 0.075, 0.45);
     if (width >= 12) {
@@ -332,7 +356,7 @@ function buildEdeCityGrid(scene, treeInventory) {
       const offset = side * (width / 2 + 0.08);
       const a = { x: s.a.x + nx * offset, z: s.a.z + nz * offset };
       const b = { x: s.b.x + nx * offset, z: s.b.z + nz * offset };
-      for (const [start, end] of curbIntervals(a, b, s, nearbyCarriageways(a, b, 0.5))) {
+      for (const [start, end] of curbIntervals(a, b, s, nearbyPavement(edeBounds([a, b]), 0.24))) {
         const length = s.len * (end - start);
         if (length < 2.5) continue;
         const mid = (start + end) / 2;

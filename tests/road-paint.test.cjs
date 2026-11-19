@@ -264,6 +264,20 @@ test('createRoadPaintChunkBuilder subdivides long strips across cells with conti
   }
 });
 
+test('surveyed zebra replaces intersecting stripes while the other approach and stop bar stay painted', () => {
+  const edge = { from: { id: 1 }, to: { id: 2 }, x0: 0, z0: 0, sx: 0, sz: 0,
+    dx: 1, dz: 0, rx: 0, rz: 1, len: 20, span: 20, half: 3, lanes: [0] };
+  const painted = [];
+  const builder = {
+    strip3D(x, ay, z, bx, by, bz, width, color, period) { painted.push({ x, width, period }); },
+    build: () => new Group()
+  };
+  buildRoadPaint(new Scene(), { edges: [edge] }, builder, undefined, (x, z, reference) => x < 0 && reference === edge);
+  assert.deepEqual(painted.map(p => p.period), [1, 1.2]);
+  assert.equal(painted[0].width, 0.45);
+  assert.ok(painted[1].x > edge.len);
+});
+
 test('createRoadPaintMaterial caches one material, gates dry/distant noise, and fades smoothly before cull distance', () => {
   const source = readFileSync(join(__dirname, '../js/tsl-materials.js'), 'utf8');
   const sliceBetween = (a, b) => {

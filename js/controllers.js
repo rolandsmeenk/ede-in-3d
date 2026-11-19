@@ -438,7 +438,7 @@ class ThirdPersonControllerManager {
     this.scene = scene;
     this.colliders = colliders;
     this._colliderCells = null; // built on first use, see nearColliders()
-    this.activeMode = 'car'; // 'person' | 'car' | 'cyclist' | 'cargobike' | 'helicopter'
+    this.activeMode = 'car'; // 'person' | 'car' | 'cyclist' | 'helicopter'
 
     this.keys = {
       forward: false,
@@ -453,7 +453,6 @@ class ThirdPersonControllerManager {
       person: this.createPersonEntity(),
       car: this.createCarEntity(),
       cyclist: this.createCyclistEntity(),
-      cargobike: this.createCargoBikeEntity(),
       helicopter: this.createHelicopterEntity()
     };
 
@@ -1976,7 +1975,7 @@ class ThirdPersonControllerManager {
     }
     for (const mode of ['cyclist', 'cargobike']) {
       const bike = this.entities[mode];
-      if (bike.headLight) bike.headLight.intensity = this.activeMode === mode ? 115 * beamScale : 0;
+      if (bike?.headLight) bike.headLight.intensity = this.activeMode === mode ? 115 * beamScale : 0;
     }
 
     this.poseCharacters(dt, focusPos);

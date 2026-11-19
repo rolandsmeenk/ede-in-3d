@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the local Ede simulator with an optional same-origin live traffic feed."""
+"""Serve the local Ede simulator with optional same-origin traffic and weather feeds."""
 
 import argparse
 import json
@@ -17,6 +17,7 @@ from xml.etree.ElementTree import ParseError
 sys.dont_write_bytecode = True
 from ede_ndw import CLOSURES, CONFIG, MEASUREMENTS, TEMPORARY_SPEEDS, fetch_xml, read_observations, read_restrictions, read_sites
 from ede_traffic_geometry import load_graph
+from ede_weather import LiveWeather
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -95,21 +96,30 @@ class LiveFeeds:
 
 
 class Handler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, feeds, **kwargs):
+    def __init__(self, *args, feeds, weather, **kwargs):
         self.feeds = feeds
+        self.weather = weather
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def end_headers(self):
-        if urlsplit(self.path).path != '/api/ede-traffic':
+        if urlsplit(self.path).path not in ('/api/ede-traffic', '/api/ede-weather'):
             self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
     def do_GET(self):
-        if urlsplit(self.path).path != '/api/ede-traffic':
+        path = urlsplit(self.path).path
+        status = 200
+        if path == '/api/ede-traffic':
+            payload = json.dumps(self.feeds.snapshot(), allow_nan=False, separators=(',', ':')).encode()
+        elif path == '/api/ede-weather':
+            payload = self.weather.snapshot()
+            if payload is None:
+                status = 503
+                payload = b'{"error":"Live weather unavailable"}'
+        else:
             super().do_GET()
             return
-        payload = json.dumps(self.feeds.snapshot(), allow_nan=False, separators=(',', ':')).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Content-Length', str(len(payload)))
@@ -121,9 +131,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bind', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8000)
-    parser.add_argument('--offline', action='store_true', help='serve static assets without contacting traffic feeds')
+    parser.add_argument('--offline', action='store_true', help='serve static assets without contacting traffic or weather feeds')
     args = parser.parse_args()
-    with ThreadingHTTPServer((args.bind, args.port), partial(Handler, feeds=LiveFeeds(args.offline))) as server:
+    handler = partial(Handler, feeds=LiveFeeds(args.offline), weather=LiveWeather(args.offline))
+    with ThreadingHTTPServer((args.bind, args.port), handler) as server:
         print(f'Open http://{args.bind}:{server.server_port}/', flush=True)
         try:
             server.serve_forever()

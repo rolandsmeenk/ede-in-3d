@@ -198,14 +198,17 @@ function waterAt(x,z){
  if(gi<0||gj<0||gi>=WNX||gj>=WNZ)return waterAtExact(x,z);
  const v=WATER_GRID[gj*WNX+gi];return v===2?waterAtExact(x,z):v===1;
 }
-function nearestDrivingPoint(x,z,name=null){
+function nearestRoadPoint(x,z,roads){
  let best=null,dist=Infinity;
- for(const r of ROAD_DRIVING.filter(r=>!name||r.name===name))for(let i=0;i+1<r.pts.length;i++){
+ for(const r of roads)for(let i=0;i+1<r.pts.length;i++){
   const a=r.pts[i],b=r.pts[i+1],dx=b.x-a.x,dz=b.z-a.z,L2=dx*dx+dz*dz;if(L2<1)continue;
   const t=Math.max(0.02,Math.min(.98,((x-a.x)*dx+(z-a.z)*dz)/L2)),px=a.x+t*dx,pz=a.z+t*dz,d=Math.hypot(px-x,pz-z);
   if(d<dist){dist=d;const sign=r.dir<0?-1:1;best={x:px,z:pz,heading:Math.atan2(dx*sign,dz*sign),road:r};}
  }
  return best;
+}
+function nearestDrivingPoint(x,z,name=null){
+ return nearestRoadPoint(x,z,name?ROAD_DRIVING.filter(r=>r.name===name):ROAD_DRIVING);
 }
 function arrival(lon,lat,name=null){
  const p=projectLonLat(lon,lat);
@@ -218,22 +221,32 @@ defaultSpawn.x-=Math.cos(defaultSpawn.heading)*1.8;defaultSpawn.z+=Math.sin(defa
 // Legacy material code samples ordered district bands through streetZ; keep distinct thresholds.
 const streetZ=(n=37)=>defaultSpawn.z+(37-Number(n))*25;
 const NYC_LANDMARKS=[
- ['oudekerk','Oude Kerk','Oude Kerk',5.671553,52.0460029,'Centrum','Driehoek'],
+ ['oudekerk','Oude Kerk','Oude Kerk',5.671553,52.0460029,'Centrum','Torenstraat'],
  ['edecentrum','Station Ede Centrum','Ede Centrum',5.6681895,52.0432539,'Centrum','Telefoonweg'],
  ['edewageningen','Station Ede-Wageningen','Ede-Wageningen',5.6741136,52.0274114,'Stationsgebied','Frisopark'],
  ['raadhuis','Raadhuis Ede','Raadhuis',5.6751979,52.0456604,'Centrum','Bergstraat'],
+ ['chico-y-chica','Chico y Chica','Chico y Chica',5.673605,52.045626,'Raadhuisplein','Raadhuisplein'],
  ['cultura','Cultura','Cultura',5.6672796,52.0465614,'Centrum','Molenstraat'],
  ['marktplein','Marktplein','Marktplein',5.669702,52.0465652,'Centrum','Marktstraat'],
  ['huis-kernhem','Huis Kernhem','Huis Kernhem',5.6573018,52.0528403,'Kernhem','Kernhemseweg'],
  ['proosdijpark','Proosdijpark','Proosdijpark',5.6496497,52.0398935,'Veldhuizen','Veenderweg'],
+ ['sherman-tank','Sherman Tank','Sherman Tank',5.69175563,52.0414851,'Langenberg','Arnhemseweg'],
 ].map(([id,name,short,lon,lat,district,road])=>{
  const site=LANDMARK_SITES[name];
  const {x,z}=site||projectLonLat(lon,lat);
  return {id,name,short,x,z,district,road,lon,lat};
 });
+// The church and sculptures have mapped approaches off the driving network.
+const LANDMARK_APPROACHES={
+ oudekerk:[5.670825,52.046130],
+ 'chico-y-chica':[5.6737293,52.0456570],
+};
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){
- const t=arrival(lm.lon,lm.lat,lm.road);
+ const approach=LANDMARK_APPROACHES[lm.id];
+ const point=approach&&projectLonLat(...approach);
+ const streetPoint=point&&nearestRoadPoint(point.x,point.z,ROADS.filter(r=>r.name===lm.road));
+ const t=streetPoint?{x:streetPoint.x,z:streetPoint.z,name:streetPoint.road.name}:arrival(lm.lon,lm.lat,lm.road);
  t.heading=Math.atan2(lm.x-t.x,lm.z-t.z);
  TELEPORT_LOCATIONS[lm.id]=t;
  if(!LANDMARK_SITES[lm.name])LANDMARK_SITES[lm.name]={x:lm.x,z:lm.z,w:60,d:60,h:20,ring:[]};

@@ -3313,5 +3313,6 @@ export {
   createSteamMaterial,
   createGodRayMaterial,
   createContactShadowMaterial,
-  createCarFlareMaterial
+  createCarFlareMaterial,
+  _transparentEffectMRT as transparentEffectMRT
 };

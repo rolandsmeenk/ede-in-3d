@@ -10,8 +10,9 @@ let profiles = new Map();
 let ways = new Map();
 let tracks = new Map();
 let cuts = new Map();
+let roofs = new Map();
 let wayCuts = new Map();
-const platformCells = new Map();
+const platformCells = new Map(), structureRoofs = new Map();
 
 const modeGroup = mode => mode === 'person' ? 'foot'
   : ['cyclist', 'cargobike', 'bicycle', 'cycleway'].includes(mode) ? 'bike'
@@ -54,7 +55,7 @@ function indexCut(index, cut) {
 
 export function setEdeGrade(data) {
   const nextSegments = new Map(), nextProfiles = new Map(), nextWays = new Map(), nextTracks = new Map();
-  const nextCuts = new Map();
+  const nextCuts = new Map(), nextRoofs = new Map();
   const nextWayCuts = new Map();
   for (const site of data.sites) {
     for (const entry of site.profiles || []) {
@@ -85,8 +86,14 @@ export function setEdeGrade(data) {
     if (site.kind !== 'underpass' && !site.excavation) continue;
     for (const entry of site.excavation ? [site.excavation] : site.profiles) {
       for (const section of gradeSections(entry)) {
-        if (section.covered && !site.cutCoveredTerrain) continue;
-        indexCut(nextCuts, sectionCut(section));
+        const cut = sectionCut(section);
+        if (section.covered && site.kind === 'underpass') {
+          const { a, b } = section;
+          const dx = b.x - a.x, dz = b.z - a.z;
+          indexCut(nextRoofs, { ...cut, a, b, dx, dz, runSquared: dx * dx + dz * dz,
+            clearance: entry.clearance || site.clearance || 3 });
+        }
+        if (!section.covered || site.cutCoveredTerrain) indexCut(nextCuts, cut);
       }
     }
   }
@@ -104,6 +111,7 @@ export function setEdeGrade(data) {
   ways = nextWays;
   tracks = nextTracks;
   cuts = nextCuts;
+  roofs = nextRoofs;
   wayCuts = nextWayCuts;
   return data;
 }
@@ -129,6 +137,11 @@ export function setEdePlatforms(platforms) {
       }
     }
   }
+}
+
+export function setEdeStructureRoofs(covers) {
+  structureRoofs.clear();
+  for (const cover of covers) indexCut(structureRoofs, cover);
 }
 
 function insideRing(ring, x, z) {
@@ -187,6 +200,18 @@ export function gradeProfileAt(x, z, mode, heading, referenceY, profileId) {
   const covered = profile.covers.some(([from, to]) => s >= from && s <= to);
   return { id: profile.id, site: profile.site.id, kind: profile.site.kind, y, lateral,
     roof: covered ? y + (profile.clearance || profile.site.clearance || 3) : Infinity };
+}
+
+export function isUnderEdeRoof(x, y, z) {
+  const cell = cellKey(Math.floor(x / CELL), Math.floor(z / CELL));
+  const covered = roofs.get(cell)?.some(({ planes, a, b, dx, dz, runSquared, clearance }) => {
+    if (!planes.every(([nx, nz, c]) => nx * x + nz * z >= c - 1e-8)) return false;
+    const progress = clamp(((x - a.x) * dx + (z - a.z) * dz) / runSquared, 0, 1);
+    const floor = a.y + (b.y - a.y) * progress;
+    return y >= floor - 0.25 && y <= floor + clearance;
+  });
+  return covered || (structureRoofs.get(cell)?.some(({ outer, holes, height }) =>
+    insideRing(outer, x, z) && !holes.some(ring => insideRing(ring, x, z)) && y <= height(x, z)) ?? false);
 }
 
 export function gradeHeightAt(x, z, referenceY, mode = 'motor', profileId) {

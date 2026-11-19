@@ -106,7 +106,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
   return { strip3D, build };
 }
 
-function buildRoadPaint(scene, network, sharedBuilder = null, heightAt) {
+function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, replacesZebra) {
   const builder = sharedBuilder || createRoadPaintChunkBuilder('RoadMarkings', { heightAt });
   const lines = [];
   const bends = new Map();
@@ -184,8 +184,11 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt) {
     }
 
     // Continental crosswalks curb to curb, between the stop lines and the intersections at both ends
-    if (!e.from.shape) across(e, -CROSSWALK / 2, -e.half, e.half, CROSSWALK - 0.3, WHITE, 1.2, 0.5);
-    if (!e.to.shape) across(e, e.len + CROSSWALK / 2, -e.half, e.half, CROSSWALK - 0.3, WHITE, 1.2, 0.5);
+    for (const [node, s] of [[e.from, -CROSSWALK / 2], [e.to, e.len + CROSSWALK / 2]]) {
+      if (!node.shape && !replacesZebra?.(...at(e, s, 0), e)) {
+        across(e, s, -e.half, e.half, CROSSWALK - 0.3, WHITE, 1.2, 0.5);
+      }
+    }
 
     for (const [end, node] of [[0, e.from], [1, e.to]]) {
       if (!node.shape) continue;

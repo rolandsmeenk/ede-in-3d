@@ -10,9 +10,12 @@ TOOLS = Path(__file__).resolve().parent
 CELL = 40
 
 
-def load_graph():
+def load_graph(*, street_features=False):
+    command = ['node', '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', str(TOOLS / 'export-ede-traffic-graph.mjs')]
+    if street_features:
+        command.append('--street-features')
     result = subprocess.run(
-        ['node', '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', str(TOOLS / 'export-ede-traffic-graph.mjs')],
+        command,
         capture_output=True, check=True, timeout=15,
     )
     return RoadGraph(json.loads(result.stdout))
@@ -72,6 +75,7 @@ class RoadGraph:
         self.affine = payload['lonLatAffine']
         self.edges = [Segment(edge['a'], edge['b'], edge) for edge in payload['edges']]
         self.index = SegmentIndex(self.edges, margin=22)
+        self.paths = [Segment(edge['a'], edge['b'], edge) for edge in payload.get('paths', ())]
 
     def project(self, lon, lat):
         a, b = lon - self.affine['lon0'], lat - self.affine['lat0']

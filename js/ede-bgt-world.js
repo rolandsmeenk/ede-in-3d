@@ -62,7 +62,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   const { structures, counts, source } = await loadEdeBgt();
   const group = new THREE.Group();
   group.name = 'Ede BGT structures';
-  const colliders = [], platforms = [], batches = new Map(), materials = new Map();
+  const colliders = [], platforms = [], weatherCovers = [], batches = new Map(), materials = new Map();
   const up = new THREE.Vector3(0, 1, 0);
   const deckProfiles = new Map(structures
     .filter(feature => feature.kind === 'deck' && feature.axis)
@@ -131,7 +131,10 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
       collect(kind, geometry, x, z);
     }
     cap(surface, false);
-    if (underside) cap(base, true);
+    if (underside) {
+      cap(base, true);
+      weatherCovers.push({ ...edeBounds(outer), outer, holes, height: base });
+    }
     let minY = Infinity, maxY = -Infinity;
     for (const edge of edges) {
       for (let i = 0; i < edge.length; i++) {
@@ -322,5 +325,5 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   }
   group.userData = { counts, source: source.url, date: source.date };
   scene.add(group);
-  return { group, colliders, counts, platforms };
+  return { group, colliders, counts, platforms, weatherCovers };
 }

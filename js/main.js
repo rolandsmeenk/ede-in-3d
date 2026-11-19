@@ -15,7 +15,9 @@ import { ThirdPersonControllerManager } from './controllers.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
-import { LightingSystem } from './lighting.js?v=20261118-lighting-menu';
+import { LightingSystem } from './lighting.js?v=20261119-weather';
+import { createLiveWeather, formatWeatherTime, weatherCondition } from './ede-weather.js';
+import { createWeatherPrecipitation } from './weather-precipitation.js';
 import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
@@ -24,11 +26,13 @@ import { loadTerrain, terrainHeightAt } from './terrain.js';
 import { loadAerialColors } from './aerial-colors.js';
 import { loadEdeTrees } from './ede-tree-data.js';
 import { loadEdeLamps } from './ede-lamp-data.js';
-import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdePlatforms } from './ede-grade.js';
+import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdePlatforms, setEdeStructureRoofs } from './ede-grade.js';
 import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
 import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js';
+import { loadEdeStreetFeatures } from './ede-street-features.js';
+import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js';
 import { buildEdeBusStops } from './ede-bus-stops.js';
 
 // js/main.js
@@ -94,11 +98,13 @@ async function initApp() {
   await showLoadingStage('Creating sky and environment lighting...');
   const scene = new THREE.Scene();
   const lightingSystem = new LightingSystem(scene, renderer);
+  const precipitation = createWeatherPrecipitation(scene);
   markInit('lighting');
 
   await showLoadingStage('Loading Ede’s map and bus timetable…');
-  const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult] = await Promise.allSettled([
-    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(), loadEdePostedSpeeds()
+  const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult] = await Promise.allSettled([
+    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
+    loadEdePostedSpeeds(), loadEdeStreetFeatures()
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -114,6 +120,8 @@ async function initApp() {
   else console.warn('[buses] timetable unavailable:', busResult.reason);
   if (gradeResult.status === 'rejected') console.warn('[grade] using AHN surface heights:', gradeResult.reason);
   const roadTraffic = createEdeRoadTraffic(speedResult.status === 'fulfilled' ? speedResult.value : undefined);
+  const streetFeatures = featureResult.status === 'fulfilled' ? featureResult.value : null;
+  if (!streetFeatures) console.warn('[street features] using existing road markings:', featureResult.reason);
   markInit('map assets and bus timetable');
 
   // 3. Build the city, buildings, street details and traffic
@@ -138,6 +146,7 @@ async function initApp() {
       return rail === undefined ? undefined : rail + 0.89;
     });
     setEdePlatforms(bgtWorld.platforms);
+    setEdeStructureRoofs(bgtWorld.weatherCovers);
   } catch (error) {
     console.warn('[bgt] structure layer unavailable:', error);
   }
@@ -180,11 +189,20 @@ async function initApp() {
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
   await showLoadingStage('Adding road markings...');
+  let streetWorld;
+  if (streetFeatures) {
+    try {
+      streetWorld = await buildEdeStreetFeaturesWorld(scene, streetFeatures);
+    } catch (error) {
+      console.warn('[street features] unable to build the feature layer:', error);
+    }
+  }
+  markInit('street features');
   buildRoadPaint(scene, trafficSystem.network, cityGrid.roadPaint,
-    (x, z, edge) => gradeWayAt(edge?.wayId, x, z, 1.2)?.y ?? terrainHeightAt(x, z));
+    (x, z, edge) => gradeWayAt(edge?.wayId, x, z, 1.2)?.y ?? terrainHeightAt(x, z), streetWorld?.replacesZebra);
   markInit('roadPaint');
 
-  // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Cargo Bike, Helicopter) & Multi-Camera System
+  // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Helicopter) & Multi-Camera System
   await showLoadingStage('Preparing player, vehicles and controls...');
   const controllerManager = new ThirdPersonControllerManager(scene, allColliders);
   // The old flat-world Y and current saved Y both measure height above local ground.
@@ -239,7 +257,7 @@ async function initApp() {
   // (scene-culling.js)
   await showLoadingStage('Preparing scene visibility and shadows...');
   const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'EdeGradeWorld', 'Ede BGT structures',
-    'ManhattanLandmarks', 'EdeBoundaryContext', 'RoadMarkings']
+    'ManhattanLandmarks', 'EdeBoundaryContext', 'RoadMarkings', 'EdeStreetFeatures']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
   setupSceneCulling(scene, cullingRoots, lightingSystem.sunLight.shadow);
@@ -316,10 +334,33 @@ async function initApp() {
 
   // 6. Wire UI Controls (Strictly using safe DOM APIs: textContent, classList, addEventListener)
   const modeButtons = document.querySelectorAll('[data-mode]');
+  const modes = Array.from(modeButtons, (button) => button.dataset.mode);
   const cameraButtons = document.querySelectorAll('[data-camera]');
   const timeButtons = document.querySelectorAll('[data-time]');
   const liveClock = document.getElementById('time-live-clock');
   let liveTimeTimer;
+  const weatherButton = document.getElementById('btn-live-weather');
+  const weatherInfo = document.getElementById('live-weather-info');
+  const weatherStatus = document.getElementById('live-weather-status');
+  const weatherClock = document.getElementById('live-weather-time');
+  const liveWeather = createLiveWeather({
+    onChange({ enabled, status, current }) {
+      weatherButton.setAttribute('aria-pressed', String(enabled));
+      weatherInfo.hidden = !enabled;
+      weatherClock.hidden = !current;
+      weatherClock.textContent = current ? formatWeatherTime(current.observedAt) : '';
+      if (current) weatherClock.dateTime = new Date(current.observedAt).toISOString();
+      else weatherClock.removeAttribute('datetime');
+
+      if (status === 'loading') weatherStatus.textContent = 'Loading weather…';
+      else if (status === 'unavailable') weatherStatus.textContent = 'Weather unavailable · using preset';
+      else if (status === 'expired') weatherStatus.textContent = 'Weather expired · using preset';
+      else if (current) weatherStatus.textContent =
+        `${weatherCondition(current.code)} · ${Math.round(current.temperature)} °C${status === 'stale' ? ' · Stale' : ''}`;
+      else weatherStatus.textContent = '';
+    }
+  });
+  weatherButton.addEventListener('click', () => liveWeather.setEnabled(!liveWeather.state.enabled));
   const teleportButtons = document.querySelectorAll('[data-teleport]');
   const hudToggleBtn = document.getElementById('btn-toggle-hud');
   const modeSwitch = document.getElementById('mode-switch');
@@ -335,7 +376,6 @@ async function initApp() {
   const elControlsHint = document.getElementById('hud-controls-hint');
   const gamepadControls = new GamepadControls(controllerManager, cameraSystem, {
     onCycleMode: (step) => {
-      const modes = ['person', 'car', 'cyclist', 'cargobike', 'helicopter'];
       selectMode(modes[(modes.indexOf(controllerManager.activeMode) + step + modes.length) % modes.length]);
     },
     onCycleCamera: cycleCamera,
@@ -348,11 +388,10 @@ async function initApp() {
     person: [[['W', 'S'], 'Walk'], [['A', 'D'], 'Turn'], [['Shift'], 'Sprint'], [['Space'], 'Jump'], [['Drag'], 'Orbit']],
     car: [[['W', 'S'], 'Drive / Reverse'], [['A', 'D'], 'Steer'], [['Shift'], 'Boost'], [['B'], 'Horn'], [['Drag'], 'Orbit']],
     cyclist: [[['W', 'S'], 'Pedal / Brake'], [['A', 'D'], 'Lean & Turn'], [['Shift'], 'Sprint'], [['Drag'], 'Orbit']],
-    cargobike: [[['W', 'S'], 'Pedal / Brake'], [['A', 'D'], 'Lean & Turn'], [['Shift'], 'Sprint'], [['Drag'], 'Orbit']],
     helicopter: [[['W', 'S'], 'Pitch'], [['A', 'D'], 'Yaw'], [['Space', 'E'], 'Ascend'], [['Q', 'C'], 'Descend'], [['Shift'], 'Boost']]
   };
   // Boosted top speeds in km/h (controllers.js caps them at 8.2, 36, 19 & 52 m/s): full scale of the speed meter
-  const topSpeedKmh = { person: 30, car: 130, cyclist: 69, cargobike: 69, helicopter: 188 };
+  const topSpeedKmh = { person: 30, car: 130, cyclist: 69, helicopter: 188 };
 
   function renderControlHints(mode) {
     if (!elControlsHint) return;
@@ -382,6 +421,7 @@ async function initApp() {
   }
 
   function selectMode(mode) {
+    if (!modes.includes(mode)) return;
     controllerManager.setMode(mode);
     touchControls.setMode(controllerManager.activeMode);
     gamepadControls.reset();
@@ -622,7 +662,7 @@ async function initApp() {
     });
   }
 
-  // Global keyboard shortcuts for modes (1-5), cameras (V / 6-0), and HUD (H)
+  // Global keyboard shortcuts for modes (1-3, 5), cameras (V / 6-0), and HUD (H)
   window.addEventListener('keydown', (e) => {
     if (isTypingInField(e)) return;
     switch (e.code) {
@@ -634,9 +674,6 @@ async function initApp() {
         break;
       case 'Digit3':
         selectMode('cyclist');
-        break;
-      case 'Digit4':
-        selectMode('cargobike');
         break;
       case 'Digit5':
         selectMode('helicopter');
@@ -809,7 +846,9 @@ async function initApp() {
         cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
-    lightingSystem.update(cameraSystem.currentPos);
+    const weatherEffects = liveWeather.update(dt);
+    lightingSystem.update(cameraSystem.currentPos, weatherEffects);
+    precipitation.update(dt, cameraSystem.camera, weatherEffects);
     mapSystem.update();
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
     if (warmedUp) updateSceneCulling(cameraSystem.camera.position); // the warm-up frame draws every chunk
@@ -852,6 +891,7 @@ async function initApp() {
           ready: true, firstFrameAt: performance.now(), init: initTimings.join(', '),
           backend: renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback',
           scene, renderer, cameraSystem, controllerManager, TELEPORT_LOCATIONS, trafficSystem,
+          get weather() { return liveWeather.state; }, streetFeatures,
           teleport(key) { const l = TELEPORT_LOCATIONS[key]; return teleportTo(l.x, l.z, l.heading); },
           teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },
           mode(m) { selectMode(m); },

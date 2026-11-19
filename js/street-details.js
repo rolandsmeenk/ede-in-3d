@@ -18,7 +18,6 @@ import {
 } from './city-config.js';
 import { cityUniforms, createSteamMaterial, createTreeGrateMaterial, createGodRayMaterial } from './tsl-materials.js';
 import { createTreeField } from './trees.js';
-import { createFoodCartParts } from './street-props.js';
 import { pavedPlazaRects, centralParkClearings, parkTreeSites, sidewalkBlocks, parkLampSites, edeStreetSites } from './city-grid.js';
 import { bryantParkLawn } from './landmarks.js';
 import { nearestEdeRoad } from './ede-geometry.js';
@@ -756,53 +755,6 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null) {
   steamInstancedSprites.frustumCulled = false;
   steamInstancedSprites.renderOrder = 2;
   if (totalSteamSprites) group.add(steamInstancedSprites);
-
-  // =========================================================================
-  // 5. NYC HOT DOG / HALAL FOOD CARTS
-  // =========================================================================
-  // Keep the whole prop on the sidewalk, outside building lots.
-  const findPropSite = (x, z, width, depth) => {
-    const hw = width * 0.5 + 0.15;
-    const hd = depth * 0.5 + 0.15;
-    const fits = (px, pz) => {
-      const block = blockAt(px, pz);
-      if (!block || block.median) return false;
-      for (const dx of [-hw, 0, hw]) {
-        for (const dz of [-hd, 0, hd]) {
-          if (blockAt(px + dx, pz + dz) !== block) return false;
-        }
-      }
-      return !block.rects.some(([x0, x1, z0, z1]) =>
-        px + hw > x0 && px - hw < x1 && pz + hd > z0 && pz - hd < z1)
-    };
-    if (fits(x, z)) return { x, z };
-    for (let r = 2; r <= 40; r += 2) {
-      for (let k = 0; k < 16; k++) {
-        const angle = k / 16 * Math.PI * 2;
-        const px = x + Math.cos(angle) * r;
-        const pz = z + Math.sin(angle) * r;
-        if (fits(px, pz)) return { x: px, z: pz };
-      }
-    }
-    return null;
-  };
-
-  const cartLocations = edeStreetSites.filter(s => /Grotestraat|Oude Kerkplein|Marktstraat|Museumplein/.test(s.name)).filter((s, i) => i % 13 === 0).slice(0, 12).map(s => [s.x, s.z]);
-
-  const cartMatrices = [];
-  for (const [ox, oz] of cartLocations) {
-    const raw = fromOldFrame(ox, oz);
-    const site = findPropSite(raw.x, raw.z, 3.5, 3.5);
-    if (!site) continue;
-    const { x, z } = site;
-    const ground = terrainHeightAt(x, z);
-    cartMatrices.push(new THREE.Matrix4().makeTranslation(x, ground, z));
-    addFootprint(x, z, 1.5, 2.2);
-    streetPointSites.push({ x, y: ground + 2.15, z, color: 0xffdf9e, intensity: 28, dist: 9.5 });
-  }
-  for (const part of createFoodCartParts()) {
-    addMatrixArrayInstanced(part.geometry, part.material, cartMatrices, part.castShadow);
-  }
 
   // =========================================================================
   // 6. FIRE HYDRANTS & USPS BLUE MAILBOXES ALONG CURBS (INSTANCED)
