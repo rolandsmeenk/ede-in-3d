@@ -1,90 +1,10 @@
 import * as THREE from 'three/webgpu';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { attribute } from 'three/tsl';
+import { makeTrainModels } from './ede-train-models.js';
 import { buildEdeTrainTracks } from './ede-train-tracks.js';
-import { createEdeTrainTraffic, TRAIN_CONSISTS, trainCarOffset, trainModel, watchEdeTrains } from './ede-train-traffic.js';
+import { createEdeTrainTraffic, trainCarOffset, trainModel, watchEdeTrains } from './ede-train-traffic.js';
 
 const POOL_SIZE = 8, ENTER = 720, LEAVE = 900;
-const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
-
-function carriageGeometry(length, livery, cab) {
-  const parts = [];
-  function box(w, h, d, x, y, z, color) {
-    const gradient = typeof color === 'function';
-    const geometry = new THREE.BoxGeometry(w, h, d, 1, 1, gradient ? Math.ceil(d / 1.5) : 1).translate(x, y, z);
-    const position = geometry.getAttribute('position');
-    const paint = new THREE.Color();
-    if (!gradient) paint.setHex(color);
-    const rgb = new Float32Array(position.count * 3);
-    for (let i = 0; i < position.count; i++) {
-      if (gradient) color(position.getZ(i), paint);
-      paint.toArray(rgb, 3 * i);
-    }
-    geometry.setAttribute('color', new THREE.BufferAttribute(rgb, 3));
-    parts.push(geometry);
-  }
-
-  const { body, belt, doors, tall, gradient } = livery;
-  const height = tall ? 3.7 : 3.05, end = length / 2;
-  const metal = 0x343b46, glass = 0x203445;
-  let bodyPaint = body;
-  if (gradient) {
-    const [purple, blue, green] = gradient;
-    bodyPaint = (z, color) => {
-      // Both cabs run from purple at the nose to green at their coupling.
-      const progress = clamp(z / length + 0.5, 0, 1);
-      if (!cab) color.copy(green).lerp(blue, 1 - Math.abs(2 * progress - 1));
-      else if (progress < 0.52) color.copy(purple).lerp(blue, progress / 0.52);
-      else color.copy(blue).lerp(green, (progress - 0.52) / 0.48);
-    };
-  }
-  box(2.92, height, length - (cab ? 1.8 : 0.44), 0, 0.78 + height / 2, cab ? 0.55 : 0, bodyPaint);
-  box(2.68, 0.3, length - 1.8, 0, height + 0.92, cab ? 0.35 : 0, metal);
-  box(2.35, 0.35, length - 1.1, 0, 0.63, 0, metal);
-  for (const z of [-length * 0.36, length * 0.36]) {
-    box(2.73, 0.57, 2.6, 0, 0.33, z, metal);
-  }
-
-  for (const side of [-1, 1]) {
-    if (belt !== undefined) {
-      box(0.05, tall ? 2.33 : livery.nose ? 1.16 : 0.94, length - 2.65, side * 1.47,
-        tall ? 2.78 : 2.75, 0.32, belt);
-    }
-    for (let z = -end + 3.8; z < end - 2.9; z += 2.05) {
-      box(0.055, 0.61, 1.51, side * 1.5, tall ? 3.56 : 2.76, z, glass);
-      if (tall) box(0.055, 0.58, 1.51, side * 1.5, 1.97, z, glass);
-    }
-    for (const z of [-end + (cab ? 3.1 : 1.65), end - 1.62]) {
-      box(0.067, 2.38, 1.24, side * 1.49, 2.14, z, doors);
-      box(0.07, 0.7, 0.62, side * 1.53, 2.78, z, glass);
-    }
-  }
-  if (cab) {
-    box(2.57, height - 0.4, 1.45, 0, 0.78 + (height - 0.4) / 2, -end + 1.18, livery.nose ?? bodyPaint);
-    box(2.36, 0.85, 0.09, 0, tall ? 3.56 : 2.94, -end + 0.40, glass);
-    for (const x of [-0.88, 0.88]) box(0.32, 0.18, 0.10, x, 1.52, -end + 0.39, 0xfff5c4);
-  }
-  const combined = mergeGeometries(parts);
-  for (const part of parts) part.dispose();
-  return combined;
-}
-
-function makeTrainModels() {
-  const nsYellow = 0xffc917, nsBlue = 0x003082;
-  const definitions = {
-    intercity: { ...TRAIN_CONSISTS.intercity, body: nsYellow, belt: nsBlue, doors: nsBlue, tall: true },
-    sprinter: { ...TRAIN_CONSISTS.sprinter, body: 0xf3f5f6, belt: 0x0862a8, doors: nsYellow, nose: nsYellow },
-    international: { ...TRAIN_CONSISTS.international, body: 0xe1e6eb, belt: 0xaa243a, doors: 0xb1b7bd },
-    nightjet: { ...TRAIN_CONSISTS.nightjet, body: 0x293d65, belt: 0x963949, doors: 0x42577d },
-    rs34: { ...TRAIN_CONSISTS.rs34, doors: 0xb7c2cb,
-      gradient: [0x6343a9, 0x087eb7, 0x30ae9b].map(color => new THREE.Color(color)) }
-  };
-  for (const model of Object.values(definitions)) {
-    model.coach = carriageGeometry(model.length, model, false);
-    model.cab = carriageGeometry(model.length, model, true);
-  }
-  return definitions;
-}
-
 function makeActor(group, material, initial) {
   const root = new THREE.Group();
   root.name = 'Ede passenger train';
@@ -107,7 +27,7 @@ function configure(actor, plan, models) {
   actor.model = model;
   for (let i = 0; i < actor.cars.length; i++) {
     const mesh = actor.cars[i];
-    mesh.geometry = i === 0 || i === model.cars - 1 ? model.cab : model.coach;
+    mesh.geometry = i === 0 ? model.cab : i === model.cars - 1 ? model.rearCab : model.coach;
     mesh.visible = i < model.cars;
   }
 }
@@ -116,6 +36,7 @@ export function createEdeTrainSystem(scene, timetable, hud, options) {
   const tracks = buildEdeTrainTracks();
   const traffic = createEdeTrainTraffic(timetable, tracks, options);
   const material = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.51, metalness: 0.12 });
+  material.emissiveNode = attribute('trainGlow', 'vec3');
   const models = makeTrainModels();
   const group = new THREE.Group();
   group.name = 'EdePassengerTrains';

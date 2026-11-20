@@ -10,6 +10,13 @@ export const RAIL_BALLAST_TOP = 0.035;
 export const RAIL_SLEEPER_SPACING = 0.65;
 export const RAIL_TOP = 0.13;
 export const CHE_BRIDGE_SOFFIT = -1.80;
+export const ENKA_PORTAL_SOFFIT = 4.60;
+// The landmark models supply the physical portals for these mapped ways.
+const MODELED_PASSAGE_SOFFITS = {
+  w961378352: CHE_BRIDGE_SOFFIT,
+  w494663072: ENKA_PORTAL_SOFFIT,
+  w494663075: ENKA_PORTAL_SOFFIT,
+};
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const cellKey = (x, z) => `${x}/${z}`;
 let world = { sites: [], railHeights: [] };
@@ -551,7 +558,8 @@ export function getEdeBuildingPassages() {
     }
     // The garage aisles need turning clearance beyond the mapped single-lane carriageway.
     const garageAisle = road.id === 'w956231562' || road.id === 'w956231563';
-    const modeled = road.id === 'w961378352'; // The surveyed CHE skybridge has no side walls at ground level.
+    const modeledSoffit = MODELED_PASSAGE_SOFFITS[road.id];
+    const modeled = modeledSoffit !== undefined;
     const profile = { id: road.id, points, width: road.bgtWidth ?? road.bgt?.width ?? (garageAisle ? 5 : road.width), modeled };
     // Unposted openings have an estimated soffit based on the mapped use.
     const clearance = road.limits?.height ?? (road.modes.some(mode => mode & MOTOR) ? 3.4 : 2.8);
@@ -561,7 +569,7 @@ export function getEdeBuildingPassages() {
       b.y = terrainHeightAt(b.x, b.z);
       const cut = slopingPassageCut(section, road.id, clearance);
       if (modeled) {
-        cut.roofAt = () => CHE_BRIDGE_SOFFIT;
+        cut.roofAt = () => modeledSoffit;
         cut.slope = 0;
       }
       indexCut(passageCells, cut);

@@ -15,8 +15,7 @@ async function setup() {
   const { buildEdeTrainTracks } = await import('../js/ede-train-tracks.js');
   const originalFetch = globalThis.fetch;
   try {
-    const heights = readFileSync(path.join(__dirname, '../assets/ede-ahn.bin'));
-    globalThis.fetch = async () => new Response(heights);
+    globalThis.fetch = async url => new Response(readFileSync(url));
     await terrain.loadTerrain();
   } finally {
     globalThis.fetch = originalFetch;

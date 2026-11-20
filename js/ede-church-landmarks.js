@@ -4,6 +4,7 @@ import { createFacadeSurfaceTexture } from './ede-facade-material.js';
 import { CivicBatch, makeGroup, polygonNormal, wallExtent, facePanel } from './ede-civic-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
+import { createWindVane } from './ede-wind-props.js';
 
 // 3DBAG LoD 2.2, transformed to the Oude Kerk scene grid. Point heights in these
 // surveys retain NAP. AHN DSM supplies the tips that LoD 2.2 misses.
@@ -1029,7 +1030,7 @@ export function createNoorderkerk() {
     wall: 0x8d5145, roof: 0x514b4b, friezes: [21.70, 23.63, 25.56, 27.90], band: 0xb59663,
   }, batch => {
     const front = frontage([-211.43, -313.12], [-198.66, -312.39]);
-    const center = 1.36;
+    const center = -1.42; // Align the window with the surveyed gable ridge.
     arch(batch, front, center, 5.02, 24.46, 31.50, 0xb1956b, 0.041);
     arch(batch, front, center, 4.77, 24.57, 31.36, 0x27383d, 0.061);
     for (let i = -1; i <= 1; i++) {
@@ -1118,7 +1119,9 @@ export function createSintAntoniuskerk() {
 }
 
 export function createBeatrixkerk() {
-  return church('Beatrixkerk', BEATRIX, { wall: 0x9b8568, roof: 0x805a4b }, batch => {
+  const x = -643.4, z = 1375.05, ridge = 41.57 - SCENE_NAP_ORIGIN;
+  const group = church('Beatrixkerk', BEATRIX, { wall: 0x9b8568, roof: 0x805a4b }, batch => {
+    batch.solid(new THREE.CylinderGeometry(0.026, 0.034, 0.78, 6).translate(x, ridge + 0.37, z), 0x5e5c55);
     const front = frontage([-627.22, 1344.97], [-623.17, 1347.70]);
     const threshold = 19.54;
     arch(batch, front, 0.19, 2.38, 19.47, 27.75, 0x7a6b54, 0.035);
@@ -1150,6 +1153,11 @@ export function createBeatrixkerk() {
     const annex = frontage([-637.67, 1393.10], [-651.59, 1383.58]);
     for (let i = -2; i <= 2; i++) windowBand(batch, annex, i * 2.39, 1.17, 19.98, 21.76, { rows: 2 });
   });
+  group.add(createWindVane('Beatrixkerk arrow vane', x, ridge + 0.72, z, [
+    [-0.49, -0.09], [-0.30, -0.02], [0.29, -0.02], [0.29, -0.095], [0.52, 0],
+    [0.29, 0.095], [0.29, 0.02], [-0.30, 0.02], [-0.49, 0.09], [-0.43, 0],
+  ], 0x57564d));
+  return group;
 }
 
 // Extra exteriors share the masonry and glazing above. Choose each frontage on
@@ -1238,7 +1246,7 @@ function churchClock(batch, wall, u, nap, size) {
 }
 
 export function createAdditionalChurch(site, survey, style) {
-  return church(site.name, survey, style, batch => {
+  const group = church(site.name, survey, style, batch => {
     const walls = surveyWalls(survey);
     const approach = site.approach ?? { x: site.x, z: site.z - 20 };
     const front = style.rose ? { ...frontage([-348.77, 736.35], [-351.19, 735.03]), cap: 24.25 }
@@ -1359,8 +1367,8 @@ export function createAdditionalChurch(site, survey, style) {
           const angle = i * Math.PI * 2 / 5;
           circle(batch, gable, Math.cos(angle) * 0.28, 27.37 + Math.sin(angle) * 0.28, 0.16, GLASS[i % GLASS.length], 0.055);
         }
-        batch.solid(new THREE.SphereGeometry(0.14, 8, 6).scale(1.65, 0.88, 0.53)
-          .translate(x, top - SCENE_NAP_ORIGIN + 0.22, z), tint);
+        batch.solid(new THREE.CylinderGeometry(0.024, 0.03, 0.18, 6)
+          .translate(x, top - SCENE_NAP_ORIGIN + 0.07, z), tint);
       }
     }
     if (style.bellHood) {
@@ -1376,4 +1384,14 @@ export function createAdditionalChurch(site, survey, style) {
       cross(batch, x, z, nap - 0.02, style.finial, style.finialTint ?? style.trim ?? 0x636b59);
     }
   });
+  if (site.id === 'lutherse-kerk') {
+    const [x, , z, , top, tint] = style.spire;
+    group.add(createWindVane('Lutherse Kerk swan vane', x, top - SCENE_NAP_ORIGIN + 0.13, z, [
+      [-0.29, 0.24], [-0.16, 0.16], [-0.05, 0.18], [0.06, 0.10], [0.15, 0.12],
+      [0.10, 0.26], [0.12, 0.36], [0.20, 0.39], [0.25, 0.35], [0.33, 0.31],
+      [0.19, 0.31], [0.18, 0.27], [0.25, 0.14], [0.22, 0.05], [0.12, 0],
+      [-0.12, 0], [-0.23, 0.09],
+    ], tint));
+  }
+  return group;
 }

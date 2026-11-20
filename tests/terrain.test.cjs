@@ -18,24 +18,35 @@ test('the built AHN asset covers Ede and retains metres relative to Oude Kerk', 
   assert.throws(() => decodeTerrain(bytes.slice(0, 80)), /Invalid AHN terrain asset/);
 });
 
-test('the Eder Kuil patch stitches into the unchanged 12 m AHN grid', async () => {
-  const { decodeTerrain, sampleTerrain } = await import('../js/terrain.js');
-  const { EDER_KUIL_TERRAIN: patch } = await import('../js/ede-kuil-terrain.js');
-  const raw = readFileSync(path.join(__dirname, '../assets/ede-ahn.bin'));
-  const coarse = decodeTerrain(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+test('the theatre, motorway and cycling patches stitch into the 12 m AHN grid', async ({ mock }) => {
+  const { loadTerrain, getTerrainPatch, getTerrainPatches, sampleTerrain, terrainHeightAt } = await import('../js/terrain.js');
+  mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
+  const coarse = await loadTerrain();
+  const { WVEDE_CIRCUIT } = await import('../js/ede-wvede-circuit-survey.js');
+  const [theatre, embankment, cyclingCircuit] = getTerrainPatches();
   assert.equal(coarse.step, 12);
-  assert.equal(patch.step, 3);
-  for (let z = patch.minZ; z <= patch.maxZ; z += 1) {
-    for (const x of [patch.minX, patch.maxX]) {
-      assert.ok(Math.abs(sampleTerrain(coarse, x, z) - sampleTerrain(patch, x, z)) <= 0.00501);
+  for (const [patch, step] of [[theatre, 3], [embankment, 3], [cyclingCircuit, 2]]) {
+    assert.equal(patch.step, step);
+    for (let z = patch.minZ; z <= patch.maxZ; z += 1) {
+      for (const x of [patch.minX, patch.maxX]) {
+        assert.ok(Math.abs(sampleTerrain(coarse, x, z) - sampleTerrain(patch, x, z)) <= 0.00501);
+      }
+    }
+    for (let x = patch.minX; x <= patch.maxX; x += 1) {
+      for (const z of [patch.minZ, patch.maxZ]) {
+        assert.ok(Math.abs(sampleTerrain(coarse, x, z) - sampleTerrain(patch, x, z)) <= 0.00501);
+      }
     }
   }
-  for (let x = patch.minX; x <= patch.maxX; x += 1) {
-    for (const z of [patch.minZ, patch.maxZ]) {
-      assert.ok(Math.abs(sampleTerrain(coarse, x, z) - sampleTerrain(patch, x, z)) <= 0.00501);
-    }
+  for (const [x, z] of WVEDE_CIRCUIT) assert.equal(getTerrainPatch(x, z), cyclingCircuit);
+  assert.ok(terrainHeightAt(476, 651) - terrainHeightAt(476, 627) > 8);
+  for (const [x, z] of [[-2500, 3120], [-2300, 3200], [-1900, 3333]]) {
+    assert.equal(getTerrainPatch(x, z), embankment);
+    assert.ok(terrainHeightAt(x, z) - terrainHeightAt(x, z + 36) > 8);
+    assert.ok(terrainHeightAt(x, z) - terrainHeightAt(x, z - 35) > 7);
+    assert.ok(terrainHeightAt(x, z) - sampleTerrain(coarse, x, z) > 1);
   }
-  assert.ok(sampleTerrain(patch, 476, 651) - sampleTerrain(patch, 476, 627) > 8);
+  assert.ok(terrainHeightAt(-1716, 3379) - terrainHeightAt(-1716, 3392) > 6);
 });
 
 test('draped faces keep their offset across terrain cells and both sides of the diagonal', async () => {
@@ -94,10 +105,7 @@ test('surveyed station footway shares a continuous grade with pavement in both d
   const file = name => readFileSync(path.join(__dirname, '../assets', name));
   const load = globalThis.fetch;
   try {
-    globalThis.fetch = async url => {
-      assert.equal(path.basename(url.pathname), 'ede-ahn.bin');
-      return new Response(file('ede-ahn.bin'));
-    };
+    globalThis.fetch = async url => new Response(readFileSync(url));
     await terrain.loadTerrain();
   } finally {
     globalThis.fetch = load;

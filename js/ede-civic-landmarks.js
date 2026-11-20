@@ -4,6 +4,7 @@ import { carveBagBuildingPassages } from './bag3d.js';
 import { buildingPassageOpenings } from './ede-grade.js';
 import { EDE_DATA } from './ede-geodata.js';
 import { terrainHeightAt } from './terrain.js';
+import { createWindFlag } from './ede-wind-props.js';
 import { sampleRoofColor } from './aerial-colors.js';
 import { applyBagFacades, loadEdeFacades } from './ede-facades.js';
 import { buildFacadeMaskAtlas, createBagFacadeMaterial, createFacadeSurfaceTexture, projectFacadeUv } from './ede-facade-material.js';
@@ -672,6 +673,56 @@ function raadhuisFront(batch, a, b, normal, width, low, roof) {
   }
 }
 
+function raadhuisFlags(batch) {
+  if (typeof document === 'undefined') return [];
+  // The three poles sit on the Bergstraat side, left of the entrance when looking out.
+  return [
+    [233.0, 18.2, 'Dutch'], [229.6, 17.4, 'European'], [226.2, 16.6, 'Ede'],
+  ].map(([x, z, name], i) => {
+    const y = terrainHeightAt(x, z);
+    const height = 6.8;
+    batch.solid(new THREE.CylinderGeometry(0.038, 0.072, height, 8)
+      .translate(x, y + height / 2, z), 0xa5a6a0);
+    const canvas = document.createElement('canvas');
+    canvas.width = 192;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (name === 'Dutch') {
+      for (const [band, tint] of ['#ae1c28', '#ffffff', '#21468b'].entries()) {
+        ctx.fillStyle = tint;
+        ctx.fillRect(0, Math.round(band * 128 / 3), 192, 44);
+      }
+    } else {
+      ctx.fillStyle = name === 'Ede' ? '#16759c' : '#003399';
+      ctx.fillRect(0, 0, 192, 128);
+      if (name === 'European') {
+        ctx.fillStyle = '#ffcc00';
+        for (let star = 0; star < 12; star++) {
+          const a = star * Math.PI / 6;
+          const cx = 96 + 42.67 * Math.sin(a), cy = 64 - 42.67 * Math.cos(a);
+          ctx.beginPath();
+          for (let tip = 0; tip < 10; tip++) {
+            const theta = tip * Math.PI / 5, radius = tip % 2 ? 2.72 : 7.11;
+            ctx.lineTo(cx + Math.sin(theta) * radius, cy - Math.cos(theta) * radius);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 42px system-ui';
+        ctx.fillText('ede', 101, 105);
+      }
+    }
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const flag = createWindFlag(new THREE.MeshStandardNodeMaterial({ map, side: THREE.DoubleSide, roughness: 0.9 }), i * 2);
+    flag.name = `Raadhuis ${name} flag`;
+    flag.position.set(x, y + height - 0.12, z);
+    return flag;
+  });
+}
+
 export function createRaadhuis() {
   const batch = new CivicBatch(), colliders = [];
   const roofRgb = [0, 0, 0];
@@ -708,7 +759,9 @@ export function createRaadhuis() {
     colliders.push(...wallColliders(a, b, y, 30));
   }
   const { a, b, sign } = raadhuisEntry(batch, colliders);
+  const flags = raadhuisFlags(batch);
   const group = makeGroup('Raadhuis Ede', batch, colliders, true);
+  if (flags.length) group.add(...flags);
   const entrance = civicSigns([{ text: 'Raadhuis', a, b, lo: 9.96, hi: 10.60,
     color: '#b5ad9d', textColor: '#286d88' }]);
   if (entrance) {
@@ -756,12 +809,12 @@ function frontArc(a, b) {
 }
 
 export function civicSigns(labels, { wide = false } = {}) {
-  if (typeof document === 'undefined') return null;
+  if (!labels.length || typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
-  const columns = wide ? 4 : 8;
+  const columns = Math.min(wide ? 4 : 8, labels.length);
   const width = wide ? 512 : 128, height = wide ? 128 : 512;
   canvas.width = columns * width;
-  canvas.height = height * (wide && labels.length > columns ? 2 : 1);
+  canvas.height = height * Math.ceil(labels.length / columns);
   const ctx = canvas.getContext('2d');
   const vertex = [], uvs = [];
   for (let i = 0; i < labels.length; i++) {

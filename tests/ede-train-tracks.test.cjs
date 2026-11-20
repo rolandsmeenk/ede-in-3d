@@ -54,13 +54,10 @@ test('passenger routes use connected alignments and distinct local berths', asyn
 async function loadLocalGrade() {
   const { loadTerrain } = await import('../js/terrain.js');
   const { setEdeGrade } = await import('../js/ede-grade.js');
-  const assets = path.join(__dirname, '../assets');
-  const [terrain, grade] = await Promise.all([
-    readFile(path.join(assets, 'ede-ahn.bin')), readFile(path.join(assets, 'ede-grade.json'), 'utf8')
-  ]);
+  const grade = await readFile(path.join(__dirname, '../assets/ede-grade.json'), 'utf8');
   const originalFetch = globalThis.fetch;
   try {
-    globalThis.fetch = async () => new Response(terrain);
+    globalThis.fetch = async url => new Response(await readFile(url));
     await loadTerrain();
   } finally {
     globalThis.fetch = originalFetch;

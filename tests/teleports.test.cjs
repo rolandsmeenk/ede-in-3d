@@ -10,9 +10,9 @@ test.before(async () => {
   ({ TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, waterAt, ISLAND_BOUNDS } = await import('../js/city-config.js'));
 });
 
-test('the ten scenic teleport buttons land in clear space and face their targets', () => {
+test('the scenic teleport buttons land in clear space and face their targets', () => {
   const buttons = [...read('index.html').matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
-  assert.equal(buttons.length, 10);
+  assert.equal(buttons.length, 16);
   const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([, point]) => point.focus);
   assert.deepEqual(scenic.map(([name]) => name).sort(), buttons.sort());
   for (const [name, point] of scenic) {

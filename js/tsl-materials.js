@@ -118,7 +118,8 @@ const cityUniforms = {
   uSkyHorizonColor: uniform(new THREE.Color(0xebd1b5)),
   uSkySunDir: uniform(new THREE.Vector3(-0.66, 0.34, -0.67).normalize()),
   uInteriorGlow: uniform(0.78),
-  uRoadWetness: uniform(0.38),
+  uRoadWetness: uniform(0),
+  uRoadPuddles: uniform(0),
   uCanyonBounce: uniform(0.52)
 };
 
@@ -1578,7 +1579,7 @@ function createTreeGrateMaterial() {
   return mat;
 }
 
-// Post-rain puddle field (organic standing rainwater pools) shared by every road surface channel
+// Low spots where rainwater collects.
 function roadPuddleField(wx, wz) {
   const nMacro = noise2D(vec2(wx.mul(0.095), wz.mul(0.075)));
   const nMid = noise2D(vec2(wx.mul(0.25).add(19.4), wz.mul(0.22).add(11.8)));
@@ -1589,16 +1590,16 @@ function roadPuddleField(wx, wz) {
 
 /**
  * Wetness masks over a puddle field, driven by cityUniforms.uRoadWetness (0 = bone dry … 1 = right after a downpour):
- * x = damp stains (darker, satin), y = standing water (mirror-smooth; none on a dry day), z = wet film over everything.
+ * x = damp stains (darker, satin), y = standing water during rain, z = wet film over everything.
  * Water collects in the field's highest (lowest-lying) spots first, so pools appear, grow & merge as wetness rises;
  * `drainage` raises the water line for better-drained surfaces such as the crowned sidewalk flags.
  */
 function roadWetMasks(field, drainage = 0.0) {
   const w = cityUniforms.uRoadWetness;
   const level = mix(float(0.86), float(0.56), clamp(w.sub(0.1).div(0.55), 0.0, 1.0)).add(drainage);
-  const damp = smoothstep(level.sub(0.09), level.sub(0.015), field);
-  const puddle = smoothstep(level, level.add(0.022), field).mul(smoothstep(0.1, 0.22, w));
-  const film = smoothstep(0.2, 0.8, w);
+  const damp = smoothstep(level.sub(0.09), level.sub(0.015), field).mul(smoothstep(0.02, 0.12, w));
+  const puddle = smoothstep(level, level.add(0.022), field).mul(smoothstep(0.1, 0.22, w)).mul(cityUniforms.uRoadPuddles);
+  const film = smoothstep(0, 0.8, w);
   return vec3(damp, puddle, film);
 }
 
@@ -1645,7 +1646,6 @@ function createRoadSurfaceMaterial(aerial = false, grade = false, wheelTracks = 
   const base = color(0x585a5d);
   const asphalt = aerial ? blendAerialSurfaceColor(base, 0.28) : base;
   const wet = roadWetMasks(roadPuddleField(positionWorld.x, positionWorld.z))
-    .mul(smoothstep(0.02, 0.12, cityUniforms.uRoadWetness))
     .mul(grade ? attribute('pavingExposure', 'float') : 1);
   const damp = wet.x, puddle = wet.y, film = wet.z;
   const viewDir = normalize(cameraPosition.sub(positionWorld));
@@ -1734,15 +1734,15 @@ function createRoadPaintMaterial(preserveGBuffer = false) {
   })();
   mat.opacityNode = dashes.mul(varying(float(1.0).div(EDE_DATA ? 1.0 : widen))).mul(smoothstep(0.1, 0.6, wear).mul(0.4).add(0.55)).mul(distFade);
 
-  // Standing-water puddle mask is zero when uRoadWetness <= 0.1 (e.g. midday); evaluate once and share across channels
+  // Skip the puddle field for dry paint and paint that's still drying after rain.
   const puddle = Fn(() => {
     const p = float(0.0).toVar();
-    If(cityUniforms.uRoadWetness.greaterThan(0.1), () => {
+    If(cityUniforms.uRoadPuddles.greaterThan(0), () => {
       p.assign(roadWetMasks(roadPuddleField(positionWorld.x, positionWorld.z)).y);
     });
     return p;
   })();
-  const film = smoothstep(0.2, 0.8, cityUniforms.uRoadWetness);
+  const film = smoothstep(0, 0.8, cityUniforms.uRoadWetness);
   mat.colorNode = vec3(mix(float(1.0), float(0.72), puddle).mul(mix(float(1.0), float(0.86), film)));
   mat.roughnessNode = mix(mix(float(0.62), float(0.42), film), float(0.2), puddle);
   mat.aoNode = canyonSkyAONode();

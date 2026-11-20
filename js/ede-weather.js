@@ -102,7 +102,7 @@ function weatherTargets(reading) {
   const wind = Math.min(25, (reading.windSpeed + Math.max(0, reading.windGusts - reading.windSpeed) * 0.25) / 3.6);
   return {
     cloud: reading.cloudCover / 100, fog: condition === 'Fog' ? 1 : 0, rain, snow,
-    wetness: rainRate > 0 ? 1 - 0.81 * Math.exp(-rainRate / 3) : 0,
+    wetness: Math.max(rain * 0.65, rainRate > 0 ? 1 - 0.81 * Math.exp(-rainRate / 3) : 0),
     // The bearing is where the wind comes from. Ede uses +X east and +Z south.
     windX: -Math.sin(bearing) * wind, windZ: Math.cos(bearing) * wind
   };
@@ -114,10 +114,11 @@ function approach(value, target, dt, seconds) {
 
 export function createWeatherTransition() {
   let target = null;
-  const effects = { blend: 0, cloud: 0, fog: 0, rain: 0, snow: 0, wetness: 0, windX: 0, windZ: 0 };
+  const effects = { blend: 0, cloud: 0, fog: 0, rain: 0, raining: false, snow: 0, wetness: 0, windX: 0, windZ: 0 };
   return {
     setReading(reading) {
       target = weatherTargets(reading);
+      effects.raining = (target?.rain ?? 0) > 0;
       if (target && effects.blend === 0) {
         for (const key of ['cloud', 'fog', 'windX', 'windZ']) effects[key] = target[key];
         effects.wetness = 0;

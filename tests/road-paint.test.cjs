@@ -351,7 +351,8 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
   const env = {
     posWorld: [0, 0.012, 0],
     camPos: [0, 4, 20],
-    wetness: 0.08,
+    wetness: 0,
+    puddles: 0,
     noiseCalls: 0
   };
 
@@ -396,7 +397,10 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
     THREE: { MeshStandardNodeMaterial: class { constructor(o) { Object.assign(this, o); } } },
     _transparentEffectMRT: {},
     canyonSkyAONode: () => wrap([1]),
-    cityUniforms: { uRoadWetness: new TNode(() => [env.wetness]) },
+    cityUniforms: {
+      uRoadWetness: new TNode(() => [env.wetness]),
+      uRoadPuddles: new TNode(() => [env.puddles]),
+    },
     positionGeometry: wrap([0, 0.012, 0]),
     positionWorld: new TNode(() => env.posWorld),
     cameraPosition: new TNode(() => env.camPos),
@@ -434,7 +438,8 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
     fwidth: () => wrap([0.01])
   };
 
-  const createRoadPaintMaterial = vm.runInNewContext(`${helpers}\n${roadPaintMatSrc}\ncreateRoadPaintMaterial;`, sandbox);
+  const { createRoadPaintMaterial, roadWetMasks } = vm.runInNewContext(
+    `${helpers}\n${roadPaintMatSrc}\n({ createRoadPaintMaterial, roadWetMasks });`, sandbox);
   const m1 = createRoadPaintMaterial();
   const m2 = createRoadPaintMaterial();
   assert.equal(m1, m2, 'createRoadPaintMaterial returns a single cached material instance');
@@ -443,8 +448,6 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
   assert.equal(ssrPaint.mrtNode, sandbox._transparentEffectMRT);
   assert.equal(createRoadPaintMaterial(true), ssrPaint);
 
-  // Dry midday (uRoadWetness = 0.08) at 120 m (> 70 m): zero noise2D evaluations for both wear and puddles
-  env.wetness = 0.08;
   env.camPos = [0, 8, 120];
   env.noiseCalls = 0;
   const opMid = m1.opacityNode.eval()[0];
@@ -452,6 +455,17 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
   assert.equal(env.noiseCalls, 0, 'skips both wear noise (>70 m) and puddle noise (dry midday)');
   assert.ok(opMid > 0, 'visible at 120 m');
   assert.deepEqual(colDry, [1, 1, 1]);
+  assert.deepEqual(roadWetMasks(wrap(0.95)).eval(), [0, 0, 0]);
+
+  env.wetness = 0.73;
+  const dampColor = m1.colorNode.eval()[0];
+  assert.ok(dampColor < 1 && m1.roughnessNode.eval()[0] < 0.62);
+  assert.equal(env.noiseCalls, 0, 'drying paint still skips the puddle field');
+  const drying = roadWetMasks(wrap(0.95)).eval();
+  assert.ok(drying[0] > 0 && drying[1] === 0 && drying[2] > 0);
+  env.puddles = 0.8;
+  const raining = roadWetMasks(wrap(0.95)).eval();
+  assert.deepEqual(raining, [drying[0], 0.8, drying[2]]);
 
   // Smoothly fades to 0 by the 1,650 m chunk cull distance
   env.camPos = [0, 40, 1660];

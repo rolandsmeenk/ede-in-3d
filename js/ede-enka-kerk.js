@@ -5,6 +5,7 @@ import { carveBagBuildingPassages } from './bag3d.js';
 import { buildingPassageOpenings } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { ENKA_SURVEY, OUDE_KERK_SURVEY } from './ede-heritage-survey.js';
+import { createWindVane } from './ede-wind-props.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const BRICK = 0x765848;
@@ -334,7 +335,12 @@ export function createOudeKerk() {
   }
   batch.box(new THREE.Vector3(center.x, 47.82, center.z), 0.077, 1.57, 0.077, 0, 0x49382a);
   batch.box(new THREE.Vector3(center.x, 48.11, center.z), 0.58, 0.07, 0.075, 0, 0x665039);
-  batch.box(new THREE.Vector3(center.x + 0.16, 48.64, center.z), 0.37, 0.20, 0.10, 0, 0xc6a258);
+  group.add(createWindVane('Oude Kerk rooster vane', center.x, 48.60, center.z, [
+    [-0.07, 0], [0.10, 0], [0.20, 0.11], [0.23, 0.24], [0.32, 0.27],
+    [0.23, 0.31], [0.20, 0.38], [0.16, 0.34], [0.10, 0.37], [0.07, 0.24],
+    [0.01, 0.17], [-0.14, 0.18], [-0.35, 0.34], [-0.32, 0.21],
+    [-0.23, 0.10], [-0.08, 0.05],
+  ], 0xc6a258));
 
   const churchDoor = facade(batch, -24.63, -13.34, -0.2514, 0.9679, -1);
   archPanel(churchDoor, 5.02, -0.36, 1.81, 3.37, 0.72, STONE, 0x503a2e, 0.115);

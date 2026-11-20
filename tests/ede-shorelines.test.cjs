@@ -11,7 +11,11 @@ test('the corrected shoreline is shared by map layers, park geometry and movemen
   const { GEO } = await import('../js/nyc-geodata.js');
   const { water, land } = asset('ede-shorelines.json.gz');
   const original = asset('ede-map-v1.json.gz');
-  assert.deepEqual(EDE_DATA.water, water);
+  const activeWater = water.filter(({ id }) => id !== 'water171');
+  assert.deepEqual(EDE_DATA.water, activeWater);
+  assert.equal(EDE_DATA.meta.counts.water, activeWater.length);
+  assert.equal(waterAtExact(-3458, 783), false);
+  assert.equal(waterAt(-3458, 783), false);
   assert.equal(GEO.centralPark.water, EDE_DATA.water);
   assert.deepEqual(EDE_DATA.roadGraph, original.roadGraph);
   assert.deepEqual(EDE_DATA.activeGraph, original.activeGraph);
@@ -30,7 +34,7 @@ test('the corrected shoreline is shared by map layers, park geometry and movemen
   assert.equal(waterAt(-1948.85, 2944.54), true);
   assert.equal(roadCrossesWater(-1948.85, 2944.54), true);
 
-  for (const { ring, holes } of water) for (const outline of [ring, ...holes]) {
+  for (const { ring, holes } of activeWater) for (const outline of [ring, ...holes]) {
     for (let k = 0, last = outline.length - 2; k < outline.length; last = k, k += 2) {
       const x = (outline[k] + outline[last]) / 2, z = (outline[k + 1] + outline[last + 1]) / 2;
       for (const [dx, dz] of [[-0.5, 0.5], [0.5, -0.5]]) {

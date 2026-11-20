@@ -21,6 +21,14 @@ import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-co
 import { addAsphaltLanes } from './ede-asphalt-lanes.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
 
+// Four BGT stems fall inside the surveyed WVEde return. Place them on its south verge.
+const WVEDE_TREE_POSITIONS = new Map([
+  ['-2026.4/1366.6', [-2025.55, 1369.06]],
+  ['-2023.2/1364.6', [-2022.38, 1368.19]],
+  ['-2018.6/1365', [-2018.28, 1367.49]],
+  ['-2013.2/1363.6', [-2013.03, 1367.01]],
+]);
+
 // Live construction data consumed by the building and street-detail builders after buildCityGrid().
 let centralParkClearings;
 let parkTreeSites;
@@ -427,7 +435,10 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       if (waterAt(x, z)) continue;
       const block = blockAt(x, z);
       if (block && !block.park && !block.sidewalk) continue;
-      parkTreeSites.push(edeTreeSite(tree, terrainHeightAt(x, z)));
+      const verge = x > -2027 && x < -2013 ? WVEDE_TREE_POSITIONS.get(`${x}/${z}`) : undefined;
+      const site = edeTreeSite(tree, terrainHeightAt(verge?.[0] ?? x, verge?.[1] ?? z));
+      if (verge) [site.x, site.z] = verge;
+      parkTreeSites.push(site);
     }
   } else {
     for (const tree of EDE_DATA.trees || []) {

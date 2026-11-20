@@ -321,6 +321,12 @@ const SCENIC_ARRIVALS = {
  'enka-westhal':     [495, 2246, 471.16, 2287.53, 6.5, 'Akulaan'],
  hoekelum:           [339.42, 3432.40, 355.2, 3393, 6.8, 'Landgoed Hoekelum'],
  gasfabriek:         [-453, 698, -433, 672, 5.0, 'Diamantstraat'],
+ mausoleum:          [478, 247, 490.8, 257.8, 1.9, 'Vossenakker'],
+ 'rwzi-ede':         [-3561, 909, -3508, 900, 5.5, 'Dwarsweg'],
+ 'oude-hofstede':    [-563.3, 3336.1, -548, 3316, 3.2, 'Bovenbuurtweg'],
+ 'de-proosdij':      [-1321.9, 631.9, -1347, 641, 3.4, 'Floreslaan'],
+ 'point-growth':     [-48.2, -16.9, -37.33, -12.96, 2.40, 'Torenstraat'],
+ 'on-the-rocks':    [-112, 260.7, -104.95, 260.6, 0.65, 'Bevrijdingsplein'],
 };
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){

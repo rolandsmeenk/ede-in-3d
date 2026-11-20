@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { EDE_DATA } from './city-config.js';
-import { getTerrain, getTerrainPatch, terrainHeightAt } from './terrain.js';
+import { getTerrain, getTerrainPatch, getTerrainPatches, terrainHeightAt } from './terrain.js';
 import { clipEdeGround, gradeCuts, localGradeSurface, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, terrainGradeCuts } from './ede-grade.js';
 
 // Geometry adapters only: rendering stays in the upstream WebGPU/TSL systems.
@@ -139,9 +139,8 @@ function surfaceGeometry(positions, indices, uv) {
   return geometry;
 }
 
-export function* edeTerrainGeometries(y) {
-  const { columns, rows, minX, minZ, step, heights, maxX, maxZ, minY } = getTerrain();
-  const chunk = 64, patch = getTerrainPatch();
+function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y, coarse = false) {
+  const chunk = 64;
   for (let row = 0; row < rows - 1; row += chunk) for (let col = 0; col < columns - 1; col += chunk) {
     const width = Math.min(chunk, columns - 1 - col) + 1;
     const height = Math.min(chunk, rows - 1 - row) + 1;
@@ -152,8 +151,7 @@ export function* edeTerrainGeometries(y) {
       positions[offset + 1] = heights[(row + j) * columns + col + i] + y;
       positions[offset + 2] = minZ + (row + j) * step;
       const x = positions[offset], z = positions[offset + 2];
-      if (i + 1 < width && j + 1 < height &&
-          !(patch && x >= patch.minX && x < patch.maxX && z >= patch.minZ && z < patch.maxZ)) {
+      if (i + 1 < width && j + 1 < height && !(coarse && getTerrainPatch(x, z))) {
         indices.push(a, a + width, a + 1, a + 1, a + width, a + width + 1);
       }
     }
@@ -174,19 +172,13 @@ export function* edeTerrainGeometries(y) {
     }
     yield surfaceGeometry(clipped);
   }
+}
 
-  if (patch) {
-    const positions = [], indices = [];
-    for (let row = 0; row < patch.rows; row++) for (let col = 0; col < patch.columns; col++) {
-      const i = row * patch.columns + col;
-      positions.push(patch.minX + col * patch.step, patch.heights[i] + y, patch.minZ + row * patch.step);
-      if (col + 1 < patch.columns && row + 1 < patch.rows) {
-        indices.push(i, i + patch.columns, i + 1, i + 1, i + patch.columns, i + patch.columns + 1);
-      }
-    }
-    yield surfaceGeometry(positions, indices);
-  }
-
+export function* edeTerrainGeometries(y) {
+  const terrain = getTerrain();
+  const { columns, rows, minX, minZ, maxX, maxZ, step, minY } = terrain;
+  yield* terrainGridGeometries(terrain, y, true);
+  for (const patch of getTerrainPatches()) yield* terrainGridGeometries(patch, y);
   // Continue the measured edges into coarse distant scenery.
   const border = 16000;
   const rim = (n, sample, outside) => {
@@ -239,7 +231,7 @@ export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavemen
   const { step, minX, minZ, columns, rows } = field;
   const position = geometry.getAttribute('position'), index = geometry.index;
   if (!position.count) return geometry;
-  const lift = position.getY(0), positions = [], patch = getTerrainPatch();
+  const lift = position.getY(0), positions = [];
   const candidate = wayId && localGradeSurface(wayId);
   let local;
   let cuts = [];
@@ -291,7 +283,8 @@ export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavemen
     const col = Math.floor(((bounds.minX + bounds.maxX) / 2 - minX) / step);
     const row = Math.floor(((bounds.minZ + bounds.maxZ) / 2 - minZ) / step);
     const cellX = minX + col * step, cellZ = minZ + row * step;
-    if (patch && cellX >= patch.minX && cellX < patch.maxX && cellZ >= patch.minZ && cellZ < patch.maxZ) {
+    const patch = getTerrainPatch(cellX, cellZ);
+    if (patch) {
       const fine = patch.step;
       const split = (piece, axis, edge) => {
         const d = p => p[axis] - edge;

@@ -54,7 +54,8 @@
   <link rel="modulepreload" href="./js/ede-train-schedule.js" />
   <link rel="modulepreload" href="./js/ede-train-tracks.js" />
   <link rel="modulepreload" href="./js/ede-train-traffic.js" />
-  <link rel="modulepreload" href="./js/ede-trains.js" />
+  <link rel="modulepreload" href="./js/ede-train-models.js" />
+  <link rel="modulepreload" href="./js/ede-trains.js?v=20261120-train-models" />
   <link rel="modulepreload" href="./js/ede-bus-stops.js" />
   <link rel="modulepreload" href="./js/ede-bus-traffic.js" />
   <link rel="modulepreload" href="./js/helicopter.js" />
@@ -77,7 +78,21 @@
   <link rel="modulepreload" href="./js/ede-research-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-research-survey.js" />
   <link rel="modulepreload" href="./js/ede-venue-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-mausoleum.js" />
+  <link rel="modulepreload" href="./js/ede-point-growth.js" />
+  <link rel="modulepreload" href="./js/ede-on-the-rocks.js" />
+  <link rel="modulepreload" href="./js/ede-waterzuivering.js" />
+  <link rel="modulepreload" href="./js/ede-kinderboerderij.js" />
   <link rel="modulepreload" href="./js/ede-venue-survey.js" />
+  <link rel="modulepreload" href="./js/ede-survey-landmark.js" />
+  <link rel="modulepreload" href="./js/ede-akoesticum-flags.js" />
+  <link rel="modulepreload" href="./js/ede-public-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-public-survey.js" />
+  <link rel="modulepreload" href="./js/ede-school-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-school-survey.js" />
+  <link rel="modulepreload" href="./js/ede-sport-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-sport-landmark-survey.js" />
+  <link rel="modulepreload" href="./js/ede-wvede-circuit-survey.js" />
   <link rel="modulepreload" href="./js/ede-next-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-next-survey.js" />
   <link rel="modulepreload" href="./js/ede-kuil-terrain.js" />
@@ -91,6 +106,7 @@
   <link rel="modulepreload" href="./js/ede-lukkien-survey.js" />
   <link rel="modulepreload" href="./js/ede-landmark-sites.js" />
   <link rel="modulepreload" href="./js/ede-windmill.js" />
+  <link rel="modulepreload" href="./js/ede-wind-props.js" />
   <link rel="modulepreload" href="./js/ede-concordiamolen.js" />
   <link rel="modulepreload" href="./js/ede-concordia-buildings.js" />
   <link rel="modulepreload" href="./js/ede-concordia-survey.js" />
@@ -154,8 +170,8 @@
   <link rel="modulepreload" href="./js/ede-facades.js" />
   <link rel="modulepreload" href="./js/ede-neighbourhood-facades.js" />
   <link rel="modulepreload" href="./js/ede-facade-material.js" />
-  <link rel="modulepreload" href="./js/main.js?v=20261120-acv-truck" />
-  <script type="module" src="./js/main.js?v=20261120-acv-truck"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261120-train-models" />
+  <script type="module" src="./js/main.js?v=20261120-train-models"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -312,6 +328,12 @@
       <button id="tp-enka-westhal" class="pop-item tp-btn" data-teleport="enka-westhal" type="button"><span class="pop-name">ENKA Westhal en Poortgebouw</span><span class="pop-sub">Akulaan · ENKA</span></button>
       <button id="tp-hoekelum" class="pop-item tp-btn" data-teleport="hoekelum" type="button"><span class="pop-name">Kasteel Hoekelum</span><span class="pop-sub">Landgoed Hoekelum</span></button>
       <button id="tp-gasfabriek" class="pop-item tp-btn" data-teleport="gasfabriek" type="button"><span class="pop-name">De Gasfabriek</span><span class="pop-sub">Diamantstraat</span></button>
+      <button id="tp-rwzi-ede" class="pop-item tp-btn" data-teleport="rwzi-ede" type="button"><span class="pop-name">Rioolwaterzuivering Ede</span><span class="pop-sub">Dwarsweg · Vijzelgemaal</span></button>
+      <button id="tp-mausoleum" class="pop-item tp-btn" data-teleport="mausoleum" type="button"><span class="pop-name">Mausoleum op de Paasberg</span><span class="pop-sub">Vossenakker</span></button>
+      <button id="tp-oude-hofstede" class="pop-item tp-btn" data-teleport="oude-hofstede" type="button"><span class="pop-name">Kinderboerderij De Oude Hofstede</span><span class="pop-sub">Bovenbuurtweg</span></button>
+      <button id="tp-de-proosdij" class="pop-item tp-btn" data-teleport="de-proosdij" type="button"><span class="pop-name">Kinderboerderij De Proosdij</span><span class="pop-sub">Floreslaan</span></button>
+      <button id="tp-point-growth" class="pop-item tp-btn" data-teleport="point-growth" type="button"><span class="pop-name">Point Growth</span><span class="pop-sub">Torenstraat</span></button>
+      <button id="tp-on-the-rocks" class="pop-item tp-btn" data-teleport="on-the-rocks" type="button"><span class="pop-name">On the Rocks</span><span class="pop-sub">Bevrijdingsplein</span></button>
     </div>
   </div>
 

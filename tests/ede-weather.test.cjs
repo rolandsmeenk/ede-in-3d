@@ -46,11 +46,17 @@ test('clear, overcast, rainy, snowy and foggy weather blend toward their scene s
   assert.ok(transition.update(10).cloud > .99);
 
   set({ weather_code: 80, cloud_cover: 100, rain: 2, showers: 2 });
-  const rain = { ...transition.update(9) };
+  const onset = { ...transition.update(.25) };
+  assert.equal(onset.raining, true);
+  assert.ok(onset.wetness > 0 && onset.wetness < 0.05);
+  const rain = { ...transition.update(8.75) };
   assert.ok(rain.rain > .99 && rain.snow === 0 && rain.wetness > .75 && rain.wetness < 1);
 
   set({ weather_code: 73, cloud_cover: 90, snowfall: .9 });
-  const snow = { ...transition.update(10) };
+  const afterRain = { ...transition.update(.01) };
+  assert.equal(afterRain.raining, false);
+  assert.ok(afterRain.wetness > rain.wetness * .99 && afterRain.rain > .9);
+  const snow = { ...transition.update(9.99) };
   assert.ok(snow.snow > .99 && snow.rain < .001);
   assert.ok(snow.wetness > rain.wetness * .85 && snow.wetness < rain.wetness);
 
@@ -62,6 +68,17 @@ test('clear, overcast, rainy, snowy and foggy weather blend toward their scene s
   assert.ok(transition.update(.5).blend > 0);
   transition.update(12);
   assert.equal(transition.update(.01).blend, 0);
+});
+
+test('drizzle with no measurable accumulation still darkens the pavement gently', async () => {
+  const { createWeatherTransition, parseWeather } = await import('../js/ede-weather.js');
+  const transition = createWeatherTransition();
+  transition.setReading(parseWeather(reading({ weather_code: 51 }), observedAt));
+  const damp = transition.update(25);
+  assert.equal(damp.raining, true);
+  assert.ok(damp.wetness > 0.05 && damp.wetness < 0.1);
+  transition.setReading(null);
+  assert.equal(transition.update(.01).raining, false);
 });
 
 test('visible refresh retains stale weather through an outage and expires it at the model age limit', async t => {

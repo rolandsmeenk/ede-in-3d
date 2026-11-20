@@ -9,6 +9,7 @@ import { createEnkaChimney } from './ede-enka-chimneys.js';
 import { createAstrant, createPegasusFlat } from './ede-mural-landmarks.js';
 import { createPlantion } from './ede-plantion.js';
 import { createFrisoKazerne } from './ede-friso-kazerne.js';
+import { createAkoesticumFlags } from './ede-akoesticum-flags.js';
 import { createEdeStationLandmark } from './ede-station-landmark.js';
 import { createEnkaWesthal, createOudeKerk } from './ede-enka-kerk.js';
 import { createMauritskazerne, createVuurvogel } from './ede-heritage-landmarks.js';
@@ -26,9 +27,17 @@ import { createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
 import { createRiedelSilos, createKappaDocie } from './ede-riedel-silos.js';
 import { buildMuralWalls } from './ede-mural-surfaces.js';
 import { createRaadhuis, createCultura } from './ede-civic-landmarks.js';
+import { createWaterzuivering } from './ede-waterzuivering.js';
+import { createOudeHofstede, createProosdij } from './ede-kinderboerderij.js';
+import { createMausoleum } from './ede-mausoleum.js';
+import { createPointGrowth } from './ede-point-growth.js';
+import { createOnTheRocks } from './ede-on-the-rocks.js';
 import { createWorkGarden } from './ede-work-garden.js';
 import { buildEdeFuelStations } from './ede-fuel-stations.js';
 import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
+import { PUBLIC_LANDMARK_FACTORIES } from './ede-public-landmarks.js';
+import { SCHOOL_LANDMARK_FACTORIES } from './ede-school-landmarks.js';
+import { SPORT_LANDMARK_FACTORIES } from './ede-sport-landmarks.js';
 
 // The engine's hand-built New York monuments are removed. Legacy exports keep the upstream controllers working.
 export let bryantParkLawn = null;
@@ -57,7 +66,7 @@ export const LANDMARK_EXCLUSIONS = [
 export function buildLandmarks(scene) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
-  const colliders = [], platforms = [], helipads = [], nearDetails = [], windmills = [], weatherCovers = [];
+  const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [];
   scene.add(group);
 
   function place(model, { x, z }, heading, footprints = [], baseY, colliderHeights = [], worldSpace = false) {
@@ -124,9 +133,30 @@ export function buildLandmarks(scene) {
     'johannus-orgelbouw': createJohannus,
     technova: createTechnova,
     gasfabriek: createGasfabriek,
+    mausoleum: createMausoleum,
+    'point-growth': createPointGrowth,
+    'on-the-rocks': createOnTheRocks,
+    'rwzi-ede': createWaterzuivering,
+    'oude-hofstede': createOudeHofstede,
+    'de-proosdij': createProosdij,
     'pallas-athene': createPallasAthene,
     tesqua: createTesqua,
+    ...PUBLIC_LANDMARK_FACTORIES,
+    ...SCHOOL_LANDMARK_FACTORIES,
+    ...SPORT_LANDMARK_FACTORIES,
   };
+  function registerDetail(detail) {
+    const range = detail.userData.nearDetail;
+    if (range) {
+      detail.updateWorldMatrix(true, false);
+      nearDetails.push({ detail, bounds: new THREE.Box3().setFromObject(detail),
+        distance: typeof range === 'number' ? range : 175 });
+    }
+    const wind = detail.userData.updateWind;
+    if (wind) windUpdates.push((dt, reading) => {
+      if (detail.visible) wind(dt, reading);
+    });
+  }
   for (const site of EDE_MODELED_LANDMARKS) {
     const footprints = modeledLandmarkFootprints(site);
     const model = site.churchSurvey ? createAdditionalChurch(site, site.churchSurvey, CHURCH_STYLES[site.id])
@@ -135,11 +165,11 @@ export function buildLandmarks(scene) {
     platforms.push(...(model.userData.platforms ?? []));
     helipads.push(...(model.userData.helipads ?? []));
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
-    model.traverse(detail => {
-      if (detail.userData.nearDetail) nearDetails.push({ detail, bounds: new THREE.Box3().setFromObject(detail) });
-      if (detail.userData.updateWind) windmills.push(detail.userData.updateWind);
-    });
+    model.traverse(registerDetail);
   }
+  const flags = createAkoesticumFlags();
+  group.add(flags);
+  flags.traverse(registerDetail);
   for (const model of buildEdeFuelStations()) {
     group.add(model);
     colliders.push(...model.userData.colliders);
@@ -159,12 +189,13 @@ export function buildLandmarks(scene) {
   function update(position) {
     if (last.distanceToSquared(position) < 4) return;
     last.copy(position);
-    for (const { detail, bounds } of nearDetails) {
-      detail.visible = bounds.distanceToPoint(position) < (detail.visible ? 205 : 175);
+    for (const { detail, bounds, distance = 175 } of nearDetails) {
+      const hysteresis = detail.visible ? Math.min(30, distance * 0.20) : 0;
+      detail.visible = bounds.distanceToPoint(position) < distance + hysteresis;
     }
   }
   function updateWind(dt, reading) {
-    for (const update of windmills) update(dt, reading);
+    for (const update of windUpdates) update(dt, reading);
   }
   return { group, colliders, platforms, helipads, weatherCovers, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
 }

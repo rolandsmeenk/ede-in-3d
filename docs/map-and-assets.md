@@ -43,6 +43,10 @@ Search the map for the surveyed churches, including Bethelkerk, Evangelisch-Luth
 
 The next ten locations include Kasteel Hoekelum, NIZO, Ziekenhuis Gelderse Vallei, De Eder Kuil, De ReeHorst, Buitenzorg, Johannus, Technova, De Gasfabriek and Tesqua. Hoekelum has a walkable moat bridge and the Eder Kuil has revised amphitheatre grading. [Sources, offline refresh and verification](../tools/data/ede-next-landmarks.md)
 
+The public-building, school and sports landmarks keep their surveyed roof and wall geometry. Verified entrances and glazing use local geometry and shared materials. Search the map for De Doelen, the Breelaan stations, Het Kernhuis, the Kenniscampus and ENKA schools, and the sports clubhouses. [Civic exterior sources](../tools/data/ede-public-landmarks.md) · [School exterior sources](../tools/data/ede-school-landmarks.md) · [Sports venue sources](../tools/data/ede-sport-landmarks.md)
+
+Six Akoesticum flagpoles follow the row visible in the 2026 PDOK aerial at the Frisokazerne forecourt. The venue's photos establish the alternating purple and green banners. The mast heights and cloth dimensions are fitted from those photographs. The cloth responds to the existing wind and is culled at the landmark detail distance. [Venue photos](https://akoesticum.org/contact/) · [PDOK RGB imagery](https://app.pdok.nl/viewer/)
+
 The sports generator fits markings and equipment to 169 mapped outdoor playing areas. It uses OSM footprints, the Tesqua court survey, and PDOK imagery to orient the Moorfielders diamonds. Unsupported layouts retain a mapped playing surface. [Sports inventory and refresh command](../tools/data/ede-sports.sources.md)
 
 ## Refresh the Ede map
@@ -81,6 +85,12 @@ uv run --with pyproj==3.8.0 --with rasterio python -B tools/build-ede-terrain.py
 Existing OSM street, cycleway, park and water outlines follow the terrain. Fitted bridges and tunnels have their own travel surfaces. The browser loads the local terrain asset and can fall back to level ground if the file is unavailable.
 
 The [targeted AHN survey](../tools/data/ede-ahn-pilot.md) shows how to refresh the native 0.5 m DTM and DSM inputs for the elevation pilot. The game loads the resulting small profiles and building base records locally. Use **Teleport → Openluchttheater Ede** to arrive above the seating and face the stage.
+
+The Rietkampen embankment north of the A12 uses a 3 m terrain patch from the native 0.5 m AHN ground model. It follows the Hoge dijkpad from Statenpad to CineMec (Pathé Ede) and blends into the town grid at the foot of the slopes. The paths and movement use the same heights. Rebuild the local asset with the command below. [PDOK AHN](https://www.pdok.nl/ogc-webservices/-/article/actueel-hoogtebestand-nederland-ahn) · [Atlas van Ede](https://www.atlasvanede.nl/mooi-ede/must-see/31-40-in-ede/39-poortwachter-en-geluidswal)
+
+```sh
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio python -B tools/build-ede-a12-embankment.py /tmp/ede-embankment-dtm.tif --fetch
+```
 
 ## Refresh structures and grade-separated routes
 

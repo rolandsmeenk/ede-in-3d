@@ -36,7 +36,7 @@ import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
 import { loadEdeTrainTimetable } from './ede-train-schedule.js';
-import { createEdeTrainSystem } from './ede-trains.js';
+import { createEdeTrainSystem } from './ede-trains.js?v=20261120-train-models';
 import { createEdeLevelCrossings } from './ede-level-crossings.js';
 import { BICYCLE, FOOT } from './road-access.js';
 import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js';

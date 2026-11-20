@@ -324,6 +324,9 @@ test('surveyed landmarks exclude only their surveyed buildings across both build
   const { NIZO_SURVEY, GELDERSE_VALLEI_SURVEY } = await import('../js/ede-research-survey.js');
   const { KUIL_SHELLS, PALLAS_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS } = await import('../js/ede-next-survey.js');
   const { REEHORST, BUITENZORG, JOHANNUS } = await import('../js/ede-venue-survey.js');
+  const { PUBLIC_LANDMARK_SURVEYS } = await import('../js/ede-public-survey.js');
+  const { SCHOOL_SURVEYS } = await import('../js/ede-school-survey.js');
+  const { SPORT_LANDMARK_SURVEYS } = await import('../js/ede-sport-landmark-survey.js');
   const { OTHER_CHURCH_SHELLS } = await import('../js/ede-other-church-shells.js');
   const { CHURCH_STYLES } = await import('../js/ede-church-styles.js');
   assert.deepEqual(Object.keys(CHURCH_STYLES).sort(), Object.keys(OTHER_CHURCH_SHELLS).sort());
@@ -338,6 +341,8 @@ test('surveyed landmarks exclude only their surveyed buildings across both build
     ['gasfabriek', ['works', 'purifier', 'wkeeper'].map(key => ESTATE_SURVEY[key])],
     ['tesqua', TESQUA_SHELLS], ['pallas-athene', PALLAS_SHELLS],
     ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, shell]) => [id, [shell]]),
+    ...Object.entries(PUBLIC_LANDMARK_SURVEYS), ...Object.entries(SCHOOL_SURVEYS),
+    ...Object.entries(SPORT_LANDMARK_SURVEYS),
   ];
   for (const [key, models] of newSites) {
     const site = sites.get(key);

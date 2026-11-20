@@ -39,7 +39,6 @@ const TIME_PRESETS = {
     fogColor: 0xdcc5ae,
     fogDensity: 0.00024,
     interiorGlow: 0.48,
-    roadWetness: 0.28,
     envIntensity: 0.54,
     canyonBounce: 0.52,
     turbidity: 8.0,
@@ -64,7 +63,6 @@ const TIME_PRESETS = {
     fogColor: 0xc6dcf2,
     fogDensity: 0.00018,
     interiorGlow: 0.24,
-    roadWetness: 0.08,
     envIntensity: 0.58,
     canyonBounce: 0.58,
     turbidity: 6.5,
@@ -89,7 +87,6 @@ const TIME_PRESETS = {
     fogColor: 0x353c58,
     fogDensity: 0.00032,
     interiorGlow: 1.25,
-    roadWetness: 0.55,
     envIntensity: 0.36,
     canyonBounce: 0.32,
     turbidity: 9.5,
@@ -114,7 +111,6 @@ const TIME_PRESETS = {
     fogColor: 0x0c1424,
     fogDensity: 0.00036,
     interiorGlow: 1.55,
-    roadWetness: 0.62,
     envIntensity: 0.30,
     canyonBounce: 0.18,
     turbidity: 4.0,
@@ -129,7 +125,7 @@ const TIME_PRESETS = {
 };
 
 const COLOR_KEYS = ['sunColor', 'hemiSky', 'hemiGround', 'skyTop', 'skyHorizon', 'fogColor'];
-const NUMBER_KEYS = ['sunIntensity', 'hemiIntensity', 'fogDensity', 'interiorGlow', 'roadWetness', 'envIntensity',
+const NUMBER_KEYS = ['sunIntensity', 'hemiIntensity', 'fogDensity', 'interiorGlow', 'envIntensity',
   'canyonBounce', 'turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG', 'cloudCoverage', 'cloudDensity',
   'skyExposure', 'nightFactor'];
 
@@ -342,7 +338,8 @@ class LightingSystem {
     const density = lerp(p.fogDensity, 0.0024, fog);
     this.scene.fog.density = density;
     if (this.uFogDensity) this.uFogDensity.value = density;
-    cityUniforms.uRoadWetness.value = lerp(p.roadWetness, this.weather?.wetness ?? 0, weight);
+    cityUniforms.uRoadWetness.value = (this.weather?.wetness ?? 0) * weight;
+    cityUniforms.uRoadPuddles.value = this.weather?.raining ? this.weather.rain * weight : 0;
   }
 
   queueWeatherBake() {

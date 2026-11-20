@@ -95,6 +95,10 @@ async function loadMap() {
       console.warn('[Ede shorelines] using OSM geometry:', error);
     }
   }
+  // PDOK aerial imagery shows that the former pond at RWZI Ede was filled.
+  data.water = data.water.filter(({ id, ring }) => id !== 'water171'
+    || ring[0] < -3500 || ring[0] > -3410 || ring[1] < 740 || ring[1] > 836);
+  data.meta.counts.water = data.water.length;
   if (years) applyBuildingYears(data.buildings, years);
   for (const { id, ring, holes } of EDE_FUEL_FALLBACK_FOOTPRINTS) {
     const building = data.buildings.find(row => row.id === id);

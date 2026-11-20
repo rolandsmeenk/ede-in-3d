@@ -13,6 +13,7 @@ test('detailed fuel stations share their sign atlas and leave vehicle clearance 
     'three/webgpu': THREE, 'three/tsl': { attribute, mix },
     './ede-geodata.js': {}, './terrain.js': {}, './aerial-colors.js': {},
     './bag3d.js': {}, './ede-grade.js': {}, './ede-facades.js': {}, './ede-facade-material.js': {},
+    './ede-wind-props.js': {},
   } });
   let canvasCount = 0;
   const canvas = { getContext: () => ({ fillRect() {}, fillText() {} }) };

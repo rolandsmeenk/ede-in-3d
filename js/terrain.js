@@ -2,7 +2,7 @@ import { EDER_KUIL_TERRAIN } from './ede-kuil-terrain.js';
 
 // PDOK AHN DTM samples on the existing Oude Kerk scene grid.
 // The binary stores centimetres NAP. World Y is relative to the origin's NAP height.
-let terrain = null, patch = null;
+let terrain = null, patches = [];
 
 export function decodeTerrain(buffer) {
   const data = new DataView(buffer);
@@ -28,10 +28,22 @@ export function decodeTerrain(buffer) {
 }
 
 export async function loadTerrain() {
-  const response = await fetch(new URL('../assets/ede-ahn.bin', import.meta.url));
-  if (!response.ok) throw new Error(`AHN terrain request failed: ${response.status}`);
-  terrain = decodeTerrain(await response.arrayBuffer());
-  patch = terrain.step === 12 ? EDER_KUIL_TERRAIN : null;
+  const load = async url => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`AHN terrain request failed: ${response.status}`);
+    return decodeTerrain(await response.arrayBuffer());
+  };
+  const optionalPatch = (file, label) => load(new URL(file, import.meta.url)).catch(error => {
+    console.warn(`Using the town terrain grid for ${label}:`, error);
+    return null;
+  });
+  const [town, embankment, cyclingCircuit] = await Promise.all([
+    load(new URL('../assets/ede-ahn.bin', import.meta.url)),
+    optionalPatch('../assets/ede-a12-embankment.bin', 'the A12 embankment'),
+    optionalPatch('../assets/ede-wvede-terrain.bin', 'the WVEde circuit'),
+  ]);
+  terrain = town;
+  patches = town.step === 12 ? [EDER_KUIL_TERRAIN, ...[embankment, cyclingCircuit].filter(Boolean)] : [];
   return terrain;
 }
 
@@ -51,9 +63,14 @@ export function sampleTerrain(field, x, z) {
   return d + (c - d) * (1 - u) + (b - d) * (1 - v);
 }
 
-export const getTerrainPatch = () => patch;
+export const getTerrainPatches = () => patches;
+
+export function getTerrainPatch(x, z) {
+  for (const patch of patches) {
+    if (x >= patch.minX && x < patch.maxX && z >= patch.minZ && z < patch.maxZ) return patch;
+  }
+}
 
 export function terrainHeightAt(x, z) {
-  const p = patch;
-  return sampleTerrain(p && x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ ? p : terrain, x, z);
+  return sampleTerrain(getTerrainPatch(x, z) ?? terrain, x, z);
 }

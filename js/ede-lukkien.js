@@ -5,6 +5,7 @@ import {
   CivicBatch, along, facePanel, makeGroup, offsetEdge, polygonNormal, wallColliders, wallExtent,
 } from './ede-civic-landmarks.js';
 import { LUKKIEN_HELIPAD, LUKKIEN_SURVEY } from './ede-lukkien-survey.js';
+import { trackWind } from './ede-wind-props.js';
 
 const slate = 0x363d43, concrete = 0xa5a7a1, brick = 0xa35744;
 const glass = [0x252e3a, 0x354657, 0x2d3c47, 0x374450];
@@ -123,14 +124,21 @@ function deck(batch, colliders) {
   const pole = { x: -3242.73, z: 2618.86 }, mastBase = 4.22, mastHeight = 2.54;
   batch.solid(new THREE.CylinderGeometry(0.035, 0.051, mastHeight, 8)
     .translate(pole.x, mastBase + mastHeight / 2, pole.z), 0x7b8584);
+  const sock = new CivicBatch();
   const rim = (i, j) => {
     const t = i / 5, angle = j * Math.PI * 2 / 10, radius = 0.28 - 0.20 * t;
-    return [pole.x + 0.12 + 1.75 * t, mastBase + mastHeight - 0.13 - 0.39 * t * t + Math.cos(angle) * radius,
-      pole.z + 0.11 * t + Math.sin(angle) * radius];
+    return [0.12 + 1.75 * t, Math.cos(angle) * radius, Math.sin(angle) * radius];
   };
   for (let i = 0; i < 5; i++) for (let j = 0; j < 10; j++) {
-    batch.quad(rim(i, j), rim(i, j + 1), rim(i + 1, j + 1), rim(i + 1, j), i % 2 ? 0xf1eee3 : 0xc54a33);
+    sock.quad(rim(i, j), rim(i, j + 1), rim(i + 1, j + 1), rim(i + 1, j), i % 2 ? 0xf1eee3 : 0xc54a33);
   }
+  const windsock = sock.mesh();
+  windsock.name = 'Lukkien windsock';
+  windsock.position.set(pole.x, mastBase + mastHeight - 0.13, pole.z);
+  windsock.rotation.z = -0.23;
+  return trackWind(windsock, { downwind: true, deform(_dt, speed) {
+    windsock.rotation.z = THREE.MathUtils.lerp(-1.26, -0.10, THREE.MathUtils.smoothstep(speed, 0, 7.5));
+  } });
 }
 
 function lukkienSign(a, b, y, height = 1.62, badge = false) {
@@ -170,7 +178,7 @@ function lukkienSign(a, b, y, height = 1.62, badge = false) {
 export function createLukkien() {
   const batch = new CivicBatch(), colliders = [];
   shell(batch, colliders);
-  deck(batch, colliders);
+  const windsock = deck(batch, colliders);
 
   const a = { x: -3226.05, z: 2636.01 }, b = { x: -3210.54, z: 2637.41 };
   const front = { x: -0.09, z: 0.996 };
@@ -184,6 +192,7 @@ export function createLukkien() {
   batch.polygon([roofCorners.map(pt => planPoint(pt, roofY - 0.28))], slate);
   facePanel(batch, p, q, front, 0, 1, roofY - 0.65, roofY + 1.27, 0x30383d);
   const group = makeGroup('Lukkien', batch, colliders);
+  group.add(windsock);
   const [s0, s1] = offsetEdge(along(p, q, 0.13), along(p, q, 0.87), front, 0.08);
   for (const sign of [
     lukkienSign(s0, s1, roofY + 0.35),

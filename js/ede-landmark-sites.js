@@ -1,6 +1,9 @@
 import { EDE_DATA } from './ede-geodata.js';
 import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
 import { OTHER_CHURCH_SHELLS } from './ede-other-church-shells.js';
+import { EDE_PUBLIC_LANDMARKS } from './ede-public-survey.js';
+import { EDE_SCHOOL_LANDMARKS } from './ede-school-survey.js';
+import { EDE_SPORT_LANDMARKS } from './ede-sport-landmark-survey.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -113,6 +116,32 @@ export const EDE_MODELED_LANDMARKS = [
   { id: 'tesqua', name: 'Tesqua', district: 'Veldhuizen', road: 'Horsterweg',
     osmId: 'w272136145', bagIds: ['0228100000041390'], x: -1859, z: 1330, height: 11, worldSpace: true,
     approach: { x: -1856, z: 1283 } },
+
+  { id: 'point-growth', name: 'Point Growth', district: 'Centrum', road: 'Torenstraat',
+    osmId: 'n9013767172', x: -37.33, z: -12.96, heading: -1.57, height: 5 },
+  { id: 'on-the-rocks', name: 'On the Rocks', district: 'Centrum', road: 'Bevrijdingsplein',
+    osmId: 'n821108126', x: -104.9533, z: 258.9767, height: 1.62, worldSpace: true },
+
+  { id: 'mausoleum', name: 'Mausoleum op de Paasberg', district: 'Paasberg', road: 'Vossenakker',
+    osmId: 'w734726076', x: 490.82, z: 257.77, heading: -1.633, height: 3.91,
+    approach: { x: 432.1, z: 233.8 } },
+
+  { id: 'rwzi-ede', name: 'Rioolwaterzuivering Ede · Vijzelgemaal', district: 'Ede-West', road: 'Dwarsweg',
+    osmId: 'w1466029086', annexOsmIds: ['w843579818', 'w272139262'],
+    bagIds: ['0228100000100438', '0228100000008655'],
+    x: -3504.52, z: 899.87, height: 10.25, worldSpace: true, approach: { x: -3561, z: 909 } },
+  { id: 'oude-hofstede', name: 'Kinderboerderij De Oude Hofstede', district: 'Reehorst', road: 'Bovenbuurtweg',
+    osmId: 'w271463467', annexOsmIds: ['w271462917', 'w271469978', 'w271376432'],
+    bagIds: ['0228100000027167', '0228100000028120', '0228100000048803', '0228100000064178'],
+    x: -543, z: 3314.3, height: 8.7, worldSpace: true, approach: { x: -563.3, z: 3336.1 } },
+  { id: 'de-proosdij', name: 'Kinderboerderij De Proosdij', district: 'Veldhuizen', road: 'Floreslaan',
+    osmId: 'w271549433', annexOsmIds: ['w271545798', 'w271548153', 'w271548956'],
+    bagIds: ['0228100000049983', '0228100000052209', '0228100000048949', '0228100000034592'],
+    x: -1350.7, z: 636.9, height: 9.23, worldSpace: true, approach: { x: -1321.9, z: 631.9 } },
+
+  ...EDE_PUBLIC_LANDMARKS,
+  ...EDE_SCHOOL_LANDMARKS,
+  ...EDE_SPORT_LANDMARKS,
 
   ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, churchSurvey]) => {
     const { name, osm, bag, center: [x, z], road, district, approach, height } = churchSurvey;
