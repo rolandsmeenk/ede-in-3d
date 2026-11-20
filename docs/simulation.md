@@ -12,7 +12,7 @@ Turn on **Live Weather** in the toolbar to use current model estimates for Oude 
 
 The game requests an update about every 15 minutes while visible. The local server shares one cached reading across clients. Static hosting requests the same conditions from Open-Meteo when the server endpoint is absent. A reading is marked stale after 30 minutes and fades back to the selected mode after an hour. When no reading is available, the selected mode supplies the weather settings.
 
-Concordiamolen, De Keetmolen, and both Windpark Maanderbroek turbines beside the A30 share the Open-Meteo 10 m wind reading when Live Weather is on. Their caps and nacelles turn into the reported wind, and the sails and blades speed up with stronger wind up to a modeled limit. They coast to a stop in calm wind, after the reading expires, or when Live Weather is switched off.
+Concordiamolen, De Keetmolen and both Windpark Maanderbroek turbines beside the A30 use the 10 m wind reading shown in the Live Weather card. Their caps and nacelles turn into the wind, and the sails and blades speed up with stronger wind up to a modeled limit. They coast to a stop in calm wind. Preset weather supplies a simulated 18 km/h southwesterly breeze when Live Weather is off or a reading is unavailable.
 
 Rain and snow use one camera-local draw with at most 1,200 particles. The effect is suppressed below mapped tunnel roofs, bridge decks and open sheds. Rain wets the roads and the surface dries gradually as rain stops. The timestamped reading and freshness status are available through `window.__slopwaw.weather`.
 

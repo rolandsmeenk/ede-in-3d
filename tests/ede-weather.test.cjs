@@ -78,12 +78,15 @@ test('visible refresh retains stale weather through an outage and expires it at 
   } });
   t.after(() => weather.setEnabled(false));
   assert.equal(weather.state.status, 'off');
+  const preset = weather.windReading;
+  assert.deepEqual(preset, { windSpeed: 18, windDirection: 225 });
   assert.equal(calls, 0);
   weather.setEnabled(true);
   assert.equal(weather.state.status, 'loading');
   await setImmediate();
   assert.equal(weather.state.status, 'fresh');
   assert.equal(weather.activeReading, weather.state.current);
+  assert.equal(weather.windReading, weather.state.current);
   assert.equal(calls, 1);
   assert.ok(weather.update(10).fog > .99);
 
@@ -100,6 +103,7 @@ test('visible refresh retains stale weather through an outage and expires it at 
   assert.equal(weather.state.status, 'stale');
   assert.equal(weather.state.current.observedAt, observedAt);
   assert.equal(weather.activeReading, weather.state.current);
+  assert.equal(weather.windReading, weather.state.current);
   assert.ok(weather.update(10).blend > .99);
 
   now += 29 * minute;
@@ -107,6 +111,7 @@ test('visible refresh retains stale weather through an outage and expires it at 
   await setImmediate();
   assert.equal(weather.state.status, 'expired');
   assert.equal(weather.activeReading, null);
+  assert.equal(weather.windReading, preset);
   assert.equal(weather.state.current.observedAt, observedAt);
   weather.update(15);
   assert.equal(weather.update(.01).blend, 0);
@@ -129,4 +134,21 @@ test('turning Live Weather off cancels an in-flight read and a late response can
   assert.deepEqual(weather.state, { enabled: false, status: 'off', current: null });
   assert.equal(weather.activeReading, null);
   assert.equal(weather.update(10).blend, 0);
+});
+
+test('calm live wind overrides the preset breeze until Live Weather is switched off', async t => {
+  const { createLiveWeather } = await import('../js/ede-weather.js');
+  const weather = createLiveWeather({
+    now: () => observedAt, page: { hidden: false, addEventListener() {} },
+    request: async () => reading({ wind_speed_10m: 0, wind_gusts_10m: 0 })
+  });
+  t.after(() => weather.setEnabled(false));
+  const preset = weather.windReading;
+  weather.setEnabled(true);
+  assert.equal(weather.windReading, preset);
+  await setImmediate();
+  assert.equal(weather.windReading, weather.state.current);
+  assert.equal(weather.windReading.windSpeed, 0);
+  weather.setEnabled(false);
+  assert.equal(weather.windReading, preset);
 });

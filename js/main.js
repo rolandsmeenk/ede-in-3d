@@ -471,9 +471,10 @@ async function initApp() {
       if (status === 'loading') weatherStatus.textContent = 'Loading weather…';
       else if (status === 'unavailable') weatherStatus.textContent = 'Weather unavailable · using preset';
       else if (status === 'expired') weatherStatus.textContent = 'Weather expired · using preset';
-      else if (current) weatherStatus.textContent =
-        `${weatherCondition(current.code)} · ${Math.round(current.temperature)} °C${status === 'stale' ? ' · Stale' : ''}`;
-      else weatherStatus.textContent = '';
+      else if (current) {
+        const wind = `Wind ${Math.round(current.windSpeed)} km/h`;
+        weatherStatus.textContent = `${weatherCondition(current.code)} · ${Math.round(current.temperature)} °C · ${wind}${status === 'stale' ? ' · Stale' : ''}`;
+      } else weatherStatus.textContent = '';
     }
   });
   weatherButton.addEventListener('click', () => liveWeather.setEnabled(!liveWeather.state.enabled));
@@ -1049,7 +1050,7 @@ async function initApp() {
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
     const weatherEffects = liveWeather.update(dt);
-    const windReading = liveWeather.activeReading;
+    const windReading = liveWeather.windReading;
     landmarks.updateWind(dt, windReading);
     bgtWorld?.updateWind(dt, windReading);
     lightingSystem.update(cameraSystem.currentPos, weatherEffects);

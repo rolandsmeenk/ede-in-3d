@@ -4,6 +4,7 @@ const REFRESH_MS = 15 * 60 * 1000;
 const RETRY_MS = 60 * 1000;
 const STALE_MS = 30 * 60 * 1000;
 const EXPIRE_MS = 60 * 60 * 1000;
+const PRESET_WIND = Object.freeze({ windSpeed: 18, windDirection: 225 });
 const CURRENT_FIELDS = [
   'temperature_2m', 'weather_code', 'cloud_cover', 'rain', 'showers', 'snowfall',
   'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m'
@@ -191,5 +192,10 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
   }
 
   page.addEventListener('visibilitychange', tick);
-  return { setEnabled, update: transition.update, get state() { return state; }, get activeReading() { return active; } };
+  return {
+    setEnabled, update: transition.update,
+    get state() { return state; },
+    get activeReading() { return active; },
+    get windReading() { return active ?? PRESET_WIND; }
+  };
 }
