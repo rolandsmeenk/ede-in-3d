@@ -234,7 +234,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     tower.name = 'A30 wind turbine';
     tower.position.set(x, ground, z);
     group.add(tower);
-    const { cap, sails } = createWindmillRig(tower, hubHeight, 3.55, 0, { cutIn: 3, rotationSign: -1 });
+    const { cap, sails } = createWindmillRig(tower, hubHeight, 3.55, 0, { turbine: true });
     cap.name = 'Wind turbine nacelle';
     sails.name = 'Wind turbine blades';
     turbineUpdates.push(cap.userData.updateWind);
@@ -248,7 +248,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
       const sin = Math.sin(angle), cos = Math.cos(angle);
       const point = (along, across, depth) =>
         [sin * along + cos * across, cos * along - sin * across, depth];
-      const sections = [[1, 0.65, 0.4], [8, 2, 0.65], [25, 1.2, 0.28], [50.5, 0.04, 0.04]];
+      const sections = [[1, 1.7, 0.5], [8, 2, 0.65], [25, 1.2, 0.28], [50.5, 0.315, 0.04]];
       for (let i = 1; i < sections.length; i++) {
         const [a, aw, ad] = sections[i - 1], [b, bw, bd] = sections[i];
         for (const sign of [-1, 1]) {

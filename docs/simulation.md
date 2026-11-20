@@ -12,7 +12,11 @@ Turn on **Live Weather** in the toolbar to use current model estimates for Oude 
 
 The game requests an update about every 15 minutes while visible. The local server shares one cached reading across clients. Static hosting requests the same conditions from Open-Meteo when the server endpoint is absent. A reading is marked stale after 30 minutes and fades back to the selected mode after an hour. When no reading is available, the selected mode supplies the weather settings.
 
-Concordiamolen, De Keetmolen and both Windpark Maanderbroek turbines beside the A30 use the 10 m wind reading shown in the Live Weather card. Their caps and nacelles turn into the wind, and the sails and blades speed up with stronger wind up to a modeled limit. They coast to a stop in calm wind. Preset weather supplies a simulated 18 km/h southwesterly breeze when Live Weather is off or a reading is unavailable.
+Concordiamolen, De Keetmolen and both Maanderbroek turbines turn into the wind using the 10 m reading shown in the Live Weather card. Preset weather supplies a simulated 18 km/h southwesterly breeze when Live Weather is off or a reading is unavailable.
+
+The Maanderbroek Siemens SWT-3.2-101 turbines have a 3 m/s cut-in speed and a 25 m/s cut-out speed at hub height. Siemens lists a 6.5–19 RPM operating range. The game estimates wind at the 99.5 m hubs with the 1/7 power law and approximates the controller’s speed curve within that range. [Wind farm construction record](https://verwaard-bv.nl/raedthuys-windpark-a30-a12-maanderbroek/) · [Siemens datasheet](https://datasheet.datasheetarchive.com/originals/crawler/siemens.com/d1ee0e9960c2d8b87e5d46af432194c2.pdf) · [Wind shear reference](https://docs.nrel.gov/docs/fy15osti/63696.pdf)
+
+Concordiamolen and De Keetmolen show canvas on their wooden lattices as they turn. The game shortens the canvas in stronger winds and shows bare lattices in high wind or at rest. The wind thresholds approximate a miller’s sail settings. [Gilde van Molenaars handbook](https://gildevanmolenaars.nl/f/files/download/opleidingen/lesmateriaal/handboek-windmolenaar/hoofdstuk-7-de-praktijk-dl-1-vs-23.pdf)
 
 Rain and snow use one camera-local draw with at most 1,200 particles. The effect is suppressed below mapped tunnel roofs, bridge decks and open sheds. Rain wets the roads and the surface dries gradually as rain stops. The timestamped reading and freshness status are available through `window.__slopwaw.weather`.
 

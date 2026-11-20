@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createWindmillRig } from './ede-windmill.js';
+import { addWindmillSailcloth, createWindmillRig } from './ede-windmill.js';
 
 const OCTAGON = Math.PI / 4;
 const GALLERY_HEIGHT = 12.8;
@@ -8,7 +8,8 @@ const SAIL_HUB = 24.65;
 const HUB_OFFSET = 4.90;
 const SHAFT_SLOPE = 0.22;
 const GALLERY_RADIUS = 6.85;
-const SAIL_SPANS = [23.55, 23.70];
+const SAIL_RADII = [23.55 / 2, 23.70 / 2];
+const SAIL_ANGLE = 0.34;
 const BRICK = 0x8a7063;
 const THATCH = 0x434039;
 const TIMBER = 0x3c3830;
@@ -122,8 +123,8 @@ export function createConcordiamolen() {
   finish(cap);
 
   for (let i = 0; i < 4; i++) {
-    const angle = 0.34 + i * Math.PI / 2;
-    const span = SAIL_SPANS[i % 2] / 2;
+    const angle = SAIL_ANGLE + i * Math.PI / 2;
+    const span = SAIL_RADII[i % 2];
     const cos = Math.cos(angle), sin = Math.sin(angle);
     const point = (r, width, offset = 0) => [
       r * cos - width * sin, r * sin + width * cos, offset,
@@ -140,5 +141,6 @@ export function createConcordiamolen() {
   }
 
   finish(sails);
+  addWindmillSailcloth(sails, { angle: SAIL_ANGLE, radii: SAIL_RADII, root: 1.65, innerWidth: 0.92, outerWidth: 1.55 });
   return group;
 }

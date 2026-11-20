@@ -9,13 +9,17 @@ const dt = 1 / 60;
 
 async function windmill(heading = 0, options) {
   const three = await import('../vendor/three/build/three.webgpu.js');
-  const { createWindmillRig } = loadModule(source, { imports: { 'three/webgpu': three } });
+  const { addWindmillSailcloth, createWindmillRig } = loadModule(source, { imports: { 'three/webgpu': three } });
   const tower = new three.Group();
   tower.rotation.y = heading;
-  const { cap, sails } = createWindmillRig(tower, 24.65, 4.90, 0.22, options);
+  const hubHeight = options?.turbine ? 99.5 : 24.65;
+  const { cap, sails } = createWindmillRig(tower, hubHeight, 4.90, 0.22, options);
   tower.updateMatrixWorld(true);
   return {
     tower, cap, sails,
+    addCloth() {
+      return addWindmillSailcloth(sails, { angle: 0.34, radii: [11.775, 11.85], root: 1.65, innerWidth: 0.92, outerWidth: 1.55 });
+    },
     tick(reading, frames = 1) {
       for (let i = 0; i < frames; i++) cap.userData.updateWind(dt, reading);
     },
@@ -59,7 +63,7 @@ test('the cap takes the short turn across north and the sails accelerate and coa
   assert.equal(speedAfter(4), 0);
   const breeze = speedAfter(14);
   const strong = speedAfter(30);
-  const capped = speedAfter(90);
+  const capped = speedAfter(60);
   assert.ok(breeze > 0 && strong > breeze);
   assert.ok(capped >= strong && capped <= 16 * 2 * Math.PI / 60 + 0.001);
 
@@ -74,13 +78,42 @@ test('the cap takes the short turn across north and the sails accelerate and coa
   assert.equal(mill.cap.rotation.y, yaw);
 });
 
-test('the A30 turbine profile faces into the wind and turns clockwise above its cut-in speed', async () => {
-  const turbine = await windmill(0, { cutIn: 3, rotationSign: -1 });
-  turbine.tick({ windDirection: 90, windSpeed: 10 }, 1200);
+test('Maanderbroek turbines start at 3 m/s at hub height and follow the Siemens speed range', async () => {
+  const turbine = await windmill(0, { turbine: true });
+  const rpmAt = windSpeed => {
+    const wind = { windDirection: 90, windSpeed };
+    turbine.tick(wind, 1200);
+    const previous = turbine.sails.rotation.z;
+    turbine.tick(wind);
+    return angleDifference(turbine.sails.rotation.z, previous) / dt * 60 / (2 * Math.PI);
+  };
+  assert.equal(rpmAt(7), 0);
   assert.ok(turbine.front().x > 0.999);
-  assert.equal(turbine.sails.rotation.z, 0);
-  turbine.tick({ windDirection: 90, windSpeed: 20 }, 1200);
-  const angle = turbine.sails.rotation.z;
-  turbine.tick({ windDirection: 90, windSpeed: 20 });
-  assert.ok(angleDifference(turbine.sails.rotation.z, angle) < 0);
+  const light = rpmAt(9);
+  assert.ok(light < -6.5 && light > -8, light);
+  const breeze = rpmAt(18);
+  assert.ok(breeze < -10 && breeze > -12, breeze);
+  assert.ok(Math.abs(rpmAt(40) + 19) < 0.01);
+  assert.equal(rpmAt(66), 0);
+});
+
+test('the four cloth panels move with the wooden sails, reef in stronger wind and furl at rest', async () => {
+  const mill = await windmill();
+  const cloth = mill.addCloth();
+  assert.equal(cloth.parent, mill.sails);
+  assert.equal(cloth.visible, false);
+  mill.tick({ windDirection: 180, windSpeed: 18 }, 300);
+  assert.equal(cloth.visible, true);
+  assert.equal(cloth.geometry.drawRange.count, 96);
+  const before = cloth.matrixWorld.elements.slice();
+  mill.tick({ windDirection: 180, windSpeed: 30 }, 60);
+  assert.equal(cloth.geometry.drawRange.count, 48);
+  assert.notDeepEqual(cloth.matrixWorld.elements, before);
+  mill.tick({ windDirection: 180, windSpeed: 48 });
+  assert.equal(cloth.visible, false);
+  assert.notEqual(mill.sails.rotation.z, 0);
+  mill.tick({ windDirection: 180, windSpeed: 18 });
+  assert.equal(cloth.visible, true);
+  mill.tick({ windDirection: 180, windSpeed: 0 }, 1200);
+  assert.equal(cloth.visible, false);
 });

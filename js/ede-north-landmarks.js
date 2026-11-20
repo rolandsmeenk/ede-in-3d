@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { terrainHeightAt } from './terrain.js';
-import { createWindmillRig } from './ede-windmill.js';
+import { addWindmillSailcloth, createWindmillRig } from './ede-windmill.js';
 import {
   CivicBatch, along, offsetEdge, facePanel, wallExtent, wallColliders, makeGroup, civicSigns, polygonNormal,
 } from './ede-civic-landmarks.js';
@@ -115,8 +115,9 @@ export function createKeetmolen() {
   }
   timber([0, hub - 0.19, 2.74], [0, hub, hubOffset], 0.47, 0.41, 0x555753);
   // The biotope survey gives a 24.75 m sail span. Build the sails in the windshaft's local plane.
+  const sailAngle = 0.08, span = 12.375;
   for (let i = 0; i < 4; i++) {
-    const a = 0.08 + i * Math.PI / 2, c = Math.cos(a), s = Math.sin(a), span = 12.375;
+    const a = sailAngle + i * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
     const sail = (r, w) => [r * c - w * s, r * s + w * c, 0];
     sailBeam(sail(0, 0), sail(span, 0), 0.234, 0.205, wood);
     sailBeam(sail(1.95, -0.31), sail(span, -0.29), 0.24, 0.15, ivory);
@@ -147,6 +148,7 @@ export function createKeetmolen() {
   const group = makeGroup('De Keetmolen', batch, colliders);
   rotatingCap.add(capBatch.mesh());
   sails.add(sailBatch.mesh());
+  addWindmillSailcloth(sails, { angle: sailAngle, radii: [span], root: 2.10, innerWidth: 0.92, outerWidth: 1.25 });
   group.add(tower);
   group.userData.platforms = [mound];
   return group;

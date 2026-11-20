@@ -1051,8 +1051,9 @@ async function initApp() {
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
     const weatherEffects = liveWeather.update(dt);
     const windReading = liveWeather.windReading;
-    landmarks.updateWind(dt, windReading);
-    bgtWorld?.updateWind(dt, windReading);
+    const windDt = fixedStep ? dt : THREE.MathUtils.clamp(rawDt, 0, 0.25);
+    landmarks.updateWind(windDt, windReading);
+    bgtWorld?.updateWind(windDt, windReading);
     lightingSystem.update(cameraSystem.currentPos, weatherEffects);
     precipitation.update(dt, cameraSystem.camera, weatherEffects);
     profiler?.stage('Lighting and weather');
