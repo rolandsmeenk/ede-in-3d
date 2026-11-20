@@ -125,7 +125,7 @@ def report(raw, catalog, output, survey=None):
     topology = catalog['topology']
     counts = catalog['counts']
     with output.open('w') as file:
-        file.write('# Slop Ede crossing audit\n\n')
+        file.write('# Ede in 3D crossing audit\n\n')
         file.write(f'The catalogue contains {counts["knownStructural"]} requested structures, {counts["confirmed"]} additional confirmed map features, '
                    f'{counts["candidate"]} discovery candidates and {counts["level"]} public level crossings. '
                    f'This run used Chrome {raw["backend"]}. There are {levels["Pass"]} passed, {levels["Fail"]} failed and {levels["Unverified"]} unverified route levels. '

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake Rijkswaterstaat DTB motorway furniture into Slop Ede's local frame."""
+"""Bake Rijkswaterstaat DTB motorway furniture into Ede in 3D's local frame."""
 
 import argparse
 from collections import Counter, defaultdict

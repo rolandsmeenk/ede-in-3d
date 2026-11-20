@@ -18,7 +18,7 @@ TMP=$(mktemp "${OUT}.tmp.XXXXXX")
 trap 'rm -f -- "$TMP"' EXIT
 for ((i = 1; i <= TRIES; i++)); do
   for ep in https://overpass-api.de/api/interpreter https://lz4.overpass-api.de/api/interpreter https://z.overpass-api.de/api/interpreter; do
-    if code=$(curl -sS -m 240 -A "slop-ede/1.0 (https://github.com/rolandsmeenk/slop-ede)" -o "$TMP" -w "%{http_code}" --data-urlencode "data@$Q" "$ep"); then
+    if code=$(curl -sS -m 240 -A "ede-in-3d/1.0 (https://github.com/rolandsmeenk/slop-ede)" -o "$TMP" -w "%{http_code}" --data-urlencode "data@$Q" "$ep"); then
       if [ "$code" = "200" ] && node -e '
         const fs = require("node:fs");
         try {

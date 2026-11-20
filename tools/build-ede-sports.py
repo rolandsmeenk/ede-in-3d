@@ -238,7 +238,7 @@ def build(paths, snapshot, scene):
         'version': 1,
         'source': {'name': 'OpenStreetMap contributors', 'license': 'ODbL 1.0',
                    'url': 'https://www.openstreetmap.org/copyright', 'date': snapshot,
-                   'tesqua': 'Existing Slop Ede court survey',
+                   'tesqua': 'Existing Ede in 3D court survey',
                    'moorfielders': 'PDOK 2026_orthoHR diamond alignment',
                    'tesquaSupersedes': sorted(set(superseded))},
         'counts': {'pitches': len(pitches), 'bySport': dict(sorted(Counter(

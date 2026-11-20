@@ -278,7 +278,7 @@ class TrainUpdates:
         self.updates = []
 
     def __call__(self):
-        headers = {'User-Agent': 'Slop Ede transit simulator', 'Accept-Encoding': 'gzip'}
+        headers = {'User-Agent': 'Ede in 3D transit simulator', 'Accept-Encoding': 'gzip'}
         if self.modified:
             headers['If-Modified-Since'] = self.modified
         request = Request(OVAPI_URL, headers=headers)

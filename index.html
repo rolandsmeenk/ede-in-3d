@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Slop Ede</title>
-  <link rel="icon" href="data:," />
+  <title>Ede in 3D</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/wapen-van-ede.svg" />
   <meta name="description" content="Explore Ede in 3D on foot, by car, bicycle, or helicopter." />
   <!-- Pinned Three.js runtime is served locally for offline play. -->
   <script type="importmap">
@@ -216,14 +216,14 @@
   <div id="loading-overlay" role="status" aria-live="polite">
     <div class="loader">
       <img class="ede-logo loader-logo" src="./assets/wapen-van-ede.svg" alt="Wapen van Ede" />
-      <div class="loader-title">Slop Ede</div>
+      <div class="loader-title">Ede in 3D</div>
       <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
       <div id="loading-status">Loading city code and data...</div>
     </div>
   </div>
 
   <!-- 3D WebGPU Viewport Container -->
-  <main id="canvas-container" data-train-prediction-seconds="32" aria-label="3D Interactive Slop Ede Viewport"></main>
+  <main id="canvas-container" data-train-prediction-seconds="32" aria-label="Interactive map of Ede in 3D"></main>
   <div class="map-attribution">
     <a href="https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html" target="_blank" rel="noopener noreferrer">Structures and streets via PDOK BGT</a>
     <a href="https://geo.ede.nl/geoserver/Ede/wfs?service=WFS&amp;request=GetCapabilities" target="_blank" rel="noopener noreferrer">Bins and play sites by Gemeente Ede</a>
@@ -248,8 +248,8 @@
       <img class="ede-logo" src="./assets/wapen-van-ede.svg" alt="Wapen van Ede" />
       <div class="brand-titles">
         <div class="brand-heading">
-          <h1>Slop Ede</h1>
-          <a class="repo-link" href="https://github.com/rolandsmeenk/slop-ede/" target="_blank" rel="noopener noreferrer" aria-label="Slop Ede on GitHub (opens in a new tab)">GitHub <span aria-hidden="true">↗</span></a>
+          <h1>Ede in 3D</h1>
+          <a class="repo-link" href="https://github.com/rolandsmeenk/slop-ede/" target="_blank" rel="noopener noreferrer" aria-label="Ede in 3D on GitHub (opens in a new tab)">GitHub <span aria-hidden="true">↗</span></a>
         </div>
         <div class="brand-subtitle">three.js · WebGPU · TSL · <span id="hud-fps" class="fps-ok">60</span> fps</div>
       </div>

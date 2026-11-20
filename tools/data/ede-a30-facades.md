@@ -1,4 +1,4 @@
-# A30 façades in Slop Ede
+# A30 façades in Ede in 3D
 
 The 20 November 2026 visibility survey followed the A30 from Maanderbroek to the northern map boundary. It sampled 94 mapped ways at 3,175 driver-eye positions, including 1,020 northbound, 1,209 southbound and 946 on ramps and interchange links. It skipped six covered positions. Of the remaining viewpoints, 2,293 used fitted lane positions and 882 used nominal lane centres. The bake considers views up to 1.5 km away and uses the 12 m AHN terrain, LoD 2.2 buildings and 35 BGT and 1GIS barriers to test sightlines. It leaves out foliage, traffic and temporary obstructions. [3DBAG](https://docs.3dbag.nl/en/copyright/) · [OpenStreetMap](https://www.openstreetmap.org/copyright) · [AHN](https://www.ahn.nl/dataroom) · [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
 

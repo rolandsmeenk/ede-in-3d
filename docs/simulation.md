@@ -1,6 +1,6 @@
 # Simulation and live feeds
 
-Traffic, weather, parking and public transport in Slop Ede. [Hosting and feed availability](running.md#github-pages-and-live-data) · [Traffic pilot and verification](../tools/data/ede-traffic-pilot.md)
+Traffic, weather, parking and public transport in Ede in 3D. [Hosting and feed availability](running.md#github-pages-and-live-data) · [Traffic pilot and verification](../tools/data/ede-traffic-pilot.md)
 
 ## Live road traffic
 

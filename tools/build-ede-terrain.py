@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Slop Ede terrain asset from a PDOK AHN GeoTIFF in EPSG:28992."""
+"""Build the Ede in 3D terrain asset from a PDOK AHN GeoTIFF in EPSG:28992."""
 
 import argparse
 from array import array

@@ -1,8 +1,8 @@
-# Slop Ede
+# Ede in 3D
 
 Explore Ede, the Netherlands, in a 3D browser game built around its real streets, landscapes and landmarks. Wander from Oude Kerk to Marktplein, cycle out to Huis Kernhem, or fly a helicopter over the ENKA factory.
 
-**[Play Slop Ede](https://rolandsmeenk.github.io/slop-ede/)**
+**[Play Ede in 3D](https://rolandsmeenk.github.io/slop-ede/)**
 
 ![Oude Kerk rising above the rooftops of Ede town centre](assets/screenshots/oude-kerk.webp)
 
@@ -18,13 +18,22 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 | --- | ---: |
 | Map extent | 7.4 × 5.4 km |
 | Scenic teleport presets | 10 |
+| Custom landmark models | 93 |
 | Building footprints in the base map | 44,844 |
+| Street litter bins | 555 |
+| Waste collection sites | 395 |
+| Mapped playground outlines | 119 |
+| Municipal play-site locations | 218 |
+| Playgrounds with surveyed equipment | 2 |
+| Outdoor sports pitches, courts and tracks | 169 |
+| Mapped traffic-light locations | 251 |
+| Lamp posts | 15,241 |
 | Mapped tree records | 50,352 |
 | Mapped roads and paths | 937 km |
 | Mapped railway tracks | 37 km |
 | Modeled parking spaces | 18,193 |
 
-Figures come from the bundled map and the Teleport menu. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
+Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 89 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
 
 ## Screenshots
 
@@ -38,7 +47,7 @@ Figures come from the bundled map and the Teleport menu. Lengths sum the mapped 
 
 | Noorderkerk | Astrant mural | NIZO Food Research |
 | --- | --- | --- |
-| ![Noorderkerk’s brick façade, arched window and spire](assets/screenshots/noorderkerk.webp) | ![Studio Giftig’s Muzikanten mural across Kuiperplein](assets/screenshots/astrant-mural.webp) | ![Brick and glass frontage at NIZO Food Research](assets/screenshots/nizo.webp) |
+| ![Noorderkerk with its centered stained-glass window beneath a symmetrical gable and its brick tower extending to ground level](assets/screenshots/noorderkerk.webp) | ![Studio Giftig’s Muzikanten mural across Kuiperplein](assets/screenshots/astrant-mural.webp) | ![Brick and glass frontage at NIZO Food Research](assets/screenshots/nizo.webp) |
 
 ## See Ede in a different light
 
@@ -54,4 +63,4 @@ Choose Golden Hour, Midday, Blue Hour or Night, or switch to **Live Time** to fo
 
 Fork it, remix it, or use it to make a game, animation, film or experiment. Explore other cities in [Slop Cities](https://github.com/zz85/slop-cities).
 
-Slop Ede is forked from [Slop Utrecht](https://github.com/bertt/slop-utrecht), based on [Slop New York](https://github.com/mrdoob/slop-newyork). The code is available under the [MIT License](LICENSE). See [License and data](docs/map-and-assets.md#license-and-data) for map and imagery credits.
+Ede in 3D is forked from [Slop Utrecht](https://github.com/bertt/slop-utrecht), based on [Slop New York](https://github.com/mrdoob/slop-newyork). The code is available under the [MIT License](LICENSE). See [License and data](docs/map-and-assets.md#license-and-data) for map and imagery credits.

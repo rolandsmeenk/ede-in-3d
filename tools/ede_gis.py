@@ -1,4 +1,4 @@
-"""Pinned horizontal GIS conversions in Slop Ede’s offline pipeline."""
+"""Pinned horizontal GIS conversions in Ede in 3D’s offline pipeline."""
 
 from functools import cache
 from hashlib import sha256

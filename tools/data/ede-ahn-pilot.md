@@ -17,7 +17,7 @@ For the Bospoort house, OSM footprint `w271586543` overlaps BAG `022810000007327
 
 ## Performance release check
 
-The baseline was Slop Ede commit `188e1ff` on Apple M4 Pro in Chrome WebGPU at 1600 × 900. After three baseline runs, two paired runs alternated the baseline and the same commit with the elevation and teleport changes. Cold runs clear the HTTP cache and share the GPU driver cache. V8 peak memory is the sampled JavaScript heap plus backing storage. The final drive traveled 14.50 m in every run.
+The baseline was commit `188e1ff` on Apple M4 Pro in Chrome WebGPU at 1600 × 900. After three baseline runs, two paired runs alternated the baseline and the same commit with the elevation and teleport changes. Cold runs clear the HTTP cache and share the GPU driver cache. V8 peak memory is the sampled JavaScript heap plus backing storage. The final drive traveled 14.50 m in every run.
 
 | Measure | Baseline range | Revised range |
 | --- | ---: | ---: |

@@ -54,7 +54,7 @@ def osm_tags(way_ids):
     way_ids = list(way_ids)
     for offset in range(0, len(way_ids), 40):
         query = urlencode({'ways': ','.join(way_ids[offset:offset + 40])})
-        request = Request(OSM + '?' + query, headers={'User-Agent': 'slop-ede/1.0 (https://github.com/rolandsmeenk/slop-ede)'})
+        request = Request(OSM + '?' + query, headers={'User-Agent': 'ede-in-3d/1.0 (https://github.com/rolandsmeenk/slop-ede)'})
         with urlopen(request, timeout=40) as response:
             ways = ET.parse(response).getroot().findall('way')
         for way in ways:

@@ -117,7 +117,7 @@ def fetch_gates(directory, sites, affine):
             bbox = ','.join(f'{value:.8f}' for value in geographic_bounds(bounds, affine))
             url = f'https://api.openstreetmap.org/api/0.6/map?bbox={bbox}'
             raw = subprocess.check_output(['curl', '-fsSL', '--max-time', '12', '--compressed', '--user-agent',
-                                           'Slop Ede offline street-detail importer (github.com/rolandsmeenk/slop-ede)', url])
+                                           'Ede in 3D offline street-detail importer (github.com/rolandsmeenk/slop-ede)', url])
             for node in ElementTree.fromstring(raw).findall('node'):
                 tags = {tag.attrib['k']: tag.attrib['v'] for tag in node.findall('tag')}
                 if tags.get('barrier') in GATE_TAGS.split('|'):

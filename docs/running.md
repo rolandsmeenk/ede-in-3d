@@ -1,4 +1,4 @@
-# Running Slop Ede
+# Running Ede in 3D
 
 Local setup, GitHub Pages behavior and browser profiling. [Simulation and live feeds](simulation.md) · [Map and asset builds](map-and-assets.md)
 
@@ -14,7 +14,7 @@ Add `--offline` to skip upstream traffic, rail and weather feeds. A plain static
 
 ## GitHub Pages and live data
 
-GitHub Pages serves the game and its bundled assets. Live features that use Slop Ede’s server require a separate deployment. [GitHub Pages hosting model](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)
+GitHub Pages serves the game and its bundled assets. Live features that use Ede in 3D’s server require a separate deployment. [GitHub Pages hosting model](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)
 
 | Feature | On GitHub Pages |
 | --- | --- |

@@ -1,4 +1,4 @@
-# Slop Ede performance verification
+# Ede in 3D performance verification
 
 Measured on an Apple M4 Pro in Chrome WebGPU at 1600 × 900 and device scale 1. Both the original and revised builds used the 12 m AHN grid. The script fixed the service clock, midday lighting, random seed and camera path. The paired renderer runs used a fixed simulation timestep with traffic and parking active, clear weather and the public 3DBAG feed. The static server supplied local data without live traffic and weather overrides. The profiler follows Geneva's independent switches. [Geneva profiler](https://github.com/emmanpi/slop-geneva/blob/main/js/perf.js#L3-L18)
 

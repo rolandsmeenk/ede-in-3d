@@ -1,4 +1,4 @@
-# A12 façades in Slop Ede
+# A12 façades in Ede in 3D
 
 The offline visibility survey follows the A12 in both directions and includes its mapped junction links. It samples a driver's eye at 1.2 m above the fitted lane or road surface and considers walls in front of the driver or out the side windows, within 1.5 km. It tests lane viewpoints every 12 m within 500 m of a wall, then groups candidate viewpoints into 42 m cells by direction, lane and grade. The rays use the 12 m AHN ground, 3DBAG building occluders and mapped BGT and 1GIS barriers. They omit covered travel, foliage, traffic and temporary objects. A wall on the resulting list can be hidden by trees or a vehicle in the game. Small features below the angular thresholds stay procedural. [3DBAG](https://docs.3dbag.nl/en/copyright/) · [OpenStreetMap](https://www.openstreetmap.org/copyright) · [AHN](https://www.ahn.nl/dataroom) · [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
 
