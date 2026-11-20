@@ -3,13 +3,13 @@ import { attribute, cameraPosition, color, float, floor, fract, fwidth, length, 
   normalGeometry, normalWorld, positionGeometry, positionView, positionWorld, smoothstep, step, texture,
   vec2, vec3, vec4, vertexColor } from 'three/tsl';
 import { bumpNormal, filteredPulse, WALL_KINDS } from './tsl-materials.js';
-import { archRise, openingTop } from './ede-facades.js';
+import { archRise, isMotorwayFacade, openingTop } from './ede-facades.js';
 
 const PADDING = 6;
 const MAX_SIDE = 1024;
 const MAX_PIXELS = 512 * 512;
 const MAX_PHYSICAL_OPENINGS = 160;
-const SURFACE_CODES = { brick: 1, stone: 2, block: 2, timber: 3, metal: 3, panel: 3, concrete: 2, stucco: 0, plaster: 0 };
+const SURFACE_CODES = { brick: 1, stone: 2, block: 2, timber: 3, metal: 4, panel: 5, corten: 6, concrete: 2, stucco: 0, plaster: 0 };
 const COLOR_SLOTS = { glazingColor: '344959', doorColor: '4f3b32', frameColor: 'c6beb0', sillColor: 'a69d91' };
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const powerOfTwo = (n) => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
@@ -27,7 +27,16 @@ function fillOpening(data, stride, tile, opening) {
   const sillBottom = bottom - fy(sill), sillLeft = left - (sill ? fx(0.055) : 0), sillRight = right + (sill ? fx(0.055) : 0);
   const coverage = (l, b, r, t, px, py) =>
     Math.max(0, Math.min(px + 1, r) - Math.max(px, l)) * Math.max(0, Math.min(py + 1, t) - Math.max(py, b));
-  const channel = kind === 'door' ? 1 : 0;
+  const channel = kind === 'door' ? 1 : kind === 'panel' ? 2 : 0;
+  const polygon = kind === 'panel' && opening.points?.map(([u, v]) => [fx(u), fy(v)]);
+  function inside(x, y) {
+    let hit = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const [a, b] = polygon[i], [c, d] = polygon[j];
+      if ((b > y) !== (d > y) && x < a + (c - a) * (y - b) / (d - b)) hit = !hit;
+    }
+    return hit;
+  }
   const arch = archRise(opening);
   const crown = px => fy(openingTop(opening, px / tile.width * tile.metres));
   const panes = clamp(Math.round(Number(opening.panes ?? opening.mullions + 1) || 1), 1, 8);
@@ -38,6 +47,13 @@ function fillOpening(data, stride, tile, opening) {
     for (let px = Math.max(0, Math.floor(sillLeft)); px < Math.min(tile.width, Math.ceil(sillRight)); px++) {
       const crownY = arch ? crown(px + 0.5) : top;
       const outer = coverage(left, bottom, right, crownY, px, py);
+      const index = 4 * ((tile.y + py) * stride + tile.x + px);
+      if (kind === 'panel') {
+        const amount = polygon ? (Number(inside(px + 0.25, py + 0.25)) + Number(inside(px + 0.75, py + 0.25))
+          + Number(inside(px + 0.25, py + 0.75)) + Number(inside(px + 0.75, py + 0.75))) / 4 : outer;
+        data[index + 2] = Math.max(data[index + 2], Math.round(amount * 255));
+        continue;
+      }
       let inner = coverage(left + frameX, bottom + frameY, right - frameX, crownY - frameY, px, py);
       for (let pane = 1; pane < panes && inner > 0; pane++) {
         const u = left + (right - left) * pane / panes;
@@ -54,7 +70,6 @@ function fillOpening(data, stride, tile, opening) {
           Math.min(crownY - frameY, peak + frameBar), px, py));
       }
       const ledge = coverage(sillLeft, sillBottom, sillRight, bottom, px, py);
-      const index = 4 * ((tile.y + py) * stride + tile.x + px);
       data[index + channel] = Math.max(data[index + channel], Math.round(inner * 255));
       data[index + 2] = Math.max(data[index + 2], Math.round((outer - inner) * 255));
       data[index + 3] = Math.max(data[index + 3], Math.round(ledge * 255));
@@ -65,9 +80,13 @@ function fillOpening(data, stride, tile, opening) {
 function pack(walls, density, measuredMinimum = 12) {
   const tiles = walls.map((wall) => {
     const metres = wallWidth(wall);
-    const scale = wall.status === 'inferred' ? density * 0.55 : Math.max(density, measuredMinimum);
-    return { wall, metres, width: clamp(Math.ceil(metres * scale), 2, 512),
-      height: clamp(Math.ceil(wall.height * scale), 2, 512) };
+    const target = wall.status === 'inferred' ? density * 0.55 : Math.max(density, measuredMinimum);
+    // Seen at driving distance, a broad warehouse needs a small chart, even
+    // when the full wall is wider than a whole town-centre façade tile.
+    const motorway = isMotorwayFacade(wall);
+    const scale = motorway ? Math.min(measuredMinimum * 0.25, target) : target;
+    return { wall, metres, width: clamp(Math.ceil(metres * scale), 2, motorway ? 192 : 512),
+      height: clamp(Math.ceil(wall.height * scale), 2, motorway ? 56 : 512) };
   }).sort((a, b) => b.height - a.height);
   const widest = tiles.reduce((max, tile) => Math.max(max, tile.width + 2 * PADDING), 32);
   let packed;
@@ -138,7 +157,7 @@ function buildPalette(walls) {
       const value = wall[name] ?? wall.openings.find(opening => opening[name])?.[name];
       return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.slice(1) : fallback;
     });
-    const surface = SURFACE_CODES[wall.wallMaterial ?? wall.masonry] ?? 1;
+    const surface = (SURFACE_CODES[wall.wallMaterial ?? wall.masonry] ?? 1) + (isMotorwayFacade(wall) ? 16 : 0);
     const key = `${samples.join('/')}/${surface}`;
     if (!styles.has(key)) {
       styles.set(key, values.length / 16);
@@ -173,7 +192,7 @@ function* bakeFacadeMaskAtlas(walls) {
       || b.confidence - a.confidence);
     const measured = detailed.filter(wall => wall.status === 'observed');
     // Reduce mask resolution before dropping measured openings from a crowded tile.
-    const measuredMinimum = [12, 8, 6].find(density => pack(measured, 3, density)) ?? 6;
+    const measuredMinimum = [12, 8, 6, 4].find(density => pack(measured, 3, density)) ?? 4;
     let low = 0, high = detailed.length;
     while (low < high) {
       const count = Math.ceil((low + high) / 2);
@@ -188,7 +207,7 @@ function* bakeFacadeMaskAtlas(walls) {
   const rects = new Map(candidates.map(wall => [wall, blank]));
   for (const tile of atlas.tiles) {
     for (const opening of tile.wall.openings) {
-      if (!['window', 'door', 'storefront'].includes(opening.kind) ||
+      if (!['window', 'door', 'storefront', 'panel'].includes(opening.kind) ||
           ![opening.x, opening.y, opening.width, opening.height].every(Number.isFinite) ||
           opening.width <= 0 || opening.height <= 0) continue;
       fillOpening(data, width, tile, opening);
@@ -207,7 +226,9 @@ function* bakeFacadeMaskAtlas(walls) {
   }
   const palette = buildPalette(candidates);
   return { ...palette, texture: makeTexture(data, width, height, 'EdeFacadeMaskAtlas', true),
-    rects, physical, byteLength: mipBytes(width, height) + palette.byteLength };
+    rects, physical, motorway: candidates.some(isMotorwayFacade),
+    metal: candidates.some(wall => (SURFACE_CODES[wall.wallMaterial ?? wall.masonry] ?? 0) >= 4),
+    byteLength: mipBytes(width, height) + palette.byteLength };
 }
 
 export function buildFacadeMaskAtlas(walls) {
@@ -236,12 +257,13 @@ export function projectFacadeUv(wall, rect, x, y, z, bottomY = wall.minY) {
   const dx = wall.b[0] - wall.a[0], dz = wall.b[1] - wall.a[1];
   const u = ((x - wall.a[0]) * dx + (z - wall.a[1]) * dz) / (dx * dx + dz * dz);
   const v = (y - bottomY) / wall.height;
-  const assigned = wall.wallType === 'shared' || wall.layoutMeasured !== false && (!wall.openings.length || rect[2] > 0) ? 1 : 0;
+  const assigned = isMotorwayFacade(wall) || wall.wallType === 'shared' ||
+    wall.layoutMeasured !== false && (!wall.openings.length || rect[2] > 0) ? 1 : 0;
   return [rect[0] + clamp(u, 0, 1) * rect[2], rect[1] + clamp(v, 0, 1) * rect[3], assigned];
 }
 
 // Use the same window proportions and finishes for streamed BAG and fallback footprints.
-function neighbourhoodWindows(masonry, layout, u, v, visible, entrance = float(0), eaves = float(1e6)) {
+function neighbourhoodWindows(masonry, layout, u, v, visible, entrance = float(0), eaves = float(1e6), motorway = false) {
   const x = fract(u), y = fract(v);
   const depth = positionView.z.negate();
   const brickNear = float(1).sub(smoothstep(16, 48, depth)).mul(visible);
@@ -255,7 +277,7 @@ function neighbourhoodWindows(masonry, layout, u, v, visible, entrance = float(0
   const fw = fwidth(u), fh = fwidth(v);
   const left = float(0.5).sub(layout.z.mul(0.5)), right = float(1).sub(left);
   const top = layout.w.mul(0.5).add(0.53), bottom = float(1.06).sub(top);
-  const near = float(1).sub(smoothstep(80, 180, depth)).mul(visible);
+  const near = float(1).sub(motorway ? smoothstep(245, 550, depth) : smoothstep(80, 180, depth)).mul(visible);
   const fitsUnderRoof = step(floor(v).add(top).mul(layout.y).add(0.12), eaves);
   const opening = filteredPulse(x, left, right, fw).mul(filteredPulse(y, bottom, top, fh))
     .mul(step(0.01, layout.z)).mul(float(1).sub(entrance)).mul(fitsUnderRoof).mul(near);
@@ -269,7 +291,18 @@ function neighbourhoodWindows(masonry, layout, u, v, visible, entrance = float(0
   return mix(mix(frames, color(0x354652), glass), color(0x42423c), door);
 }
 
-export function createEdeFacadeBoxMaterial({ layout, shed }) {
+function metalCladding(u, y, code) {
+  const panel = step(4.5, code).mul(float(1).sub(step(5.5, code)));
+  const weathering = step(5.5, code);
+  const rib = u.div(mix(0.48, 1.20, panel.max(weathering)));
+  const course = y.div(mix(2.7, 1.28, panel));
+  const seam = float(1).sub(filteredPulse(fract(rib), 0.027, 0.973, fwidth(rib)))
+    .max(float(1).sub(filteredPulse(fract(course), 0.012, 0.988, fwidth(course))).mul(0.6));
+  const shade = mx_noise_float(vec2(floor(rib), floor(course)).mul(0.51)).mul(weathering.mul(0.24).add(0.08));
+  return float(1.01).add(shade).sub(seam.mul(0.29));
+}
+
+export function createEdeFacadeBoxMaterial({ layout, shed, motorway, cladding }) {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.91 });
   const box = attribute('box', 'vec4'), faces = attribute('faces', 'vec4');
   const appearance = attribute('facadeAppearance', 'vec4');
@@ -286,7 +319,13 @@ export function createEdeFacadeBoxMaterial({ layout, shed }) {
   const entrance = step(kind.sub(WALL_KINDS.entry).abs(), 0.1).mul(step(u, 1)).mul(step(v, 1));
   const grain = mx_noise_float(positionWorld.mul(0.7)).mul(0.1).add(0.95);
   material.colorNode = neighbourhoodWindows(appearance.xyz.mul(grain), vec4(...layout), u, v,
-    visible.mul(step(0, along)).mul(step(along, width)), shed || layout[2] > 0 ? entrance : float(0));
+    visible.mul(step(0, along)).mul(step(along, width)), shed || layout[2] > 0 ? entrance : float(0), float(1e6), motorway);
+  if (cladding) {
+    const lineRange = float(1).sub(smoothstep(100, 360, positionView.z.negate())).mul(visible);
+    const finish = metalCladding(along, positionWorld.y, float(cladding));
+    const walls = mix(appearance.xyz.mul(grain), appearance.xyz.mul(finish), lineRange);
+    material.colorNode = mix(walls, material.colorNode, layout[2] > 0 ? 0.75 : 0);
+  }
   return material;
 }
 
@@ -324,23 +363,34 @@ export function createBagFacadeMaterial(atlas = null, surfaceTexture = null, use
   const masked = assigned.mul(float(1).sub(step(1.5, atlasUv.z)));
   const trim = step(2.5, atlasUv.z);
   material.maskNode = trim.lessThan(0.5).or(viewDistance.lessThan(37));
-  const near = float(1).sub(smoothstep(100, 220, viewDistance));
+  const finish = index => texture(atlas.palette, vec2((index + 0.5) / 4, style.z));
+  const glazing = finish(0);
+  const encoded = glazing.a.mul(255).round();
+  const motorway = step(15.5, encoded);
+  const masonryCode = encoded.sub(motorway.mul(16));
+  const near = float(1).sub(atlas.motorway
+    ? mix(smoothstep(100, 220, viewDistance), smoothstep(245, 550, viewDistance), motorway)
+    : smoothstep(100, 220, viewDistance));
   const masks = texture(atlas.texture, atlasUv.xy).mul(masked.mul(near));
   const door = masks.g;
   const glass = masks.r.min(float(1).sub(door));
   const frame = masks.b.min(float(1).sub(glass.add(door)).max(0));
   const sill = masks.a.min(float(1).sub(glass.add(door).add(frame)).max(0));
   const bare = float(1).sub(glass.add(door).add(frame).add(sill)).max(0);
-  const finish = index => texture(atlas.palette, vec2((index + 0.5) / 4, style.z));
-  const glazing = finish(0), masonryCode = glazing.a.mul(255);
   const pattern = texture(surfaceTexture, style.xy.mul(vec2(1 / 1.04, 1 / 0.64)));
   const brick = step(0.5, masonryCode).mul(float(1).sub(step(1.5, masonryCode)));
   const stone = step(1.5, masonryCode).mul(float(1).sub(step(2.5, masonryCode)));
-  const cladding = step(2.5, masonryCode);
+  const metal = step(3.5, masonryCode);
+  const cladding = step(2.5, masonryCode).mul(float(1).sub(metal));
   const textureGrain = pattern.a.mul(float(1).sub(brick.add(stone).add(cladding)))
     .add(pattern.r.mul(brick)).add(pattern.g.mul(stone)).add(pattern.b.mul(cladding));
   const materialRange = float(1).sub(smoothstep(35, 95, viewDistance)).mul(assigned).mul(float(1).sub(trim));
-  const wallRgb = mix(procedural, masonry, assigned).mul(mix(1, textureGrain.mul(0.32).add(0.72), materialRange)).mul(bare);
+  const textureBlend = mix(1, textureGrain.mul(0.32).add(0.72), materialRange.mul(float(1).sub(metal)));
+  let wallRgb = mix(procedural, masonry, assigned).mul(textureBlend).mul(bare);
+  if (atlas.metal) {
+    const metalRange = float(1).sub(smoothstep(140, 420, viewDistance)).mul(assigned).mul(metal);
+    wallRgb = wallRgb.mul(mix(1, metalCladding(style.x, style.y, masonryCode), metalRange));
+  }
   material.colorNode = wallRgb.add(glazing.rgb.mul(glass)).add(finish(1).rgb.mul(door))
     .add(finish(2).rgb.mul(frame).mul(0.82)).add(finish(3).rgb.mul(sill));
   material.roughnessNode = bare.mul(0.92).add(glass.mul(0.2)).add(door.mul(0.59))

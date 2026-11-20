@@ -591,10 +591,28 @@ export function createPatheEde() {
   const [p, q] = offsetEdge(a, b, north, 1.28);
   horizontalOverhang(batch, [[a.x,a.z],[b.x,b.z],[q.x,q.z],[p.x,p.z]],
     [floor+7.38,floor+7.38,floor+7.32,floor+7.32], 0x686b65, 0.25);
-  const group = makeGroup('Pathé Ede', batch, colliders);
   const [c, d] = offsetEdge(along(a, b, 0.34), along(a, b, 0.68), north, 0.065);
-  addSign(group, { text: 'Pathé', a: c, b: d, lo: floor + 5.30, hi: floor + 6.72,
-    color: '#333737', textColor: '#f1b828' });
+  const signs = [{ text: 'Pathé', a: c, b: d, lo: floor + 5.30, hi: floor + 6.72,
+    color: '#333737', textColor: '#f1b828' }];
+  // The A12-facing projection boxes carry illuminated programme panels.
+  for (const [x0, z0, x1, z1, lo, hi, tint] of [
+    [-1668.16, 3396.33, -1654.25, 3397.36, -2.06, 0.79, '#465659'],
+    [-1648.65, 3397.59, -1637.35, 3397.89, -1.86, 0.82, '#3a4754'],
+    [-1617.03, 3397.76, -1589.03, 3395.39, -2.07, 0.82, '#514444'],
+    [-1564.07, 3393.97, -1516.27, 3379.85, -2.01, 0.65, '#3b4f53'],
+    [-1516.81, 3378.06, -1490.69, 3368.12, -0.71, 2.53, '#354451'],
+  ]) {
+    const p = { x: x0, z: z0 }, q = { x: x1, z: z1 };
+    const width = Math.hypot(x1 - x0, z1 - z0);
+    const n = { x: (z0 - z1) / width, z: (x1 - x0) / width };
+    const clear = Math.min(0.35, 6.20 / width);
+    facePanel(batch, p, q, n, 0.5 - clear, 0.5 + clear, lo, hi, 0x393533, 0.053);
+    const [start, end] = offsetEdge(along(p, q, 0.52 - clear), along(p, q, 0.48 + clear), n, 0.077);
+    signs.push({ text: 'Pathé', a: end, b: start, lo: lo + 0.08, hi: hi - 0.08, color: tint, textColor: '#efc851' });
+  }
+  const group = makeGroup('Pathé Ede', batch, colliders);
+  const sign = civicSigns(signs, { wide: true });
+  if (sign) group.add(sign);
   return group;
 }
 

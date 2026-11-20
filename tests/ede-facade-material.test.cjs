@@ -87,3 +87,19 @@ test('dense square tiles keep measured layouts within the existing mask budget',
   assert.ok(atlas.texture.image.width * atlas.texture.image.height <= 512 * 512);
   assert.ok(walls.every(wall => atlas.rects.get(wall)[2] > 0));
 });
+
+test('the motorway showrooms keep glazing in a densely packed tile', () => {
+  const wall = { a: [0, 0], b: [142, 0], height: 18, minY: 0, motorway: 'A30',
+    status: 'observed', confidence: 0.86, wallType: 'side', wallMaterial: 'corten',
+    openings: [{ kind: 'storefront', x: 16, y: 3, width: 40, height: 8 }],
+  };
+  const nearby = Array.from({ length: 31 }, (_, i) => ({
+    ...wall, a: [0, i + 1], b: [126, i + 1], confidence: 0.85,
+  }));
+  const atlas = buildFacadeMaskAtlas([...nearby, wall]);
+  const { data, width, height } = atlas.texture.image;
+  const [u, v] = projectFacadeUv(wall, atlas.rects.get(wall), 35, 6, 0);
+  assert.ok(width * height <= 512 * 512);
+  assert.ok(atlas.rects.get(wall)[2] > 0);
+  assert.ok(data[(Math.floor(u * width) + Math.floor(v * height) * width) * 4] > 230);
+});

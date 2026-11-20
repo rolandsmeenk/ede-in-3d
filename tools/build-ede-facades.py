@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 BUILDING_TYPES = {'terraced', 'apartments', 'detached', 'semi-detached', 'shop', 'mixed-use'}
 WALL_TYPES = {'street', 'side', 'rear', 'shared'}
 OPENING_TYPES = ('window', 'door', 'storefront')
-WALL_MATERIALS = {'brick', 'block', 'stone', 'stucco', 'timber', 'concrete'}
+WALL_MATERIALS = {'brick', 'block', 'stone', 'stucco', 'timber', 'concrete', 'metal', 'panel', 'corten'}
 APPEARANCE_COLORS = ('wallColor', 'roofColor', 'frameColor', 'doorColor', 'sillColor', 'glazingColor', 'surroundColor')
 OPENING_DIMENSIONS = {'frame': 0.3, 'sill': 0.3, 'surround': 0.5, 'depth': 3.0, 'arch': 2.0}
 OPENING_DETAILS = ('frame', 'sill', 'surround', 'depth', 'arch', 'panes', 'transom', 'tracery')
@@ -741,7 +741,13 @@ def tile_assets(path, value):
         name = f'{path.stem}/{ix}_{iz}.json.gz'
         tile_bytes += save(path.parent / name, {'version': 2, 'walls': walls})
         tiles[f'{ix},{iz}'] = name
-    index_bytes = save(path, dict(version=2, attribution=value['attribution'], tileSize=TILE_SIZE, tiles=tiles))
+    manifest = dict(version=2, attribution=value['attribution'], tileSize=TILE_SIZE, tiles=tiles)
+    if path.is_file():
+        previous = json.loads(path.read_text())
+        for key in ('a12Tiles', 'a30Tiles'):
+            if previous.get(key):
+                manifest[key] = previous[key]
+    index_bytes = save(path, manifest)
     return {'tiles': len(tiles), 'tileBytes': tile_bytes, 'indexBytes': index_bytes}
 
 

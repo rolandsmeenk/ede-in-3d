@@ -10,6 +10,7 @@ const CROWN_HEIGHT = 42;
 const CROWN_CENTER = { x: -3863.85, z: 960.07 };
 
 const concrete = new THREE.Color(0xb2afa5);
+const leafRelief = new THREE.Color(0x918f86);
 const green = new THREE.Color(0x6f8b7b);
 const pale = new THREE.Color(0xa5b2b0);
 const door = new THREE.Color(0xc0c7c7);
@@ -129,6 +130,18 @@ export function createPlantion() {
           point(end, highB, offset), point(start, highA, offset)], color);
 
       span(walls, 0, 1, bottom[0], bottom[1], 3.68, 3.68, concrete);
+      // The motorway and rail side retain the precast leaf relief in the plinth.
+      if (main && wx > -4000 && (nx > 0.3 || nz < -0.5) && length > 2.6) {
+        const leaves = Math.max(1, Math.floor(length / 3.05));
+        for (let i = 0; i < leaves; i++) {
+          const centre = (i + 0.5) / leaves;
+          const half = 0.8 / length, lean = (edge + i) % 2 ? 1 : -1;
+          const leaf = [[-0.89, 0.95], [0.34, 1.24], [0.76, 1.96], [0.89, 2.96],
+            [-0.22, 2.63], [-0.67, 1.91]].map(([u, y]) => point(centre + lean * u * half, y, 0.021));
+          if (lean < 0) leaf.reverse();
+          for (let j = 1; j < leaf.length - 1; j++) walls.face([leaf[0], leaf[j], leaf[j + 1]], leafRelief);
+        }
+      }
       const office = main && (wx > -3877 || (wx > -4140 && wz < 922));
       const panel = office ? green : pale;
       const columns = Math.ceil(length / 1.25);

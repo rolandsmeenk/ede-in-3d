@@ -9,6 +9,10 @@ Façade layout and material measurements are tied to stable BAG building and wal
 
 Residential reviews around Kolkakkerweg use images by [thewizard](https://www.mapillary.com/app/user/thewizard). The [reviewed measurements](../tools/data/ede-facade-observations.json) list the other source image IDs, dates and creators. Mapillary imagery is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Copyright and attribution stay with the source contributors. The game renders the wall measurements with shared procedural surfaces and parametric openings. [Mapillary imagery licence](https://help.mapillary.com/hc/en-us/articles/115001770409-CC-BY-SA-license-for-open-data)
 
+## Motorway frontages
+
+The motorway layer uses 3DBAG wall planes, an official BAG building-use snapshot and dated exterior references. [A12 source catalogue](../tools/data/ede-a12-facades.md) · [A30 source catalogue](../tools/data/ede-a30-facades.md)
+
 ## Square frontages
 
 - Marktplein uses Allard Bijlsma’s market and Brouwerstraat photos from 2018 to 2021 and Dick Martens’s 2025 view of Chillerz. The square design archive credits Pieter Kers. [Atlas van Ede](https://www.atlasvanede.nl/ede-toen/van-centrum-tot-buitenwijk/centrum-van-ede-1/marktplein) · [EdeStad](https://www.edestad.nl/lokaal/mensen/1183695/het-gezicht-van-ede-centrum-cris-en-nettie-van-chillerz) · [Hosper](https://www.hosper.nl/plein-en-centrum/ede-marktplein/) · [Wall records](../tools/data/ede-square-facades/marktplein.json)

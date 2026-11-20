@@ -119,6 +119,10 @@ test('BAG bounds fetch and share only intersecting local parameter tiles', async
   const requested = [];
   const wall = { bagId: '0228100000015551', wallId: 'south', a: [10, 20], b: [16, 20], minY: 0,
     height: 3.4, status: 'observed', openings: [{ kind: 'door', x: 1, y: 0, width: 1, height: 2 }] };
+  const inferred = { ...wall, wallId: 'adjacent', b: [10, 23], status: 'inferred' };
+  const scoped = { ...inferred, a12: true, wallMaterial: 'corten' };
+  const a30Measured = { ...inferred, motorway: 'A30', status: 'observed', wallMaterial: 'metal' };
+  const a30Only = { ...inferred, motorway: 'A30', wallId: 'other-side', a: [10, 23], b: [16, 23] };
   t.mock.method(globalThis, 'fetch', async ({ pathname }) => {
     requested.push(pathname.split('/').at(-1));
     if (pathname.endsWith('/ede-facades.json')) return Response.json({
@@ -126,15 +130,21 @@ test('BAG bounds fetch and share only intersecting local parameter tiles', async
         '0,0': 'ede-facades/0_0.json.gz',
         '1,0': 'ede-facades/1_0.json.gz',
         '9,0': 'ede-facades/9_0.json.gz'
-      }
+      },
+      a12Tiles: { '0,0': 'ede-facades/a12_0_0.json.gz', '8,0': 'ede-facades/a12_8_0.json.gz' },
+      a30Tiles: { '0,0': 'ede-facades/a30_0_0.json.gz', '8,0': 'ede-facades/a30_8_0.json.gz' },
     });
-    assert.ok(pathname.endsWith('/0_0.json.gz'));
-    return new Response(gzipSync(JSON.stringify({ version: 2, walls: [wall] })));
+    const corridor = pathname.endsWith('/a12_0_0.json.gz');
+    const a30 = pathname.endsWith('/a30_0_0.json.gz');
+    assert.ok(corridor || a30 || pathname.endsWith('/0_0.json.gz'));
+    const walls = a30 ? [{ ...wall, motorway: 'A30' }, a30Measured, a30Only]
+      : corridor ? [{ ...wall, status: 'inferred', a12: true }, scoped] : [wall, inferred];
+    return new Response(gzipSync(JSON.stringify({ version: 2, walls })));
   });
   const index = await loadEdeFacades();
   const bounds = { min: { x: 9, z: 18 }, max: { x: 19, z: 22 } };
   const [first, second] = await Promise.all([index.forBounds(bounds), index.forBounds(bounds)]);
-  assert.deepEqual(first.get(wall.bagId), [wall]);
+  assert.deepEqual(first.get(wall.bagId), [wall, a30Measured, a30Only]);
   assert.deepEqual(second, first);
-  assert.deepEqual(requested, ['ede-facades.json', '0_0.json.gz']);
+  assert.deepEqual(requested, ['ede-facades.json', '0_0.json.gz', 'a12_0_0.json.gz', 'a30_0_0.json.gz']);
 });

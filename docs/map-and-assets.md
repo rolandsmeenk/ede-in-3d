@@ -251,6 +251,8 @@ The full bake includes the reviewed layouts for Marktplein, Kuiperplein, Museump
 python3 tools/build-ede-facades.py --report tools/data/ede-facade-coverage.json
 ```
 
+The motorway façade bake covers both carriageways and junction links on the A12 and A30. It uses exterior references for prominent frontages and fits other visible walls using BAG geometry and recorded building use. [A12 survey and refresh](../tools/data/ede-a12-facades.md) · [A30 survey and refresh](../tools/data/ede-a30-facades.md)
+
 Procedural façades use the original BAG construction year. The four local neighbourhood palettes take precedence, and measured Mapillary façades keep their recorded finishes. Streamed buildings use the year in the 3D BAG tile. For fallback buildings, the baked year table matches PDOK BAG footprints to the local map by overlap.
 
 ```bash

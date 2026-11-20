@@ -280,7 +280,7 @@ function colorEdeRoof(roof, id, fallback, aerial, tiles) {
 }
 
 // `bag`: 3D BAG meshes already supply the facades and roofs, so only colliders and street-level details are built here.
-function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
+function buildCityBlocks(scene, { bag = false, streamBag = false, motorwayFacades } = {}) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeCityBlocks' : 'ManhattanCityBlocks';
   const colliders = [];
@@ -427,6 +427,19 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
   if (EDE_DATA) for (const [style, { layout }] of Object.entries(EDE_FACADE_STYLES)) {
     neighbourhoodMaterials.set(style, facades.length);
     facades.push([createEdeFacadeBoxMaterial, { layout, floorHeight: layout[1], shed: style === 'shed' }]);
+  }
+  const motorwayMaterials = new Map();
+  if (motorwayFacades) for (const [profile, layout, cladding] of [
+    ['brick', [2.68, 2.95, 0.47, 0.42], 0],
+    ['modern', [2.9, 3.25, 0.72, 0.58], 0],
+    ['blank', [3.25, 3.2, 0, 0], 0],
+    ['hall', [4.5, 3.35, 0, 0], 4],
+    ['office', [3.8, 3.7, 0.69, 0.51], 5],
+    ['rust', [4.2, 3.65, 0, 0], 6],
+    ['showroom', [1.9, 4.2, 0.94, 0.75], 5],
+  ]) {
+    motorwayMaterials.set(profile, facades.length);
+    facades.push([createEdeFacadeBoxMaterial, { layout, cladding, motorway: true, floorHeight: layout[1] }]);
   }
   const materials = facades.map(([create, opts]) => create({ ...opts, boxLocal: true }));
   // Storey height of each facade: buildings are massed in whole storeys so every window row lines up across tiers
@@ -2083,6 +2096,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
       const neighbourhood = edeFacadeAt(cx, cz, height, source.buildYear, source.kind);
       const facadeColour = new THREE.Color(neighbourhood.color);
       const matIndex = neighbourhoodMaterials.get(shed ? 'shed' : neighbourhood.style);
+      const motorwayWalls = motorwayFacades?.[source.id];
       const detail = { id: source.id, name: source.name, cx, cz, ...bounds, district: districtAt(cx, cz), maxH: height,
         cornices: [], waterTowers: [], hvacUnits: [], fireEscapes: [], awnings: [], scaffoldSheds: [], yards: [],
         footprints: [{ x0: bounds.minX, x1: bounds.maxX, z0: bounds.minZ, z1: bounds.maxZ, h: height, tone, pts: poly, holes }],
@@ -2117,6 +2131,14 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
               wallBottom = Math.min(wallBottom, terrainHeightAt(a.x + dx * j / steps, a.z + dz * j / steps) + groundCorrection);
             }
           }
+          let wallMat = matIndex, wallColour = facadeColour, renderFace = face;
+          const motorway = !ringIndex && motorwayWalls?.[i];
+          // Confirm the surveyed start vertex so a later OSM footprint edit cannot shift all wall assignments.
+          if (motorway && a.x === motorway[0] && a.z === motorway[1] && b.x === motorway[2] && b.z === motorway[3]) {
+            wallMat = motorwayMaterials.get(motorway[4]) ?? matIndex;
+            wallColour = new THREE.Color(motorway[5]);
+            renderFace = WALL_KINDS.rear;
+          }
           const wallTop = ground + eave;
           const openings = buildingPassageOpenings(a, b);
           const splits = [...new Set([0, 1, ...openings.flatMap(({ from, to }) => [from, to])])].sort((a, b) => a - b);
@@ -2142,9 +2164,10 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
               if (bottom >= top) continue;
               const renderTop = Math.min(top, wallTop);
               if (renderExterior && bottom < renderTop) {
-                buckets[matIndex].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz, fallbackId: source.id,
+                buckets[wallMat].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz, fallbackId: source.id,
                   w: (to - from) * length + 0.06, h: renderTop - bottom, d: thickness,
-                  ry, tone, facadeColour, facadeLevels: source.facadeLevels, faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, face, face] });
+                  ry, tone, facadeColour: wallColour, facadeLevels: source.facadeLevels,
+                  faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, renderFace, renderFace] });
               }
               for (const [t0, t1] of cuts.length ? [[from, to]] : solid) {
                 const lo = Math.max(t0, from), hi = Math.min(t1, to), hx = (hi - lo) * length / 2;

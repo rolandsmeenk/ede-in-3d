@@ -46,6 +46,7 @@ import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
+import { loadEdeMotorwayFallbacks } from './ede-facades.js';
 import { buildEdeDetail, loadEdeDetail } from './ede-detail.js?v=20261120-sign-faces';
 
 // js/main.js
@@ -146,7 +147,7 @@ async function initApp() {
 
   await showLoadingStage('Loading Ede’s map and timetables…');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, motorwayFacadesResult] = await Promise.allSettled([
     loadTerrain(), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
@@ -154,6 +155,7 @@ async function initApp() {
       directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null,
     enabled('laneFits') ? loadEdeFittedLanes() : null,
     enabled('sports') ? loadEdeSports() : null,
+    loadEdeMotorwayFallbacks(),
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -248,7 +250,9 @@ async function initApp() {
     markInit('bag3d');
   }
   await showLoadingStage('Generating building facades...');
-  const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag });
+  if (motorwayFacadesResult.status === 'rejected') console.warn('[facades] using basic motorway fallback walls:', motorwayFacadesResult.reason);
+  const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag,
+    motorwayFacades: motorwayFacadesResult.value });
   const murals = createEdeMurals(scene, { enabled: enabled('murals'), isFallbackVisible: cityBlocks.isFallbackVisible });
   if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks });
   markInit('blocks');

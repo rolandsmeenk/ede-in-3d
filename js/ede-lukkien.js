@@ -133,24 +133,35 @@ function deck(batch, colliders) {
   }
 }
 
-function entranceSign(a, b, y) {
+function lukkienSign(a, b, y, height = 1.62, badge = false) {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 96;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#30383d';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (!badge) {
+    ctx.fillStyle = '#30383d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.fillStyle = '#f2f1e8';
+    ctx.fillRect(10, 5, 80, 85);
+    ctx.fillStyle = '#262c32';
+    ctx.fillRect(17, 47, 65, 31);
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = i === 2 ? '#bb433d' : '#f2f1e8';
+      ctx.fillRect(21 + i * 12, 53, 7, 18);
+    }
+  }
   ctx.fillStyle = '#f2f1e8';
-  ctx.font = '800 64px system-ui';
+  ctx.font = badge ? '800 76px system-ui' : '800 64px system-ui';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('LUKKIEN', 256, 49);
+  ctx.fillText('LUKKIEN', badge ? 303 : 256, 49);
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
   const width = Math.hypot(a.x - b.x, a.z - b.z);
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, 1.62),
-    new THREE.MeshStandardMaterial({ map, roughness: 0.85 }));
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height),
+    new THREE.MeshStandardMaterial({ map, alphaTest: badge ? 0.4 : 0, roughness: 0.85 }));
   mesh.position.set((a.x + b.x) / 2, y, (a.z + b.z) / 2);
   mesh.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
   return mesh;
@@ -174,8 +185,12 @@ export function createLukkien() {
   facePanel(batch, p, q, front, 0, 1, roofY - 0.65, roofY + 1.27, 0x30383d);
   const group = makeGroup('Lukkien', batch, colliders);
   const [s0, s1] = offsetEdge(along(p, q, 0.13), along(p, q, 0.87), front, 0.08);
-  const sign = entranceSign(s0, s1, roofY + 0.35);
-  if (sign) group.add(sign);
+  for (const sign of [
+    lukkienSign(s0, s1, roofY + 0.35),
+    // The studio wordmark wraps the south-east corner above the silver belt.
+    lukkienSign({ x: -3140.61, z: 2614.29 }, { x: -3129.80, z: 2615.30 }, -5.61, 1.72, true),
+    lukkienSign({ x: -3126.07, z: 2612.11 }, { x: -3125.03, z: 2601.22 }, -5.98, 1.72, true),
+  ]) if (sign) group.add(sign);
   group.userData.helipads = [LUKKIEN_HELIPAD];
   return group;
 }

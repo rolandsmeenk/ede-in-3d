@@ -15,7 +15,36 @@ function indexWalls(walls) {
   return byId;
 }
 
+export const isMotorwayFacade = wall => Boolean(wall.a12 || wall.motorway);
+
 let facadeIndex;
+
+async function readFacadePayload(response) {
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const body = new Response(bytes);
+  return (bytes[0] === 31 && bytes[1] === 139
+    ? new Response(body.body.pipeThrough(new DecompressionStream('gzip'))) : body).json();
+}
+
+export async function loadEdeMotorwayFallbacks() {
+  const corridors = await Promise.all(['a12', 'a30'].map(async motorway => {
+    try {
+      const response = await fetch(new URL(`../assets/ede-${motorway}-fallbacks.json.gz`, import.meta.url));
+      const data = await readFacadePayload(response);
+      if (data.version !== 1 || !data.buildings || typeof data.buildings !== 'object' || Array.isArray(data.buildings)) {
+        throw new Error('Invalid fallback façade data');
+      }
+      return data.buildings;
+    } catch (error) {
+      console.warn(`[facades] using basic ${motorway.toUpperCase()} fallback walls:`, error.message);
+      return {};
+    }
+  }));
+  const [a12, a30] = corridors;
+  for (const [id, edges] of Object.entries(a30)) a12[id] = { ...edges, ...a12[id] };
+  return a12;
+}
 
 export function loadEdeFacades() {
   facadeIndex ??= readEdeFacades().catch(error => {
@@ -33,44 +62,56 @@ async function readEdeFacades() {
   if (data.version !== 2 || !Number.isFinite(data.tileSize) || data.tileSize < 64 ||
       !data.tiles || typeof data.tiles !== 'object' || Array.isArray(data.tiles)) throw new Error('Invalid Ede façade index');
   const recent = new Map();
-  const tile = (key) => {
-    const uri = data.tiles[key];
+  const corridorTiles = [data.a12Tiles, data.a30Tiles].filter(Boolean);
+  const tile = (uri) => {
     if (!/^ede-facades\/[a-zA-Z0-9_-]+\.json(?:\.gz)?$/.test(uri)) return null;
-    let pending = recent.get(key);
-    if (!pending) pending = fetch(new URL(uri, source)).then(async result => {
-      if (!result.ok) throw new Error(`Façade tile ${key}: HTTP ${result.status}`);
-      const bytes = new Uint8Array(await result.arrayBuffer());
-      const response = new Response(bytes);
-      return (bytes[0] === 31 && bytes[1] === 139
-        ? new Response(response.body.pipeThrough(new DecompressionStream('gzip'))) : response).json();
-    }).then(payload => {
-      if (payload.version !== 2 || !Array.isArray(payload.walls)) throw new Error(`Invalid façade tile ${key}`);
+    let pending = recent.get(uri);
+    if (!pending) pending = fetch(new URL(uri, source)).then(readFacadePayload).then(payload => {
+      if (payload.version !== 2 || !Array.isArray(payload.walls)) throw new Error(`Invalid façade tile ${uri}`);
       return indexWalls(payload.walls);
     }).catch(error => {
-      recent.delete(key);
+      recent.delete(uri);
       console.warn('[facades] using procedural walls for unavailable parameters:', error.message);
       return null;
     });
-    recent.delete(key);
-    recent.set(key, pending);
-    if (recent.size > 12) recent.delete(recent.keys().next().value);
+    recent.delete(uri);
+    recent.set(uri, pending);
+    if (recent.size > 12 + 6 * corridorTiles.length) recent.delete(recent.keys().next().value);
     return pending;
   };
   return { async forBounds({ min, max }) {
     const { tileSize } = data;
     const margin = 12;
     const grid = n => Math.floor(n / tileSize);
-    const selected = [];
+    const selected = [], corridors = [];
     for (let z = grid(min.z - margin); z <= grid(max.z + margin); z++) {
       for (let x = grid(min.x - margin); x <= grid(max.x + margin); x++) {
-        const record = tile(`${x},${z}`);
+        const cell = `${x},${z}`;
+        const record = tile(data.tiles[cell]);
         if (record) selected.push(record);
+        for (const layer of corridorTiles) {
+          const pending = tile(layer[cell]);
+          if (pending) corridors.push(pending);
+        }
       }
     }
     const byId = new Map();
     for (const values of await Promise.all(selected)) for (const [id, walls] of values ?? []) {
       if (!byId.has(id)) byId.set(id, []);
       byId.get(id).push(...walls);
+    }
+    for (const values of await Promise.all(corridors)) for (const [id, walls] of values ?? []) {
+      const previous = byId.get(id) ?? [];
+      for (const wall of walls) {
+        const index = previous.findIndex(row => row.wallId === wall.wallId ||
+          Math.abs((row.baseOffset ?? 0) - (wall.baseOffset ?? 0)) < 0.15 &&
+          Math.hypot(row.a[0] - wall.a[0], row.a[1] - wall.a[1]) < 0.3 &&
+          Math.hypot(row.b[0] - wall.b[0], row.b[1] - wall.b[1]) < 0.3);
+        if (index < 0) previous.push(wall);
+        else if (previous[index].status !== 'observed' && previous[index].wallType !== 'shared'
+            && (wall.status === 'observed' || !isMotorwayFacade(previous[index]))) previous[index] = wall;
+      }
+      byId.set(id, previous);
     }
     return byId;
   } };
@@ -301,7 +342,7 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     const { wall, nx, nz, tx, tz } = frame;
     const first = triangles[0].ids[0];
     const base = buildingHeight.getX(first) - triangles[0].verts[0][1];
-    const useProceduralColor = wall.status !== 'observed' && edeFacadeLayout?.getX(first) > 0;
+    const useProceduralColor = wall.status !== 'observed' && !isMotorwayFacade(wall) && edeFacadeLayout?.getX(first) > 0;
     const eaves = edeFacadeBay?.getY(first);
     // Fall back to roofline-aware procedural openings when an inferred atlas would clip a window.
     if (useProceduralColor && eaves > 0 && wall.openings.some(opening =>
@@ -317,6 +358,7 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     const frontNormal = [nx, 0, nz];
     const vertexColor = i => wallColor ?? [color.getX(i), color.getY(i), color.getZ(i)];
     const physical = atlas.physical.has(wall) ? wall.openings.flatMap((opening, index) => {
+      if (opening.kind === 'panel') return [];
       const detail = wall.detail?.opening === index ? wall.detail : null;
       const depth = opening.depth ?? detail?.depth ?? (opening.kind === 'window' ? 0.12 : 0.16);
       if (!(depth >= 0.055 && depth <= 1.5 && opening.width >= 0.25 && opening.height >= 0.4 &&
