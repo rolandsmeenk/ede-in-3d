@@ -42,7 +42,7 @@ function keyboardHarness(nyc = {}, terrainHeightAt = () => 0, buildingPassageHea
       './building-collision.js': polygonCollision,
       './terrain.js': { terrainHeightAt },
       './ede-grade.js': { gradeHeightAt: terrainHeightAt, gradeGroundHeightAt: terrainHeightAt,
-        gradeDeckAt: () => undefined, gradeProfileAt: () => null, buildingPassageHeadingAt }
+        gradeDeckAt: () => undefined, gradeProfileAt: () => null, heliLandingHeightAt: () => undefined, buildingPassageHeadingAt }
     }
   });
   // Exercise the production event handlers without constructing the scene's 3D models.
@@ -557,6 +557,8 @@ test('helicopter uses local ground for landing and preserves saved world altitud
   assert.equal(ent.position.y, 25.25);
   assert.equal(impacts[0]?.kind, 'ground');
   assert.equal(impacts[0]?.y, 25.25);
+  assert.equal(ent.verticalSpeed, 0);
+  assert.equal(ent.tiltPivot.position.y, 0);
   controller.teleportActiveTo(30, 35, 0, 500);
   assert.equal(ent.position.y, 380);
 });

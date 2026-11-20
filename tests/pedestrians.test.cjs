@@ -656,7 +656,7 @@ test('poseCharacters skips stationary inactive cyclist IK/uploads and culls park
       './vehicle-lights.js': {},
       './landmarks.js': {},
       './building-collision.js': polygonCollision,
-      './ede-grade.js': { gradeHeightAt: () => 0, gradeDeckAt: () => undefined, gradeProfileAt: () => null }
+      './ede-grade.js': { gradeHeightAt: () => 0, gradeDeckAt: () => undefined, gradeProfileAt: () => null, heliLandingHeightAt: () => undefined }
     }
   });
 

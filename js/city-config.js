@@ -298,6 +298,11 @@ const NYC_LANDMARKS=[
 })));
 // Specific approaches point toward the entrance or main façade from a mapped street.
 const LANDMARK_APPROACHES={
+ 'nieuwe-kerk':[5.6629353,52.0368761],
+ noorderkerk:[5.6685570,52.0489451],
+ 'sint-antoniuskerk':[5.6708978,52.0308568],
+ beatrixkerk:[5.6626710,52.0341281],
+ lukkien:[5.6246029,52.0221551],
  oudekerk:[5.670825,52.046130],
  'chico-y-chica':[5.6737293,52.0456570],
  openluchttheater:[5.6782546,52.0398201],

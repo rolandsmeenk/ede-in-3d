@@ -28,7 +28,7 @@ import { loadTerrain, terrainHeightAt } from './terrain.js';
 import { loadAerialColors } from './aerial-colors.js';
 import { loadEdeTrees } from './ede-tree-data.js';
 import { loadEdeLamps } from './ede-lamp-data.js';
-import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdePlatforms, setEdeStructureRoofs } from './ede-grade.js';
+import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdeHelipads, setEdePlatforms, setEdeStructureRoofs } from './ede-grade.js';
 import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
@@ -196,14 +196,15 @@ async function initApp() {
       if (kind === 'raised-wall') return rail;
       return rail === undefined ? undefined : rail + 0.89;
     });
-    setEdePlatforms(bgtWorld.platforms);
     setEdeStructureRoofs(bgtWorld.weatherCovers);
   } catch (error) {
     console.warn('[bgt] structure layer unavailable:', error);
   }
   markInit('grade and BGT structures');
   await showLoadingStage('Building landmarks...');
-  const { colliders: landmarkColliders } = buildLandmarks(scene);
+  const landmarks = buildLandmarks(scene);
+  setEdePlatforms([...(bgtWorld?.platforms ?? []), ...landmarks.platforms]);
+  setEdeHelipads(landmarks.helipads);
   markInit('landmarks');
   const eagerBag = graphics.buildingDetail && profiling && query.get('bag') === 'eager';
   const streamBag = graphics.buildingDetail && !eagerBag;
@@ -224,7 +225,7 @@ async function initApp() {
   const murals = createEdeMurals(scene, { enabled: enabled('murals'), isFallbackVisible: cityBlocks.isFallbackVisible });
   if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks });
   markInit('blocks');
-  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
+  const allColliders = [...landmarks.colliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
     ...gradeWorld.colliders, ...(bgtWorld?.colliders || [])];
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');

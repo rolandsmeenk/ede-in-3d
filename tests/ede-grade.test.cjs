@@ -191,3 +191,19 @@ test('a garage branch meets the aisle without a generated wall across either dri
     })));
   }
 });
+
+test('the Lukkien roof deck supplies helicopter contact only inside its surveyed outline', async () => {
+  const { LUKKIEN_HELIPAD: pad } = await import('../js/ede-lukkien-survey.js');
+  const { constrainEdeCamera, gradeProfileAt, heliLandingHeightAt, setEdeHelipads } = await import('../js/ede-grade.js');
+  setEdeHelipads([pad]);
+  try {
+    assert.equal(heliLandingHeightAt(pad.x, pad.z), pad.y);
+    assert.equal(heliLandingHeightAt(pad.x - 15, pad.z), undefined);
+    assert.equal(gradeProfileAt(pad.x, pad.z, 'person', 0, pad.y), null);
+    const camera = { x: pad.x, y: pad.y - 2, z: pad.z };
+    constrainEdeCamera({ type: 'helicopter', position: { x: pad.x, y: pad.y + 0.25, z: pad.z } }, camera);
+    assert.equal(camera.y, pad.y + 0.55);
+  } finally {
+    setEdeHelipads([]);
+  }
+});

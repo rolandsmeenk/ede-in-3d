@@ -31,7 +31,7 @@ import { HEADLIGHTS, createVehicleHeadlight, placeVehicleHeadlight } from './veh
 import { bryantParkLawn } from './landmarks.js';
 import { polygonContact } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
-import { buildingPassageHeadingAt, gradeDeckAt, gradeGroundHeightAt, gradeHeightAt, gradeProfileAt } from './ede-grade.js';
+import { buildingPassageHeadingAt, gradeDeckAt, gradeGroundHeightAt, gradeHeightAt, gradeProfileAt, heliLandingHeightAt } from './ede-grade.js';
 
 // js/controllers.js
 // Sculpted, non-blocky GTA 6-style 3D models, animations, and physics controllers
@@ -53,7 +53,8 @@ function spawnPosition(lateral, forward, y) {
 const groundCollider = { type: 'ground' };
 
 function helicopterAltitude(x, z, y, clearance = 0.25) {
-  return Math.max(terrainHeightAt(x, z) + clearance, (gradeDeckAt(x, z) ?? -Infinity) + clearance, Math.min(380, y));
+  const surface = Math.max(terrainHeightAt(x, z), gradeDeckAt(x, z) ?? -Infinity, heliLandingHeightAt(x, z) ?? -Infinity);
+  return Math.max(surface + clearance, Math.min(380, y));
 }
 
 function placeEntityMesh(entity) {
@@ -2221,11 +2222,13 @@ class ThirdPersonControllerManager {
     h.position.y += h.verticalSpeed * dt;
 
     this.resolveHorizontalCollision(h.position, 4.5, null, h);
-    const y = helicopterAltitude(h.position.x, h.position.z, h.position.y);
-    if (h.position.y < y) {
-      this.reportCollision(h, groundCollider, 'ground', h.position.x, y, h.position.z, 0, 1, 0, -h.verticalSpeed);
+    const floor = helicopterAltitude(h.position.x, h.position.z, -Infinity);
+    const grounded = h.position.y <= floor;
+    if (grounded && h.verticalSpeed < 0) {
+      this.reportCollision(h, groundCollider, 'ground', h.position.x, floor, h.position.z, 0, 1, 0, -h.verticalSpeed);
+      h.verticalSpeed = 0;
     }
-    h.position.y = y;
+    h.position.y = Math.max(floor, Math.min(380, h.position.y));
 
     const targetPitch = (h.speed / maxHorizSpeed) * 0.24;
     const targetRoll = -yawInput * 0.28;
@@ -2234,7 +2237,7 @@ class ThirdPersonControllerManager {
 
     h.tiltPivot.rotation.x = h.pitchAngle;
     h.tiltPivot.rotation.z = h.rollAngle;
-    h.tiltPivot.position.y = Math.sin(elapsed * 2.6) * 0.18;
+    h.tiltPivot.position.y = grounded ? 0 : Math.sin(elapsed * 2.6) * 0.18;
   }
 }
 

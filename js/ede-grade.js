@@ -9,6 +9,7 @@ export const RAIL_BALLAST_WIDTH = 2.9;
 export const RAIL_BALLAST_TOP = 0.035;
 export const RAIL_SLEEPER_SPACING = 0.65;
 export const RAIL_TOP = 0.13;
+export const CHE_BRIDGE_SOFFIT = -1.80;
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const cellKey = (x, z) => `${x}/${z}`;
 let world = { sites: [], railHeights: [] };
@@ -28,7 +29,7 @@ let wayCuts = new Map();
 let buildingPassages;
 const passageCells = new Map();
 let fittedPassageCells = new Map();
-const platformCells = new Map(), structureRoofs = new Map();
+const platformCells = new Map(), helipadCells = new Map(), structureRoofs = new Map();
 
 const modeGroup = mode => mode === 'person' ? 'foot'
   : ['cyclist', 'cargobike', 'bicycle', 'cycleway'].includes(mode) ? 'bike'
@@ -245,18 +246,35 @@ export async function loadEdeGrade({ localSurfaces = true } = {}) {
 export const getEdeGrade = () => world;
 export const isGradeWay = (wayId) => ways.has(wayId);
 
-export function setEdePlatforms(platforms) {
-  platformCells.clear();
+function indexPlatforms(cells, platforms) {
+  cells.clear();
   for (const platform of platforms) {
     const { minX, minZ, maxX, maxZ } = boundsOf(platform.outer);
     for (let x = Math.floor(minX / CELL); x <= Math.floor(maxX / CELL); x++) {
       for (let z = Math.floor(minZ / CELL); z <= Math.floor(maxZ / CELL); z++) {
         const key = cellKey(x, z);
-        if (!platformCells.has(key)) platformCells.set(key, []);
-        platformCells.get(key).push(platform);
+        if (!cells.has(key)) cells.set(key, []);
+        cells.get(key).push(platform);
       }
     }
   }
+}
+
+export function setEdePlatforms(platforms) {
+  indexPlatforms(platformCells, platforms);
+}
+
+export function setEdeHelipads(helipads) {
+  indexPlatforms(helipadCells, helipads);
+}
+
+export function heliLandingHeightAt(x, z) {
+  const candidates = helipadCells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL)));
+  let height;
+  for (const { outer, y } of candidates ?? []) {
+    if (insideRing(outer, x, z) && (height === undefined || y > height)) height = y;
+  }
+  return height;
 }
 
 export function setEdeStructureRoofs(covers) {
@@ -533,7 +551,8 @@ export function getEdeBuildingPassages() {
     }
     // The garage aisles need turning clearance beyond the mapped single-lane carriageway.
     const garageAisle = road.id === 'w956231562' || road.id === 'w956231563';
-    const profile = { id: road.id, points, width: road.bgtWidth ?? road.bgt?.width ?? (garageAisle ? 5 : road.width) };
+    const modeled = road.id === 'w961378352'; // The surveyed CHE skybridge has no side walls at ground level.
+    const profile = { id: road.id, points, width: road.bgtWidth ?? road.bgt?.width ?? (garageAisle ? 5 : road.width), modeled };
     // Unposted openings have an estimated soffit based on the mapped use.
     const clearance = road.limits?.height ?? (road.modes.some(mode => mode & MOTOR) ? 3.4 : 2.8);
     const sections = gradeSections(profile, 3).map(section => {
@@ -541,6 +560,10 @@ export function getEdeBuildingPassages() {
       a.y = terrainHeightAt(a.x, a.z);
       b.y = terrainHeightAt(b.x, b.z);
       const cut = slopingPassageCut(section, road.id, clearance);
+      if (modeled) {
+        cut.roofAt = () => CHE_BRIDGE_SOFFIT;
+        cut.slope = 0;
+      }
       indexCut(passageCells, cut);
       return cut;
     });
@@ -752,8 +775,9 @@ export function constrainEdeCamera(entity, position, clearance = 0.55) {
       }
     }
   }
-  const deck = gradeDeckAt(x, z);
-  const onDeck = deck !== undefined && (entity.type === 'helicopter' || entity.position.y >= deck - 1.2);
+  const deck = entity.type === 'helicopter'
+    ? Math.max(gradeDeckAt(x, z) ?? -Infinity, heliLandingHeightAt(x, z) ?? -Infinity) : gradeDeckAt(x, z);
+  const onDeck = Number.isFinite(deck) && (entity.type === 'helicopter' || entity.position.y >= deck - 1.2);
   const platform = entity.type === 'person' ? platformAt(x, z, entity.position.y)?.y : undefined;
   position.y = Math.max(position.y, (onDeck ? deck : platform ?? gradeGroundHeightAt(x, z, entity.position.y)) + clearance);
 }

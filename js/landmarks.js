@@ -13,6 +13,10 @@ import { createEdeStationLandmark } from './ede-station-landmark.js';
 import { createEnkaWesthal, createOudeKerk } from './ede-enka-kerk.js';
 import { createMauritskazerne, createVuurvogel } from './ede-heritage-landmarks.js';
 import { createEdeCentrumStation, createHuisKernhem } from './ede-historic-landmarks.js';
+import { createKeetmolen, createDePeppel } from './ede-north-landmarks.js';
+import { createCheCampus } from './ede-campus-landmark.js';
+import { createNieuweKerk, createNoorderkerk, createSintAntoniuskerk, createBeatrixkerk } from './ede-church-landmarks.js';
+import { createLukkien } from './ede-lukkien.js';
 import { createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
 import { createRiedelSilos, createKappaDocie } from './ede-riedel-silos.js';
 import { buildMuralWalls } from './ede-mural-surfaces.js';
@@ -44,7 +48,7 @@ export const LANDMARK_EXCLUSIONS = [
 export function buildLandmarks(scene) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
-  const colliders = [];
+  const colliders = [], platforms = [], helipads = [];
   scene.add(group);
 
   function place(model, { x, z }, heading, footprints = [], baseY, colliderHeights = [], worldSpace = false) {
@@ -93,11 +97,21 @@ export function buildLandmarks(scene) {
     'kappa-docie': createKappaDocie,
     stadspoort: createStadspoort,
     'pathe-ede': createPatheEde,
+    lukkien: createLukkien,
+    keetmolen: createKeetmolen,
+    'de-peppel': createDePeppel,
+    'che-campus': createCheCampus,
+    'nieuwe-kerk': createNieuweKerk,
+    noorderkerk: createNoorderkerk,
+    'sint-antoniuskerk': createSintAntoniuskerk,
+    beatrixkerk: createBeatrixkerk,
   };
   for (const site of EDE_MODELED_LANDMARKS) {
     const footprints = modeledLandmarkFootprints(site);
     const model = models[site.id](footprints);
     model.name = site.name;
+    platforms.push(...(model.userData.platforms ?? []));
+    helipads.push(...(model.userData.helipads ?? []));
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
   }
   for (const model of buildMuralWalls()) {
@@ -107,5 +121,5 @@ export function buildLandmarks(scene) {
   const station = createEdeStationLandmark();
   group.add(station);
   colliders.push(...station.userData.colliders);
-  return { group, colliders, exclusions: LANDMARK_EXCLUSIONS, update() {} };
+  return { group, colliders, platforms, helipads, exclusions: LANDMARK_EXCLUSIONS, update() {} };
 }

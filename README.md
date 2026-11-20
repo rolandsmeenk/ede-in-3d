@@ -55,6 +55,8 @@ After updating the offline wall assignments or WebP assets, run:
 node tools/build-ede-murals.mjs
 ```
 
+The Teleport menu also includes De Keetmolen, De Peppel, CHE and Van der Knaaphal, four churches, and Lukkien. The Lukkien destination faces the street entrance, and the marked rooftop deck supports landing in Fly mode. See the [survey sources and in-game checks](tools/data/ede-landmark-batch.md).
+
 ## Graphics and profiling
 
 The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and keeps bloom and color grading. Standard enables screen-space reflections and multisample antialiasing. The terrain uses the same 12 m AHN grid in both presets.

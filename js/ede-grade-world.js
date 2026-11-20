@@ -118,7 +118,8 @@ export function buildEdeGradeWorld(scene) {
     }
   }
 
-  for (const { sections } of getEdeBuildingPassages().values()) {
+  for (const { profile, sections } of getEdeBuildingPassages().values()) {
+    if (profile.modeled) continue;
     for (const section of sections) {
       const { a, b, id, minX, maxX, minZ, maxZ, clearance, roofAt } = section;
       quad(roof, [a.left, a.right, b.right, b.left].map(p => height(p, roofAt(p.x, p.z))));
