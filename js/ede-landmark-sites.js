@@ -2,7 +2,9 @@ import { EDE_DATA } from './ede-geodata.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
-    osmId: 'w1412208401', x: -390.65, z: -101.70, heading: 1.96, height: 36 },
+    osmId: 'w1412208401', annexOsmIds: ['w271545742', 'w271547371', 'w271549077', 'w271547126'],
+    bagIds: ['0228100000009921', '0228100000033968', '0228100000065603', '0228100000045246'],
+    x: -390.65, z: -101.70, heading: 1.96, height: 36, worldSpace: true },
   { id: 'stingerbol', name: 'Stingerbol', district: 'Stationsgebied', road: 'Bataljonlaan',
     osmId: 'w271575955', x: 412.20, z: 2007.99, heading: 1.754, height: 20 },
   { id: 'grote-enka-schoorsteen', name: 'Grote ENKA-schoorsteen', district: 'ENKA', road: 'Grote Schoorsteenplein',
@@ -87,6 +89,9 @@ export const EDE_MODELED_LANDMARKS = [
   { id: 'reehorst', name: 'De ReeHorst', district: 'Stationsgebied', road: 'Bennekomseweg',
     osmId: 'w271472015', bagIds: ['0228100000004736'], x: -42.95, z: 2408.85, height: 25.84, worldSpace: true,
     approach: { x: 15, z: 2418 } },
+  { id: 'work-garden', name: 'Work Garden', district: 'Centrum', road: 'Grotestraat',
+    osmId: 'w501079879', bagIds: ['0228100000077693'], x: -47.86, z: -226.77, height: 10.74, worldSpace: true,
+    approach: { x: -56, z: -226.7 } },
   { id: 'buitenzorg', name: 'Buitenzorg', district: 'Centrum', road: 'Amsterdamseweg',
     osmId: 'w271549976', bagIds: ['0228100000042682'], x: -294.55, z: -293.6, height: 10.97, worldSpace: true,
     approach: { x: -302, z: -323 } },
@@ -104,15 +109,6 @@ export const EDE_MODELED_LANDMARKS = [
     osmId: 'w272136145', bagIds: ['0228100000041390'], x: -1859, z: 1330, height: 11, worldSpace: true,
     approach: { x: -1856, z: 1283 } },
 
-];
-
-// The mill tower is mapped as a part of the adjacent building in the OSM fallback.
-export const MILL_ADJOINING_FOOTPRINT = [
-  -385.8, -107.4, -382, -108.4, -377.6, -91.2, -378.9, -90.9, -378.9, -90.6,
-  -363, -94.7, -368.4, -115.5, -367.2, -116.6, -367.8, -119, -369.3, -119.4,
-  -370.4, -123.6, -370.8, -124.1, -371.3, -124.3, -371.5, -124.3, -376.1, -123.2,
-  -375.7, -121.6, -395.3, -116.6, -395.7, -116.2, -395.9, -115.9, -396, -115.4,
-  -393.5, -105.9, -389.7, -106.7, -387.2, -105.2
 ];
 
 const sources = new Set(EDE_MODELED_LANDMARKS.flatMap(site => [site.osmId, ...(site.annexOsmIds ?? [])]));
@@ -167,12 +163,6 @@ function convexHull(points) {
 }
 
 const bagCuts = [
-  // Clip the mill tower within the shared BAG feature, leaving the rest of the attached building.
-  cutFor([
-    { x: -389.70, z: -106.70 }, { x: -393.70, z: -105.90 }, { x: -395.70, z: -102.50 },
-    { x: -394.70, z: -98.70 }, { x: -391.30, z: -96.70 }, { x: -387.50, z: -97.60 },
-    { x: -385.60, z: -101.00 }, { x: -386.50, z: -104.80 },
-  ], 0.32),
   cutFor(circle(dome, 11.45), 0.1),
   // The tall shaft also appears as a straight extrusion in the live 3DBAG tile.
   cutFor(circle(groteChimney, 5.5, 24), 0),

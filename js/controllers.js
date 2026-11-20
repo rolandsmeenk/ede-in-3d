@@ -16,7 +16,6 @@ import {
   buildCarGeometry,
   buildCarSidePatch,
   buildSteerableWheelGeo,
-  carTipZ,
   createCarWheelMaterial,
   createLoftedCarMaterial
 } from './cars.js';
@@ -379,55 +378,13 @@ function buildingContact(c, x, y, z, body, contact) {
 function createTaxiDoorDecalTexture() {
   const c = document.createElement('canvas');
   c.width = 256;
-  c.height = 128;
+  c.height = 96;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#e5d7b5';
-  ctx.fillRect(0, 0, 256, 128);
-  // Black T&LC circle emblem
-  ctx.fillStyle = '#111317';
-  ctx.beginPath();
-  ctx.arc(58, 64, 42, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#e5d7b5';
-  ctx.font = '900 32px Inter, Arial, sans-serif';
+  ctx.fillStyle = '#e5e9ed';
+  ctx.font = '700 41px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('T', 58, 66);
-  // Taxi roof sign typography & fare rate
-  ctx.fillStyle = '#111317';
-  ctx.textAlign = 'left';
-  ctx.font = '900 26px Inter, Arial, sans-serif';
-  ctx.fillText('EDE TAXI', 112, 42);
-  ctx.font = '700 15px JetBrains Mono, monospace';
-  ctx.fillText('EDE · TAXI', 112, 68);
-  ctx.font = '600 13px Inter, Arial, sans-serif';
-  ctx.fillText('TAXI EDE', 112, 90);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  // The decals are mostly seen at grazing angles from the chase camera
-  tex.anisotropy = 16;
-  return tex;
-}
-
-function createNYLicensePlateTexture() {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 128;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#f6c500';
-  ctx.fillRect(0, 0, 256, 128);
-  ctx.strokeStyle = '#171c21';
-  ctx.lineWidth = 5;
-  ctx.strokeRect(3, 3, 250, 122);
-  ctx.fillStyle = '#154795';
-  ctx.fillRect(7, 7, 26, 114);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '700 22px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('NL', 20, 91);
-  ctx.fillStyle = '#111820';
-  ctx.font = '700 42px Arial, sans-serif';
-  ctx.fillText('GX-123-B', 143, 80);
+  ctx.fillText('EDE TAXI', 128, 48, 225);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 16;
@@ -758,7 +715,7 @@ class ThirdPersonControllerManager {
   }
 
   // =========================================================================
-  // 2. CAR (3D LOFTED SCULPTED NYC MEDALLION YELLOW TAXI SEDAN)
+  // 2. PLAYER TAXI
   // =========================================================================
   createCarEntity() {
     const root = new THREE.Group();
@@ -777,12 +734,13 @@ class ThirdPersonControllerManager {
     carBodyMesh.receiveShadow = true;
     chassisPivot.add(carBodyMesh);
 
-    // 2. Authentic NYC Taxi Side Door T&LC Medallion & Fare Tariff Emblem Decals, hugging the curved front doors
+    // Generic local operator lettering, following the curved door panels
     const doorDecalTex = createTaxiDoorDecalTexture();
     const doorDecalMat = new THREE.MeshStandardNodeMaterial({
       map: doorDecalTex,
-      roughness: 0.24,
-      metalness: 0.34,
+      roughness: 0.32,
+      transparent: true,
+      depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2
@@ -793,18 +751,7 @@ class ThirdPersonControllerManager {
       chassisPivot.add(decal);
     }
 
-    // 3. High-Detail Dutch yellow license plates on the bumpers, tilted to follow the fascias
-    const nyPlateTex = createNYLicensePlateTexture();
-    const nyPlateMat = new THREE.MeshStandardNodeMaterial({ map: nyPlateTex, roughness: 0.28 });
-    for (const front of [true, false]) {
-      const y = spec.plates[front ? 0 : 1];
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.008), nyPlateMat);
-      plate.position.set(0, y, carTipZ(spec, y, front) + (front ? 0.003 : -0.003));
-      plate.rotation.x = Math.atan((carTipZ(spec, y + 0.07, front) - carTipZ(spec, y - 0.07, front)) / 0.14);
-      chassisPivot.add(plate);
-    }
-
-    // 3b. Brake, reverse & turn lights are lit by the taxi material from its carState uniform (see updateCar)
+    // Brake, reverse and turn lights use the shared body material.
     const carState = taxiLoftMat.userData.carState;
 
     // 4. Steerable & Spinning 3D LatheGeometry Tyres + Recessed 5-Spoke Alloy Wheels

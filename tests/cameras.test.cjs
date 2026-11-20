@@ -249,6 +249,20 @@ for (const preset of ['chase', 'observatory', 'drone']) {
   });
 }
 
+test('a landmark arrival frames the target until the player starts moving', () => {
+  const { camera, entity } = cameraHarness();
+  const target = new Vector3(0, 13, 155);
+  const pose = { ...target, offset: [5, 3] };
+  camera.resetForTeleport(pose);
+  camera.update(1 / 60, 0);
+  assert.deepEqual(camera.currentLookAt, target);
+  close(camera.currentPos.x, 5);
+  entity.speed = 1;
+  camera.update(1 / 60, 1 / 60);
+  assert.equal(camera.teleportFocus, null);
+  assert.ok(camera.currentLookAt.z < target.z);
+});
+
 test('teleport releases every camera pointer and ignores old gestures before accepting a new drag', () => {
   const h = cameraHarness();
   h.pointer(h.canvas, 'pointerdown', 1, 0);

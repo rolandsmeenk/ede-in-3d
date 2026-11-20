@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { edeBounds, edePolygonGeometry } from './ede-geometry.js';
+import { drapeEdeSurface, edeBounds, edePolygonGeometry } from './ede-geometry.js';
+import { playgroundEquipment } from './ede-playground-equipment.js';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 
@@ -19,6 +20,13 @@ const BARRIERS = {
 
 const infrastructure = new Set(['balustrade', 'guardrail', 'gutter', 'drain',
   'canopy', 'landing', 'steps', 'bin', 'container']);
+
+const WASTE_COLORS = {
+  residual: 0x43494a, restafval: 0x43494a, glass: 0x398253, glas: 0x398253,
+  textiles: 0x806450, textile: 0x806450, textiel: 0x806450, paper: 0x316b9a, papier: 0x316b9a,
+  pmd: 0xc47736, organic: 0x638044, gft: 0x638044, 'food-waste': 0x638044,
+};
+const PLAY_SURFACES = { sand: 0xbba984, bark: 0x84664e, gravel: 0xaca394, rubber: 0x794c45, path: 0x9d927f };
 
 async function readPacked(url) {
   const response = await fetch(url);
@@ -58,16 +66,24 @@ async function loadLandCover() {
   }
 }
 
-export async function loadEdeDetail({ bgt = true, motorway = true, directional = motorway, bgtStage = 'all' } = {}) {
-  const files = { bgt: 'ede-bgt-detail', '1gis': 'ede-1gis-detail', nbd: 'ede-nbd-signs' };
-  const requests = [bgt && 'bgt', motorway && '1gis', directional && 'nbd'].filter(Boolean);
+export async function loadEdeDetail({ bgt = true, motorway = true, directional = motorway, bgtStage = 'all', municipal = true } = {}) {
+  const files = { bgt: 'ede-bgt-detail', '1gis': 'ede-1gis-detail', nbd: 'ede-nbd-signs',
+    municipal: 'ede-municipal-detail' };
+  const requests = [bgt && 'bgt', motorway && '1gis', directional && 'nbd',
+    bgt && bgtStage === 'all' && municipal && 'municipal'].filter(Boolean);
   const assetUrl = (source, extension) => new URL(`../assets/${files[source]}.${extension}`, import.meta.url);
-  let nbdTexture;
+  let nbdTexture, replacedBgt;
   const land = bgt && bgtStage === 'all' ? loadLandCover() : null;
   const assets = await Promise.all(requests.map(async source => {
     try {
       const asset = await (await readPacked(assetUrl(source, 'json.gz'))).json();
       if (asset.version !== 1 || !Array.isArray(asset.features)) throw new Error('invalid asset format');
+      if (source === 'municipal') {
+        if (!Array.isArray(asset.replaces) || asset.replaces.some(id => typeof id !== 'string')) {
+          throw new Error('invalid BGT replacement list');
+        }
+        replacedBgt = new Set(asset.replaces);
+      }
       if (source === 'nbd' && asset.features.length) {
         nbdTexture = await new THREE.TextureLoader().loadAsync(assetUrl(source, 'png?v=20261120-traffic-blue').href);
         nbdTexture.colorSpace = THREE.SRGBColorSpace;
@@ -81,21 +97,22 @@ export async function loadEdeDetail({ bgt = true, motorway = true, directional =
       return [];
     }
   }));
-  const features = assets.flat();
+  const features = assets.flat().filter(feature => feature.source !== 'bgt' || !replacedBgt?.has(feature.id));
   return { features: features.filter(f => f.type !== 'marking'), markings: features.filter(f => f.type === 'marking'),
     nbdTexture, landCover: await land };
 }
 
 function groundAt(feature, x, z, surveyY, height = 0) {
   const coarse = terrainHeightAt(x, z);
+  const localInventory = feature.source === 'bgt' || feature.source === 'municipal';
   const kind = feature.level > 0 ? 'bridge' : feature.level < 0 ? 'underpass' : null;
   const explicit = feature.profileId && gradeProfileAt(x, z, undefined, undefined, undefined, feature.profileId, ROAD_REACH);
   if (explicit && explicit.id === feature.profileId && (!kind || explicit.kind === kind)) return explicit.y;
   // A ground-level motorway object can be beside a raised road and keep its own surface.
-  const matched = (kind || feature.source === 'bgt') && feature.wayId && gradeWayAt(feature.wayId, x, z, ROAD_REACH);
+  const matched = (kind || localInventory) && feature.wayId && gradeWayAt(feature.wayId, x, z, ROAD_REACH);
   if (matched && (!kind || matched.span.profile.site?.kind === kind)) return matched.y;
   if (Number.isFinite(surveyY)) return surveyY - (getTerrain()?.napOrigin ?? NAP_FALLBACK) - height;
-  if (feature.source !== 'bgt') return kind ? undefined : coarse;
+  if (!localInventory) return kind ? undefined : coarse;
   const local = gradeProfileAt(x, z, 'foot', undefined, coarse);
   if (local && (local.kind === 'platform' && !(feature.level < 0) || local.kind === 'surface' && !kind)) return local.y;
   return kind ? undefined : coarse;
@@ -175,7 +192,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   group.name = 'EdeImportedDetail';
   const batches = new Map(), stopIds = new Set(), gantryLampMounts = new Map(), colliders = [];
   const gantries = [], portalPanels = new Map();
-  const stats = { bgt: 0, '1gis': 0, nbd: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
+  const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
   group.userData.stats = stats;
   group.userData.stopIds = [];
   scene.add(group);
@@ -194,25 +211,27 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const ripple = 1 + 0.11 * Math.sin(x * 16 + y * 25) * Math.cos(z * 21);
     leafPosition.setXYZ(i, x * ripple, y * ripple, z * ripple);
   }
-  const shapes = { box, glass: box, pole: new THREE.CylinderGeometry(0.5, 0.5, 1, 6),
+  const shapes = { box, glass: box, pole: new THREE.CylinderGeometry(0.5, 0.5, 1, 6), round: new THREE.CylinderGeometry(0.5, 0.5, 1, 10),
     leaf, tuft: new THREE.IcosahedronGeometry(0.5) };
   const color = new THREE.Color(), dummy = new THREE.Object3D();
   const pipelines = new Map();
+  const up = new THREE.Vector3(0, 1, 0), axis = new THREE.Vector3();
+  const across = new THREE.Vector3(), normal = new THREE.Vector3(), basis = new THREE.Matrix4();
 
   function resolveGround(feature, x, z, surveyY, height) {
     const deck = feature.surfaceId && deckProfiles?.get(feature.surfaceId);
     return deck?.(x, z) ?? groundAt(feature, x, z, surveyY, height);
   }
 
-  function batch(kind, x, z, source) {
-    const cell = kind === 'inset' ? 90 : CELL;
-    const key = `${kind}/${source}/${Math.floor(x / cell)}/${Math.floor(z / cell)}`;
-    if (!batches.has(key)) batches.set(key, { kind, source, instances: [], positions: [], indices: [], colors: [], uv: [] });
+  function batch(kind, x, z, source, range) {
+    const cell = kind === 'inset' || source === 'municipal' ? 90 : CELL;
+    const key = `${kind}/${source}/${range ?? ''}/${Math.floor(x / cell)}/${Math.floor(z / cell)}`;
+    if (!batches.has(key)) batches.set(key, { kind, source, range, instances: [], positions: [], indices: [], colors: [], uv: [] });
     return batches.get(key);
   }
 
-  function instance(source, kind, x, y, z, sx, sy, sz, angle, paint) {
-    batch(kind, x, z, source).instances.push([x, y, z, sx, sy, sz, angle, paint]);
+  function instance(source, kind, x, y, z, sx, sy, sz, angle, paint, range) {
+    batch(kind, x, z, source, range).instances.push([x, y, z, sx, sy, sz, angle, paint]);
   }
 
   function quad(target, points, paint) {
@@ -444,17 +463,61 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     return true;
   }
 
+  function playSurface(feature) {
+    const rings = [feature.polygon, ...(feature.holes ?? [])];
+    if (feature.level || rings.some(ring => !Array.isArray(ring) || ring.length < 3 || !ring.every(validPoint))) return false;
+    const [outer, ...holes] = rings.map(ring => ring.map(([x, z]) => ({ x, z })));
+    const cap = drapeEdeSurface(edePolygonGeometry(outer, holes, 0.079));
+    const target = batch('playSurface', outer[0].x, outer[0].z, feature.source, 310);
+    const pos = cap.getAttribute('position'), index = cap.index;
+    const base = target.positions.length / 3;
+    color.setHex(Object.hasOwn(PLAY_SURFACES, feature.material) ? PLAY_SURFACES[feature.material] : PLAY_SURFACES.sand);
+    for (let i = 0; i < pos.count; i++) {
+      target.positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+      target.colors.push(color.r, color.g, color.b);
+    }
+    for (let i = 0; i < (index?.count ?? pos.count); i++) target.indices.push(base + (index?.getX(i) ?? i));
+    cap.dispose();
+    return true;
+  }
+
   function buildProp(feature) {
     if (!validPoint(feature.position)) return false;
     const [x, z] = feature.position;
     const height = dimension(feature.height, 0.85);
-    const y = resolveGround(feature, x, z, feature.surveyY ?? feature.topY, feature.surveyY == null ? height : 0);
-    if (!Number.isFinite(y)) return false;
+    const support = resolveGround(feature, x, z, feature.surveyY ?? feature.topY, feature.surveyY == null ? height : 0);
+    if (!Number.isFinite(support)) return false;
+    const y = support + (Number.isFinite(feature.baseOffset) ? feature.baseOffset : 0);
     const angle = Number.isFinite(feature.angle) ? feature.angle : 0;
     const cos = Math.cos(angle), sin = Math.sin(angle);
-    const part = (sx, sy, sz, dx, dy, dz, paint, shape = 'box') => {
+    const play = feature.type === 'playEquipment';
+    const detailRange = (detail) => play ? (detail ? 92 : 245) : feature.source === 'municipal' ? 112 : undefined;
+    const part = (sx, sy, sz, dx, dy, dz, paint, shape = 'box', detail = false) => {
       instance(feature.source, shape, x + cos * dx + sin * dz, y + dy, z - sin * dx + cos * dz,
-        sx, sy, sz, angle, paint);
+        sx, sy, sz, angle, paint, detailRange(detail));
+    };
+    const beam = (a, b, width, paint, detail = false, shape = 'pole', depth = width) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+      axis.set(cos * dx + sin * dz, dy, -sin * dx + cos * dz);
+      const length = axis.length();
+      if (length < 0.001) return;
+      axis.divideScalar(length);
+      const rotation = new THREE.Quaternion();
+      if (shape === 'box' && Math.hypot(axis.x, axis.z) > 0.001) {
+        across.set(axis.z, 0, -axis.x).normalize();
+        normal.crossVectors(across, axis);
+        rotation.setFromRotationMatrix(basis.makeBasis(across, axis, normal));
+      } else rotation.setFromUnitVectors(up, axis);
+      const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2, cz = (a[2] + b[2]) / 2;
+      instance(feature.source, shape, x + cos * cx + sin * cz, y + cy, z - sin * cx + cos * cz,
+        width, length, depth, rotation, paint, detailRange(detail));
+    };
+    const body = (width, depth, top, dx = 0, dz = 0, base = 0) => {
+      const cx = x + cos * dx + sin * dz, cz = z - sin * dx + cos * dz;
+      const hx = width / 2, hz = depth / 2;
+      const rx = Math.abs(cos) * hx + Math.abs(sin) * hz, rz = Math.abs(sin) * hx + Math.abs(cos) * hz;
+      colliders.push({ minX: cx - rx, maxX: cx + rx, minZ: cz - rz, maxZ: cz + rz,
+        minY: y + base, maxY: y + top, obb: { cx, cz, hx, hz, cs: cos, sn: sin }, kind: 'municipal-furniture' });
     };
     switch (feature.type) {
       case 'bench': {
@@ -491,6 +554,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         if (feature.stopId) stopIds.add(feature.stopId);
         break;
       }
+      case 'playEquipment': return playgroundEquipment(feature, part, beam, body);
       case 'playground': {
         const width = dimension(feature.width, 1.25);
         for (const end of [-0.42, 0.42]) part(0.10, 1.8, 0.10, 0, 0.9, width * end, 0x2d8294);
@@ -501,6 +565,51 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       }
       case 'bin': case 'container': {
         const large = feature.type === 'container';
+        if (feature.source === 'municipal') {
+          const width = dimension(feature.width, large ? 0.65 : 0.43);
+          const depth = dimension(feature.length, large ? 0.65 : 0.38);
+          const semi = feature.model === 'semi-underground';
+          const greenPost = feature.model === 'greenPost';
+          const double = feature.model === 'city-split';
+          const round = semi || greenPost;
+          const below = feature.model === 'underground';
+          const bodyColor = large ? (below ? 0x737e83 : semi ? 0x525c5b : feature.model === 'surface' ? 0x65706c : 0x58635f)
+            : round ? 0x405e4c : 0x434b4d;
+          if (greenPost) {
+            part(width * 0.22, height * 0.44, depth * 0.20, 0, height * 0.22, 0, GALVANIZED, 'pole');
+            part(width, height * 0.59, depth, 0, height * 0.59, 0, bodyColor, 'round');
+          } else if (below) {
+            // Only the access column and the flush deck are visible above ground.
+            part(width * 1.55, 0.04, depth * 1.55, 0, 0.008, 0, 0x848b88);
+            part(width * 0.95, height * 0.7, depth * 0.91, 0, height * 0.35, 0, bodyColor);
+          } else {
+            part(width * 0.82, 0.045, depth * 0.83, 0, 0.013, 0, 0x515652);
+            part(width, height * 0.89, depth, 0, height * 0.445, 0, bodyColor, round ? 'round' : 'box');
+          }
+          part(width, height * (below ? 0.3 : 0.11), depth, 0, height * (below ? 0.85 : 0.94), 0,
+            large ? 0x3c484c : 0x31393a, round ? 'round' : 'box');
+          const openingZ = depth * (round ? 0.48 : 0.505);
+          const openingY = height * 0.78;
+          if (double) {
+            for (const side of [-1, 1]) {
+              part(width * 0.29, height * 0.105, 0.03, side * width * 0.24, openingY, openingZ, 0x1b2223);
+              part(width * 0.13, 0.045, 0.014, side * width * 0.24, height * 0.63, openingZ, 0xddded9);
+            }
+            part(0.026, height * 0.66, 0.018, 0, height * 0.40, openingZ, 0x4e5555);
+            part(width * 0.94, 0.035, depth * 0.61, 0, height * 0.988, 0, 0x404a4c);
+          } else {
+            part(width * 0.62, height * 0.105, 0.032, 0, openingY, openingZ, 0x1b2223);
+          }
+          const streams = feature.streams ?? [];
+          for (let i = 0; i < Math.min(streams.length, 4); i++) {
+            const stream = streams[i];
+            if (Object.hasOwn(WASTE_COLORS, stream)) {
+              part(width * 0.18, 0.06, 0.012, width * (i * 0.22 - 0.33), height * 0.62, openingZ, WASTE_COLORS[stream]);
+            }
+          }
+          if (feature.collidable) body(width, depth, height);
+          break;
+        }
         const width = dimension(feature.width, large ? 1.55 : 0.42);
         const length = dimension(feature.length, large ? 1.25 : 0.37);
         part(width, height * 0.89, length, 0, height * 0.445, 0, large ? 0x466052 : 0x515755);
@@ -536,7 +645,8 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   }
 
   for (const feature of features) {
-    const success = Object.hasOwn(BARRIERS, feature.type) ? barrier(feature)
+    const success = feature.type === 'playSurface' ? playSurface(feature)
+      : Object.hasOwn(BARRIERS, feature.type) ? barrier(feature)
       : feature.type === 'gantry' ? gantry(feature)
         : feature.type === 'directionalSign' ? directionalPanel(feature)
           : feature.type === 'drain' || feature.type === 'gutter' ? drainage(feature)
@@ -550,14 +660,16 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   }
 
   for (const target of batches.values()) {
-    const { kind, source } = target;
+    const { kind, source, range } = target;
     const signFace = kind === 'sign' || kind === 'directionalSign';
     let mesh;
     if (target.instances.length) {
       const geometry = shapes[kind];
       mesh = new THREE.InstancedMesh(geometry, kind === 'glass' ? glass : material, target.instances.length);
       target.instances.forEach(([x, y, z, sx, sy, sz, angle, paint], index) => {
-        dummy.position.set(x, y, z); dummy.scale.set(sx, sy, sz); dummy.rotation.y = angle;
+        dummy.position.set(x, y, z); dummy.scale.set(sx, sy, sz);
+        if (typeof angle === 'number') dummy.rotation.set(0, angle, 0);
+        else dummy.quaternion.copy(angle);
         dummy.updateMatrix(); mesh.setMatrixAt(index, dummy.matrix);
         if (kind !== 'glass') mesh.setColorAt(index, color.setHex(paint));
       });
@@ -578,8 +690,8 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     }
     mesh.name = `${source.toUpperCase()} detail ${kind}`;
     mesh.receiveShadow = !signFace && kind !== 'glass';
-    mesh.userData.cullDistance = kind === 'inset' ? 65 : kind === 'tuft' ? 130
-      : kind === 'leaf' ? 190 : source === 'bgt' ? 310 : 700;
+    mesh.userData.cullDistance = range ?? (kind === 'inset' ? 65 : kind === 'tuft' ? 130
+      : kind === 'leaf' ? 190 : source === 'bgt' ? 310 : 700);
     const pipeline = pipelines.get(kind);
     if (pipeline) mesh.userData.sharesPipelineWith = pipeline;
     else pipelines.set(kind, mesh);

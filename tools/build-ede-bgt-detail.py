@@ -251,7 +251,21 @@ def flat_polygon(outer, holes=()):
     return make_valid(Polygon(BGT['pairs'](outer), [BGT['pairs'](hole) for hole in holes]))
 
 
-def build_evidence(scene, area):
+def tree_positions(path):
+    data = path.read_bytes()
+    version, count = struct.unpack_from('<4sI', data)
+    if version not in {b'EDT1', b'EDT2', b'EDT3'}:
+        raise ValueError(f'Unrecognized Ede tree inventory: {path}')
+    offset = 8
+    for _ in range(count):
+        x, z, _, _, _, flags = struct.unpack_from('<hhHBBB', data, offset)
+        offset += 9 + bool(flags & 72) + bool(flags & 128)
+        yield Point(x / 5, z / 5)
+    if offset != len(data):
+        raise ValueError(f'Invalid Ede tree inventory length: {path}')
+
+
+def build_evidence(scene, area, *, tree_path=ROOT / 'assets/ede-trees.bin'):
     route_rows = []
     bus_roads = []
 
@@ -310,7 +324,7 @@ def build_evidence(scene, area):
             if geometry.intersects(border):
                 structures.append((record['layer'], geometry))
     trees = [Point(t['x'], t['z']) for t in scene['trees']]
-    trees.extend(Point(x / 5, z / 5) for x, z, *_ in struct.iter_unpack('<hhHBBB', (ROOT / 'assets/ede-trees.bin').read_bytes()[8:]))
+    trees.extend(tree_positions(tree_path))
     lamp_data = gzip.decompress((ROOT / 'assets/ede-lamps.bin.gz').read_bytes())
     if lamp_data[:4] != b'EDL2':
         raise ValueError('Unrecognized Ede lamp inventory')
@@ -894,7 +908,7 @@ def bake(directory, sites, scene, day, town=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('snapshot', type=Path)
+    parser.add_argument('snapshot', type=Path, nargs='?', help='dated PDOK snapshot directory')
     parser.add_argument('--fetch', action='store_true', help='download a dated PDOK snapshot first')
     parser.add_argument('--date', type=date.fromisoformat, default=date.today())
     parser.add_argument('--coverage', choices=('pilot', 'expanded', 'town'), default='town')
@@ -904,31 +918,54 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-bgt-detail.json.gz')
     parser.add_argument('--review', type=Path, default=ROOT / 'tools/data/ede-bgt-detail.review.json')
     parser.add_argument('--land-output', type=Path, default=ROOT / 'assets/ede-bgt-land.bin.gz')
+    parser.add_argument('--municipal-snapshot', type=Path, help='dated municipal WFS cache directory')
+    parser.add_argument('--municipal-output', type=Path, default=ROOT / 'assets/ede-municipal-detail.json.gz')
+    parser.add_argument('--municipal-review', type=Path, default=ROOT / 'tools/data/ede-municipal-detail.review.json.gz')
+    parser.add_argument('--acv-profile', type=Path, default=ROOT / 'tools/data/ede-mor-acv-profile.json')
+    parser.add_argument('--bin-profile', type=Path, default=ROOT / 'tools/data/ede-mor-bin-profile.json')
+    parser.add_argument('--playground-survey', type=Path, default=ROOT / 'tools/data/ede-playground-pilots.json')
     args = parser.parse_args()
+    if not args.snapshot and not args.municipal_snapshot:
+        parser.error('Provide a PDOK or municipal snapshot.')
     scene = load_scene()
     town = args.coverage == 'town'
     sites = town_sites(scene['meta']['bounds']) if town else PILOTS | EXTRA if args.coverage == 'expanded' else PILOTS
     affine = scene['meta']['lonLatAffine']
-    gates = args.snapshot / 'gates.json'
-    if town and not args.osm and not gates.exists():
-        parser.error('Provide local province extracts with --osm for mapped gate openings.')
-    if args.fetch:
-        fetch(args.snapshot, sites, affine, args.date.isoformat(), town, args.osm)
-    if town and not gates.exists():
-        extract_gates(args.snapshot, args.osm, geographic_bounds(scene['meta']['bounds'], affine))
-    if town and args.station_ahn:
-        fetch_station_heights(args.snapshot, affine)
-    day = args.date.isoformat()
-    snapshot = json.loads((args.snapshot / 'snapshot.json').read_bytes())
-    if snapshot['date'] != day or any(snapshot['sites'].get(site) != list(bounds) for site, bounds in sites.items()):
-        parser.error('Snapshot date or site bounds differ. Use the original options or run --fetch.')
-    asset, review = bake(args.snapshot, sites, scene, day, town)
-    if town and not args.skip_land:
-        review['landMask'] = bake_land(args.snapshot, sites, scene, day, args.land_output)
-    write_json(args.output, asset)
-    write_json(args.review, review)
-    print(f"Ede BGT street detail: {len(asset['features'])} placements, {len(review['reviews'])} review records")
-    print(review['placements'])
+    if args.snapshot:
+        gates = args.snapshot / 'gates.json'
+        if town and not args.osm and not gates.exists():
+            parser.error('Provide local province extracts with --osm for mapped gate openings.')
+        if args.fetch:
+            fetch(args.snapshot, sites, affine, args.date.isoformat(), town, args.osm)
+        if town and not gates.exists():
+            extract_gates(args.snapshot, args.osm, geographic_bounds(scene['meta']['bounds'], affine))
+        if town and args.station_ahn:
+            fetch_station_heights(args.snapshot, affine)
+        day = args.date.isoformat()
+        snapshot = json.loads((args.snapshot / 'snapshot.json').read_bytes())
+        if snapshot['date'] != day or any(snapshot['sites'].get(site) != list(bounds) for site, bounds in sites.items()):
+            parser.error('Snapshot date or site bounds differ. Use the original options or run --fetch.')
+        asset, review = bake(args.snapshot, sites, scene, day, town)
+        if town and not args.skip_land:
+            review['landMask'] = bake_land(args.snapshot, sites, scene, day, args.land_output)
+        write_json(args.output, asset)
+        write_json(args.review, review)
+        print(f"Ede BGT street detail: {len(asset['features'])} placements, {len(review['reviews'])} review records")
+        print(review['placements'])
+
+    if args.municipal_snapshot:
+        import ede_municipal_detail as municipal
+        if args.fetch:
+            municipal.fetch(args.municipal_snapshot, scene['meta']['geographicBounds'])
+        base = municipal.read_json(args.output)
+        profiles = municipal.read_json(args.acv_profile) if args.acv_profile.is_file() else {}
+        survey = municipal.read_json(args.playground_survey) if args.playground_survey.is_file() else {}
+        bins = municipal.read_json(args.bin_profile) if args.bin_profile.is_file() else {}
+        municipal_asset, audit = municipal.bake(args.municipal_snapshot, scene, base, globals(), profiles, survey, bins)
+        write_json(args.municipal_output, municipal_asset)
+        write_json(args.municipal_review, audit)
+        print(f"Ede municipal detail: {len(municipal_asset['features'])} placements, {len(audit['playSites'])} play sites")
+        print(audit['counts'])
 
 
 if __name__ == '__main__':

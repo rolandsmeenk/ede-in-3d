@@ -2,18 +2,19 @@
 
 The 19 November 2026 bake starts with 15,102 active BGT light-mast records. It retains the relative layer and uses one physical mast for records with coincident positions on the same layer. The 1GIS layer 6 query returned 446 light records in RD New with Z. The bake clips it to 45 m around the A12 and A30 carriageways and ramps. [PDOK BGT poles](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal) · [1GIS light-point catalogue](https://data.overheid.nl/dataset/83397-geografische-areaalregistratie-licht-punten)
 
-The packed 143,466-byte asset has 15,242 lamps. It stores the base, mounting level, arm direction, light height and target height in the Oude Kerk frame. Both public sources are CC0. The [matching report](ede-lamps.review.json.gz) retains the matched light IDs, native RD coordinates and NAP heights, fixture metadata, source dates where supplied, fit IDs, duplicate BGT records and ambiguous observations.
+The packed asset has 15,242 lamps. It stores the base, mounting level, arm direction, light height and target height in the Oude Kerk frame. Both public sources are CC0. The [matching report](ede-lamps.review.json.gz) retains the matched light IDs, native RD coordinates and NAP heights, fixture metadata, source dates where supplied, fit IDs, duplicate BGT records and ambiguous observations.
 
 | Decision | Records |
 | --- | ---: |
 | BGT coordinate/layer duplicates removed | 87 |
 | BGT poles corroborated by a compatible 1GIS mounting elevation | 52 |
 | Standalone 1GIS ground masts with consistent elevations | 227 |
+| Surveyed masts with the 1GIS double-arm type | 94 |
 | Additional overlapping 1GIS measurements discarded | 22 |
 | Other 1GIS lights without sufficient distinct mounting evidence | 111 |
 | 1GIS fixture-only points and positions outside the corridor | 34 |
 
-A 1GIS base can replace a BGT estimate when the same-level survey is within 1.3 m horizontally and 0.65 m vertically of the fitted surface or terrain. Additional 1GIS-only ground masts need the same vertical check and separation from BGT placements. An elevated BGT pole follows the applicable road or path profile. The native BGT bridge footprint extends support to deck edges and parapets. Positive surveyed heights for the fixture or mast determine the model height when available. Missing dimensions use 8.2 m. Arm and target geometry follow the same surface. A short maximum light range limits upper spotlights to the deck. Pedestrian footprints use the same relative level.
+A 1GIS base can replace a BGT estimate when the same-level survey is within 1.3 m horizontally and 0.65 m vertically of the fitted surface or terrain. Additional 1GIS-only ground masts need the same vertical check and separation from BGT placements. An elevated BGT pole follows the applicable road or path profile. The native BGT bridge footprint extends support to deck edges and parapets. Positive surveyed heights for the fixture or mast determine the model height when available. Missing dimensions use 8.2 m. Arm and target geometry follow the same surface. The double-arm model uses two opposite arms along the baked axis. The source does not provide a usable second-arm bearing for these records. A short maximum light range limits upper spotlights to the deck. Pedestrian footprints use the same relative level.
 
 ## De Poortwachter audit
 
@@ -23,7 +24,7 @@ At X −1395.17, Z 3489.69, BGT pole `P0025.105ebde7da3446b8b66990361d986c28` mo
 
 ## Refresh
 
-Supply the RD New/Z layer 6 JSON response from the 1GIS source refresh. Keep the saved BGT snapshot for offline rebuilds.
+Supply the RD New/Z layer 6 JSON response from the 1GIS source refresh or the bundled 1GIS snapshot. Keep the saved BGT snapshot for offline rebuilds.
 
 ```sh
 uv run --with 'shapely>=2.1' python tools/build-ede-lamps.py \

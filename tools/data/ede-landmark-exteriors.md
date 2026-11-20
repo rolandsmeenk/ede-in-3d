@@ -212,11 +212,15 @@ The national register has 77 built heritage records in the scene, including list
 | Register ID | Monument or component | Register address or site |
 | --- | --- | --- |
 | [14469](https://monumentenregister.cultureelerfgoed.nl/monumenten/14469) | Concordiamolen · Custom model | Accesweg 2, 6712 CZ te Ede |
-| [527721](https://monumentenregister.cultureelerfgoed.nl/monumenten/527721) | Hallehuisboerderij bij de molen | Bij Telefoonweg 32, 6712 GC te Ede |
-| [527722](https://monumentenregister.cultureelerfgoed.nl/monumenten/527722) | Hallehuisschuur | Bij Telefoonweg 32, 6712 GC te Ede |
-| [527723](https://monumentenregister.cultureelerfgoed.nl/monumenten/527723) | Maalschuur | Bij Telefoonweg 32, 6712 GC te Ede |
-| [527724](https://monumentenregister.cultureelerfgoed.nl/monumenten/527724) | Maalderij | Telefoonweg 32, 6712 GC te Ede |
+| [527721](https://monumentenregister.cultureelerfgoed.nl/monumenten/527721) | Hallehuisboerderij bij de molen · Custom model | Bij Telefoonweg 32, 6712 GC te Ede |
+| [527722](https://monumentenregister.cultureelerfgoed.nl/monumenten/527722) | Hallehuisschuur · Custom model | Bij Telefoonweg 32, 6712 GC te Ede |
+| [527723](https://monumentenregister.cultureelerfgoed.nl/monumenten/527723) | Maalschuur · Custom model | Bij Telefoonweg 32, 6712 GC te Ede |
+| [527724](https://monumentenregister.cultureelerfgoed.nl/monumenten/527724) | Maalderij · Custom model | Telefoonweg 32, 6712 GC te Ede |
 | [527725](https://monumentenregister.cultureelerfgoed.nl/monumenten/527725) | Accesweg | Bij Telefoonweg 32, 6712 GC te Ede |
+
+The four modeled exteriors follow the mapped buildings immediately around Accesweg. The molenaarswoning includes the attached bakehouse, dormers and shutters. The two barns have individually placed doors and iron windows. The former maalderij includes the retained silo, the loading platform and the courtyard glazing with its metal sunshades. [2024 maalderij photographs by Yoram brons](https://commons.wikimedia.org/wiki/File:Concordia_Ede_Maalderij_zijkant_2024.jpg) · [Atlas van Ede ground views from 2020–22](https://www.atlasvanede.nl/verken-ede/musea/stad-ede/concordiamolen-molenstraat) · [RCE photographs](https://commons.wikimedia.org/wiki/Category:Concordia_molen,_Ede)
+
+The replacement uses 3DBAG LoD 2.2 walls and roofs in the existing Oude Kerk frame, checked against PDOK’s 2025 aerial imagery. Only the four BAG records and their matching OSM outlines are replaced. The original windmill model supplies the tower and sails. Window placement, colour and trim are estimates from the photographs. The loading steps are exterior details. [3DBAG](https://3dbag.nl/en/) · [PDOK aerial imagery](https://www.pdok.nl/introductie/-/article/pdok-luchtfoto-rgb-open-)
 
 #### [Ede-West barracks](https://monumentenregister.cultureelerfgoed.nl/complexen/523484)
 
@@ -345,3 +349,11 @@ The municipal Cultuurhistorische Waardenkaart identifies 103 protected entries i
 | GM249 | Ede-West - gebouw 8 - kantinegebouw | Kazernelaan, Nieuwe Kazernelaan, Verbindelaarsweg 59A t/m H, 2D8, 59Z |
 | GM254 | Wester Wetering | Rijksweg 31 |
 | GM256 | Vijzelgemaal met verdeeltoren | Dwarsweg BY 5 |
+
+## Work Garden
+
+The survey uses BAG pand `0228100000077693` for Grotestraat 102, with the 3DBAG LoD 2.2 shell and the Oude Kerk NAP datum. OSM way `501079879` identifies the fallback footprint. Work Garden's own photographs show dark glazing profiles, high transoms and a white window decal. The façade uses recessed geometry, generic lettering and procedural materials. The upper windows and brick colour are approximate. [Work Garden contact](https://www.workgarden.nl/contact-2/) · [Work Garden street-facing glazing](https://www.workgarden.nl/wp-content/uploads/2018/01/work-garden-ede-1300x770.jpg) · [3DBAG feature](https://api.3dbag.nl/collections/pand/items/NL.IMBAG.Pand.0228100000077693) · [3DBAG licence](https://docs.3dbag.nl/en/copyright/)
+
+## Shop fascia colours
+
+Photographs of the Ede shops informed the branch-specific colour pairs. The letter shapes, placement and panel sizes use the game's generic shop signs. The H&M colour pair comes from its projecting sign. [HEMA](https://www.edecentrum.nl/winkels/hema/) · [Intertoys](https://www.edecentrum.nl/winkels/intertoys/) · [Bij de Toren](https://bijdetoren.nl/ontdek-ons/bij-ons-werken) · [Zeeman](https://ede.nieuws.nl/nieuws/zeeman-winkel-in-ede-volledig-gerenoveerd) · [H&M](https://ede.nieuws.nl/nieuws/minder-winkels-in-nieuw-bestemmingsplan-voor-ede-centrum)

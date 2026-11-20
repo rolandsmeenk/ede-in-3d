@@ -152,6 +152,7 @@ class Vector4 {
   }
 }
 
+const paintedDecals = [], decalFills = [];
 const cars = loadModule(readFileSync(join(__dirname, '../js/cars.js'), 'utf8'), {
   imports: {
     'three/webgpu': { MeshStandardNodeMaterial, Vector4, CanvasTexture: class {}, SRGBColorSpace: 'srgb' },
@@ -164,7 +165,10 @@ const cars = loadModule(readFileSync(join(__dirname, '../js/cars.js'), 'utf8'), 
   globals: {
     document: {
       createElement: () => ({
-        getContext: () => ({ fillRect() {}, fillText() {} })
+        getContext: () => ({
+          fillRect() { decalFills.push(this.fillStyle); },
+          fillText(label) { paintedDecals.push({ label, color: this.fillStyle }); }
+        })
       })
     }
   }
@@ -188,6 +192,19 @@ test('createCarWheelMaterial is lightweight, cached, and never binds license pla
   instA.colorNode.eval();
   fixedA.colorNode.eval();
   assert.equal(plateTextureCreated, 0, 'wheel shader must not sample carPlateTexture');
+});
+
+test('the shared car atlas supplies Dutch traffic plates and taxi lettering', () => {
+  const spec = BODY_SPECS.taxi;
+  const mat = createLoftedCarMaterial(spec, 0x2a2e33);
+  env.attrs = { position: [0, spec.plates[0], spec.zFront], normal: [0, 0, 1], partId: [CAR_PARTS.BODY] };
+  mat.colorNode.eval();
+  assert.ok(decalFills.includes('#80c3e5') && decalFills.includes('#ffce21'));
+  assert.equal(paintedDecals.filter(({ label }) => label === 'NL').length, 5);
+  assert.ok(paintedDecals.some(({ label, color }) => label === 'GX-123-B' && color === '#13191d'));
+  assert.ok(paintedDecals.some(({ label }) => label === 'TAXI'));
+  assert.ok(paintedDecals.some(({ label }) => label === 'POLITIE'));
+  assert.ok(paintedDecals.every(({ label }) => label !== 'NEW YORK'));
 });
 
 test('near instanced wheels match far proxy wheel shading across NYPD, blackout, and all spoke styles', () => {

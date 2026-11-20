@@ -17,6 +17,10 @@ test('the checked-in BGT lamp posts cover the Ede scene and reject an incomplete
   assert.ok(lamps.every(lamp => lamp.height >= 3 && lamp.height <= 20 &&
     Math.abs(Math.hypot(lamp.nx, lamp.nz) - 1) < 1e-12));
   assert.throws(() => decodeEdeLamps(buffer.slice(0, -4)), /asset length/);
+  const doubleArm = lamps.filter(lamp => lamp.doubleArm);
+  assert.equal(doubleArm.length, 94);
+  assert.ok(doubleArm.every(lamp => lamp.surveyed));
+  assert.ok(doubleArm.some(lamp => lamp.layer === 1 && lamp.fitted));
 
   const upper = lamps.filter(({ x, z, layer }) => layer === 1 && x >= -1460 && x <= -1360 && z >= 3400 && z <= 3610);
   assert.equal(upper.length, 35);

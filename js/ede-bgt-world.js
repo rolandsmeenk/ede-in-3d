@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { edeBounds, edePoints, edePolygonGeometry, EDE_RENDER_CELL } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
+import { createWindmillRig } from './ede-windmill.js';
 
 const PALETTE = {
   deck: 0x989797, abutment: 0x98938a, platform: 0xb3aea3, platformEdge: 0xe0ddd0,
@@ -78,10 +79,21 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   const group = new THREE.Group();
   group.name = 'Ede BGT structures';
   const colliders = [], platforms = [], weatherCovers = [], batches = new Map(), materials = new Map();
+  const turbineUpdates = [];
   const up = new THREE.Vector3(0, 1, 0);
   const deckProfiles = new Map(structures
     .filter(feature => feature.kind === 'deck' && feature.axis)
     .map(feature => [feature.ids[0], makeDeckProfile(feature, gradeSurfaceAt)]));
+
+  function materialFor(kind) {
+    if (!materials.has(kind)) {
+      const steel = kind === 'steel' || kind === 'tank';
+      materials.set(kind, new THREE.MeshStandardNodeMaterial({
+        color: PALETTE[kind], roughness: steel ? 0.58 : 0.86, metalness: steel ? 0.26 : 0.03,
+      }));
+    }
+    return materials.get(kind);
+  }
 
   function append(kind, positions, x, z) {
     if (!positions.length) return;
@@ -212,19 +224,31 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
 
   function turbine(rings, x, z) {
     const ground = terrainHeightAt(x, z);
-    const hubY = ground + 99.5;
+    const hubHeight = 99.5;
+    const hubY = ground + hubHeight;
     slab('footing', rings, () => ground + 0.32, () => ground - 0.25);
     beam('turbine', [x, ground, z], [x, hubY, z], 2.35, 1.15);
-    beam('turbine', [x, hubY, z - 3.3], [x, hubY, z + 3.3], 1.65, 1.42);
     column(x, z, ground + 0.32, hubY, 2.35);
-    const rotorZ = z + 3.1;
+
+    const tower = new THREE.Group();
+    tower.name = 'A30 wind turbine';
+    tower.position.set(x, ground, z);
+    group.add(tower);
+    const { cap, sails } = createWindmillRig(tower, hubHeight, 3.55, 0, { cutIn: 3, rotationSign: -1 });
+    cap.name = 'Wind turbine nacelle';
+    sails.name = 'Wind turbine blades';
+    turbineUpdates.push(cap.userData.updateWind);
+    const material = materialFor('turbine');
+    const nacelle = new THREE.CylinderGeometry(1.42, 1.65, 6.6, 12)
+      .rotateX(Math.PI / 2).translate(0, hubHeight, 0);
+    const spinner = new THREE.SphereGeometry(1.05, 10, 6).scale(1, 1, 1.25);
+    const positions = [];
     for (let blade = 0; blade < 3; blade++) {
       const angle = (blade / 3 + 0.07) * Math.PI * 2;
       const sin = Math.sin(angle), cos = Math.cos(angle);
       const point = (along, across, depth) =>
-        [x + sin * along + cos * across, hubY + cos * along - sin * across, rotorZ + depth];
+        [sin * along + cos * across, cos * along - sin * across, depth];
       const sections = [[1, 0.65, 0.4], [8, 2, 0.65], [25, 1.2, 0.28], [50.5, 0.04, 0.04]];
-      const positions = [];
       for (let i = 1; i < sections.length; i++) {
         const [a, aw, ad] = sections[i - 1], [b, bw, bd] = sections[i];
         for (const sign of [-1, 1]) {
@@ -237,7 +261,15 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
           }
         }
       }
-      append('turbine', positions, x, z);
+    }
+    const blades = new THREE.BufferGeometry();
+    blades.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    blades.computeVertexNormals();
+    for (const [geometry, parent] of [[nacelle, cap], [spinner, sails], [blades, sails]]) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
     }
   }
 
@@ -325,17 +357,11 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
 
   const firstMeshes = new Map();
   for (const { kind, positions } of batches.values()) {
-    if (!materials.has(kind)) {
-      const steel = kind === 'steel' || kind === 'tank';
-      materials.set(kind, new THREE.MeshStandardNodeMaterial({
-        color: PALETTE[kind], roughness: steel ? 0.58 : 0.86, metalness: steel ? 0.26 : 0.03,
-      }));
-    }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
-    const mesh = new THREE.Mesh(geometry, materials.get(kind));
+    const mesh = new THREE.Mesh(geometry, materialFor(kind));
     mesh.name = `Ede BGT ${kind}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -346,5 +372,10 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   }
   group.userData = { counts, source: source.url, date: source.date };
   scene.add(group);
-  return { group, colliders, counts, platforms, weatherCovers, deckProfiles };
+  return {
+    group, colliders, counts, platforms, weatherCovers, deckProfiles,
+    updateWind(dt, reading) {
+      for (const update of turbineUpdates) update(dt, reading);
+    },
+  };
 }

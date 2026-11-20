@@ -27,6 +27,7 @@ import {
   CENTRAL_PARK_BOUNDS,
   ISLAND_BOUNDS,
   BLOCKS,
+  blockAt,
   LANDMARK_SITES,
   streetZ,
   avenueX,
@@ -52,8 +53,9 @@ import { buildingPassageOpenings } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleRoofColor } from './aerial-colors.js';
 import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js';
-import { MILL_ADJOINING_FOOTPRINT } from './ede-landmark-sites.js';
 import { EDE_BUILDING_BASES } from './ede-building-bases.js';
+import { edeFacadeAt, EDE_FACADE_STYLES, isEdeShed, EDE_SHED_HEIGHT } from './ede-neighbourhood-facades.js';
+import { createEdeFacadeBoxMaterial } from './ede-facade-material.js';
 
 // Match the exposed end walls while their streamed BAG tile is unavailable.
 const muralWallSeats = new Map([
@@ -266,13 +268,13 @@ function carve(r, holes, axis = 'x') {
   return out.map(([u0, u1, v0, v1]) => (flip ? rect(v0, v1, u0, u1) : rect(u0, u1, v0, v1)));
 }
 
-function colorEdeRoof(roof, id, fallback, aerial) {
+function colorEdeRoof(roof, id, fallback, aerial, tiles) {
   const normal = roof.attributes.normal;
   const colors = new Float32Array(normal.count * 3);
-  const sampled = sampleRoofColor(id, aerial);
+  const tint = tiles ?? (sampleRoofColor(id, aerial) ? aerial : fallback);
   for (let i = 0; i < normal.count; i++) {
     // Pitched roof geometry also includes the vertical gable ends.
-    colors.set(sampled && normal.getY(i) > 0.1 ? aerial : fallback, i * 3);
+    colors.set(normal.getY(i) > 0.1 ? tint : fallback, i * 3);
   }
   roof.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
@@ -421,6 +423,11 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
       seed: 94.3
     }]
   ];
+  const neighbourhoodMaterials = new Map();
+  if (EDE_DATA) for (const [style, { layout }] of Object.entries(EDE_FACADE_STYLES)) {
+    neighbourhoodMaterials.set(style, facades.length);
+    facades.push([createEdeFacadeBoxMaterial, { layout, floorHeight: layout[1], shed: style === 'shed' }]);
+  }
   const materials = facades.map(([create, opts]) => create({ ...opts, boxLocal: true }));
   // Storey height of each facade: buildings are massed in whole storeys so every window row lines up across tiers
   const storeys = facades.map(([, opts]) => opts.floorHeight);
@@ -2024,37 +2031,63 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
     for (const source of EDE_DATA.buildings || []) {
       if (LANDMARK_SOURCE_EXCLUSIONS.has(source.id) || LANDMARK_SOURCE_EXCLUSIONS.has(source.osmId)) continue;
       if (!source.ring || source.ring.length < 6) continue;
-      const outline = source.id === 'w271547126' ? MILL_ADJOINING_FOOTPRINT : source.ring;
-      const poly = edePoints(outline), holes = (source.holes || []).map(edePoints);
+      const poly = edePoints(source.ring), holes = (source.holes || []).map(edePoints);
       const bounds = edeBounds(poly);
       const cx = (bounds.minX + bounds.maxX) / 2, cz = (bounds.minZ + bounds.maxZ) / 2;
       if (cx < ISLAND_BOUNDS.minX - 100 || cx > ISLAND_BOUNDS.maxX + 100 || cz < ISLAND_BOUNDS.minZ - 100 || cz > ISLAND_BOUNDS.maxZ + 100) continue;
       if (LANDMARK_EXCLUSIONS.some(r => cx > r.minX && cx < r.maxX && cz > r.minZ && cz < r.maxZ)) continue;
-      if (Math.abs(signedArea(poly)) < 7) continue;
+      const area = signedArea(poly);
+      const shed = isEdeShed(source, Math.abs(area));
+      if (!shed && Math.abs(area) < 7) continue;
+      const renderExterior = !bag || shed;
+      let doorSide = -1;
+      if (shed) {
+        const road = nearestEdeRoad(cx, cz, 65);
+        const direction = Math.sign(area) || 1;
+        let best = -Infinity;
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], b = poly[(i + 1) % poly.length];
+          const dx = b.x - a.x, dz = b.z - a.z;
+          const length = Math.hypot(dx, dz);
+          if (length < 1.3) continue;
+          const nx = dz * direction / length, nz = -dx * direction / length;
+          const x = (a.x + b.x) / 2, z = (a.z + b.z) / 2;
+          let clearance = 0;
+          for (const metres of [0.65, 1.3, 2.6]) {
+            const block = blockAt(x + nx * metres, z + nz * metres, false);
+            if (block?.osmId && !block.park && !block.sidewalk) break;
+            clearance = metres;
+          }
+          const facing = road ? (nx * (road.x - cx) + nz * (road.z - cz)) / Math.max(road.distance, 1) : 0;
+          const score = clearance * 2 + facing + length * 0.01;
+          if (score > best) { best = score; doorSide = i; }
+        }
+      }
       const coarseGround = terrainHeightAt(cx, cz);
       const seat = muralWallSeats.get(source.id);
       const ground = seat?.[0] ?? surveyedBuildingBases.get(source.id) ?? coarseGround;
       const groundCorrection = ground - coarseGround;
       buildingGrounds.set(source, ground);
       const base = Math.max(0, source.minHeight || 0);
-      const height = Math.max(base + 0.15, seat?.[1] || source.h || (source.levels || 6) * 3.4);
+      const useShedHeight = shed && (source.heightSource === 'default'
+        || (source.heightSource === 'building:levels' && source.levels === 1));
+      const defaultHeight = useShedHeight ? EDE_SHED_HEIGHT : source.h || (source.levels || 6) * 3.4;
+      const height = Math.max(base + 0.15, seat?.[1] || defaultHeight);
       const roofHeight = Math.max(0, Math.min(source.roofHeight || 0, height * 0.4));
       const pitched = roofHeight > 0.6 && poly.length === 4 && !holes.length && ['gabled', 'hipped', 'half-hipped', 'pyramidal'].includes(source.roofShape);
       const eave = pitched ? Math.max(base + 0.5, height - roofHeight) : height;
       const seed = (source.styleSeed || source.id).split('').reduce((n, c) => (Math.imul(n, 31) + c.charCodeAt(0)) | 0, 701);
       rand = mulberry32(seed);
       const tone = rand();
-      const updated = false;
-      const colourName = source.colour?.trim().toLowerCase();
-      const facadeColour = updated && colourName && (/^#[0-9a-f]{6}$/.test(colourName) || THREE.Color.NAMES[colourName] !== undefined) ? new THREE.Color(colourName) : null;
-      const warmMasonry = facadeColour && facadeColour.r > facadeColour.b * 1.4;
-      const modern = !warmMasonry && ['office', 'commercial', 'hotel', 'retail'].includes(source.kind) && (height > 30 || tone > 0.72);
-      const matIndex = modern ? 3 + Math.floor(rand() * 3) : Math.floor(rand() * 3);
+
+      const neighbourhood = edeFacadeAt(cx, cz, height, source.buildYear, source.kind);
+      const facadeColour = new THREE.Color(neighbourhood.color);
+      const matIndex = neighbourhoodMaterials.get(shed ? 'shed' : neighbourhood.style);
       const detail = { id: source.id, name: source.name, cx, cz, ...bounds, district: districtAt(cx, cz), maxH: height,
         cornices: [], waterTowers: [], hvacUnits: [], fireEscapes: [], awnings: [], scaffoldSheds: [], yards: [],
         footprints: [{ x0: bounds.minX, x1: bounds.maxX, z0: bounds.minZ, z1: bounds.maxZ, h: height, tone, pts: poly, holes }],
         sourceHeight: source.h, sourceHeightKind: source.heightSource };
-      if (replacements) replacements.set(source.id, { tiles: 0, toggle: [] });
+      if (replacements && !shed) replacements.set(source.id, { tiles: 0, toggle: [] });
       for (const [ringIndex, ring] of [poly, ...holes].entries()) {
         const direction = Math.sign(signedArea(ring)) || 1;
         for (let i = 0; i < ring.length; i++) {
@@ -2069,9 +2102,13 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
           const nx = dz / length * normalSign, nz = -dx / length * normalSign;
           // Tuin van veren is painted on the windowless south elevation.
           const muralRear = source.id === 'w1361985664' && !ringIndex && nz > 0.9;
-          const road = !muralRear && !updated && ringIndex === 0 && length > 6 && base < 0.5 ? nearestEdeRoad(x + nx * 3, z + nz * 3, 35) : null;
-          const shop = !updated && road && road.distance < road.width / 2 + 13 && !['church', 'cathedral', 'school', 'university', 'civic'].includes(source.kind);
-          const face = muralRear ? WALL_KINDS.blankStone : ringIndex ? WALL_KINDS.rear : shop ? WALL_KINDS.shop : WALL_KINDS.entry;
+          const road = !shed && !muralRear && ringIndex === 0 && length > 3 && base < 0.5
+            ? nearestEdeRoad(x + nx * 3, z + nz * 3, 35) : null;
+          const streetFront = road && road.distance < road.width / 2 + 13;
+          const shop = streetFront && ['retail', 'supermarket'].includes(source.kind);
+          const face = shed ? (ringIndex === 0 && i === doorSide ? WALL_KINDS.entry : WALL_KINDS.rear)
+            : muralRear ? WALL_KINDS.blankStone : ringIndex || !streetFront
+              ? WALL_KINDS.rear : shop ? WALL_KINDS.shop : WALL_KINDS.entry;
           let wallBottom = ground + base;
           if (base === 0) {
             // Extend the bottom of the wall to close any gap on the low side of the footprint.
@@ -2104,7 +2141,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
             for (const [bottom, top] of panels) {
               if (bottom >= top) continue;
               const renderTop = Math.min(top, wallTop);
-              if (!bag && bottom < renderTop) {
+              if (renderExterior && bottom < renderTop) {
                 buckets[matIndex].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz, fallbackId: source.id,
                   w: (to - from) * length + 0.06, h: renderTop - bottom, d: thickness,
                   ry, tone, facadeColour, facadeLevels: source.facadeLevels, faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, face, face] });
@@ -2119,14 +2156,10 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
               }
             }
           }
-          if (!bag && !muralRear && !modern && height > 7 && length > 1.5) {
-            detail.cornices.push({ x, z, y: ground + eave, w: length + 0.2, h: 0.44, d: 0.85, ry });
-            if (height > 13) detail.cornices.push({ x, z, y: ground + 4.4, w: length + 0.12, h: 0.22, d: 0.62, ry });
-          }
         }
       }
-      let roof = bag ? null : edePolygonGeometry(poly, holes, ground + eave + 0.035);
-      if (pitched && !bag) {
+      let roof = renderExterior ? edePolygonGeometry(poly, holes, ground + eave + 0.035) : null;
+      if (pitched && renderExterior) {
         // Hipped/gabled roof on a mapped quadrilateral, preserving every eave
         // corner; no guessed Manhattan towers or rooftop water tanks.
         const ordered = signedArea(poly) < 0 ? [...poly].reverse() : poly;
@@ -2146,11 +2179,12 @@ function buildCityBlocks(scene, { bag = false, streamBag = false } = {}) {
         roof.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); roof.computeVertexNormals();
       }
       if (roof) {
-        colorEdeRoof(roof, source.id, roofPalette[Math.floor(tone * 3)], aerial);
+        const tiles = !shed && pitched && neighbourhood.roofColor ? new THREE.Color(neighbourhood.roofColor).toArray() : null;
+        colorEdeRoof(roof, source.id, roofPalette[Math.floor(tone * 3)], aerial, tiles);
         if (replacements) roof.userData.fallbackId = source.id;
         roofs.push(roof);
       }
-      if (!bag && !pitched && !holes.length && !source.part && height > 12 && rand() < 0.34) {
+      if (!bag && !shed && !pitched && !holes.length && !source.part && height > 12 && rand() < 0.34) {
         detail.hvacUnits.push({ x: cx, z: cz, y: ground + height, w: 2.2, h: 0.85, d: 3.0, ry: 0 });
       }
       quadtree.insert(detail); allBlocks.push(detail); built++;

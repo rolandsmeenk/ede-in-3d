@@ -22,6 +22,25 @@ test('BAG identity and wall orientation match a specific diagonal wall', async (
   assert.equal(matchBagWall([frame], points.map(p => [p[0], p[1] + 7, p[2]]), normal), undefined);
 });
 
+test('BAG original construction years decode from the per-building metadata table', async () => {
+  const { readBagBuildYears } = await import('../js/ede-facades.js');
+  const buffer = new ArrayBuffer(12), view = new DataView(buffer);
+  [1934, 2147483647, 1982].forEach((year, i) => view.setInt32(i * 4, year, true));
+  const metadata = {
+    schema: { classes: { building: { properties: {
+      oorspronkelijkbouwjaar: { componentType: 'INT32', type: 'SCALAR', noData: 2147483647 }
+    } } } },
+    propertyTables: [
+      { class: 'building', count: 3, properties: { oorspronkelijkbouwjaar: { values: 0 } } },
+      { class: 'building', count: 1, properties: {} }
+    ]
+  };
+  const gltf = { parser: { json: { extensions: { EXT_structural_metadata: metadata } }, getDependency: async () => buffer } };
+  const [years, missing] = await readBagBuildYears(gltf);
+  assert.deepEqual(Array.from(years), [1934, 0, 1982]);
+  assert.equal(missing, undefined);
+});
+
 test('recess clipping preserves the masonry surface around a doorway across both triangles', async () => {
   const { cutFacadeOpening } = await import('../js/ede-facades.js');
   const vertex = (x, y) => ({ local: [x, y, 0], position: [x, y, 0] });
@@ -69,6 +88,29 @@ test('two openings share a wall batch and each exposes its own modeled depth, ja
   assert.ok(depths.some(depth => Math.abs(depth - 0.075) < 0.0001));
   assert.ok(Array.from(facadeUv.array).includes(2), 'jambs have their own surface');
   assert.ok(Array.from(facadeUv.array).includes(3), 'projecting trim has its own surface');
+});
+
+test('district masonry survives inferred BAG layouts and yields to observed finishes', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { applyBagFacades } = await import('../js/ede-facades.js');
+  for (const [status, openingY, expected] of [['inferred', 0.8, 0.25], ['observed', 4.5, 0.5], ['inferred', 4.5, 0.25]]) {
+    const openings = [{ kind: 'window', x: 1, y: openingY, width: 1, height: 1 }];
+    const wall = { a: [0, 0], b: [8, 0], minY: 0, height: 6, status, openings, wallColor: '#abcdef' };
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.Float32BufferAttribute([0,0,0, 8,0,0, 8,6,0], 3));
+    geometry.setAttribute('normal', new T.Float32BufferAttribute([0,0,1, 0,0,1, 0,0,1], 3));
+    geometry.setAttribute('buildingHeight', new T.Float32BufferAttribute([0, 0, 6], 1));
+    geometry.setAttribute('color', new T.Float32BufferAttribute(new Float32Array(9).fill(0.25), 3));
+    geometry.setAttribute('edeFacadeLayout', new T.Float32BufferAttribute(new Float32Array(12).fill(2), 4));
+    geometry.setAttribute('edeFacadeBay', new T.Float32BufferAttribute([0,5, 3,5, 3,5], 2));
+    const ids = new T.Float32BufferAttribute([0, 0, 0], 1);
+    const atlas = { physical: new Set(), rects: new Map([[wall, [0,0,1,1]]]), rows: new Map([[wall, 0.5]]) };
+    const result = applyBagFacades(geometry, ids, new Map([[0, [wall]]]), new Map([[0, 0]]), atlas,
+      () => [0, 0, 1], () => [0.5, 0.5, 0.5]);
+    if (status === 'inferred' && openingY > 4) assert.equal(result, null);
+    else assert.deepEqual(result.matched, [wall]);
+    assert.ok(geometry.attributes.color.array.every(value => value === expected));
+  }
 });
 
 test('BAG bounds fetch and share only intersecting local parameter tiles', async (t) => {

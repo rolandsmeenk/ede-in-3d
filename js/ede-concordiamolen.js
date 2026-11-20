@@ -1,9 +1,13 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { createWindmillRig } from './ede-windmill.js';
 
 const OCTAGON = Math.PI / 4;
 const GALLERY_HEIGHT = 12.8;
 const SAIL_HUB = 24.65;
+const HUB_OFFSET = 4.90;
+const SHAFT_SLOPE = 0.22;
+const GALLERY_RADIUS = 6.85;
 const SAIL_SPANS = [23.55, 23.70];
 const BRICK = 0x8a7063;
 const THATCH = 0x434039;
@@ -13,7 +17,19 @@ const GREEN = 0x324636;
 
 // The gallery and sail sizes are published. Tower tapers, cap and trim are fitted to reference views.
 export function createConcordiamolen() {
+  const group = new THREE.Group();
+  group.name = 'Concordiamolen';
+  const { cap, sails } = createWindmillRig(group, SAIL_HUB, HUB_OFFSET, SHAFT_SLOPE);
+  const material = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.89 });
   const parts = [];
+
+  function finish(parent) {
+    const mesh = new THREE.Mesh(mergeGeometries(parts), material);
+    mesh.castShadow = mesh.receiveShadow = true;
+    parent.add(mesh);
+    for (const part of parts) part.dispose();
+    parts.length = 0;
+  }
   const up = new THREE.Vector3(0, 1, 0);
   const start = new THREE.Vector3(), end = new THREE.Vector3();
   const rotation = new THREE.Quaternion();
@@ -53,10 +69,6 @@ export function createConcordiamolen() {
   ring(2.84, 3.25, 21.0, 23.15, THATCH);
   ring(3.28, 3.35, 23.07, 23.30, TIMBER);
 
-  const cap = [[3.3, 23.28], [3.26, 23.8], [3.01, 24.68], [2.47, 25.3], [1.73, 26.04],
-    [0.85, 26.56], [0, 26.72]].map(([r, y]) => new THREE.Vector2(r, y));
-  add(new THREE.LatheGeometry(cap, 18), THATCH);
-
   function window(angle, y, radius, width, height) {
     const face = Math.cos(OCTAGON / 2) * radius;
     trimBox(width + 0.10, height + 0.10, 0.12, angle, face + 0.055, y, PAINT);
@@ -74,39 +86,47 @@ export function createConcordiamolen() {
   trimBox(1.43, 2.58, 0.16, 0, 4.73, 1.29, GREEN);
   trimBox(0.98, 2.10, 0.10, Math.PI, 3.97, 13.87, GREEN);
 
-  ring(8.55, 8.48, 12.51, GALLERY_HEIGHT, TIMBER);
-  const rim = (i, y) => [8.48 * Math.sin((i + 0.5) * OCTAGON), y, 8.48 * Math.cos((i + 0.5) * OCTAGON)];
+  // The modeled gallery ends behind the sail sweep at railing height.
+  ring(GALLERY_RADIUS + 0.07, GALLERY_RADIUS, 12.51, GALLERY_HEIGHT, TIMBER);
+  const rim = (i, y) => [GALLERY_RADIUS * Math.sin((i + 0.5) * OCTAGON), y, GALLERY_RADIUS * Math.cos((i + 0.5) * OCTAGON)];
   for (let i = 0; i < 8; i++) {
     const a = rim(i, GALLERY_HEIGHT), b = rim(i + 1, GALLERY_HEIGHT);
     for (const t of [0, 1 / 3, 2 / 3]) {
       const x = THREE.MathUtils.lerp(a[0], b[0], t), z = THREE.MathUtils.lerp(a[2], b[2], t);
       beam([x, GALLERY_HEIGHT, z], [x, 13.92, z], 0.105, 0.105, PAINT);
-      beam([x * 0.53, 8.6, z * 0.53], [x, 12.53, z], 0.20, 0.19, TIMBER);
+      beam([x * 0.67, 8.6, z * 0.67], [x, 12.53, z], 0.20, 0.19, TIMBER);
     }
     for (const y of [13.02, 13.46, 13.89]) {
       beam(rim(i, y), rim(i + 1, y), 0.10, 0.085, PAINT);
     }
   }
 
+  finish(group);
+
+  const roof = [[3.3, 23.28], [3.26, 23.8], [3.01, 24.68], [2.47, 25.3], [1.73, 26.04],
+    [0.85, 26.56], [0, 26.72]].map(([r, y]) => new THREE.Vector2(r, y));
+  add(new THREE.LatheGeometry(roof, 18), THATCH);
+
   // Tail beam, winding frame and characteristic white struts behind the cap.
-  beam([0, 23.8, -2.82], [0, 13.06, -7.30], 0.33, 0.36, TIMBER);
+  beam([0, 23.8, -2.82], [0, 13.06, -6.60], 0.33, 0.36, TIMBER);
   beam([-4.02, 23.23, -2.0], [4.02, 23.23, -2.0], 0.21, 0.20, PAINT);
   for (const side of [-1, 1]) {
-    beam([side * 3.88, 23.22, -2.02], [0, 13.65, -7.06], 0.18, 0.16, PAINT);
-    beam([side * 2.6, 19.9, -2.75], [0, 14.9, -6.56], 0.14, 0.14, TIMBER);
+    beam([side * 3.88, 23.22, -2.02], [0, 13.65, -6.40], 0.18, 0.16, PAINT);
+    beam([side * 2.6, 19.9, -2.75], [0, 14.9, -6.08], 0.14, 0.14, TIMBER);
   }
 
   // Distinctive green beard with pale trim below the shaft.
   trimBox(2.34, 0.56, 0.15, 0, 3.09, 23.60, PAINT);
   trimBox(2.20, 0.44, 0.17, 0, 3.16, 23.61, GREEN);
-  trimBox(0.61, 0.59, 1.70, 0, 3.53, SAIL_HUB, 0x4d5050);
+  beam([0, SAIL_HUB - 0.43, 2.94], [0, SAIL_HUB, HUB_OFFSET], 0.61, 0.59, 0x4d5050);
+  finish(cap);
 
   for (let i = 0; i < 4; i++) {
     const angle = 0.34 + i * Math.PI / 2;
     const span = SAIL_SPANS[i % 2] / 2;
     const cos = Math.cos(angle), sin = Math.sin(angle);
     const point = (r, width, offset = 0) => [
-      r * cos - width * sin, SAIL_HUB + r * sin + width * cos, 4.38 - r * sin * 0.068 + offset,
+      r * cos - width * sin, r * sin + width * cos, offset,
     ];
     beam(point(0, 0), point(span, 0), 0.25, 0.18, TIMBER);
     beam(point(2.24, -0.30), point(span, -0.31), 0.35, 0.16, PAINT);
@@ -119,12 +139,6 @@ export function createConcordiamolen() {
     }
   }
 
-  const group = new THREE.Group();
-  group.name = 'Concordiamolen';
-  const geometry = mergeGeometries(parts);
-  for (const part of parts) part.dispose();
-  const body = new THREE.Mesh(geometry, new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.89 }));
-  body.castShadow = body.receiveShadow = true;
-  group.add(body);
+  finish(sails);
   return group;
 }

@@ -1,6 +1,5 @@
 /* css/style.css */
-/* NYC HUD design system: quiet graphite glass in the corners of the screen, taxi yellow for whatever is active,
-   NYC DOT green for street names, so that the city itself stays the star */
+/* Graphite panels, taxi yellow controls and blue Dutch street-name signs. */
 
 :root {
   /* Surfaces */
@@ -20,7 +19,7 @@
   /* Accents */
   --taxi: #ffc21a;
   --taxi-ink: #17140a;
-  --sign-green: #0b6a46;
+  --sign-blue: #164780;
   --highway: #c08a3e;
   --ok: #5ee08f;
   --warn: #ffc857;
@@ -604,6 +603,21 @@ body.hud-minimized .icon-show {
   color: var(--text-3);
 }
 
+@media (max-height: 640px), (max-width: 540px) {
+  #teleport-popover {
+    inset-inline: 0 !important;
+    margin-inline: auto;
+    width: min(420px, calc(100vw - 2 * var(--edge)));
+  }
+
+  .teleport-destinations {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #teleport-popover .tp-btn { padding: 5px 8px; }
+}
+
 #crossing-debug-popover { width: min(330px, calc(100vw - 2 * var(--edge))); }
 
 /* ------------------------------------------------------------------------------------------------------------------
@@ -656,7 +670,7 @@ body.hud-minimized .icon-show {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
-/* Green blade, white inset border, Highway Gothic lettering: the sign on every Manhattan corner */
+/* Blue street-name blade with an inset white border. */
 .street-sign {
   max-width: 210px;
   overflow: hidden;
@@ -669,7 +683,7 @@ body.hud-minimized .icon-show {
   line-height: 1.05;
   letter-spacing: 0.01em;
   color: #ffffff;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 55%), var(--sign-green);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 55%), var(--sign-blue);
   border-radius: 6px;
   outline: 1.5px solid rgba(255, 255, 255, 0.92);
   outline-offset: -4px;

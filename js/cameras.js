@@ -62,6 +62,7 @@ class CameraSystem {
     this.followLookOffset = new THREE.Vector3();
     this.followBaseY = 0;
     this.smoothedSpeed = 0;
+    this.teleportFocus = null;
     this._desiredPos = new THREE.Vector3();
     this._desiredLook = new THREE.Vector3();
 
@@ -160,7 +161,7 @@ class CameraSystem {
     this.userOrbitTimer = 0;
   }
 
-  resetForTeleport() {
+  resetForTeleport(point = null) {
     // Arrive with a fresh chase view, without carrying a previous drive or gesture into the destination.
     this._clearPointers();
     this.isDragging = false;
@@ -170,6 +171,7 @@ class CameraSystem {
     this.followOffset.set(0, 0, 0);
     this.followLookOffset.set(0, 0, 0);
     this.followBaseY = 0;
+    this.teleportFocus = point && { point, entity: this.controllerManager.getActiveEntity() };
     this.setCameraPreset('chase', true);
   }
 
@@ -201,6 +203,10 @@ class CameraSystem {
     this.smoothedSpeed += (Math.abs(entity.speed) - this.smoothedSpeed) * (1 - Math.exp(-dt * 3.0));
     const speedLag = this.smoothedSpeed * 0.1;
 
+    if (this.teleportFocus && (this.teleportFocus.entity !== entity ||
+        this.activePresetId !== 'chase' || this.userOrbitTimer > 0 || Math.abs(entity.speed) > 0.5)) {
+      this.teleportFocus = null;
+    }
     const totalYaw = entity.heading + this.orbitYawOffset;
 
     switch (this.activePresetId) {
@@ -222,6 +228,14 @@ class CameraSystem {
           entity.position.y + entity.cameraTargetOffset.y + lookUpBias,
           entity.position.z + Math.cos(entity.heading) * lookAhead
         );
+        if (this.teleportFocus) {
+          const { x, y, z, offset } = this.teleportFocus.point;
+          desiredLook.set(x, y, z);
+          if (offset) {
+            desiredPos.x += offset[0];
+            desiredPos.z += offset[1];
+          }
+        }
         break;
       }
 

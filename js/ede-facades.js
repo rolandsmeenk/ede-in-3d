@@ -95,6 +95,24 @@ export async function readBagFacadeFeatures(gltf, byId) {
   return result;
 }
 
+export async function readBagBuildYears(gltf) {
+  const parser = gltf.parser;
+  const metadata = parser?.json.extensions?.EXT_structural_metadata;
+  return Promise.all((metadata?.propertyTables ?? []).map(async ({ class: className, count, properties }) => {
+    const storage = properties.oorspronkelijkbouwjaar;
+    const definition = metadata.schema?.classes?.[className]?.properties?.oorspronkelijkbouwjaar;
+    if (storage?.values === undefined || definition?.componentType !== 'INT32' || definition.type !== 'SCALAR') return;
+    const values = await parser.getDependency('bufferView', storage.values);
+    if (values.byteLength < count * 4) return;
+    const years = new Uint16Array(count), data = new DataView(values);
+    for (let i = 0; i < count; i++) {
+      const year = data.getInt32(i * 4, true);
+      if (year >= 1000 && year < 2100 && year !== definition.noData) years[i] = year;
+    }
+    return years;
+  }));
+}
+
 export function meshBagFacadeFeatures(gltf, mesh, tables) {
   const ext = mesh.userData?.gltfExtensions?.EXT_mesh_features;
   const assoc = gltf.parser?.associations?.get(mesh);
@@ -218,7 +236,7 @@ export function applyBagFacades(...args) {
 }
 
 function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, projectUv, linearColor) {
-  const { position, normal, color, buildingHeight } = geometry.attributes;
+  const { position, normal, color, buildingHeight, edeFacadeLayout, edeFacadeBay } = geometry.attributes;
   const originalCount = position.count;
   const input = geometry.index?.array;
   const count = input?.length ?? originalCount;
@@ -271,7 +289,14 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
   for (const [frame, triangles] of groups) {
     yield;
     const { wall, nx, nz, tx, tz } = frame;
-    const wallColor = linearColor(wall.wallColor);
+    const first = triangles[0].ids[0];
+    const base = buildingHeight.getX(first) - triangles[0].verts[0][1];
+    const useProceduralColor = wall.status !== 'observed' && edeFacadeLayout?.getX(first) > 0;
+    const eaves = edeFacadeBay?.getY(first);
+    // Fall back to roofline-aware procedural openings when an inferred atlas would clip a window.
+    if (useProceduralColor && eaves > 0 && wall.openings.some(opening =>
+      opening.kind === 'window' && base + opening.y + opening.height > eaves + 0.05)) continue;
+    const wallColor = useProceduralColor ? null : linearColor(wall.wallColor);
     const rect = atlas.rects.get(wall), newId = new Map();
     const paletteRow = atlas.rows.get(wall);
     const materialOrigin = frame.x * tx + frame.z * tz;
@@ -281,7 +306,6 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     const uv = point => projectUv(wall, rect, ...point, frame.y);
     const frontNormal = [nx, 0, nz];
     const vertexColor = i => wallColor ?? [color.getX(i), color.getY(i), color.getZ(i)];
-    const base = buildingHeight.getX(triangles[0].ids[0]) - triangles[0].verts[0][1];
     const physical = atlas.physical.has(wall) ? wall.openings.flatMap((opening, index) => {
       const detail = wall.detail?.opening === index ? wall.detail : null;
       const depth = opening.depth ?? detail?.depth ?? (opening.kind === 'window' ? 0.12 : 0.16);
@@ -379,6 +403,7 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     }
     matched.push(wall);
   }
+  if (!matched.length) return null;
   const BufferAttribute = position.constructor, finalCount = originalCount + added.buildingHeight.length;
   for (const [name, values] of Object.entries(added)) {
     yield;
@@ -388,6 +413,14 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     combined.set(old?.array ?? originalAttributes[name]);
     combined.set(values, originalCount * stride);
     geometry.setAttribute(name, new BufferAttribute(combined, stride));
+  }
+  // Added vertices sample the atlas. Their procedural attributes can be zero.
+  if (finalCount > originalCount) for (const name of ['edeFacadeLayout', 'edeFacadeBay']) {
+    const attribute = geometry.attributes[name];
+    if (!attribute) continue;
+    const padded = new Float32Array(finalCount * attribute.itemSize);
+    padded.set(attribute.array);
+    geometry.setAttribute(name, new BufferAttribute(padded, attribute.itemSize));
   }
   const Index = finalCount > 65535 ? Uint32Array : Uint16Array;
   const indices = new Index(nextIndex.length + extraIndex.length);

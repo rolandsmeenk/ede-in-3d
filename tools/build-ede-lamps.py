@@ -189,13 +189,17 @@ def source_date(props):
 
 def read_gis(path, graph, surfaces):
     raw = read(path)
-    if raw.get('spatialReference', {}).get('wkid') != 28992 or not raw.get('hasZ'):
+    if raw.get('horizontalCrs') == 28992 and raw.get('verticalDatum') == 'NAP':
+        features = raw['layers']['6']
+    elif raw.get('spatialReference', {}).get('wkid') == 28992 and raw.get('hasZ'):
+        features = raw['features']
+    else:
         raise ValueError('1GIS light points require outSR=28992 and returnZ=true')
     rd_to_lon_lat = runpy.run_path(str(ROOT / 'tools/build-ede-posted-speeds.py'))['rd_to_lon_lat']
     out = []
     counts = Counter()
     levels = {'Maaiveld': 0, 'MaaiveldPlus1': 1, 'MaaiveldMin1': -1}
-    for row in raw['features']:
+    for row in features:
         p, g = row['attributes'], row['geometry']
         height = g.get('z')
         if p['type'] not in ('Lichtmast', 'Verlichtingsobject', 'Lijnverlichtingsmast'):
@@ -213,7 +217,7 @@ def read_gis(path, graph, surfaces):
                     'x': x, 'z': z, 'nap': height, 'rd': [round(g['x'], 3), round(g['y'], 3)],
                     'level': levels[p['niveau']], 'type': p['type'], 'fixture': p.get('armatuurtype'),
                     'lamp': p.get('lamptype'), 'height': p.get('lichtpunthoogte'), 'mast': p.get('lengte'),
-                    'date': source_date(p)})
+                    'doubleArm': p.get('type_2') == 'Lichtmast-Dubbele uitlegger', 'date': source_date(p)})
     return out, counts
 
 
@@ -221,6 +225,8 @@ def encode(rows, datum):
     packed = []
     for r in sorted(rows, key=lambda item: (round(item['x'] * 5), round(item['z'] * 5), item['level'], item['id'])):
         flags = int(r['fixtureLED']) | (2 if r['source'] == '1GIS surveyed base' else 0) | (4 if r['profile'] else 0)
+        if r['doubleArm']:
+            flags |= 8
         packed.append(RECORD.pack(round(r['x'] * 5), round(r['z'] * 5), round((r['base'] - datum) * 100),
                                   round((r['angle'] % math.tau) * 65536 / math.tau) % 65536,
                                   round((r['target'] - datum) * 100), round(r['height'] * 100), flags, r['level']))
@@ -273,7 +279,7 @@ def bake(scene, snapshot, gis_path):
         fixture_led = bool(gis and 'led' in (gis['lamp'] or '').lower())
         result = {'id': identity, 'version': version, 'level': level, 'x': x, 'z': z, 'date': updated,
                   'base': base, 'target': target, 'angle': target_angle, 'height': height, 'fixtureLED': fixture_led,
-                  'profile': profile, 'source': label}
+                  'doubleArm': bool(gis and gis['doubleArm']), 'profile': profile, 'source': label}
         if ((level == 1 and profile and profile.startswith('de-poortwachter-'))
                 or (level == 0 and POORT[0] <= x <= POORT[2] and POORT[1] <= z <= POORT[3] and not native)):
             review['poortwachter'].append({**result, 'oldNAP': round(surfaces.terrain_at(x, z), 3)})
@@ -289,6 +295,8 @@ def bake(scene, snapshot, gis_path):
             review['matches'].append({'id': identity, 'fixture': gis['fixture'], '1GIS': gis,
                                       'baseNAP': round(base, 3), 'profile': profile, 'nativeOnly': native})
         counts[label] += 1
+        if result['doubleArm']:
+            counts['doubleArm'] += 1
         if native:
             counts['new1gis'] += 1
 
@@ -317,7 +325,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bgt', type=Path, help='Read a downloaded BGT lamp snapshot')
     parser.add_argument('--save-bgt', type=Path, help='Save the BGT lamp snapshot for offline refresh')
-    parser.add_argument('--gis', type=Path, help='1GIS ArcGIS layer 6 feature set queried in RD New with Z')
+    parser.add_argument('--gis', type=Path, help='1GIS snapshot or ArcGIS layer 6 queried in RD New with Z')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-lamps.bin.gz')
     parser.add_argument('--report', type=Path, help='Detailed lamp source matching and Poortwachter audit')
     args = parser.parse_args()

@@ -191,5 +191,5 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
   }
 
   page.addEventListener('visibilitychange', tick);
-  return { setEnabled, update: transition.update, get state() { return state; } };
+  return { setEnabled, update: transition.update, get state() { return state; }, get activeReading() { return active; } };
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { attribute, mix, texture, uv, vertexColor } from 'three/tsl';
+import { attribute, mix, step, texture, uv, vertexColor } from 'three/tsl';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
 import { terrainHeightAt } from './terrain.js';
 import { CivicBatch, civicSigns, polygonNormal, wallExtent } from './ede-civic-landmarks.js';
@@ -62,7 +62,7 @@ function opening(batch, trim, frame, spec) {
   batch.polygon([inside], material);
   for (let i = 0; i < outside.length; i++) {
     const j = (i + 1) % outside.length;
-    batch.quad(outside[j], outside[i], inside[i], inside[j], 0x696d65);
+    batch.quad(outside[i], outside[j], inside[j], inside[i], 0x696d65);
   }
   const border = spec.border ?? 0.085, x0 = spec.u - spec.width / 2, x1 = spec.u + spec.width / 2;
   const domed = spec.arch ?? 0;
@@ -110,18 +110,25 @@ function siteColliders(outlines, minY, maxY) {
 
 function textureMasonry(mesh, masonry) {
   const coords = [], { position, normal } = mesh.geometry.attributes;
-  for (let i = 0; i < position.count; i++) coords.push(
-    (position.getX(i) * normal.getZ(i) - position.getZ(i) * normal.getX(i)) / 1.08,
-    position.getY(i) / 0.64,
-  );
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
+    const nx = normal.getX(i), nz = normal.getZ(i);
+    if (masonry[i] === 2) {
+      const span = Math.hypot(nx, nz);
+      coords.push(span ? (x * nz - z * nx) / span / 1.12 : x / 1.12,
+        span ? (x * nx + z * nz) / span / 1.05 : z / 1.05);
+    } else coords.push((x * nz - z * nx) / 1.08, y / 0.64);
+  }
   mesh.geometry.setAttribute('uv', new THREE.Float32BufferAttribute(coords, 2));
   mesh.geometry.setAttribute('venueMasonry', new THREE.Float32BufferAttribute(masonry, 1));
   masonryTexture ??= createFacadeSurfaceTexture().texture;
-  mesh.material.colorNode = vertexColor().mul(mix(1,
-    texture(masonryTexture, uv()).r.mul(0.83).add(0.31), attribute('venueMasonry', 'float')));
+  const finish = attribute('venueMasonry', 'float');
+  const grain = texture(masonryTexture, uv());
+  const contrast = mix(grain.r, grain.b, step(1.5, finish));
+  mesh.material.colorNode = vertexColor().mul(mix(1, contrast.mul(0.83).add(0.31), finish.min(1)));
 }
 
-function buildVenue(name, survey, style, facade, entry) {
+export function buildVenue(name, survey, style, facade, entry) {
   const batch = new CivicBatch(), trim = new CivicBatch(), group = new THREE.Group(), colliders = [];
   const labels = [], masonry = [];
   const ground = Math.min(...survey.vertices.map(p => p[1]));
@@ -140,7 +147,7 @@ function buildVenue(name, survey, style, facade, entry) {
   for (let index = 0; index < survey.faces.length; index++) {
     const [type, rings, frame] = view(index);
     if (type === 1) {
-      addFace(rings, style.roof(rings[0]), 0);
+      addFace(rings, style.roof(rings[0]), style.roofFinish?.(index) ?? 0);
       continue;
     }
     const color = style.wall(rings[0], frame);

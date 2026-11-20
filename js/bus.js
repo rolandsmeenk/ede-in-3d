@@ -25,10 +25,8 @@ import { LoftGeometry } from 'three/addons/geometries/LoftGeometry.js';
 import { part, mirrorSection, roundedBox } from './vehicles.js';
 import { CAR_PARTS, buildBodyLoft, carBodyHalfWidthAt } from './cars.js';
 
-// A 40-ft low-floor bus lofted with the car body machinery: rounded plan-view corners, a raked windshield, a
-// tight roof radius and arches over the wheels; bumpers, the folded front bike rack, stalk mirrors and the roof AC &
-// battery pods are separate pieces of the same mesh (partId). Windows, doors, livery & lamps are painted by
-// createLoftedBusMaterial(); destination signs are textured panels (buildBusSignGeometry).
+// A shared RRReis bus based on the MAN Lion's City 12 E LE. Body, trim and equipment
+// share a mesh. Doors and lamps are shaded on the body, and destinations use a separate atlas.
 const BUS_PARTS = {
   BODY: 0,
   TRIM: 1,
@@ -38,11 +36,11 @@ const BUS_PARTS = {
 
 const BUS_SPEC = {
   name: 'bus',
-  headlight: [0.89, 0.78], // midpoint of each swept Xcelsior LED headlamp cluster
+  headlight: [0.91, 0.66],
   zFront: 5.9,
   zRear: -6.22,
   wheelRadius: 0.5,
-  wheelZ: 3.6,
+  wheelZ: 3.0,
   wheelX: 1.12,
   archGap: 0.085,
   archFlare: 0.012,
@@ -51,18 +49,18 @@ const BUS_SPEC = {
   lowerRound: 3.4,
   upperRound: 7.5,
   upperSamples: [0.35, 0.66, 0.89, 1],
-  halfWidth: [[5.9, 1.3], [-6.22, 1.3]],
+  halfWidth: [[5.9, 1.275], [-6.22, 1.275]],
   sill: [[5.9, 0.35], [-6.22, 0.36]],
   shoulder: [[5.9, 0.98], [-6.22, 0.98]],
   edge: [[5.9, 2.94], [-6.22, 2.94]],
   crown: [[5.9, 0.04], [-6.22, 0.04]],
   tumble: [[5.9, 0.055], [-6.22, 0.055]],
-  nose: { halfWidth: [0.28, 1.06, 2.2], edge: [0.26, 2.74, 2], crown: [0.26, 0.006, 2], sill: [0.08, 0.42, 2], shoulder: [0.2, 0.92, 2] },
+  nose: { halfWidth: [0.28, 1.06, 2.2], edge: [0.23, 2.79, 2], crown: [0.26, 0.006, 2], sill: [0.08, 0.42, 2], shoulder: [0.2, 0.92, 2] },
   tail: { halfWidth: [0.22, 1.12, 2.2], edge: [0.2, 2.78, 2], crown: [0.2, 0.006, 2], sill: [0.1, 0.46, 2], shoulder: [0.18, 0.94, 2] },
-  rake: 0.22, // how far the top of the windshield & sign header leans back
-  window: [1.22, 2.42], // side window band (y)
-  frontDoor: [4.36, 5.42], // curb-side (-x) low-floor entry & rear exit doors (z ranges)
-  rearDoor: [-2.06, -1.02]
+  rake: 0.145,
+  window: [1.04, 2.61],
+  frontDoor: [4.13, 5.52],
+  rearDoor: [-0.75, 0.62]
 };
 
 // Windshield & header rake at the nose (plus slight plan-view bow and upper-rear cap taper)
@@ -90,17 +88,16 @@ function buildLoftedBusBodyGeometry() {
   body.computeVertexNormals();
   const parts = [part(body, BUS_PARTS.BODY)];
 
-  // Sculpted New Flyer Xcelsior full-length roof fairing (shroud): aerodynamic sloped nose behind the front sign,
-  // raised battery/cooling fairing over the front half, stepped rear HVAC shroud, painted in upper-body livery
+  // The roof fairing covers the battery packs and climate equipment.
   const roofY = s.edge[0][1] + s.crown[0][1] - 0.03;
   const fairingStations = [
-    [4.68, 0.92, 0.01, 0.005],
-    [4.12, 1.08, 0.22, 0.035],
-    [3.35, 1.13, 0.26, 0.04],
-    [-0.35, 1.13, 0.26, 0.04],
-    [-0.85, 1.12, 0.2, 0.035],
-    [-5.55, 1.11, 0.19, 0.035],
-    [-5.95, 0.98, 0.02, 0.008]
+    [5.10, 0.89, 0.01, 0.005],
+    [4.57, 1.09, 0.20, 0.03],
+    [3.68, 1.13, 0.29, 0.045],
+    [-0.30, 1.13, 0.29, 0.045],
+    [-0.90, 1.12, 0.22, 0.04],
+    [-5.38, 1.10, 0.22, 0.04],
+    [-5.88, 0.94, 0.02, 0.008]
   ];
   const fairingSections = fairingStations.map(([z, hw, h, cr]) =>
     mirrorSection(
@@ -120,19 +117,11 @@ function buildLoftedBusBodyGeometry() {
   parts.push(part(roundedBox(0.88, 0.065, 2.5, 0.08, 0.025).translate(0, roofY + 0.22, -3.35), BUS_PARTS.POD));
   parts.push(part(roundedBox(0.84, 0.06, 2.7, 0.08, 0.025).translate(0, roofY + 0.27, 1.45), BUS_PARTS.POD));
 
-  // Wraparound 3-piece energy-absorbing front & rear bumpers + folded Sportworks front bike rack
-  const zNose = s.zFront - busRake(0.48, s.zFront, 0);
-  parts.push(part(roundedBox(1.27, 0.13, 0.26, 0.075, 0.028).translate(0, 0.47, zNose - 0.02), BUS_PARTS.TRIM));
-  parts.push(part(roundedBox(1.26, 0.125, 0.24, 0.065, 0.028).translate(0, 0.46, s.zRear + 0.03), BUS_PARTS.TRIM));
-  const rackZ = zNose + 0.14;
-  parts.push(part(roundedBox(0.54, 0.022, 0.045, 0.018, 0.007).translate(0, 0.96, rackZ + 0.03), BUS_PARTS.TRIM));
-  parts.push(part(roundedBox(0.5, 0.02, 0.045, 0.016, 0.007).translate(0, 0.68, rackZ), BUS_PARTS.TRIM));
-  for (const side of [-1, 1]) {
-    parts.push(part(new THREE.BoxGeometry(0.032, 0.34, 0.032).rotateX(-0.1).translate(side * 0.49, 0.81, rackZ + 0.015), BUS_PARTS.TRIM));
-    parts.push(part(new THREE.BoxGeometry(0.024, 0.28, 0.024).rotateX(-0.1).translate(side * 0.18, 0.81, rackZ + 0.015), BUS_PARTS.TRIM));
-  }
+  const zNose = s.zFront - busRake(0.40, s.zFront);
+  parts.push(part(roundedBox(1.10, 0.067, 0.13, 0.048, 0.018).translate(0, 0.39, zNose - 0.075), BUS_PARTS.TRIM));
+  parts.push(part(roundedBox(1.11, 0.071, 0.12, 0.05, 0.018).translate(0, 0.42, s.zRear + 0.045), BUS_PARTS.TRIM));
 
-  // Asymmetric Xcelsior transit mirrors: high-mount curb arm (-x) clearing boarding passengers, mid-mount driver arm (+x)
+  // Tall boarding-side mirror and lower driver-side mirror.
   for (const side of [-1, 1]) {
     const mountY = side < 0 ? 2.48 : 2.16;
     const headY = side < 0 ? 2.28 : 1.98;
@@ -173,26 +162,29 @@ function buildBusSignGeometry() {
   const s = BUS_SPEC;
   const panels = [];
   const yF = 2.56;
-  const z0 = s.zFront - busRake(yF - 0.13, s.zFront, 0);
-  const z1 = s.zFront - busRake(yF + 0.13, s.zFront, 0);
-  const front = new THREE.PlaneGeometry(1.94, 0.27);
-  front.rotateX(-Math.atan2(z0 - z1, 0.26));
-  front.translate(0, yF, (z0 + z1) * 0.5 + 0.014);
+  const front = new THREE.PlaneGeometry(1.90, 0.28, 8);
+  const face = front.getAttribute('position');
+  for (let i = 0; i < face.count; i++) {
+    const y = face.getY(i) + yF;
+    face.setY(i, y);
+    face.setZ(i, s.zFront - busRake(y, s.zFront, face.getX(i)) + 0.011);
+  }
+  front.computeVertexNormals();
   panels.push(front);
-  const sideZ = 3.74;
-  const sideY = 2.26;
+  const sideZ = 3.55;
+  const sideY = 2.37;
   const side = new THREE.PlaneGeometry(1.08, 0.19).rotateY(-Math.PI / 2);
   side.translate(-(carBodyHalfWidthAt(s, sideZ, sideY) + 0.007), sideY, sideZ);
   panels.push(side);
-  const yR = 2.58;
-  const zR0 = s.zRear - busRake(yR - 0.1, s.zRear, -0.45);
-  const zR1 = s.zRear - busRake(yR + 0.1, s.zRear, -0.45);
+  const yR = 2.51;
+  const zR0 = s.zRear - busRake(yR - 0.1, s.zRear);
+  const zR1 = s.zRear - busRake(yR + 0.1, s.zRear);
   const rear = new THREE.PlaneGeometry(0.52, 0.21);
   const uv = rear.attributes.uv;
-  for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 0.29);
+  for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 0.245);
   rear.rotateY(Math.PI);
   rear.rotateX(Math.atan2(zR1 - zR0, 0.2));
-  rear.translate(-0.45, yR, (zR0 + zR1) * 0.5 - 0.012);
+  rear.translate(0, yR, (zR0 + zR1) * 0.5 - 0.012);
   panels.push(rear);
   return mergeGeometries(panels);
 }
@@ -367,39 +359,18 @@ function createLoftedBusMaterial() {
   const side = smoothstep(0.45, 0.72, abs(n.x)).mul(isSkin);
   const curb = step(p.x, 0.0);
 
-  // 1. Wraparound windshield, destination sign surround and wipers
-  const frontMaskEdge = rBoxEdge(p.x, p.y.sub(1.97), 1.22, 0.8, 0.15, invX, invY);
+  // A continuous windshield sits between the destination display and the black nose panel.
+  const frontMaskEdge = rBoxEdge(p.x, p.y.sub(1.94), 1.20, 0.8, 0.13, invX, invY);
   const frontMask = cov(frontMaskEdge.d, frontMaskEdge.inv).mul(front);
-  const frontGlassOuter = boxMask(p.x, p.y.sub(1.8), 1.15, 0.56, invX, invY).mul(frontMask);
-  const centerDivider = one.sub(band(p.x, 0.015, invX));
-  const inWiperY = smoothstep(1.23, 1.25, p.y).mul(smoothstep(1.97, 1.95, p.y));
-  const wiperTilt = p.y.sub(1.24).mul(0.36);
-  const wipers = max(band(p.x.sub(0.38).add(wiperTilt), 0.015, invX), band(p.x.add(0.14).sub(wiperTilt), 0.015, invX))
-    .mul(inWiperY);
-  const frontGlass = frontGlassOuter.mul(centerDivider).mul(one.sub(wipers.mul(0.85)));
-  const signBand = boxMask(p.x, p.y.sub(2.56), 1.02, 0.16, invX, invY).mul(front);
+  const frontGlassOuter = rBoxEdge(p.x, p.y.sub(1.77), 1.11, 0.59, 0.11, invX, invY);
+  const wiperY = p.y.sub(1.29).sub(ax.mul(0.09));
+  const wipers = band(wiperY, 0.012, invY).mul(boxMask(ax.sub(0.52), p.y.sub(1.34), 0.41, 0.14, invX, invY));
+  const frontGlass = cov(frontGlassOuter.d, frontGlassOuter.inv).mul(front).mul(one.sub(wipers.mul(0.93)));
+  const signBand = boxMask(p.x, p.y.sub(2.56), 1.00, 0.165, invX, invY).mul(front);
 
-  // 5 amber roof brow marker LEDs folded into 2 distance checks
-  const browCenterX = min(ax, abs(ax.sub(0.13)));
-  const browMarker = max(
-    covAt(0.022, length(vec2(browCenterX.mul(0.7), p.y.sub(2.81).mul(1.4))), invXY),
-    covAt(0.025, length(vec2(ax.sub(0.98).mul(0.65), p.y.sub(2.79).mul(1.4))), invXY)
-  ).mul(front);
-
-  // 2. Rear cooling hood with louvers, route sign and lamps
-  const rearSignBox = boxMask(p.x.add(0.45), p.y.sub(2.58), 0.31, 0.14, invX, invY).mul(rear);
-  const rearLouverArea = boxMask(p.x.sub(0.42), p.y.sub(2.58), 0.44, 0.14, invX, invY)
-    .mul(covUp(0.024, abs(p.x.sub(0.42)), invX))
-    .mul(rear);
-  const rearUpperSlats = mix(
-    float(0.58),
-    smoothstep(0.32, 0.46, fract(p.y.mul(22.0))).mul(0.55).add(0.25),
-    fineFade(fwY)
-  );
-  const rearIdLamps = max(
-    covAt(0.02, length(vec2(min(ax, abs(ax.sub(0.14))).mul(0.7), p.y.sub(2.79).mul(1.4))), invXY),
-    covAt(0.023, length(vec2(ax.sub(0.96).mul(0.65), p.y.sub(2.74).mul(1.4))), invXY)
-  ).mul(rear);
+  const rearSignBox = boxMask(p.x, p.y.sub(2.51), 0.30, 0.14, invX, invY).mul(rear);
+  const backWindow = rBoxEdge(p.x, p.y.sub(2.23), 1.04, 0.41, 0.11, invX, invY);
+  const rearGlass = cov(backWindow.d, backWindow.inv).mul(rear).mul(one.sub(rearSignBox));
   const rearSeam = max(
     band(p.y.sub(1.42), 0.008, invY).mul(smoothstep(0.95, 0.93, ax)),
     band(ax.sub(0.92), 0.008, invX).mul(smoothstep(0.58, 0.62, p.y)).mul(smoothstep(2.77, 2.73, p.y))
@@ -417,7 +388,7 @@ function createLoftedBusMaterial() {
     fineFade(fwY)
   );
 
-  // 3. Side window band with black framing, upper transom bar, driver window, and curb-side doors
+  // The passenger window band and twin low-entry doors have separate black frames.
   const [wy0, wy1] = s.window;
   const winMid = (wy0 + wy1) / 2;
   const winHalf = (wy1 - wy0) / 2;
@@ -427,8 +398,7 @@ function createLoftedBusMaterial() {
   // Mullions and stanchions repeat every 1 / 0.76 m along z: filter in that repeat's units
   const invZRepeat = invZ.div(0.76);
   const mullion = one.sub(band(fract(p.z.mul(0.76).add(0.18)).sub(0.5), 0.038, invZRepeat));
-  const transomBar = one.sub(band(p.y.sub(2.08), 0.015, invY).mul(0.88));
-  const sideSignCutout = one.sub(boxMask(p.z.sub(3.74), p.y.sub(2.26), 0.56, 0.11, invZ, invY).mul(curb));
+  const sideSignCutout = one.sub(boxMask(p.z.sub(3.55), p.y.sub(2.37), 0.56, 0.11, invZ, invY).mul(curb));
   const drvWin = boxEdge(p.z.sub(4.92), p.y.sub(winMid + 0.02), 0.52, winHalf, invZ, invY);
   const driverSeal = covAt(0.044, drvWin.d, drvWin.inv).mul(side).mul(one.sub(curb));
   const driverWin = cov(drvWin.d, drvWin.inv)
@@ -436,16 +406,21 @@ function createLoftedBusMaterial() {
     .mul(side)
     .mul(one.sub(curb));
 
-  // Both curb-side doors evaluated via closest door center (zc = 4.89 or -1.54, half-width = 0.525)
-  const dzDoor = min(abs(p.z.sub(4.89)), abs(p.z.add(1.54)));
   const doorSide = side.mul(curb);
-  const doorFrame = boxMask(dzDoor, p.y.sub(1.42), 0.525, 1.02, invZ, invY).mul(doorSide);
-  const doorGlass = boxMask(abs(dzDoor.sub(0.25)), p.y.sub(1.48), 0.19, 0.86, invZ, invY)
-    .mul(one.sub(band(p.y.sub(1.18), 0.015, invY).mul(0.85)))
-    .mul(doorSide);
-  const sideGlassPanes = sideBand.mul(mullion).mul(transomBar).mul(sideSignCutout).mul(one.sub(doorFrame));
-  const glass = clamp(max(frontGlass, max(max(sideGlassPanes, driverWin), doorGlass)), 0.0, 1.0);
-  const seal = clamp(max(max(frontMask, rearSignBox), max(max(sideSeal, driverSeal), max(signBand, doorFrame))), 0.0, 1.0);
+  let doorFrame = float(0), doorGlass = float(0);
+  for (const [rearEdge, frontEdge] of [s.frontDoor, s.rearDoor]) {
+    const half = (frontEdge - rearEdge) / 2;
+    const dzDoor = abs(p.z.sub((rearEdge + frontEdge) / 2));
+    doorFrame = max(doorFrame, boxMask(dzDoor, p.y.sub(1.47), half, 1.06, invZ, invY));
+    const pane = boxMask(abs(dzDoor.sub(half / 2)), p.y.sub(1.51), half / 2 - 0.049, 0.91, invZ, invY)
+      .mul(one.sub(band(p.y.sub(1.05), 0.019, invY)));
+    doorGlass = max(doorGlass, pane);
+  }
+  doorFrame = doorFrame.mul(doorSide);
+  doorGlass = doorGlass.mul(doorSide);
+  const sideGlassPanes = sideBand.mul(mullion).mul(sideSignCutout).mul(one.sub(doorFrame));
+  const glass = max(max(frontGlass, rearGlass), max(max(sideGlassPanes, driverWin), doorGlass));
+  const seal = max(max(frontMask, rearSignBox), max(max(sideSeal, driverSeal), max(signBand, doorFrame)));
 
   // Black rubber wheel-arch fender flares (folded front/rear via az = abs(p.z) into 1 length() call, extending straight down to the 0.35 sill)
   const archR = s.wheelRadius + s.archGap;
@@ -486,31 +461,33 @@ function createLoftedBusMaterial() {
   const shadeY = smoothstep(0.34, 1.25, p.y).mul(0.16).add(0.84);
   const livery = mix(mix(regular, comfort, isComfort), color(0x181c22), skirt).mul(shadeY);
 
-  // Accessibility sticker and reflective yellow plates.
-  const wheelchairBadge = boxMask(p.z.sub(5.52), p.y.sub(0.98), 0.065, 0.075, invZ, invY).mul(doorSide);
-  const frontPlate = boxMask(p.x.sub(0.88), p.y.sub(1.02), 0.14, 0.065, invX, invY).mul(front);
-  const rearPlateEdge = boxEdge(p.x, p.y.sub(0.76), 0.155, 0.07, invX, invY);
+  const wheelchairBadge = boxMask(p.z.sub(5.60), p.y.sub(0.93), 0.065, 0.075, invZ, invY).mul(doorSide);
+  const frontPlate = boxMask(p.x, p.y.sub(0.52), 0.26, 0.055, invX, invY).mul(front);
+  const rearPlateEdge = boxEdge(p.x, p.y.sub(0.66), 0.26, 0.055, invX, invY);
   const rearPlate = cov(rearPlateEdge.d, rearPlateEdge.inv).mul(rear);
   const rearPlateRecess = covAt(0.036, rearPlateEdge.d, rearPlateEdge.inv).mul(rear);
   const plate = max(frontPlate, rearPlate);
-  const plateText = mix(float(0.55), smoothstep(0.35, 0.55, fract(p.x.mul(22.0))), fineFade(fwX))
-    .mul(max(band(p.y.sub(0.76), 0.035, invY), band(p.y.sub(1.02), 0.03, invY)));
+  const plateText = mix(float(0.55), smoothstep(0.35, 0.55, fract(p.x.mul(27.0))), fineFade(fwX))
+    .mul(max(band(p.y.sub(0.66), 0.034, invY), band(p.y.sub(0.52), 0.034, invY)));
+  const plateBand = boxMask(p.x.add(0.225), p.y.sub(0.52), 0.027, 0.052, invX, invY).mul(front)
+    .add(boxMask(p.x.sub(0.225), p.y.sub(0.66), 0.027, 0.052, invX, invY).mul(rear));
 
-  // 5. Lamps: swept Xcelsior wedge headlamps (folded pair) + lower amber turn; 4-lamp vertical circular rear stack (folded)
-  const lampTiltY = p.y.sub(float(0.74).add(ax.sub(0.76).mul(0.14)));
-  const pod = boxMask(ax.sub(0.93), lampTiltY, 0.21, 0.064, invX, invY).mul(front);
-  const headLamp = covAt(0.041, length(vec2(abs(ax.sub(0.91)).sub(0.07), lampTiltY)), invXY).mul(pod);
-  const drlStrip = band(lampTiltY.add(0.038), 0.011, invY).mul(pod);
-  const turnFront = boxMask(ax.sub(1.05), p.y.sub(0.62), 0.075, 0.022, invX, invY).mul(front);
+  const nose = rBoxEdge(p.x, p.y.sub(0.76), 1.16, 0.15, 0.12, invX, invY);
+  const nosePanel = cov(nose.d, nose.inv).mul(front);
+  const [lampX, lampY] = s.headlight;
+  const lampTiltY = p.y.sub(float(lampY).add(ax.sub(lampX).mul(0.23)));
+  const lampHousing = rBoxEdge(ax.sub(lampX), lampTiltY, 0.225, 0.057, 0.025, invX, invY);
+  const pod = cov(lampHousing.d, lampHousing.inv).mul(front);
+  const headLamp = covAt(0.030, length(vec2(min(abs(ax.sub(0.88)), abs(ax.sub(0.97))), lampTiltY)), invXY).mul(pod);
+  const drlStrip = band(lampTiltY.add(0.031), 0.009, invY).mul(pod);
+  const turnFront = boxMask(ax.sub(1.042), lampTiltY.sub(0.01), 0.04, 0.014, invX, invY).mul(pod);
 
-  // Periodic vertical fold for the 4 circular rear lamps at y = 0.70, 0.90, 1.10, 1.30 (1 length() instead of 4)
-  const inRearStack = smoothstep(0.59, 0.61, p.y).mul(smoothstep(1.41, 1.39, p.y)).mul(rear);
-  const dRearLamp = length(vec2(ax.sub(1.03), fract(p.y.sub(0.6).mul(5.0)).sub(0.5).mul(0.2)));
-  const rearBezel = covAt(0.066, dRearLamp, invXY).mul(inRearStack);
-  const rearLens = covAt(0.049, dRearLamp, invXY).mul(inRearStack);
-  const turnRear = rearLens.mul(step(1.2, p.y));
-  const tailLamp = rearLens.mul(step(0.8, p.y)).mul(step(p.y, 1.2));
-  const reverse = rearLens.mul(step(p.y, 0.8));
+  // Slim vertical lamps follow the outer corners of the rear fascia.
+  const rearBezel = boxMask(ax.sub(1.10), p.y.sub(1.03), 0.044, 0.31, invX, invY).mul(rear);
+  const tailLamp = boxMask(ax.sub(1.10), p.y.sub(1.10), 0.025, 0.21, invX, invY).mul(rearBezel);
+  const turnRear = boxMask(ax.sub(1.10), p.y.sub(0.84), 0.026, 0.034, invX, invY).mul(rearBezel);
+  const reverse = boxMask(ax.sub(1.10), p.y.sub(0.77), 0.026, 0.027, invX, invY).mul(rearBezel);
+  const rearLens = max(tailLamp, max(turnRear, reverse));
   const sideMarkers = covAt(0.025, length(vec2(az.sub(s.wheelZ + 0.68), p.y.sub(1.02))), invZY).mul(side);
 
   // 6. Tinted window glass with interior passenger seats, yellow vertical grab stanchions & ceiling light strip
@@ -529,15 +506,16 @@ function createLoftedBusMaterial() {
   // Composite body surface
   let body = mix(livery, color(0x12161b), max(seal, max(archFlareMask, max(rearSeam, rearPlateRecess))));
   body = mix(body, color(0x181c22).mul(slats), sideRearGrille);
-  body = mix(body, color(0x282418).mul(rearUpperSlats), rearLouverArea);
+  body = mix(body, color(0x171b20), nosePanel);
   body = mix(body, color(0x1258b8), wheelchairBadge);
   body = mix(body, color(0x12151a), max(pod, rearBezel));
   body = mix(body, color(0xf2f8ff), max(headLamp, drlStrip));
-  body = mix(body, color(0xff9d14), max(turnFront, max(browMarker, sideMarkers)));
-  body = mix(body, color(0x9e0e16), max(tailLamp, max(highBrake, rearIdLamps)));
+  body = mix(body, color(0xff9d14), max(turnFront, sideMarkers));
+  body = mix(body, color(0x9e0e16), max(tailLamp, highBrake));
   body = mix(body, color(0xd86e18), turnRear);
   body = mix(body, color(0xe8eef4), reverse);
   body = mix(body, mix(color(0xf2b518), color(0x182648), plateText.mul(0.65)), plate);
+  body = mix(body, color(0x154795), plateBand);
   body = mix(body, glassTint, glass);
 
   const col = mix(mix(body, color(0x191d22), isTrim), color(0xd0d5dc), isPod);
@@ -570,9 +548,9 @@ function createLoftedBusMaterial() {
   mat.emissiveNode = color(0xe8f4ff)
     .mul(headEmit)
     .add(color(0xfff0d4).mul(cabinGlow))
-    .add(color(0xff9210).mul(max(browMarker, sideMarkers).mul(mix(float(0.65), float(1.15), night))))
+    .add(color(0xff9210).mul(sideMarkers.mul(mix(float(0.65), float(1.15), night))))
     .add(color(0xff9a14).mul(max(turnFront, turnRear).mul(blink).mul(2.2)))
-    .add(color(0xff0c14).mul(tailLamp.mul(brake.mul(1.6).add(0.75)).add(highBrake.mul(brake.mul(1.8))).add(rearIdLamps.mul(night))));
+    .add(color(0xff0c14).mul(tailLamp.mul(brake.mul(1.6).add(0.75)).add(highBrake.mul(brake.mul(1.8)))));
 
   _busLoftedMat = mat;
   return mat;

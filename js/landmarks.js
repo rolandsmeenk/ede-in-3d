@@ -3,7 +3,7 @@ import { LANDMARK_SITES, projectLonLat } from './city-config.js';
 import { createChicaSculpture, createChicoSculpture, createShermanMonument } from './street-props.js';
 import { terrainHeightAt } from './terrain.js';
 import { EDE_MODELED_LANDMARKS, modeledLandmarkFootprints } from './ede-landmark-sites.js';
-import { createConcordiamolen } from './ede-concordiamolen.js';
+import { createConcordiaComplex } from './ede-concordia-buildings.js';
 import { createStingerbol } from './ede-stingerbol.js';
 import { createEnkaChimney } from './ede-enka-chimneys.js';
 import { createAstrant, createPegasusFlat } from './ede-mural-landmarks.js';
@@ -25,6 +25,7 @@ import { createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
 import { createRiedelSilos, createKappaDocie } from './ede-riedel-silos.js';
 import { buildMuralWalls } from './ede-mural-surfaces.js';
 import { createRaadhuis, createCultura } from './ede-civic-landmarks.js';
+import { createWorkGarden } from './ede-work-garden.js';
 
 // The engine's hand-built New York monuments are removed. Legacy exports keep the upstream controllers working.
 export let bryantParkLawn = null;
@@ -52,7 +53,7 @@ export const LANDMARK_EXCLUSIONS = [
 export function buildLandmarks(scene) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
-  const colliders = [], platforms = [], helipads = [], nearDetails = [];
+  const colliders = [], platforms = [], helipads = [], nearDetails = [], windmills = [];
   scene.add(group);
 
   function place(model, { x, z }, heading, footprints = [], baseY, colliderHeights = [], worldSpace = false) {
@@ -81,7 +82,7 @@ export function buildLandmarks(scene) {
   place(createChicoSculpture(), chicoSite, 1.18);
   place(createChicaSculpture(), chicaSite, 1.32);
   const models = {
-    concordiamolen: createConcordiamolen,
+    concordiamolen: createConcordiaComplex,
     stingerbol: createStingerbol,
     'grote-enka-schoorsteen': () => createEnkaChimney('grote'),
     'kleine-enka-schoorsteen': () => createEnkaChimney('kleine'),
@@ -115,6 +116,7 @@ export function buildLandmarks(scene) {
     openluchttheater: createEderKuil,
     reehorst: createReehorst,
     buitenzorg: createBuitenzorg,
+    'work-garden': createWorkGarden,
     'johannus-orgelbouw': createJohannus,
     technova: createTechnova,
     gasfabriek: createGasfabriek,
@@ -122,13 +124,14 @@ export function buildLandmarks(scene) {
   };
   for (const site of EDE_MODELED_LANDMARKS) {
     const footprints = modeledLandmarkFootprints(site);
-    const model = models[site.id](footprints);
+    const model = models[site.id](footprints, site);
     model.name = site.name;
     platforms.push(...(model.userData.platforms ?? []));
     helipads.push(...(model.userData.helipads ?? []));
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
     model.traverse(detail => {
       if (detail.userData.nearDetail) nearDetails.push({ detail, bounds: new THREE.Box3().setFromObject(detail) });
+      if (detail.userData.updateWind) windmills.push(detail.userData.updateWind);
     });
   }
   for (const model of buildMuralWalls()) {
@@ -146,5 +149,8 @@ export function buildLandmarks(scene) {
       detail.visible = bounds.distanceToPoint(position) < (detail.visible ? 205 : 175);
     }
   }
-  return { group, colliders, platforms, helipads, exclusions: LANDMARK_EXCLUSIONS, update };
+  function updateWind(dt, reading) {
+    for (const update of windmills) update(dt, reading);
+  }
+  return { group, colliders, platforms, helipads, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
 }

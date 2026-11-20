@@ -83,6 +83,7 @@ test('visible refresh retains stale weather through an outage and expires it at 
   assert.equal(weather.state.status, 'loading');
   await setImmediate();
   assert.equal(weather.state.status, 'fresh');
+  assert.equal(weather.activeReading, weather.state.current);
   assert.equal(calls, 1);
   assert.ok(weather.update(10).fog > .99);
 
@@ -98,12 +99,14 @@ test('visible refresh retains stale weather through an outage and expires it at 
   assert.equal(calls, 2);
   assert.equal(weather.state.status, 'stale');
   assert.equal(weather.state.current.observedAt, observedAt);
+  assert.equal(weather.activeReading, weather.state.current);
   assert.ok(weather.update(10).blend > .99);
 
   now += 29 * minute;
   onVisibility();
   await setImmediate();
   assert.equal(weather.state.status, 'expired');
+  assert.equal(weather.activeReading, null);
   assert.equal(weather.state.current.observedAt, observedAt);
   weather.update(15);
   assert.equal(weather.update(.01).blend, 0);
@@ -124,5 +127,6 @@ test('turning Live Weather off cancels an in-flight read and a late response can
   resolve(reading());
   await setImmediate();
   assert.deepEqual(weather.state, { enabled: false, status: 'off', current: null });
+  assert.equal(weather.activeReading, null);
   assert.equal(weather.update(10).blend, 0);
 });

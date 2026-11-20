@@ -42,7 +42,7 @@ function makeBlock(b,id,park=0){
   minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minZ=Math.min(minZ,p.z);maxZ=Math.max(maxZ,p.z);a+=c;cx+=(q.x+p.x)*c;cz+=(q.z+p.z)*c;
  }
  a*=.5;cx=a?cx/(6*a):(minX+maxX)/2;cz=a?cz/(6*a):(minZ+maxZ)/2;
- return {id,osmId:b.id,poly,holes,rects:[],frames:null,park,parkName:park?b.name:'',rect:false,area:Math.abs(a),minX,maxX,minZ,maxZ,cx,cz,median:false,district:districtAt(cx,cz)};
+ return {id,osmId:b.id,source:b,poly,holes,rects:[],frames:null,park,parkName:park?b.name:'',rect:false,area:Math.abs(a),minX,maxX,minZ,maxZ,cx,cz,median:false,district:districtAt(cx,cz)};
 }
 const BLOCKS=[...EDE_DATA.buildings.filter(b=>!b.part).map((b,i)=>makeBlock(b,i)),...EDE_DATA.parks.map((b,i)=>makeBlock(b,'park:'+i,1))];
 const LANDMARK_BLOCKS=new Set();
@@ -140,13 +140,13 @@ function pointInPoly(poly, x, z) {
   return inside;
 }
 /** The block (curb island) under (x, z), or null on the roadway / in the water */
-function blockAt(x, z) {
+function blockAt(x, z, includeSidewalk = true) {
   const list = BLOCK_GRID.get(Math.floor(x / BLOCK_CELL) * 100000 + Math.floor(z / BLOCK_CELL));
   for (const b of list || []) {
     if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
     if ((b.rect || pointInPoly(b.poly, x, z)) && !b.holes.some(h=>pointInPoly(h,x,z))) return b;
   }
-  return sidewalkAt(x,z);
+  return includeSidewalk ? sidewalkAt(x,z) : null;
 }
 const SIDEWALKS = new Map();
 function sidewalkAt(x, z) {
@@ -310,6 +310,19 @@ const LANDMARK_APPROACHES={
  'enka-westhal':[5.67843,52.02564],
  'pegasus-flat':[5.6488113,52.0240750],
 };
+// Scene metres for the viewpoint and the part of each landmark the chase camera frames.
+const SCENIC_ARRIVALS = {
+ oudekerk:           [-49.8, -14.25, 0, 0, 18, 'Torenstraat'],
+ concordiamolen:     [-386, -65, -390.65, -101.7, 16, 'Accesweg'],
+ raadhuis:           [253, 8, 247.4, 34.8, 3.8, 'Bergstraat'],
+ 'huis-kernhem':     [-1010, -750, -973.6, -759.5, 5.3, 'Kernhemselaan'],
+ openluchttheater:   [475.5, 655, 476.5, 624.8, 3.15, 'van Pabstlaan', [-5, -4.5]],
+ edewageningen:      [209, 2207, 195, 2150, 17, 'Polar Bearsplein'],
+ 'johan-willem-friso': [145, 1928, 211, 1946, 7.5, 'Frisopark'],
+ 'enka-westhal':     [495, 2246, 471.16, 2287.53, 6.5, 'Akulaan'],
+ hoekelum:           [339.42, 3432.40, 355.2, 3393, 6.8, 'Landgoed Hoekelum'],
+ gasfabriek:         [-453, 698, -433, 672, 5.0, 'Diamantstraat'],
+};
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){
  const approach=LANDMARK_APPROACHES[lm.id];
@@ -317,7 +330,13 @@ for(const lm of NYC_LANDMARKS){
  const streetPoint=point&&nearestRoadPoint(point.x,point.z,ROADS.filter(r=>r.name===lm.road));
  const t=streetPoint?{x:streetPoint.x,z:streetPoint.z,name:streetPoint.road.name}:arrival(lm.lon,lm.lat,lm.road);
  t.heading=Math.atan2(lm.x-t.x,lm.z-t.z);
- TELEPORT_LOCATIONS[lm.id]=t;
+ const scenic = SCENIC_ARRIVALS[lm.id];
+ if (scenic) {
+   const [x, z, tx, tz, height, name, offset] = scenic;
+   TELEPORT_LOCATIONS[lm.id] = { x, z, name, heading: Math.atan2(tx - x, tz - z), focus: { x: tx, z: tz, height, offset } };
+ } else {
+   TELEPORT_LOCATIONS[lm.id] = t;
+ }
  if(!LANDMARK_SITES[lm.name])LANDMARK_SITES[lm.name]={x:lm.x,z:lm.z,w:60,d:60,h:20,ring:[]};
 }
 function getLocationLabel(x,z){

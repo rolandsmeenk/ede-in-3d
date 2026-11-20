@@ -17,7 +17,7 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 | Feature | Count or coverage |
 | --- | ---: |
 | Map extent | 7.4 × 5.4 km |
-| Teleport destinations | 43 |
+| Scenic teleport presets | 10 |
 | Building footprints in the base map | 44,844 |
 | Mapped tree records | 50,352 |
 | Mapped roads and paths | 937 km |

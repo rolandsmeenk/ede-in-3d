@@ -18,7 +18,7 @@ export function decodeEdeLamps(buffer) {
     const flags = view.getUint8(offset + 12);
     return { x, z, baseY: view.getInt16(offset + 4, true) / 100, nx: Math.cos(angle), nz: Math.sin(angle),
       targetY: view.getInt16(offset + 8, true) / 100, height: view.getUint16(offset + 10, true) / 100,
-      led: Boolean(flags & 1), surveyed: Boolean(flags & 2), fitted: Boolean(flags & 4),
+      led: Boolean(flags & 1), surveyed: Boolean(flags & 2), fitted: Boolean(flags & 4), doubleArm: Boolean(flags & 8),
       layer: view.getInt8(offset + 13) };
   });
 }

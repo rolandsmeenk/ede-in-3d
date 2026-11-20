@@ -21,11 +21,11 @@ See [License and data](#license-and-data) for attribution and the sections below
 
 ## Landmarks
 
-The **Teleport** menu includes Astrant, the Van Eekelenflat, Plantion, the Johan Willem Friso-kazerne and station Ede-Wageningen. Their models use the mapped building plans and surveyed elevations where available.
+The **Teleport** menu offers ten framed arrivals, including the Johan Willem Friso-kazerne and station Ede-Wageningen. Use map search to find other landmarks such as Astrant, the Van Eekelenflat, Plantion and Work Garden.
 
 The historic exterior models include ENKA Westhal and Poortgebouw, Mauritskazerne, Oude Kerk, the old Ede Centrum station, Huis Kernhem and its coach house, De Vuurvogel, Raadhuis Ede and Cultura. See the [exterior references and fitted details](../tools/data/ede-landmark-exteriors.md).
 
-Stadspoort and Pathé Ede have custom exteriors based on surveyed building shapes and public exterior references. Use the Teleport menu to visit the shopping-centre entrance, cinema, Riedel silos, or Kappa Docie. Stadspoort’s upper walking passage and the lower roads and paths use their fitted grade profiles.
+Stadspoort and Pathé Ede have custom exteriors based on surveyed building shapes and public exterior references. Find the shopping-centre entrance, cinema, Riedel silos and Kappa Docie on the map. Stadspoort’s upper walking passage and the lower roads and paths use their fitted grade profiles.
 
 Street art streams near the camera as separate paint decals. Most decals use painted portions of real reference photos. Astrant and the Van Eekelenflat use approved reconstructions of Studio Giftig’s *Muzikanten* and Nina Valkhoff’s *Pegasus (Airborne)*. The buildings and tunnel walls use procedural materials and modeled geometry. See the [mural catalogue, sources and coverage](../tools/data/ede-murals.md).
 
@@ -35,7 +35,7 @@ After updating the offline wall assignments or WebP assets, run:
 node tools/build-ede-murals.mjs
 ```
 
-The Teleport menu also includes De Keetmolen, De Peppel, CHE and Van der Knaaphal, four churches, and Lukkien. The Lukkien destination faces the street entrance, and the marked rooftop deck supports landing in Fly mode. See the [survey sources and in-game checks](../tools/data/ede-landmark-batch.md).
+Map search includes De Keetmolen, De Peppel, CHE and Van der Knaaphal, four churches, and Lukkien. The marked Lukkien rooftop deck supports landing in Fly mode. See the [survey sources and in-game checks](../tools/data/ede-landmark-batch.md).
 
 The next ten locations include Kasteel Hoekelum, NIZO, Ziekenhuis Gelderse Vallei, De Eder Kuil, De ReeHorst, Buitenzorg, Johannus, Technova, De Gasfabriek and Tesqua. Hoekelum has a walkable moat bridge and the Eder Kuil has revised amphitheatre grading. [Sources, offline refresh and verification](../tools/data/ede-next-landmarks.md)
 
@@ -74,7 +74,7 @@ python3 tools/build-ede-terrain.py /tmp/ede-ahn-rd.tif
 
 Existing OSM street, cycleway, park and water outlines follow the terrain. Fitted bridges and tunnels have their own travel surfaces. The browser loads the local terrain asset and can fall back to level ground if the file is unavailable.
 
-The [targeted AHN survey](../tools/data/ede-ahn-pilot.md) shows how to refresh the native 0.5 m DTM and DSM inputs for the elevation pilot. The game loads the resulting small profiles and building base records locally. Use **Teleport → Openluchttheater Ede** to visit the theatre from Van Pabstlaan.
+The [targeted AHN survey](../tools/data/ede-ahn-pilot.md) shows how to refresh the native 0.5 m DTM and DSM inputs for the elevation pilot. The game loads the resulting small profiles and building base records locally. Use **Teleport → Openluchttheater Ede** to arrive above the seating and face the stage.
 
 ## Refresh structures and grade-separated routes
 
@@ -132,6 +132,8 @@ uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/bui
 The bake reads the checked-in 1GIS and motorway snapshots, the BGT road asset, and the [aerial trace manifest](../tools/data/ede-lane-aerial-traces.json). The [GIS frame and controls](../tools/data/ede-gis-v1.md) document the pinned PROJ release, RDNAPTRANS2018 grid, axis order, and Oude Kerk export. The [verification report](../tools/data/ede-fitted-lanes-verification.md) records the reviewed sites, fallback reasons, and paired browser checks.
 
 ## Refresh traffic signs, speed bumps and crossings
+
+Motor and pedestrian signals use dark Dutch-style housings on striped masts. Motor heads have round lenses and a thin white border. Pedestrian signals use a standing red figure and a walking green figure, which flashes during the clearance interval. [Ede signal hardware in local photos](https://www.atlasvanede.nl/thema-s/stadsontwikkeling/heden/rand-van-ede/fietstunnels-n224) · [Dutch traffic-light specification](https://kennisbank.crow.nl/public/gastgebruiker/VMGT/Handboek_verkeerslichtenregelingen_2022/Bijlage_I_%C2%AD_Regeling_verkeerslichten/114590)
 
 NDW Verkeersborden v5 supplies placed signs and their codes, values, bearings, conditions, and supplementary plates. PDOK BGT supplies wayfinder locations. The Drempels and WKD VOP snapshots supply bump, table, and zebra geometry. The surface import merges OpenStreetMap speed-calming tags, marked paths, refuge islands, and crossing controls. [Sign sources and face atlas refresh](../tools/data/ede-street-sign-sources.md)
 
@@ -196,6 +198,17 @@ uv run --with 'pillow>=12.1' python tools/build-ede-nbd-signs.py /tmp/ede-nbd /t
 
 The game loads the baked assets locally in the Oude Kerk scene frame. Props use spatially tiled instances. Long barriers and directional sign faces use batched geometry. For a performance comparison, open the game with `?perf=1` and use `bgtStage=street`, `bgtStage=infrastructure`, or `bgtStage=all`. The existing `detail=off`, `bgtDetail=off`, `motorwayDetail=off`, and `nbdSigns=off` switches remain available. [Town and shoreline verification](../tools/data/ede-bgt-town-verification.md) · [Motorway pilot verification](../tools/data/ede-1gis-verification.md)
 
+### Refresh municipal bins, collection sites and playgrounds
+
+The BGT street-detail bake also accepts a dated municipal WFS cache. It writes a separate local layer with approved bin and container placements and traced playground fixtures. Matched municipal objects replace the corresponding BGT props. The public ACV map and municipal designations inform collection types. Play sites without equipment evidence use their existing mapped surfaces. [Municipal street detail sources and checks](../tools/data/ede-municipal-detail.md)
+
+```sh
+uv run --with pyproj==3.8.0 --with shapely==2.1.2 python -B tools/build-ede-bgt-detail.py \
+  --municipal-snapshot /tmp/ede-municipal-2026-11-20 --date 2026-11-20 --fetch
+```
+
+Reuse the saved raw inputs by omitting `--fetch`. The per-record review is written to `tools/data/ede-municipal-detail.review.json.gz`. Use `?perf=1&municipalDetail=off` to compare the BGT-only view.
+
 ## Refresh the aerial colors
 
 The 2025 PDOK orthophoto is downloaded in 1 km RD New tiles and sampled at 0.5 m. Inset building footprints use the median of brighter interior pixels to limit shadows and edge bleed. Roads and mapped cycle paths sample along their centerlines. A 3 m color grid supplies terrain, parks, pavement and squares, including Markt and Oude Kerkplein.
@@ -222,6 +235,12 @@ uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 --with flatgeobu
   python tools/catalogue-ede-facade-walls.py /tmp/ede-facades-catalogue /tmp/ede-facades-walls.json --fetch
 python3 tools/build-ede-facades.py /tmp/ede-facades-walls.json tools/data/ede-facade-observations.json \
   --report tools/data/ede-facade-coverage.json
+```
+
+Procedural façades use the original BAG construction year. The four local neighbourhood palettes take precedence, and measured Mapillary façades keep their recorded finishes. Streamed buildings use the year in the 3D BAG tile. For fallback buildings, the baked year table matches PDOK BAG footprints to the local map by overlap.
+
+```bash
+python3 tools/build-ede-building-years.py /tmp/ede-bag-footprints.json --fetch
 ```
 
 To review new Mapillary views, set `MAPILLARY_TOKEN` in the local shell and add the views and measured opening bounds to the review manifest. The extractor accepts candidate views from [orthofacade](https://github.com/louis-e/orthofacade) through `--orthofacade /path/to/orthofacade/out/RUN` and `--metadata /path/to/orthofacade/cache/panos.json`.

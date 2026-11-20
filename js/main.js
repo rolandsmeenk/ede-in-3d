@@ -147,7 +147,8 @@ async function initApp() {
     motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult] = await Promise.allSettled([
     loadTerrain(), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
-    enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, motorway: enabled('motorwayDetail'),
+    enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
+      motorway: enabled('motorwayDetail'),
       directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null,
     enabled('laneFits') ? loadEdeFittedLanes() : null
   ]);
@@ -762,11 +763,13 @@ async function initApp() {
     elLocation.replaceChildren(...nodes);
   }
 
-  function teleportTo(x, z, heading = Math.PI, altitude = null) {
+  function teleportTo(x, z, heading = Math.PI, altitude = null, focus = null) {
     const destination = controllerManager.teleportActiveTo(x, z, heading, altitude);
     touchControls.reset();
     gamepadControls.reset();
-    cameraSystem.resetForTeleport();
+    cameraSystem.resetForTeleport(focus && {
+      x: focus.x, y: terrainHeightAt(focus.x, focus.z) + focus.height, z: focus.z, offset: focus.offset
+    });
     selectCamera('chase', true);
     mapSystem.waypoint = {
       x: destination.x,
@@ -774,6 +777,15 @@ async function initApp() {
       name: getLocationLabel(destination.x, destination.z)
     };
     return destination;
+  }
+
+  function teleportToLandmark(key) {
+    const loc = TELEPORT_LOCATIONS[key];
+    if (!loc) return;
+    const fly = loc.focus && controllerManager.activeMode === 'helicopter';
+    const x = fly ? loc.x - Math.sin(loc.heading) * 52 : loc.x;
+    const z = fly ? loc.z - Math.cos(loc.heading) * 52 : loc.z;
+    return teleportTo(x, z, loc.heading, fly ? terrainHeightAt(x, z) + 65 : null, loc.focus);
   }
 
   const mapSystem = new NYCMapSystem({
@@ -795,11 +807,7 @@ async function initApp() {
 
   teleportButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const key = btn.getAttribute('data-teleport');
-      const loc = TELEPORT_LOCATIONS[key];
-      if (loc) {
-        teleportTo(loc.x, loc.z, loc.heading);
-      }
+      teleportToLandmark(btn.getAttribute('data-teleport'));
       closePopovers();
     });
   });
@@ -1041,6 +1049,9 @@ async function initApp() {
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
     const weatherEffects = liveWeather.update(dt);
+    const windReading = liveWeather.activeReading;
+    landmarks.updateWind(dt, windReading);
+    bgtWorld?.updateWind(dt, windReading);
     lightingSystem.update(cameraSystem.currentPos, weatherEffects);
     precipitation.update(dt, cameraSystem.camera, weatherEffects);
     profiler?.stage('Lighting and weather');
@@ -1113,7 +1124,7 @@ async function initApp() {
           },
           get treeSeason() { return treeSeasonsEnabled ? getTreeSeason() : 'off'; },
           get weather() { return liveWeather.state; }, streetFeatures, importedDetail, murals: murals.statistics,
-          teleport(key) { const l = TELEPORT_LOCATIONS[key]; return teleportTo(l.x, l.z, l.heading); },
+          teleport: teleportToLandmark,
           teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },
           mode(m) { selectMode(m); },
           camera(id) { selectCamera(id, true); },

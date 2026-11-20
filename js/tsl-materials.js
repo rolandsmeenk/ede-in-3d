@@ -53,6 +53,7 @@ import {
   fwidth,
   texture,
   mrt,
+  output,
   If,
   sqrt,
   specularColor,
@@ -2736,6 +2737,7 @@ function createParkLawnMaterial(isMeadow = false, aerial = false, landCover = nu
 
 // Transparent decal/effect planes & sprites preserve the underlying road/scene G-buffer in MRT (zero RGB & zero alpha on normal & metalRough)
 const _transparentEffectMRT = mrt({
+  output,
   normal: vec4(0.0, 0.0, 0.0, 0.0),
   metalRough: vec4(0.0, 0.0, 0.0, 0.0)
 });
@@ -2798,6 +2800,7 @@ function createContactShadowMaterial() {
   mat.opacityNode = shadowOpacity;
   // Smoothly occlude wet-road SSR under the vehicle footprint proportional to shadow opacity (0 at quad edges)
   mat.mrtNode = mrt({
+    output,
     normal: vec4(0.0, 0.0, 0.0, 0.0),
     metalRough: vec4(0.0, 1.0, 0.0, shadowOpacity.mul(0.88))
   });

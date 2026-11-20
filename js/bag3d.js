@@ -8,9 +8,10 @@ import { terrainHeightAt } from './terrain.js';
 import { buildingPassageCuts } from './ede-grade.js';
 import { landmarkBagExclusions, landmarkBuildingCuts } from './ede-landmark-sites.js';
 import { getAerialColors, sampleGroundColor, sampleRoofColor } from './aerial-colors.js';
-import { applyBagFacadeChunks, loadEdeFacades, meshBagFacadeFeatures, readBagFacadeFeatures } from './ede-facades.js';
+import { applyBagFacadeChunks, loadEdeFacades, meshBagFacadeFeatures, readBagFacadeFeatures, readBagBuildYears } from './ede-facades.js';
 import { buildFacadeMaskAtlasIncrementally, createBagFacadeMaterial, createFacadeSurfaceTexture, projectFacadeUv } from './ede-facade-material.js';
 import { EDE_BUILDING_BASES } from './ede-building-bases.js';
+import { edeFacadeAt, isEdeShed } from './ede-neighbourhood-facades.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
 // https://3dbag.nl — tiles are glTF with node matrices in ECEF (glTF axes: x = X, y = Z, z = -Y).
@@ -231,7 +232,7 @@ function mappedRoofAt(x, z) {
     if (x < roof.minX || x > roof.maxX || z < roof.minZ || z > roof.maxZ) continue;
     if ((!match || roof.area < match.area) && polygonContains(roof, x, z)) match = roof;
   }
-  return match?.osmId;
+  return match;
 }
 
 const ROOF_WEIGHTS = [[1 / 3, 1 / 3, 1 / 3], [0.5, 0.25, 0.25], [0.25, 0.5, 0.25], [0.25, 0.25, 0.5]];
@@ -249,7 +250,7 @@ function estimateRoofColor(triangles, positions) {
     const widestEdge = Math.max(Math.hypot(x1 - x0, z1 - z0), Math.hypot(x2 - x1, z2 - z1), Math.hypot(x0 - x2, z0 - z2));
     for (const [u, v, w] of ROOF_WEIGHTS) {
       const x = u * x0 + v * x1 + w * x2, z = u * z0 + v * z1 + w * z2;
-      const id = mappedRoofAt(x, z);
+      const id = mappedRoofAt(x, z)?.osmId;
       if (id !== undefined) votes.set(id, (votes.get(id) || 0) + area / ROOF_WEIGHTS.length);
       if (area / widestEdge >= 1.5) points.push([x, z]);
     }
@@ -272,7 +273,7 @@ function linearColor(hex) {
   return new THREE.Color(hex).toArray();
 }
 
-function* colorBagRoofs(geometry, featureIds) {
+function* colorBagRoofs(geometry, featureIds, roofColors, useAerial) {
   const { position, buildingHeight } = geometry.attributes;
   const positions = position.array, heights = buildingHeight.array;
   const index = geometry.index;
@@ -286,37 +287,42 @@ function* colorBagRoofs(geometry, featureIds) {
     const ux = positions[b] - positions[a], uy = heights[ib] - heights[ia], uz = positions[b + 2] - positions[a + 2];
     const vx = positions[c] - positions[a], vy = heights[ic] - heights[ia], vz = positions[c + 2] - positions[a + 2];
     const area = uz * vx - ux * vz;
+    const horizontalNormal = Math.hypot(uy * vz - uz * vy, ux * vy - uy * vx);
     const id = Math.round(featureIds.getX(ia));
-    const roof = area > 0.35 * Math.hypot(uy * vz - uz * vy, area, ux * vy - uy * vx)
+    const roof = area > 0.35 * Math.hypot(horizontalNormal, area)
       && Math.max(heights[ia], heights[ib], heights[ic]) > 0.25
       && id === Math.round(featureIds.getX(ib)) && id === Math.round(featureIds.getX(ic));
+    const tile = roof && roofColors.has(id) && horizontalNormal > area * 0.25;
+    const kind = tile ? 4 : roof ? 1 : 2;
     if (uses) {
-      const kind = roof ? 1 : 2;
       uses[ia] |= kind; uses[ib] |= kind; uses[ic] |= kind;
     }
     if (!roof) continue;
     if (!roofs.has(id)) roofs.set(id, []);
-    roofs.get(id).push({ i, a, b, c, area });
+    roofs.get(id).push({ i, a, b, c, area, kind });
   }
   const colors = geometry.attributes.color.array;
   const splits = new Map();
   let roofIndices;
-  for (const triangles of roofs.values()) {
+  for (const [id, triangles] of roofs) {
     yield;
-    const tint = estimateRoofColor(triangles, positions);
-    if (!tint) continue;
-    for (const { i, a, b, c } of triangles) {
+    const aerialTint = useAerial && triangles.some(triangle => triangle.kind === 1)
+      ? estimateRoofColor(triangles, positions) : null;
+    for (const { i, a, b, c, kind } of triangles) {
+      const tint = kind === 4 ? roofColors.get(id) : aerialTint;
+      if (!tint) continue;
       const vertices = [a / 3, b / 3, c / 3];
       for (let corner = 0; corner < 3; corner++) {
         const vertex = vertices[corner];
-        if (uses?.[vertex] !== 3) {
+        if (!uses || uses[vertex] === kind) {
           colors.set(tint, vertex * 3);
           continue;
         }
-        // Keep the tile indexed and duplicate only vertices shared by tinted roofs and walls.
+        // Keep the tile indexed where both sides of an edge use the same finish.
         roofIndices ??= Uint32Array.from(index.array);
-        if (!splits.has(vertex)) splits.set(vertex, { vertex: position.count + splits.size, tint });
-        roofIndices[i + corner] = splits.get(vertex).vertex;
+        const key = vertex * 2 + Number(kind === 4);
+        if (!splits.has(key)) splits.set(key, { source: vertex, vertex: position.count + splits.size, tint });
+        roofIndices[i + corner] = splits.get(key).vertex;
       }
     }
   }
@@ -326,7 +332,7 @@ function* colorBagRoofs(geometry, featureIds) {
       yield;
       const expanded = new array.constructor(vertexCount * itemSize);
       expanded.set(array);
-      for (const [source, { vertex, tint }] of splits) {
+      for (const { source, vertex, tint } of splits.values()) {
         const values = name === 'color' ? tint : array.subarray(source * itemSize, (source + 1) * itemSize);
         expanded.set(values, vertex * itemSize);
       }
@@ -368,10 +374,10 @@ export function bakeTile(...args) {
   return finishBagWork(bakeTileChunks(...args));
 }
 
-function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions) {
+function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, yearTables) {
   const geometries = [];
   const useAerial = getAerialColors();
-  if (useAerial) mappedRoofs ??= mappedRoofIndex();
+  mappedRoofs ??= mappedRoofIndex();
   gltf.scene.updateMatrixWorld(true);
   const meshes = [];
   gltf.scene.traverse(object => { if (object.isMesh) meshes.push(object); });
@@ -381,6 +387,7 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions) {
   try {
     for (const o of meshes) {
       const facadeFeatures = tables && meshBagFacadeFeatures(gltf, o, tables);
+      const years = yearTables?.length ? meshBagFacadeFeatures(gltf, o, yearTables) : null;
       const meshBases = bases?.byMesh.get(o);
       const src = o.geometry;
       const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
@@ -388,23 +395,9 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions) {
       const pos = src.attributes.position, nor = src.attributes.normal, fid = src.attributes._feature_id_0;
       const count = pos.count;
       const excluded = exclusions && meshBagFacadeFeatures(gltf, o, exclusions);
-      let kept;
-      if (excluded?.size && fid) {
-        const srcCount = src.index?.count ?? count;
-        kept = [];
-        for (let i = 0; i < srcCount; i += 3) {
-          if (i % 768 === 0) yield;
-          const a = src.index?.getX(i) ?? i;
-          const b = src.index?.getX(i + 1) ?? i + 1;
-          const c = src.index?.getX(i + 2) ?? i + 2;
-          if (excluded.has(Math.round(fid.getX(a))) && excluded.has(Math.round(fid.getX(b))) && excluded.has(Math.round(fid.getX(c)))) continue;
-          kept.push(a, b, c);
-        }
-        if (!kept.length) continue;
-      }
       const positions = new Float32Array(count * 3), normals = new Float32Array(count * 3), colors = new Float32Array(count * 3);
       const v = new THREE.Vector3(), c = new THREE.Color();
-      const baseByBuilding = new Map();
+      const baseByBuilding = new Map(), extents = new Map();
       for (let i = 0; i < count; i++) {
         if ((i & 1023) === 0) yield;
         v.fromBufferAttribute(pos, i).applyMatrix4(full);
@@ -412,13 +405,56 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions) {
         v.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
         normals[i * 3] = v.x; normals[i * 3 + 1] = v.y; normals[i * 3 + 2] = v.z;
         const seed = fid ? Math.round(fid.getX(i)) : 0;
-        baseByBuilding.set(seed, Math.min(baseByBuilding.get(seed) ?? Infinity, positions[i * 3 + 1]));
+        const y = positions[i * 3 + 1];
+        baseByBuilding.set(seed, Math.min(baseByBuilding.get(seed) ?? Infinity, y));
+        if (fid) {
+          const x = positions[i * 3], z = positions[i * 3 + 2];
+          const bounds = extents.get(seed);
+          if (bounds) {
+            bounds.minX = Math.min(bounds.minX, x); bounds.maxX = Math.max(bounds.maxX, x);
+            bounds.minZ = Math.min(bounds.minZ, z); bounds.maxZ = Math.max(bounds.maxZ, z);
+            bounds.top = Math.max(bounds.top, y);
+          } else {
+            extents.set(seed, { minX: x, maxX: x, minZ: z, maxZ: z, top: y });
+          }
+        }
         const r = hash(seed + 1), s = hash(seed * 7 + 3);
         if (v.y > 0.35) c.setHSL(0.03 + s * 0.04, 0.12 + r * 0.12, 0.17 + r * 0.1); // roofs: dark tile / slate
         else if (r < 0.62) c.setHSL(0.045 + s * 0.03, 0.34 + r * 0.2, 0.30 + s * 0.12); // brick
         else if (r < 0.85) c.setHSL(0.11 + s * 0.04, 0.12 + s * 0.12, 0.52 + r * 0.14); // plaster / stone
         else c.setHSL(0.08 + s * 0.05, 0.08, 0.40 + s * 0.15);
         colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+      }
+      const facades = new Map(), roofColors = new Map(), sheds = new Set();
+      for (const [seed, { minX, maxX, minZ, maxZ, top }] of extents) {
+        const x = (minX + maxX) / 2, z = (minZ + maxZ) / 2;
+        // Require the whole BAG footprint to fit so an adjoining house keeps its own mesh.
+        const footprint = mappedRoofAt(x, z);
+        if (isEdeShed(footprint?.source, footprint?.area)
+          && minX >= footprint.minX - 0.8 && maxX <= footprint.maxX + 0.8
+          && minZ >= footprint.minZ - 0.8 && maxZ <= footprint.maxZ + 0.8) {
+          sheds.add(seed);
+          continue;
+        }
+        const year = years?.[seed] || footprint?.source?.buildYear;
+        const style = edeFacadeAt(x, z, top - baseByBuilding.get(seed), year, footprint?.source?.kind);
+        if (style) facades.set(seed, { x, z, layout: style.layout, rgb: c.setHex(style.color).toArray(), planes: new Map() });
+        if (style?.roofColor) roofColors.set(seed, c.setHex(style.roofColor).toArray());
+      }
+      let kept;
+      if (fid && (excluded?.size || sheds.size)) {
+        const omit = i => {
+          const seed = Math.round(fid.getX(i));
+          return excluded?.has(seed) || sheds.has(seed);
+        };
+        const srcCount = src.index?.count ?? count;
+        kept = [];
+        for (let i = 0; i < srcCount; i += 3) {
+          if (i % 768 === 0) yield;
+          const a = src.index?.getX(i) ?? i, b = src.index?.getX(i + 1) ?? i + 1, c = src.index?.getX(i + 2) ?? i + 2;
+          if (!(omit(a) && omit(b) && omit(c))) kept.push(a, b, c);
+        }
+        if (!kept.length) continue;
       }
       if (meshBases) for (const [seed, { bagId }] of meshBases) baseByBuilding.set(seed, bases.rawById.get(bagId));
       // Use the low side of each footprint to seat the whole building without bending its roof.
@@ -436,10 +472,69 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions) {
         }
       }
       if (meshBases) for (const [seed, { y }] of meshBases) groundByBuilding.set(seed, y);
+      const facadeLayouts = new Float32Array(count * 4), facadeBays = new Float32Array(count * 2);
+      const planeByVertex = facades.size ? new Array(count) : [];
+      const indices = kept ?? src.index?.array;
+      const wallDirections = new Float32Array(planeByVertex.length * 2);
+      if (facades.size) for (let i = 0; i + 2 < (indices?.length ?? count); i += 3) {
+        if (i % 768 === 0) yield;
+        const a = indices?.[i] ?? i, b = indices?.[i + 1] ?? i + 1, c = indices?.[i + 2] ?? i + 2;
+        if (!facades.has(Math.round(fid.getX(a)))) continue;
+        const ax = positions[a * 3], az = positions[a * 3 + 2];
+        const ux = positions[b * 3] - ax, uz = positions[b * 3 + 2] - az;
+        const vx = positions[c * 3] - ax, vz = positions[c * 3 + 2] - az;
+        const uy = relativeHeights[b] - relativeHeights[a], vy = relativeHeights[c] - relativeHeights[a];
+        const nx = uy * vz - uz * vy, nz = ux * vy - uy * vx;
+        const horizontal = Math.hypot(nx, nz);
+        if (horizontal < 0.0001 || Math.abs(uz * vx - ux * vz) > horizontal * 0.25) continue;
+        // Source lighting normals can be smoothed. Use the wall triangle's physical plane for the bay layout.
+        for (const vertex of [a, b, c]) {
+          wallDirections[vertex * 2] = nx / horizontal;
+          wallDirections[vertex * 2 + 1] = nz / horizontal;
+        }
+      }
       for (let i = 0; i < count; i++) {
         if ((i & 1023) === 0) yield;
-        const seed = fid ? Math.round(fid.getX(i)) : 0;
-        positions[i * 3 + 1] = relativeHeights[i] + groundByBuilding.get(seed);
+        const seed = fid ? Math.round(fid.getX(i)) : 0, j = i * 3;
+        positions[j + 1] = relativeHeights[i] + groundByBuilding.get(seed);
+        const facade = facades.get(seed);
+        const nx = wallDirections[i * 2], nz = wallDirections[i * 2 + 1];
+        if (facade && (nx || nz)) {
+          colors.set(facade.rgb, j);
+          facadeLayouts.set(facade.layout, i * 4);
+          const x = positions[j] - facade.x, z = positions[j + 2] - facade.z;
+          const along = x * nz - z * nx;
+          // Group each planar wall in feature-local space so the bays end at its corners.
+          const key = [Math.round(nx * 32), Math.round(nz * 32), Math.round((x * nx + z * nz) * 5)].join('/');
+          let plane = facade.planes.get(key);
+          if (!plane) {
+            plane = { min: Infinity, max: -Infinity, leftTop: 0, rightTop: 0, spacing: facade.layout[0] };
+            facade.planes.set(key, plane);
+          }
+          const height = relativeHeights[i];
+          // Take the roofline at the wall's ends. The gable peak is not another storey.
+          const tolerance = 0.05;
+          if (along <= plane.min + tolerance) {
+            plane.leftTop = along < plane.min - tolerance ? height : Math.max(plane.leftTop, height);
+            plane.min = Math.min(plane.min, along);
+          }
+          if (along >= plane.max - tolerance) {
+            plane.rightTop = along > plane.max + tolerance ? height : Math.max(plane.rightTop, height);
+            plane.max = Math.max(plane.max, along);
+          }
+          planeByVertex[i] = plane;
+          facadeBays[i * 2] = along;
+        }
+      }
+      for (let i = 0; i < planeByVertex.length; i++) {
+        if ((i & 1023) === 0) yield;
+        const plane = planeByVertex[i];
+        if (!plane) continue;
+        const width = plane.max - plane.min;
+        const bays = Math.max(1, Math.round(width / plane.spacing));
+        const index = i * 2;
+        facadeBays[index] = width >= 1.7 ? (facadeBays[index] - plane.min) * bays / width : 0;
+        facadeBays[index + 1] = Math.min(plane.leftTop, plane.rightTop);
       }
       let g = new THREE.BufferGeometry();
       geometries.push(g);
@@ -447,12 +542,13 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions) {
       g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
       g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       g.setAttribute('buildingHeight', new THREE.BufferAttribute(relativeHeights, 1));
-      const indices = kept ?? src.index?.array;
+      g.setAttribute('edeFacadeLayout', new THREE.BufferAttribute(facadeLayouts, 4));
+      g.setAttribute('edeFacadeBay', new THREE.BufferAttribute(facadeBays, 2));
       if (indices) {
         const IndexArray = count > 65535 ? Uint32Array : Uint16Array;
         g.setIndex(new THREE.BufferAttribute(IndexArray.from(indices), 1));
       }
-      if (fid && useAerial) yield* colorBagRoofs(g, fid);
+      if (fid && (useAerial || roofColors.size)) yield* colorBagRoofs(g, fid, roofColors, useAerial);
       if (fid && facadeFeatures?.size) {
         const applied = yield* applyBagFacadeChunks(g, fid, facadeFeatures, groundByBuilding, atlas, projectFacadeUv, linearColor);
         if (applied) g.userData.facades = applied;
@@ -594,7 +690,8 @@ async function bagGeometry(gltf, matrix, facades, tile, stillWanted = () => true
       throw new Error('Surveyed BAG building identifiers are missing. Keep the corrected OSM fallback.');
     }
     const exclusions = excluded.size ? await readBagFacadeFeatures(gltf, excluded) : null;
-    const work = bakeTileChunks(gltf, matrix, atlas ? features : null, atlas, bases, exclusions);
+    const years = await readBagBuildYears(gltf).catch(() => []);
+    const work = bakeTileChunks(gltf, matrix, atlas ? features : null, atlas, bases, exclusions, years);
     const geometries = pacing ? await finishBagWorkIncrementally(work, stillWanted, pacing) : finishBagWork(work);
     if (!geometries) {
       disposeFacadeAtlas(atlas);
@@ -620,6 +717,21 @@ function addBagGeometry(group, geometries, material, detailedMaterial) {
       for (const wall of detail.matched) matched.add(wall);
       recesses += detail.recesses;
       delete geometry.userData.facades;
+      // Keep detailed façades within WebGPU's eight vertex buffer slots.
+      const { edeFacadeLayout: layout, edeFacadeBay: bay } = geometry.attributes;
+      const interleaved = new THREE.InterleavedBuffer(new Float32Array(layout.count * 6), 6);
+      const data = interleaved.array;
+      for (let i = 0; i < layout.count; i++) {
+        const offset = i * 6;
+        data[offset] = layout.getX(i);
+        data[offset + 1] = layout.getY(i);
+        data[offset + 2] = layout.getZ(i);
+        data[offset + 3] = layout.getW(i);
+        data[offset + 4] = bay.getX(i);
+        data[offset + 5] = bay.getY(i);
+      }
+      geometry.setAttribute('edeFacadeLayout', new THREE.InterleavedBufferAttribute(interleaved, 4, 0));
+      geometry.setAttribute('edeFacadeBay', new THREE.InterleavedBufferAttribute(interleaved, 2, 4));
     }
     const mesh = new THREE.Mesh(geometry, detail ? detailedMaterial : material);
     mesh.castShadow = mesh.receiveShadow = true;

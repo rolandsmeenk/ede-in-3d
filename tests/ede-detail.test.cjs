@@ -22,6 +22,7 @@ async function fixture(grade = {}, fetch = globalThis.fetch) {
     THREE,
     ...loadModule(detail, {
       imports: { ...imports, './ede-geometry.js': geometry, './ede-grade.js': grade,
+        './ede-playground-equipment.js': loadModule(source('ede-playground-equipment.js')),
         './terrain.js': { getTerrain: () => ({ napOrigin: 22.54 }), terrainHeightAt: () => 2 } },
       globals: { fetch, URL, Response, DecompressionStream }
     }),
@@ -139,6 +140,39 @@ test('offline detail loading accepts packed and already decoded responses', asyn
   assert.equal(features[1].source, '1gis');
   await loadEdeDetail({ bgt: false, directional: false });
   assert.deepEqual(requested, ['ede-bgt-detail.json.gz', 'ede-1gis-detail.json.gz', 'ede-1gis-detail.json.gz']);
+});
+
+test('the municipal sidecar suppresses matched BGT duplicates and leaves unrelated furniture', async () => {
+  const { loadEdeDetail } = await fixture({}, async url => {
+    const name = path.basename(url.pathname);
+    if (name === 'ede-bgt-land.bin.gz') return new Response(null, { status: 404 });
+    const data = name === 'ede-municipal-detail.json.gz' ?
+      { replaces: ['duplicate'], features: [{ id: 'mor_afvalbakken.7', type: 'bin' }] } :
+      { features: [{ id: 'duplicate', type: 'bin' }, { id: 'unrelated', type: 'bench' }] };
+    return new Response(gzipSync(JSON.stringify({ version: 1, ...data })));
+  });
+  const base = { bgt: true, motorway: false, directional: false };
+  const ids = result => [...result.features].map(feature => `${feature.source}/${feature.id}`);
+  assert.deepEqual(ids(await loadEdeDetail(base)), ['bgt/unrelated', 'municipal/mor_afvalbakken.7']);
+  assert.deepEqual(ids(await loadEdeDetail({ ...base, municipal: false })), ['bgt/duplicate', 'bgt/unrelated']);
+});
+
+test('municipal underground shafts respect supporting levels and use close-range instance tiles', async () => {
+  const { buildEdeDetail, THREE } = await fixture({ gradeProfileAt: () => ({ kind: 'surface', y: 4 }) });
+  const { group, colliders, stats } = buildEdeDetail(new THREE.Scene(), [
+    { id: 'mor_acv_containers.8', source: 'municipal', type: 'container', model: 'underground',
+      position: [25, 42], angle: 0.7, baseOffset: 0.065, height: 0.95,
+      width: 0.7, length: 0.6, level: 0, collidable: true, streams: ['glass', 'pmd'] },
+  ]);
+  assert.equal(stats.municipal, 1);
+  assert.equal(colliders.length, 1);
+  assert.equal(colliders[0].minY, 4.065);
+  assert.ok(Math.abs(colliders[0].maxY - 5.015) < 1e-7);
+  const [tile] = group.children;
+  assert.equal(tile.userData.cullDistance, 112);
+  assert.equal(tile.count, 6);
+  const bounds = new THREE.Box3().setFromObject(tile);
+  assert.ok(bounds.min.y > 4.04 && bounds.max.y < 5.03);
 });
 
 test('directional sign faces look toward the approach at the baked NAP height', async () => {

@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { terrainHeightAt } from './terrain.js';
+import { createWindmillRig } from './ede-windmill.js';
 import {
   CivicBatch, along, offsetEdge, facePanel, wallExtent, wallColliders, makeGroup, civicSigns, polygonNormal,
 } from './ede-civic-landmarks.js';
@@ -56,11 +57,16 @@ function keetmolenMound(batch) {
 export function createKeetmolen() {
   const batch = new CivicBatch(), colliders = [];
   const mound = keetmolenMound(batch);
-  const x = -77.55, z = 1808.70, hub = 14.06, yaw = -0.085;
+  // Leave room for the full sweep above the fitted earth mound.
+  const x = -77.55, z = 1808.70, hub = 14.80, hubOffset = 4.16, yaw = -0.085;
+  const tower = new THREE.Group();
+  tower.position.set(x, 0, z);
+  tower.rotation.y = yaw;
+  const { cap: rotatingCap, sails } = createWindmillRig(tower, hub, hubOffset, 0.13);
+  const capBatch = new CivicBatch(), sailBatch = new CivicBatch();
   const green = 0x31453b, wood = 0x3c3830, ivory = 0xe7e0cf, brick = 0x776558, cap = 0x373830;
-  const local = (u, y, v) => [x + u * Math.cos(yaw) + v * Math.sin(yaw), y,
-    z - u * Math.sin(yaw) + v * Math.cos(yaw)];
-  const timber = (a, b, w, d, color) => beam(batch, local(...a), local(...b), w, d, color);
+  const timber = (a, b, w, d, color) => beam(capBatch, a, b, w, d, color);
+  const sailBeam = (a, b, w, d, color) => beam(sailBatch, a, b, w, d, color);
   const trim = (w, h, d, a, r, y, color) => {
     batch.solid(new THREE.BoxGeometry(w, h, d).translate(0, y, r).rotateY(a)
       .translate(x, 0, z), color);
@@ -99,33 +105,32 @@ export function createKeetmolen() {
   ring(2.90, 2.83, shoulder + 0.05, shoulder + 0.28, 0x3c463c);
   const roof = [[2.88, 12.35], [3.02, 12.66], [2.95, 13.03], [2.64, 13.96], [2.25, 14.65],
     [1.65, 15.43], [0.85, 16.11], [0, 16.46]].map(([radius, y]) => new THREE.Vector2(radius, y));
-  batch.solid(new THREE.LatheGeometry(roof, 20).translate(x, 0, z), cap);
+  capBatch.solid(new THREE.LatheGeometry(roof, 20), cap);
   timber([0, 16.1, 0], [0, 16.67, 0], 0.09, 0.09, ivory);
-  const nose = local(0, 13.60, 2.57);
-  batch.solid(new THREE.BoxGeometry(2.48, 1.86, 0.89).rotateY(yaw).translate(...nose), green);
+  capBatch.solid(new THREE.BoxGeometry(2.48, 2.02, 0.89).translate(0, 13.84, 2.57), green);
   for (const d of [-1, 1]) {
     timber([d * 1.23, 12.74, 3.03], [d * 1.23, 14.47, 3.03], 0.10, 0.09, ivory);
     timber([d * 1.35, 14.42, 3.03], [0, 14.42, 3.03], 0.11, 0.11, ivory);
     timber([d * 1.13, 12.78, 3.08], [d * 0.18, 12.78, 3.08], 0.09, 0.09, ivory);
   }
-  timber([0, hub, 2.79], [0, hub, 4.15], 0.47, 0.41, 0x555753);
-  // The biotope survey gives a 24.75 m sail span. Keep the station-facing orientation from the aerial view.
+  timber([0, hub - 0.19, 2.74], [0, hub, hubOffset], 0.47, 0.41, 0x555753);
+  // The biotope survey gives a 24.75 m sail span. Build the sails in the windshaft's local plane.
   for (let i = 0; i < 4; i++) {
     const a = 0.08 + i * Math.PI / 2, c = Math.cos(a), s = Math.sin(a), span = 12.375;
-    const sail = (r, w) => [r * c - w * s, hub + r * s + w * c, 4.16 - r * s * 0.055];
-    timber(sail(0, 0), sail(span, 0), 0.234, 0.205, wood);
-    timber(sail(1.95, -0.31), sail(span, -0.29), 0.24, 0.15, ivory);
-    timber(sail(2.10, 0.92), sail(span, 1.25), 0.067, 0.061, wood);
-    timber(sail(2.10, 0.43), sail(span, 0.64), 0.058, 0.054, wood);
-    timber(sail(span - 0.045, 0), sail(span - 0.045, 1.25), 0.08, 0.07, wood);
+    const sail = (r, w) => [r * c - w * s, r * s + w * c, 0];
+    sailBeam(sail(0, 0), sail(span, 0), 0.234, 0.205, wood);
+    sailBeam(sail(1.95, -0.31), sail(span, -0.29), 0.24, 0.15, ivory);
+    sailBeam(sail(2.10, 0.92), sail(span, 1.25), 0.067, 0.061, wood);
+    sailBeam(sail(2.10, 0.43), sail(span, 0.64), 0.058, 0.054, wood);
+    sailBeam(sail(span - 0.045, 0), sail(span - 0.045, 1.25), 0.08, 0.07, wood);
     for (let row = 0; row < 23; row++) {
       const t = row / 22, r = 2.12 + t * (span - 2.20);
-      timber(sail(r, -0.13), sail(r, 0.92 + 0.33 * t), 0.057, 0.05, wood);
+      sailBeam(sail(r, -0.13), sail(r, 0.92 + 0.33 * t), 0.057, 0.05, wood);
     }
   }
 
-  const tailEnd = local(0, 0, -8.8);
-  const tailY = mound.height(tailEnd[0], tailEnd[2]) + 0.57;
+  const tailLength = 8.8;
+  const tailY = mound.height(x - tailLength * Math.sin(yaw), z - tailLength * Math.cos(yaw)) + 0.57;
   timber([0, 13.64, -2.62], [0, tailY, -8.80], 0.27, 0.24, wood);
   for (const d of [-1, 1]) {
     timber([d * 3.82, 13.11, -1.98], [0, tailY + 0.57, -8.55], 0.12, 0.13, ivory);
@@ -140,6 +145,9 @@ export function createKeetmolen() {
     colliders.push(...wallColliders(footprint[i], footprint[(i + 1) % 8], base - 0.3, shoulder + 0.1));
   }
   const group = makeGroup('De Keetmolen', batch, colliders);
+  rotatingCap.add(capBatch.mesh());
+  sails.add(sailBatch.mesh());
+  group.add(tower);
   group.userData.platforms = [mound];
   return group;
 }

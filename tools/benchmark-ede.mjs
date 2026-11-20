@@ -26,7 +26,15 @@ function facadeWalk(name, a, b, distance, lookHeight) {
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = suite === 'trees' ? [
+const shots = suite === 'municipal' ? [
+  { name: 'De Oude Hofstede walk', from: [-594, 1.65, 3344], to: [-590, 1.65, 3350], look: [-578, 1.25, 3371] },
+  { name: 'De Oude Hofstede aerial', from: [-624, 39, 3356], to: [-617, 27, 3360], look: [-577, 1, 3379] },
+  { name: 'Proosdijpark walk', from: [-1363, 1.65, 596], to: [-1367, 1.65, 589], look: [-1382, 1.2, 582] },
+  { name: 'Proosdijpark aerial', from: [-1430, 37, 618], to: [-1418, 25, 613], look: [-1383, 1, 581] },
+  { name: 'Residential litter bins', from: [-857, 1.65, 773], to: [-854.5, 1.65, 779.2], look: [-853.1, 0.6, 784] },
+  { name: 'HEMA shopping walk', from: [-73, 1.65, 82], to: [-69, 1.65, 77], look: [-64.3, 0.72, 77.7] },
+  { name: 'Kuiperplein ACV cluster', from: [-293.4, 1.65, 18.3], to: [-294.5, 1.65, 19.6], look: [-298.85, 0.68, 21.92] },
+] : suite === 'trees' ? [
   { name: 'Low helicopter pass', from: [335, 22, 777], to: [446, 24, 708], look: [641, 16, 608] },
   { name: 'Climb through old cutoff', from: [668, 17, 768], to: [686, 80, 738], look: [909, 16, 558] },
   { name: 'Fast sideways pan', from: [852, 55, 632], to: [895, 56, 630], look: [525, 15, 649], lookTo: [1110, 12, 576], pan: true },
@@ -146,7 +154,7 @@ async function playable() {
         ms: app.firstFrameAt, stages: app.init, backend: app.backend, quality: app.graphics?.quality,
         bagMeshes: app.scene.getObjectByName('bag3d-buildings')?.children.length ?? 0,
         trees: app.treeInventory && {...app.treeInventory, planted: app.treeStats?.trees},
-        detail: detail && { bgt: detail.bgt, motorway: detail['1gis'] ?? detail.dtb, signs: detail.nbd, unresolved: detail.unresolved.length },
+        detail: detail && { bgt: detail.bgt, municipal: detail.municipal, motorway: detail['1gis'] ?? detail.dtb, signs: detail.nbd, unresolved: detail.unresolved.length },
       };
     })()`);
     if (state) return state;
@@ -304,12 +312,13 @@ async function run(search, cache, trial) {
     if (!startupOnly && cache === 'warm') {
       for (const shot of shots) {
         samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
-        if (screenshots && ['facades', 'trees'].includes(suite)) {
+        if (screenshots && ['facades', 'trees', 'municipal'].includes(suite)) {
           const label = shot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const { data } = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
           const variant = suite === 'trees'
             ? [url.port, url.searchParams.get('treeInventory'), url.searchParams.get('treeQuality'), url.searchParams.get('treeSeason'), trial].filter(v => v != null).join('-')
-            : url.port;
+            : suite === 'municipal' ? [url.port, url.searchParams.get('municipalDetail') ?? 'on', trial].join('-')
+              : url.port;
           await writeFile(join(screenshots, `${variant}-${label}.jpg`), Buffer.from(data, 'base64'));
         }
       }

@@ -1,0 +1,279 @@
+{
+  "version": 1,
+  "reviewDate": "2026-11-20",
+  "sites": [
+    {
+      "id": "mor_speelplekken.96",
+      "osmId": "w85031545",
+      "name": "De Oude Hofstede",
+      "boundary": [
+        [
+          -591.07,
+          3350.57
+        ],
+        [
+          -580.62,
+          3348.44
+        ],
+        [
+          -568.03,
+          3350.38
+        ],
+        [
+          -564.86,
+          3358.22
+        ],
+        [
+          -565.87,
+          3375.76
+        ],
+        [
+          -566.77,
+          3391.61
+        ],
+        [
+          -572.08,
+          3402.06
+        ],
+        [
+          -573.52,
+          3409.32
+        ],
+        [
+          -587.81,
+          3410.21
+        ],
+        [
+          -590.89,
+          3401.8
+        ],
+        [
+          -590.27,
+          3364.63
+        ]
+      ],
+      "approaches": [
+        {
+          "label": "Bovenbuurtweg shared approach",
+          "points": [
+            [
+              -628.76,
+              3347.41
+            ],
+            [
+              -609.11,
+              3346.82
+            ],
+            [
+              -594.63,
+              3346.88
+            ],
+            [
+              -589.84,
+              3347.93
+            ],
+            [
+              -587.31,
+              3351.43
+            ]
+          ]
+        },
+        {
+          "label": "Farm-side path",
+          "points": [
+            [
+              -575.9,
+              3343.18
+            ],
+            [
+              -569.7,
+              3345.28
+            ],
+            [
+              -566.43,
+              3350.0
+            ],
+            [
+              -565.98,
+              3354.91
+            ]
+          ]
+        }
+      ],
+      "imagery": {
+        "layer": "2026_orthoHR",
+        "comparisonLayer": "2025_orthoHR",
+        "crs": "EPSG:28992",
+        "extent": [
+          173884,
+          447453,
+          174016,
+          447585
+        ],
+        "source": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+        "credit": "Samenwerkingsverband Beeldmateriaal via PDOK, CC BY 4.0"
+      },
+      "sources": [
+        "https://ede.begroting-2026.nl/p24838/wat-gaan-we-doen",
+        "https://www.deoudehofstede.nl/activiteiten/speeltuin/",
+        "https://socialekaart.ede.nl/is/organisatie/3951/invis2/stichting-kinderboerderij-de-oude-hofstede",
+        "https://www.atlasvanede.nl/ede-nu/sport-en-ontspanning/kinderboerderijen"
+      ],
+      "assessment": "Aerial layout reviewed. Equipment dimensions and finish are approximate. Later works require a new reference.",
+      "deferred": [
+        "The farm-side toddler circuit, spring riders and obscured fixtures are held for individually located references.",
+        "The municipal programme identifies replacement work in 2026. The aerial frames do not establish whether later work is complete."
+      ],
+      "replaces": [],
+      "features": [
+        {"id": "ede-play-survey:96:swing", "type": "playEquipment", "level": 0, "model": "swing", "position": [-575.71, 3367.33], "angle": -1.082, "width": 5.57, "length": 2.05, "height": 2.47, "baseOffset": 0.075, "evidence": "Regular two-seat frame across the inner end of the southern sand area is visible in both orthophotos.", "style": "dark"},
+        {"id": "ede-play-survey:96:basket", "type": "playEquipment", "level": 0, "model": "basketSwing", "position": [-575.85, 3378.79], "angle": -0.94111, "width": 6.67, "length": 2.48, "height": 2.62, "baseOffset": 0.075, "evidence": "Basket seat and timber frame register between both orthophotos. The operator photograph corroborates the basket design.", "style": "dark"},
+        {"id": "ede-play-survey:96:slide-east-a", "type": "playEquipment", "level": 0, "model": "slide", "position": [-584.7, 3369.7], "angle": 1.03118, "width": 1.19, "length": 5.36, "height": 1.75, "baseOffset": 0.075, "evidence": "Pale chute, ladder and cast shadow repeat between the 2025 and 2026 orthophotos.", "style": "freestanding"},
+        {"id": "ede-play-survey:96:slide-east-b", "type": "playEquipment", "level": 0, "model": "slide", "position": [-585.04, 3373.9], "angle": 1.00694, "width": 1.2, "length": 5.33, "height": 1.78, "baseOffset": 0.075, "evidence": "Second parallel chute repeats between the 2025 and 2026 orthophotos.", "style": "freestanding"},
+        {"id": "ede-play-survey:96:timber-slide", "type": "playEquipment", "level": 0, "model": "slide", "position": [-583.69, 3388.76], "angle": 1.1518, "width": 2.72, "length": 6.78, "height": 2.72, "baseOffset": 0.075, "evidence": "The southern timber deck and silver chute are visible in both aerials and the operator photograph."},
+        {"id": "ede-play-survey:96:toddler-slide", "type": "playEquipment", "level": 0, "model": "slide", "position": [-583.71, 3357.44], "angle": 0.66624, "width": 1.76, "length": 4.69, "height": 2.15, "baseOffset": 0.075, "evidence": "The dark roof and light chute in the northern area match the small roofed slide in the July 2023 Atlas photo.", "style": "blue", "roof": true},
+        {"id": "ede-play-survey:96:balance-trail", "type": "playEquipment", "level": 0, "model": "climber", "position": [-576.05, 3359.12], "angle": 0.79885, "width": 1.87, "length": 7.06, "height": 1.04, "baseOffset": 0.075, "evidence": "Low timber rails and stepping elements visible in the dated aerials, with the operator photo used for the small timber style.", "style": "low"},
+        {"id": "ede-play-survey:96:entry", "type": "playSurface", "level": 0, "polygon": [[-587.865,3348.998], [-589.962,3349.426], [-588.631,3351.267], [-588.63,3351.24], [-586.585,3350.768]], "material": "path", "evidence": "The visible granular entry at the Bovenbuurtweg side ends at the existing path and at the sand apron."},
+        {"id": "ede-play-survey:96:sand", "type": "playSurface", "level": 0, "polygon": [[-588.63, 3351.24], [-581.0, 3349.48], [-570.01, 3351.69], [-566.73, 3355.47], [-566.58, 3364.72], [-567.01, 3379.91], [-567.16, 3392.83], [-570.56, 3396.69], [-572.65, 3403.19], [-573.98, 3408.37], [-586.58, 3408.32], [-588.92, 3404.26], [-589.09, 3375.67], [-589.24, 3364.82]], "material": "sand", "evidence": "Sand colour and outer limit visible in both dated aerials and on the operator ground photo. Walkways remain outside the traced apron."}
+      ]
+    },
+    {
+      "id": "mor_speelplekken.150",
+      "osmId": "w1169127169",
+      "name": "Proosdijpark",
+      "boundary": [
+        [
+          -1391.58,
+          571.48
+        ],
+        [
+          -1387.38,
+          570.24
+        ],
+        [
+          -1383.81,
+          572.45
+        ],
+        [
+          -1380.99,
+          573.41
+        ],
+        [
+          -1376.17,
+          575.62
+        ],
+        [
+          -1373.29,
+          578.21
+        ],
+        [
+          -1372.38,
+          586.33
+        ],
+        [
+          -1374.08,
+          588.4
+        ],
+        [
+          -1379.41,
+          587.81
+        ],
+        [
+          -1383.67,
+          585.66
+        ],
+        [
+          -1387.17,
+          582.25
+        ],
+        [
+          -1390.04,
+          579.1
+        ],
+        [
+          -1391.47,
+          575.63
+        ]
+      ],
+      "approaches": [
+        {
+          "label": "Floreslaan side approach",
+          "points": [
+            [
+              -1352.29,
+              581.56
+            ],
+            [
+              -1354.32,
+              588.09
+            ],
+            [
+              -1358.36,
+              593.99
+            ],
+            [
+              -1363.74,
+              591.58
+            ],
+            [
+              -1369.37,
+              587.91
+            ],
+            [
+              -1373.07,
+              586.89
+            ]
+          ]
+        },
+        {
+          "label": "Park-side gap",
+          "points": [
+            [
+              -1393.26,
+              566.57
+            ],
+            [
+              -1391.95,
+              569.97
+            ],
+            [
+              -1390.77,
+              572.11
+            ]
+          ]
+        }
+      ],
+      "imagery": {
+        "layer": "2026_orthoHR",
+        "comparisonLayer": "2025_orthoHR",
+        "crs": "EPSG:28992",
+        "extent": [
+          173088,
+          450257,
+          173176,
+          450345
+        ],
+        "source": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+        "credit": "Samenwerkingsverband Beeldmateriaal via PDOK, CC BY 4.0"
+      },
+      "sources": [
+        "https://ede.begroting-2026.nl/p24838/wat-gaan-we-doen",
+        "https://www.ededoet.nl/initiatief/1966",
+        "https://www.kinderfeestje.nl/locaties/kinderboerderij-de-proosdij/"
+      ],
+      "assessment": "Aerial layout reviewed. Equipment dimensions and finish are approximate. Later works require a new reference.",
+      "deferred": [
+        "Equipment masked by branches is held for newer photographs. The farm-side water play and the 2009 zipline did not supply a current placement reference.",
+        "The spring 2026 aerial shows the selected equipment. Completion of any work later in the municipal 2026 programme remains unverified."
+      ],
+      "replaces": [],
+      "features": [
+        {"id": "ede-play-survey:150:swing", "type": "playEquipment", "level": 0, "model": "swing", "position": [-1388.8, 574.04], "angle": -1.04844, "width": 4.87, "length": 2.24, "height": 2.45, "baseOffset": 0, "evidence": "Present-day A-frame established by the 2026 aerial. Public visitor description corroborates swings. Seat colour and configuration are simplified.", "seats": 1},
+        {"id": "ede-play-survey:150:slide", "type": "playEquipment", "level": 0, "model": "slide", "position": [-1378.28, 578.82], "angle": -1.64858, "width": 2.85, "length": 5.09, "height": 2.65, "baseOffset": 0.075, "evidence": "Tower silhouette and westward chute are visible in both dated orthophotos. Slide finish is approximate."},
+        {"id": "ede-play-survey:150:climber", "type": "playEquipment", "level": 0, "model": "climber", "position": [-1378.64, 583.6], "angle": 0.96036, "width": 2.05, "length": 5.96, "height": 1.34, "baseOffset": 0.075, "evidence": "Five staggered platforms follow the stable northwest-to-southeast footprint in both dated orthophotos."},
+        {"id": "ede-play-survey:150:entry", "type": "playSurface", "level": 0, "polygon": [[-1373.143,585.988], [-1373.13,586.45], [-1374.409,587.219], [-1374.456,587.389], [-1373.296,587.709], [-1372.523,587.922], [-1371.684,586.901], [-1371.545,586.429], [-1372.844,586.071]], "material": "path", "evidence": "The unbound Floreslaan-side opening and sand edge are visible in the 2026 ortho. The existing approach path remains in place."},
+        {"id": "ede-play-survey:150:central-sand", "type": "playSurface", "level": 0, "polygon": [[-1384.26, 575.41], [-1381.68, 573.97], [-1378.48, 574.67], [-1375.48, 576.51], [-1373.61, 578.4], [-1373.24, 582.68], [-1373.13, 586.45], [-1375.21, 587.7], [-1378.97, 586.81], [-1381.78, 585.16], [-1384.22, 582.76], [-1385.09, 579.11]], "material": "sand", "evidence": "Light-granular safety apron traced where visible in both dated aerials. Exact aggregate specification is unverified."}
+      ]
+    }
+  ]
+}

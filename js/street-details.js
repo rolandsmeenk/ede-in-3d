@@ -29,33 +29,38 @@ function createStreetSignBladeTexture(label) {
   c.width = 256;
   c.height = 64;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = EDE_DATA ? '#eeeeeb' : '#0d6b3f';
+  ctx.fillStyle = EDE_DATA ? '#164780' : '#0d6b3f';
   ctx.fillRect(0, 0, 256, 64);
-  ctx.strokeStyle = EDE_DATA ? '#242829' : '#ffffff';
-  ctx.lineWidth = 5;
-  ctx.strokeRect(4, 4, 248, 56);
-  ctx.fillStyle = EDE_DATA ? '#242829' : '#ffffff';
-  ctx.font = `${EDE_DATA ? 600 : 800} ${label.length > 22 ? 19 : label.length > 16 ? 23 : 30}px Inter, Arial, sans-serif`;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = EDE_DATA ? 3 : 5;
+  if (EDE_DATA) {
+    ctx.beginPath();
+    ctx.roundRect(5, 5, 246, 54, 8);
+    ctx.stroke();
+  } else {
+    ctx.strokeRect(4, 4, 248, 56);
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.font = EDE_DATA ? '600 34px Arial, sans-serif'
+    : `800 ${label.length > 22 ? 19 : label.length > 16 ? 23 : 30}px Inter, Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, 128, 34);
+  ctx.fillText(label, 128, 34, 228);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
 
-/**
- * TSL 3-Aspect Traffic Signal Lens Material (Red y=5.78, Amber y=5.42, Green y=5.06)
- * Driven by the shared signal clock and SIGNAL_TIMING (city-config.js), which js/traffic.js obeys.
- */
+// Use the same signal clock and phase boundaries as the traffic simulation.
 function createTrafficSignalLensMaterial(isAvenueHead, clock) {
   const { cycle, avenueAmber, avenueRed, streetAmber } = SIGNAL_TIMING;
   const mat = new THREE.MeshBasicNodeMaterial();
   mat.colorNode = Fn(() => {
     const t = mod(clock, cycle);
     const y = positionGeometry.y;
-    const isTopRed = step(0.18, y);
-    const isBottomGreen = float(1.0).sub(step(-0.18, y));
+    const split = EDE_DATA ? 0.125 : 0.18;
+    const isTopRed = step(split, y);
+    const isBottomGreen = float(1).sub(step(-split, y));
     const isMidAmber = float(1.0).sub(isTopRed).mul(float(1.0).sub(isBottomGreen));
 
     // Avenue phase: Green, then Amber from avenueAmber, Red from avenueRed
@@ -84,8 +89,7 @@ function createTrafficSignalLensMaterial(isAvenueHead, clock) {
   return mat;
 }
 
-// Pedestrian signal for crossing alongside the avenue: WALK, then a flashing hand until the avenue's amber, then a
-// steady hand
+// Render the existing walk, clearance and stop intervals as pedestrian indications.
 function createWalkSignalMaterial(clock) {
   const { cycle, avenueAmber, walk } = SIGNAL_TIMING;
   const mat = new THREE.MeshBasicNodeMaterial();
@@ -93,11 +97,32 @@ function createWalkSignalMaterial(clock) {
     const t = mod(clock, cycle);
     const isWalk = float(1.0).sub(step(walk, t));
     const isFlashing = step(walk, t).mul(float(1.0).sub(step(avenueAmber, t)));
+    if (EDE_DATA) {
+      const isRed = step(0, positionGeometry.y);
+      const greenLit = isWalk.add(isFlashing.mul(float(1).sub(step(0.5, fract(t)))));
+      const active = mix(greenLit, step(avenueAmber, t), isRed);
+      return mix(color(0x1d2120), mix(color(0x29ff72), color(0xff3131), isRed).mul(1.35), active);
+    }
     const handLit = float(1.0).sub(isFlashing.mul(step(0.5, fract(t))));
     const hand = mix(color(0x14181e), color(0xff5518), handLit);
     return mix(hand, color(0xf4f9ff), isWalk);
   })();
   return mat;
+}
+
+function pedestrianFigure(walking) {
+  const limbs = walking ? [
+    [0, 0.036, -0.012, -0.012], [-0.012, -0.012, -0.048, -0.059], [-0.012, -0.012, 0.045, -0.054],
+    [-0.003, 0.027, 0.043, 0.005], [-0.003, 0.027, -0.044, 0.009]
+  ] : [
+    [0, 0.036, 0, -0.011], [0, -0.011, -0.017, -0.059], [0, -0.011, 0.017, -0.059],
+    [0, 0.029, 0.032, -0.011], [0, 0.029, -0.032, -0.011]
+  ];
+  return mergeGeometries([
+    new THREE.CircleGeometry(0.016, 8).translate(walking ? 0.006 : 0, 0.052, 0),
+    ...limbs.map(([ax, ay, bx, by], i) => new THREE.PlaneGeometry(Math.hypot(bx - ax, by - ay) + 0.014, i === 0 ? 0.03 : 0.017)
+      .rotateZ(Math.atan2(by - ay, bx - ax)).translate((ax + bx) / 2, (ay + by) / 2, 0))
+  ]);
 }
 
 function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLampMounts, treeOptions) {
@@ -122,7 +147,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     metalness: 0.78
   });
   const signalHousingMat = new THREE.MeshStandardNodeMaterial({
-    color: 0xe6a817, // Authentic NYC DOT school-bus/marigold yellow housing
+    color: EDE_DATA ? 0x222627 : 0xe6a817,
     roughness: 0.38,
     metalness: 0.35,
     side: THREE.DoubleSide // the tunnel visors are open half-tubes
@@ -140,27 +165,37 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     roughness: 0.32
   });
 
-  // 12-inch three-section signal head (origin at its centre, y = 5.42): yellow housing, a tunnel visor over each lens
-  // and a hanger to the mast arm, lenses on both faces (+-z) so it reads from both approaches; the lens material
-  // picks red / amber / green from each lens's height relative to the housing
-  const HEAD_W = 0.4;
-  const HEAD_H = 1.12;
-  const HEAD_D = 0.28;
-  const LENS_R = 0.145;
-  const LENS_Y = [0.36, 0, -0.36];
+  const HEAD_W = EDE_DATA ? 0.29 : 0.4;
+  const HEAD_H = EDE_DATA ? 0.83 : 1.12;
+  const HEAD_D = EDE_DATA ? 0.22 : 0.28;
+  const LENS_R = EDE_DATA ? 0.10 : 0.145;
+  const spacing = EDE_DATA ? 0.25 : 0.36;
+  const visorDepth = EDE_DATA ? 0.16 : 0.24;
+  const LENS_Y = [spacing, 0, -spacing];
   const bothFaces = (geo) => [geo, geo.clone().rotateY(Math.PI)];
+  const visor = (r, y, face, depth) => bothFaces(
+    new THREE.CylinderGeometry(r, r, depth, 14, 1, true, Math.PI / 2, Math.PI)
+      .rotateX(Math.PI / 2).translate(0, y, face + depth / 2));
   const signalHousingGeo = mergeGeometries([
     new THREE.BoxGeometry(HEAD_W, HEAD_H, HEAD_D),
-    new THREE.BoxGeometry(0.07, 0.2, 0.07).translate(0, HEAD_H / 2 + 0.1, 0),
-    ...LENS_Y.flatMap((ly) => bothFaces(
-      new THREE.CylinderGeometry(LENS_R + 0.03, LENS_R + 0.03, 0.24, 14, 1, true, Math.PI / 2, Math.PI)
-        .rotateX(Math.PI / 2).translate(0, ly, HEAD_D / 2 + 0.12)
-    ))
+    EDE_DATA ? new THREE.BoxGeometry(0.47, 1.02, 0.035)
+      : new THREE.BoxGeometry(0.07, 0.2, 0.07).translate(0, HEAD_H / 2 + 0.1, 0),
+    ...LENS_Y.flatMap(y => visor(LENS_R + 0.023, y, HEAD_D / 2, visorDepth))
   ]);
-  const signalLensGeo = mergeGeometries(LENS_Y.flatMap((ly) => bothFaces(new THREE.CircleGeometry(LENS_R, 18).translate(0, ly, HEAD_D / 2 + 0.004))));
-  // Pedestrian signal: housing with the WALK / hand face lit on both sides (+-z, toward the crosswalk's far end)
-  const walkHousingGeo = new THREE.BoxGeometry(0.34, 0.4, 0.24);
-  const walkPanelGeo = mergeGeometries(bothFaces(new THREE.PlaneGeometry(0.27, 0.31).translate(0, 0, 0.125)));
+  const signalLensGeo = mergeGeometries(LENS_Y.flatMap(y =>
+    bothFaces(new THREE.CircleGeometry(LENS_R, 18).translate(0, y, HEAD_D / 2 + 0.004))));
+  const signalBorderGeo = EDE_DATA ? mergeGeometries([
+    ...[-0.51, 0.51].map(y => new THREE.BoxGeometry(0.49, 0.016, 0.042).translate(0, y, 0)),
+    ...[-0.237, 0.237].map(x => new THREE.BoxGeometry(0.016, 1.005, 0.042).translate(x, 0, 0)),
+  ]) : null;
+  const walkHousingGeo = EDE_DATA ? mergeGeometries([
+    new THREE.BoxGeometry(0.24, 0.475, 0.18),
+    ...[-0.118, 0.118].flatMap(y => visor(0.096, y, 0.09, 0.10))
+  ]) : new THREE.BoxGeometry(0.34, 0.4, 0.24);
+  const walkPanelGeo = EDE_DATA ? mergeGeometries([
+    ...bothFaces(pedestrianFigure(false).translate(0, 0.118, 0.093)),
+    ...bothFaces(pedestrianFigure(true).translate(0, -0.118, 0.093))
+  ]) : mergeGeometries(bothFaces(new THREE.PlaneGeometry(0.27, 0.31).translate(0, 0, 0.125)));
   // Cobra-head luminaire on the end of the arm: flattened grey housing, flat lens underneath
   const lampHousingGeo = new THREE.SphereGeometry(1, 14, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(0.7, 0.2, 0.3);
   const lampLensGeo = new THREE.CircleGeometry(1, 16).rotateX(Math.PI / 2).scale(0.6, 1, 0.24).translate(0, -0.005, 0);
@@ -177,7 +212,9 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
   // =========================================================================
   const poleMatrices = [];
   const armMatrices = [];
-  const yellowBoxMatrices = [];
+  const signalHousingMatrices = [];
+  const dutchMastMatrices = [];
+  const callButtonMatrices = [];
   const aveLensMatrices = [];
   const streetLensMatrices = [];
   const streetBladeMatrices = [];
@@ -324,7 +361,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
           dummy.rotation.set(0, armDist < 4.0 ? 0 : Math.PI / 2, 0);
           dummy.scale.set(1, 1, 1);
           dummy.updateMatrix();
-          yellowBoxMatrices.push(dummy.matrix.clone());
+          signalHousingMatrices.push(dummy.matrix.clone());
           (armDist < 4.0 ? aveLensMatrices : streetLensMatrices).push(dummy.matrix.clone());
         }
         dummy.rotation.set(0, 0, 0);
@@ -496,13 +533,13 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       dummy.position.set(x, y, z); dummy.rotation.set(0, yaw, 0); dummy.scale.set(sx, sy, sz);
       dummy.updateMatrix(); list.push(dummy.matrix.clone());
     };
+    const poleRadius = 0.11;
     const lampSites = mappedLamps ?? edeStreetSites;
     for (let i = 0; i < lampSites.length; i++) {
       const s = lampSites[i];
       const { x, z } = s;
       let { nx, nz, ux, uz, name } = s;
       if (mappedLamps) {
-        // A side-mounted street blade follows the arm's baked road alignment.
         const road = s.baseY === undefined || i % 4 === 0 ? nearestEdeRoad(x, z, 25, undefined, s.layer) : null;
         name = road?.road.name;
         if (s.baseY === undefined) {
@@ -511,9 +548,9 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
           const side = road && ((road.x - x) * -uz + (road.z - z) * ux) < 0 ? -1 : 1;
           nx = -uz * side;
           nz = ux * side;
-        } else {
-          ux = nz;
-          uz = -nx;
+        } else if (road) {
+          ux = road.ux;
+          uz = road.uz;
         }
       } else {
         if (waterAt(x, z) && !s.road.bridge) continue;
@@ -526,16 +563,26 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       const lampX = mount?.x ?? x, lampZ = mount?.z ?? z;
       const poleBase = mount?.top ?? ground;
       const poleHeight = headY - poleBase;
-      if (poleHeight > 0) setMatrix(poleMatrices, lampX, poleBase + poleHeight / 2, lampZ, 0.11, poleHeight, 0.11);
-      const yaw = Math.atan2(-nz, nx);
-      setMatrix(armMatrices, lampX + nx * 1.1, headY - 0.12, lampZ + nz * 1.1, 2.2, 0.085, 0.085, yaw);
-      setMatrix(lampHeadMatrices, lampX + nx * 2.1, headY - 0.10, lampZ + nz * 2.1, 1, s.led ? 0.55 : 1, 1, yaw);
-      cobraLampSites.push({ x: lampX + nx * 2.1, y: headY - 0.16, z: lampZ + nz * 2.1,
-        tx: lampX + nx * 3.5, ty: s.targetY, tz: lampZ + nz * 3.5, layer: s.layer, color: s.led ? 0xfff3e0 : 0xffe8c2 });
-      addPole(lampX, lampZ, 0.11, s.layer);
-      if (name && i % 4 === 0 && (edeSignMatrices.has(name) || edeSignMatrices.size < 70 || centreStreetSigns.has(name))) {
+      if (poleHeight > 0) setMatrix(poleMatrices, lampX, poleBase + poleHeight / 2, lampZ, poleRadius, poleHeight, poleRadius);
+      const armCount = s.doubleArm ? 2 : 1;
+      for (let arm = 0; arm < armCount; arm++) {
+        const ax = arm === 0 ? nx : -nx, az = arm === 0 ? nz : -nz;
+        const yaw = Math.atan2(-az, ax);
+        setMatrix(armMatrices, lampX + ax * 1.1, headY - 0.12, lampZ + az * 1.1, 2.2, 0.085, 0.085, yaw);
+        setMatrix(lampHeadMatrices, lampX + ax * 2.1, headY - 0.10, lampZ + az * 2.1, 1, s.led ? 0.55 : 1, 1, yaw);
+        cobraLampSites.push({ x: lampX + ax * 2.1, y: headY - 0.16, z: lampZ + az * 2.1,
+          tx: lampX + ax * 3.5, ty: s.targetY, tz: lampZ + az * 3.5, layer: s.layer, color: s.led ? 0xfff3e0 : 0xffe8c2 });
+      }
+      addPole(lampX, lampZ, poleRadius, s.layer);
+      if (name && !mount && poleHeight >= 2.9 && i % 4 === 0 &&
+          (edeSignMatrices.has(name) || edeSignMatrices.size < 70 || centreStreetSigns.has(name))) {
         if (!edeSignMatrices.has(name)) edeSignMatrices.set(name, []);
-        setMatrix(edeSignMatrices.get(name), lampX, ground + 3.25, lampZ, 1.8, 0.33, 0.055, -Math.atan2(uz, ux));
+        const width = Math.min(1.45, Math.max(0.72, 0.24 + name.length * 0.051));
+        const end = poleRadius + 0.04;
+        const offset = end + width / 2;
+        const y = poleBase + 2.55, yaw = -Math.atan2(uz, ux);
+        setMatrix(armMatrices, lampX + ux * end / 2, y, lampZ + uz * end / 2, end + 0.036, 0.056, 0.038, yaw);
+        setMatrix(edeSignMatrices.get(name), lampX + ux * offset, y, lampZ + uz * offset, width, 0.23, 0.028, yaw);
       }
     }
     const signalKeys = new Set();
@@ -550,11 +597,19 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       signalKeys.add(key);
       const yaw = Math.atan2(road.ux, road.uz), isAvenue = Math.abs(road.uz) >= Math.abs(road.ux);
       const ground = terrainHeightAt(x, z);
-      setMatrix(poleMatrices, x, ground + 3.0, z, 0.09, 6, 0.09);
-      setMatrix(yellowBoxMatrices, x, ground + 5.42, z, 1, 1, 1, yaw);
-      setMatrix(isAvenue ? aveLensMatrices : streetLensMatrices, x, ground + 5.42, z, 1, 1, 1, yaw);
-      setMatrix(walkBoxMatrices, x, ground + 2.7, z, 1, 1, 1, yaw + Math.PI / 2);
-      audioSignals.push({ x, y: ground + 2.7, z, isAvenue });
+      const motorY = ground + 2.77;
+      setMatrix(dutchMastMatrices, x, ground + 1.21, z, 0.063, 2.42, 0.063);
+      setMatrix(signalHousingMatrices, x, motorY, z, 1, 1, 1, yaw);
+      setMatrix(isAvenue ? aveLensMatrices : streetLensMatrices, x, motorY, z, 1, 1, 1, yaw);
+
+      const px = x - road.ux * 0.78, pz = z - road.uz * 0.78;
+      const pedestrianGround = terrainHeightAt(px, pz);
+      const pedestrianY = pedestrianGround + 2.44;
+      setMatrix(dutchMastMatrices, px, pedestrianGround + 1.12, pz, 0.055, 2.24, 0.055);
+      setMatrix(walkBoxMatrices, px, pedestrianY, pz, 1, 1, 1, yaw + Math.PI / 2);
+      setMatrix(callButtonMatrices, px + nx * side * 0.065, pedestrianGround + 1.08, pz + nz * side * 0.065,
+        0.085, 0.15, 0.075, yaw + Math.PI / 2);
+      audioSignals.push({ x: px, y: pedestrianY, z: pz, isAvenue });
     }
   }
 
@@ -573,15 +628,35 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     return inst;
   }
 
-  addMatrixArrayInstanced(unitCyl, poleMetalMat, poleMatrices);
-  addMatrixArrayInstanced(unitBox, poleMetalMat, armMatrices);
-  addMatrixArrayInstanced(signalHousingGeo, signalHousingMat, yellowBoxMatrices);
+  const poles = addMatrixArrayInstanced(unitCyl, poleMetalMat, poleMatrices);
+  const arms = addMatrixArrayInstanced(unitBox, poleMetalMat, armMatrices);
+  if (EDE_DATA) {
+    if (poles) poles.name = 'EdeLampPoles';
+    if (arms) arms.name = 'EdeLampArmsAndSignBrackets';
+  }
+  const motorSignals = addMatrixArrayInstanced(signalHousingGeo, signalHousingMat, signalHousingMatrices);
+  if (motorSignals && EDE_DATA) {
+    motorSignals.name = 'EdeMotorSignals';
+    const stripe = step(0.5, fract(positionGeometry.y.add(0.5).mul(4)));
+    const striped = new THREE.MeshStandardNodeMaterial({ roughness: 0.72 });
+    striped.colorNode = mix(color(0x202327), color(0xe0e0db), stripe);
+    addMatrixArrayInstanced(unitCyl, striped, dutchMastMatrices).name = 'EdeStripedSignalMasts';
+    const white = new THREE.MeshStandardNodeMaterial({ color: 0xe6e6dc, roughness: 0.75 });
+    addMatrixArrayInstanced(signalBorderGeo, white, signalHousingMatrices);
+    const button = new THREE.MeshStandardNodeMaterial({ color: 0xe1b83a, roughness: 0.72 });
+    addMatrixArrayInstanced(unitBox, button, callButtonMatrices, false);
+  }
   addMatrixArrayInstanced(signalLensGeo, aveSignalLensMat, aveLensMatrices, false);
   addMatrixArrayInstanced(signalLensGeo, streetSignalLensMat, streetLensMatrices, false);
   addMatrixArrayInstanced(unitBox, streetBladeMat, streetBladeMatrices);
-  addMatrixArrayInstanced(walkHousingGeo, signalHousingMat, walkBoxMatrices);
-  addMatrixArrayInstanced(walkPanelGeo, walkSignalGlow, walkBoxMatrices, false);
-  addMatrixArrayInstanced(lampHousingGeo, poleMetalMat, lampHeadMatrices);
+  const pedestrianSignals = addMatrixArrayInstanced(walkHousingGeo, signalHousingMat, walkBoxMatrices);
+  const pedestrianFigures = addMatrixArrayInstanced(walkPanelGeo, walkSignalGlow, walkBoxMatrices, false);
+  if (pedestrianSignals && EDE_DATA) {
+    pedestrianSignals.name = 'EdePedestrianSignals';
+    pedestrianFigures.name = 'EdePedestrianSignalFigures';
+  }
+  const housings = addMatrixArrayInstanced(lampHousingGeo, poleMetalMat, lampHeadMatrices);
+  if (housings && EDE_DATA) housings.name = 'EdeLampHousings';
   addMatrixArrayInstanced(lampLensGeo, lampBulbGlow, lampHeadMatrices, false);
   const pedPosts = addMatrixArrayInstanced(pedLampPostGeo, poleMetalMat, pedPostMatrices);
   // ~28k posts: they cast as 4-sided base + shaft (16 triangles instead of 120; scene-culling.js shadow stand-ins)
@@ -592,9 +667,14 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     ]);
   }
   addMatrixArrayInstanced(pedGlobeGeo, pedGlobeGlow, pedPostMatrices, false);
-  for (const [name, matrices] of edeSignMatrices) {
-    const mat = new THREE.MeshStandardNodeMaterial({ map: createStreetSignBladeTexture(name), roughness: 0.6 });
-    addMatrixArrayInstanced(unitBox, mat, matrices);
+  if (edeSignMatrices.size) {
+    const blade = unitBox.clone();
+    const uv = blade.getAttribute('uv');
+    for (let i = 0; i < 16; i++) uv.setXY(i, 1 / 256, 1 / 64);
+    for (const [name, matrices] of edeSignMatrices) {
+      const mat = new THREE.MeshStandardNodeMaterial({ map: createStreetSignBladeTexture(name), roughness: 0.6 });
+      addMatrixArrayInstanced(blade, mat, matrices).name = `EdeStreetName:${name}`;
+    }
   }
 
   // =========================================================================

@@ -3,6 +3,7 @@ import { EDE_ROAD_TAGS } from './ede-road-tags.js';
 
 const mapUrl = new URL('../assets/ede-map-v1.json.gz', import.meta.url);
 const shorelineUrl = new URL('../assets/ede-shorelines.json.gz', import.meta.url);
+const yearsUrl = new URL('../assets/ede-building-years.json.gz', import.meta.url);
 
 async function readMapAsset(url, optional = false) {
   let bytes;
@@ -54,11 +55,31 @@ function applyShorelines(data, shoreline) {
   for (const group of ['water', ...groups]) data.meta.counts[group] = data[group].length;
 }
 
+function applyBuildingYears(buildings, table) {
+  let orderedIds = 2166136261;
+  for (const { id } of buildings) {
+    for (let i = 0; i < id.length; i++) orderedIds = Math.imul(orderedIds ^ id.charCodeAt(i), 16777619);
+    orderedIds = Math.imul(orderedIds ^ 10, 16777619);
+  }
+  if (table.version !== 1 || table.orderedIds !== (orderedIds >>> 0)
+    || !Array.isArray(table.years) || table.years.length !== buildings.length) {
+    console.warn('[Ede BAG years] building-year asset does not match the OSM map');
+    return;
+  }
+  for (const [i, year] of table.years.entries()) {
+    if (Number.isInteger(year) && year >= 1000 && year < 2100) buildings[i].buildYear = year;
+  }
+}
+
 async function loadMap() {
-  const [data, shoreline] = await Promise.all([
+  const [data, shoreline, years] = await Promise.all([
     readMapAsset(mapUrl),
     readMapAsset(shorelineUrl, true).catch(error => {
       console.warn('[Ede shorelines] using OSM geometry:', error);
+      return null;
+    }),
+    readMapAsset(yearsUrl, true).catch(error => {
+      console.warn('[Ede BAG years] using the default façade palette:', error);
       return null;
     }),
   ]);
@@ -73,6 +94,7 @@ async function loadMap() {
       console.warn('[Ede shorelines] using OSM geometry:', error);
     }
   }
+  if (years) applyBuildingYears(data.buildings, years);
   for (const road of data.roads) Object.assign(road, EDE_ROAD_TAGS[road.id]);
   return data;
 }

@@ -60,7 +60,7 @@ test('a rail-only deck with sparse rail hits stays above its cut approaches', ()
     .replaceAll('import.meta.url', JSON.stringify(pathToFileURL(filename).href))
     .replaceAll('export async function', 'async function') + '\nexport { makeDeckProfile };';
   const { makeDeckProfile } = loadModule(source, { filename, imports: {
-    'three/webgpu': {}, './ede-geometry.js': {}, './terrain.js': { terrainHeightAt: () => 16.5 }
+    'three/webgpu': {}, './ede-geometry.js': {}, './terrain.js': { terrainHeightAt: () => 16.5 }, './ede-windmill.js': {}
   } });
   const feature = { axis: [0, 0, 80, 0] };
   const rail = (x, z, kind) => kind === 'rail-deck' && z === 0 && x >= 30 && x <= 40 ? 21.1 : undefined;

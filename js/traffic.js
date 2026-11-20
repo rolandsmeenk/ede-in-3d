@@ -82,18 +82,14 @@ function createBusDestinationTexture(routes) {
   ctx.fillRect(0, 0, c.width, c.height);
   routes.forEach(({ line, headsign }, idx) => {
     const y0 = idx * 64;
-    ctx.fillStyle = '#0b0e14';
-    ctx.fillRect(6, y0 + 8, 500, 48);
-    ctx.fillStyle = '#3d3217';
-    ctx.fillRect(12, y0 + 11, 126, 42);
-    ctx.fillStyle = '#ffc65b';
-    ctx.font = '900 32px Inter, Arial, sans-serif';
+    ctx.fillStyle = '#ededdb';
+    ctx.font = '700 37px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(line, 75, y0 + 33);
-    ctx.font = '800 28px Arial, sans-serif';
+    ctx.fillText(line, 63, y0 + 33, 97);
+    ctx.font = '700 29px Arial, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(headsign, 152, y0 + 33, 345);
+    ctx.fillText(headsign, 132, y0 + 33, 366);
   });
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -416,7 +412,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // Lamps/livery and destination atlas index use separate instance attributes.
   const busStates = new THREE.InstancedBufferAttribute(new Float32Array(NUM_BUSES * 4), 4);
   busBodyGeo.setAttribute('busState', busStates);
-  // Destination signs above the windshield, by the front door & on the upper-right rear cap
+  // Destination displays at the front and curb side, with a route number at the rear.
   const busHeaderGeo = buildBusSignGeometry();
   const busSigns = new THREE.InstancedBufferAttribute(new Float32Array(NUM_BUSES), 1);
   busHeaderGeo.setAttribute('busSign', busSigns);

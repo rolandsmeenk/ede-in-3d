@@ -28,6 +28,7 @@
   <link rel="modulepreload" href="./js/ede-grade-world.js" />
   <link rel="modulepreload" href="./js/ede-bgt-world.js" />
   <link rel="modulepreload" href="./js/ede-detail.js" />
+  <link rel="modulepreload" href="./js/ede-playground-equipment.js" />
   <link rel="modulepreload" href="./js/aerial-colors.js" />
   <link rel="modulepreload" href="./js/city-config.js" />
   <link rel="modulepreload" href="./js/tsl-materials.js" />
@@ -79,7 +80,10 @@
   <link rel="modulepreload" href="./js/ede-lukkien.js" />
   <link rel="modulepreload" href="./js/ede-lukkien-survey.js" />
   <link rel="modulepreload" href="./js/ede-landmark-sites.js" />
+  <link rel="modulepreload" href="./js/ede-windmill.js" />
   <link rel="modulepreload" href="./js/ede-concordiamolen.js" />
+  <link rel="modulepreload" href="./js/ede-concordia-buildings.js" />
+  <link rel="modulepreload" href="./js/ede-concordia-survey.js" />
   <link rel="modulepreload" href="./js/ede-stingerbol.js" />
   <link rel="modulepreload" href="./js/ede-mural-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-murals.js" />
@@ -95,6 +99,7 @@
   <link rel="modulepreload" href="./js/ede-heritage-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-historic-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-civic-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-work-garden.js" />
   <link rel="modulepreload" href="./js/ede-enka-chimneys.js" />
   <link rel="modulepreload" href="./js/street-details.js" />
   <link rel="modulepreload" href="./js/street-props.js" />
@@ -137,6 +142,7 @@
   <link rel="modulepreload" href="./js/audio-system.js" />
   <link rel="modulepreload" href="./js/bag3d.js" />
   <link rel="modulepreload" href="./js/ede-facades.js" />
+  <link rel="modulepreload" href="./js/ede-neighbourhood-facades.js" />
   <link rel="modulepreload" href="./js/ede-facade-material.js" />
   <link rel="modulepreload" href="./js/main.js?v=20261120-landmarks-5" />
   <script type="module" src="./js/main.js?v=20261120-landmarks-5"></script>
@@ -144,7 +150,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261119-crossing-debug" />
+  <link rel="stylesheet" href="./css/style.css?v=20261120-scenic-teleports" />
 </head>
 <body>
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
@@ -194,6 +200,7 @@
   <main id="canvas-container" data-train-prediction-seconds="32" aria-label="3D Interactive Slop Ede Viewport"></main>
   <div class="map-attribution">
     <a href="https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html" target="_blank" rel="noopener noreferrer">Structures and streets via PDOK BGT</a>
+    <a href="https://geo.ede.nl/geoserver/Ede/wfs?service=WFS&amp;request=GetCapabilities" target="_blank" rel="noopener noreferrer">Bins and play sites by Gemeente Ede</a>
     <a href="https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer" target="_blank" rel="noopener noreferrer">Motorway detail via Rijkswaterstaat 1GIS</a>
     <a href="https://downloads.rijkswaterstaatdata.nl/bewegwijzering/" target="_blank" rel="noopener noreferrer">Motorway direction signs via NBd</a>
     <a href="https://verkeersveiligheid.ndw.nu/" target="_blank" rel="noopener noreferrer">Traffic signs, bumps and zebras via NDW</a>
@@ -284,49 +291,18 @@
 
   <div id="teleport-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" aria-label="Teleport the active player">
     <div class="pop-title">Teleport to</div>
-    <button id="tp-oudekerk" class="pop-item tp-btn" data-teleport="oudekerk" type="button"><span class="pop-name">Oude Kerk</span><span class="pop-sub">Torenstraat · Centrum</span></button>
-    <button id="tp-edecentrum" class="pop-item tp-btn" data-teleport="edecentrum" type="button"><span class="pop-name">Station Ede Centrum</span><span class="pop-sub">Telefoonweg · Centrum</span></button>
-    <button id="tp-edewageningen" class="pop-item tp-btn" data-teleport="edewageningen" type="button"><span class="pop-name">Station Ede-Wageningen</span><span class="pop-sub">Frisopark · Stationsgebied</span></button>
-    <button id="tp-raadhuis" class="pop-item tp-btn" data-teleport="raadhuis" type="button"><span class="pop-name">Raadhuis Ede</span><span class="pop-sub">Bergstraat · Centrum</span></button>
-    <button id="tp-chico-y-chica" class="pop-item tp-btn" data-teleport="chico-y-chica" type="button"><span class="pop-name">Chico y Chica</span><span class="pop-sub">Raadhuisplein · Centrum</span></button>
-    <button id="tp-cultura" class="pop-item tp-btn" data-teleport="cultura" type="button"><span class="pop-name">Cultura</span><span class="pop-sub">Molenstraat · Centrum</span></button>
-    <button id="tp-marktplein" class="pop-item tp-btn" data-teleport="marktplein" type="button"><span class="pop-name">Marktplein</span><span class="pop-sub">Marktstraat · Centrum</span></button>
-    <button id="tp-huis-kernhem" class="pop-item tp-btn" data-teleport="huis-kernhem" type="button"><span class="pop-name">Huis Kernhem</span><span class="pop-sub">Kernhemseweg · Kernhem</span></button>
-    <button id="tp-proosdijpark" class="pop-item tp-btn" data-teleport="proosdijpark" type="button"><span class="pop-name">Proosdijpark</span><span class="pop-sub">Veenderweg · Veldhuizen</span></button>
-    <button id="tp-hoekelum" class="pop-item tp-btn" data-teleport="hoekelum" type="button"><span class="pop-name">Kasteel Hoekelum</span><span class="pop-sub">Edeseweg</span></button>
-    <button id="tp-nizo" class="pop-item tp-btn" data-teleport="nizo" type="button"><span class="pop-name">NIZO Food Research</span><span class="pop-sub">Kernhemseweg</span></button>
-    <button id="tp-ziekenhuis" class="pop-item tp-btn" data-teleport="ziekenhuis" type="button"><span class="pop-name">Ziekenhuis Gelderse Vallei</span><span class="pop-sub">Willy Brandtlaan</span></button>
-    <button id="tp-openluchttheater" class="pop-item tp-btn" data-teleport="openluchttheater" type="button"><span class="pop-name">De Eder Kuil</span><span class="pop-sub">Van Pabstlaan</span></button>
-    <button id="tp-reehorst" class="pop-item tp-btn" data-teleport="reehorst" type="button"><span class="pop-name">De ReeHorst</span><span class="pop-sub">Bennekomseweg</span></button>
-    <button id="tp-buitenzorg" class="pop-item tp-btn" data-teleport="buitenzorg" type="button"><span class="pop-name">Buitenzorg</span><span class="pop-sub">Amsterdamseweg</span></button>
-    <button id="tp-johannus-orgelbouw" class="pop-item tp-btn" data-teleport="johannus-orgelbouw" type="button"><span class="pop-name">Johannus Orgelbouw</span><span class="pop-sub">Keplerlaan</span></button>
-    <button id="tp-technova" class="pop-item tp-btn" data-teleport="technova" type="button"><span class="pop-name">Technova College</span><span class="pop-sub">Bovenbuurtweg</span></button>
-    <button id="tp-gasfabriek" class="pop-item tp-btn" data-teleport="gasfabriek" type="button"><span class="pop-name">De Gasfabriek</span><span class="pop-sub">Diamantstraat</span></button>
-    <button id="tp-tesqua" class="pop-item tp-btn" data-teleport="tesqua" type="button"><span class="pop-name">Tesqua</span><span class="pop-sub">Horsterweg</span></button>
-    <button id="tp-concordiamolen" class="pop-item tp-btn" data-teleport="concordiamolen" type="button"><span class="pop-name">Concordiamolen</span><span class="pop-sub">Accesweg · Centrum</span></button>
-    <button id="tp-stingerbol" class="pop-item tp-btn" data-teleport="stingerbol" type="button"><span class="pop-name">Stingerbol</span><span class="pop-sub">Kazerneterrein · Stationsgebied</span></button>
-    <button id="tp-grote-enka-schoorsteen" class="pop-item tp-btn" data-teleport="grote-enka-schoorsteen" type="button"><span class="pop-name">Grote ENKA-schoorsteen</span><span class="pop-sub">Grote Schoorsteenplein · ENKA</span></button>
-    <button id="tp-kleine-enka-schoorsteen" class="pop-item tp-btn" data-teleport="kleine-enka-schoorsteen" type="button"><span class="pop-name">Kleine ENKA-schoorsteen</span><span class="pop-sub">Kleine Schoorsteenplein · ENKA</span></button>
-    <button id="tp-astrant" class="pop-item tp-btn" data-teleport="astrant" type="button"><span class="pop-name">Astrant</span><span class="pop-sub">Kuiperplein</span></button>
-    <button id="tp-pegasus-flat" class="pop-item tp-btn" data-teleport="pegasus-flat" type="button"><span class="pop-name">Pegasusflat</span><span class="pop-sub">Van Eekelenflat · Ede-Zuid</span></button>
-    <button id="tp-plantion" class="pop-item tp-btn" data-teleport="plantion" type="button"><span class="pop-name">Plantion</span><span class="pop-sub">Wellensiekstraat · Ede-West</span></button>
-    <button id="tp-johan-willem-friso" class="pop-item tp-btn" data-teleport="johan-willem-friso" type="button"><span class="pop-name">Johan Willem Friso-kazerne</span><span class="pop-sub">Frisopark · Veluwse Poort</span></button>
-    <button id="tp-enka-westhal" class="pop-item tp-btn" data-teleport="enka-westhal" type="button"><span class="pop-name">ENKA Westhal en Poortgebouw</span><span class="pop-sub">Akulaan · ENKA</span></button>
-    <button id="tp-mauritskazerne" class="pop-item tp-btn" data-teleport="mauritskazerne" type="button"><span class="pop-name">Mauritskazerne</span><span class="pop-sub">Frisopark · Veluwse Poort</span></button>
-    <button id="tp-de-vuurvogel" class="pop-item tp-btn" data-teleport="de-vuurvogel" type="button"><span class="pop-name">De Vuurvogel</span><span class="pop-sub">Nachtegaallaan · Vogelbuurt</span></button>
-    <button id="tp-kappa-docie" class="pop-item tp-btn" data-teleport="kappa-docie" type="button"><span class="pop-name">Kappa Docie</span><span class="pop-sub">Noordplein · Stationsgebied</span></button>
-    <button id="tp-riedel-silos" class="pop-item tp-btn" data-teleport="riedel-silos" type="button"><span class="pop-name">Riedel-silo’s</span><span class="pop-sub">Frankeneng</span></button>
-    <button id="tp-stadspoort" class="pop-item tp-btn" data-teleport="stadspoort" type="button"><span class="pop-name">Winkelcentrum Stadspoort</span><span class="pop-sub">Doctor Willem Dreeslaan · Rietkampen</span></button>
-    <button id="tp-pathe-ede" class="pop-item tp-btn" data-teleport="pathe-ede" type="button"><span class="pop-name">Pathé Ede</span><span class="pop-sub">Laan der Verenigde Naties · Rietkampen</span></button>
-    <button id="tp-keetmolen" class="pop-item tp-btn" data-teleport="keetmolen" type="button"><span class="pop-name">De Keetmolen</span><span class="pop-sub">Stationsweg · Stationsgebied</span></button>
-    <button id="tp-de-peppel" class="pop-item tp-btn" data-teleport="de-peppel" type="button"><span class="pop-name">Zwembad en Sporthal De Peppel</span><span class="pop-sub">Peppelensteeg · Veldhuizen</span></button>
-    <button id="tp-che-campus" class="pop-item tp-btn" data-teleport="che-campus" type="button"><span class="pop-name">Christelijke Hogeschool Ede · Van der Knaaphal</span><span class="pop-sub">Oude Kerkweg · Kenniscampus</span></button>
-    <button id="tp-nieuwe-kerk" class="pop-item tp-btn" data-teleport="nieuwe-kerk" type="button"><span class="pop-name">Nieuwe Kerk</span><span class="pop-sub">Verlengde Maanderweg · Maandereng</span></button>
-    <button id="tp-noorderkerk" class="pop-item tp-btn" data-teleport="noorderkerk" type="button"><span class="pop-name">Noorderkerk · Edesche Concertzaal</span><span class="pop-sub">Amsterdamseweg · Centrum</span></button>
-    <button id="tp-sint-antoniuskerk" class="pop-item tp-btn" data-teleport="sint-antoniuskerk" type="button"><span class="pop-name">Sint-Antonius van Paduakerk</span><span class="pop-sub">Stationsweg · Stationsgebied</span></button>
-    <button id="tp-beatrixkerk" class="pop-item tp-btn" data-teleport="beatrixkerk" type="button"><span class="pop-name">Beatrixkerk</span><span class="pop-sub">Beatrixlaan · Ede-Zuid</span></button>
-    <button id="tp-lukkien" class="pop-item tp-btn" data-teleport="lukkien" type="button"><span class="pop-name">Lukkien</span><span class="pop-sub">Copernicuslaan · De Vallei</span></button>
-    <button id="tp-sherman-tank" class="pop-item tp-btn" data-teleport="sherman-tank" type="button"><span class="pop-name">Sherman Tank</span><span class="pop-sub">Arnhemseweg · Langenberg</span></button>
+    <div class="teleport-destinations">
+      <button id="tp-oudekerk" class="pop-item tp-btn" data-teleport="oudekerk" type="button"><span class="pop-name">Oude Kerk</span><span class="pop-sub">Torenstraat · Centrum</span></button>
+      <button id="tp-concordiamolen" class="pop-item tp-btn" data-teleport="concordiamolen" type="button"><span class="pop-name">Concordiamolen</span><span class="pop-sub">Accesweg · Centrum</span></button>
+      <button id="tp-raadhuis" class="pop-item tp-btn" data-teleport="raadhuis" type="button"><span class="pop-name">Raadhuis Ede</span><span class="pop-sub">Bergstraat · Centrum</span></button>
+      <button id="tp-huis-kernhem" class="pop-item tp-btn" data-teleport="huis-kernhem" type="button"><span class="pop-name">Huis Kernhem</span><span class="pop-sub">Landgoed Kernhem</span></button>
+      <button id="tp-openluchttheater" class="pop-item tp-btn" data-teleport="openluchttheater" type="button"><span class="pop-name">De Eder Kuil</span><span class="pop-sub">Van Pabstlaan</span></button>
+      <button id="tp-edewageningen" class="pop-item tp-btn" data-teleport="edewageningen" type="button"><span class="pop-name">Station Ede-Wageningen</span><span class="pop-sub">Polar Bearsplein · Stationsgebied</span></button>
+      <button id="tp-johan-willem-friso" class="pop-item tp-btn" data-teleport="johan-willem-friso" type="button"><span class="pop-name">Johan Willem Friso-kazerne</span><span class="pop-sub">Frisopark · Veluwse Poort</span></button>
+      <button id="tp-enka-westhal" class="pop-item tp-btn" data-teleport="enka-westhal" type="button"><span class="pop-name">ENKA Westhal en Poortgebouw</span><span class="pop-sub">Akulaan · ENKA</span></button>
+      <button id="tp-hoekelum" class="pop-item tp-btn" data-teleport="hoekelum" type="button"><span class="pop-name">Kasteel Hoekelum</span><span class="pop-sub">Landgoed Hoekelum</span></button>
+      <button id="tp-gasfabriek" class="pop-item tp-btn" data-teleport="gasfabriek" type="button"><span class="pop-name">De Gasfabriek</span><span class="pop-sub">Diamantstraat</span></button>
+    </div>
   </div>
 
   <div id="crossing-debug-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-labelledby="crossing-debug-title">
@@ -361,7 +337,7 @@
       <button id="mode-person" class="mode-btn" data-mode="person" type="button" title="Person [1]">
         <svg class="icon" aria-hidden="true"><use href="#i-walk"/></svg><span class="mode-label">Walk</span><kbd>1</kbd>
       </button>
-      <button id="mode-car" class="mode-btn active" data-mode="car" type="button" title="Car · Yellow Cab [2]">
+      <button id="mode-car" class="mode-btn active" data-mode="car" type="button" title="Car · Ede Taxi [2]">
         <svg class="icon" aria-hidden="true"><use href="#i-car"/></svg><span class="mode-label">Drive</span><kbd>2</kbd>
       </button>
       <button id="mode-cyclist" class="mode-btn" data-mode="cyclist" type="button" title="Cyclist [3]">

@@ -42,7 +42,8 @@ class Vector3 {
   normalize() { return this; }
 }
 
-function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}, globals = {}, meta = {}, landmarks = {} } = {}) {
+function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {},
+  facadeStyle = () => null, isEdeShed = () => false, globals = {}, meta = {}, landmarks = {} } = {}) {
   return loadModule(read('bag3d.js').replaceAll('export async function', 'async function'), {
     globals,
     imports: {
@@ -61,8 +62,9 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}
       './terrain.js': { terrainHeightAt: (x) => 10 + x / 2 },
       './ede-grade.js': { buildingPassageCuts: () => [], ...grade },
       './ede-building-bases.js': { EDE_BUILDING_BASES: [] },
+      './ede-neighbourhood-facades.js': { edeFacadeAt: facadeStyle, isEdeShed },
       './ede-landmark-sites.js': { landmarkBagExclusions: () => new Map(), landmarkBuildingCuts: () => [], ...landmarks },
-      './ede-facades.js': facadeStubs,
+      './ede-facades.js': { readBagBuildYears: async () => [], ...facadeStubs },
       './ede-facade-material.js': facadeStubs,
       './aerial-colors.js': { getAerialColors: () => false, ...aerial }
     }
@@ -88,6 +90,55 @@ test('one surveyed building base shifts every BAG primitive and leaves neighbour
     }
     assert.equal(attributes.position.getY(2), original[i].attributes.position.getY(2));
   });
+});
+
+test('BAG gables use their eaves as the top of the window area', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { bakeTile } = loadBag({ three: T, facadeStyle: () => ({ color: 0x995a45, layout: [3, 2.85, 0.6, 0.56] }) });
+  const wall = new T.BufferGeometry();
+  wall.setAttribute('position', new T.Float32BufferAttribute([
+    0,0,0, 6,0,0, 6,5.6,0, 3,8.8,0, 0,5.6,0
+  ], 3));
+  wall.setAttribute('normal', new T.Float32BufferAttribute([0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1], 3));
+  wall.setAttribute('_feature_id_0', new T.Float32BufferAttribute([0,0,0,0,0], 1));
+  wall.setIndex([0, 1, 2, 0, 2, 4, 4, 2, 3]);
+  const scene = new T.Group();
+  scene.add(new T.Mesh(wall));
+  const [geometry] = bakeTile({ scene }, new T.Matrix4());
+  const bay = geometry.attributes.edeFacadeBay;
+  assert.equal(bay.count, 5);
+  assert.deepEqual(Array.from(bay.array).filter((_, i) => i % 2 === 0), [0, 2, 2, 1, 0]);
+  for (let i = 0; i < bay.count; i++) assert.ok(Math.abs(bay.getY(i) - 5.6) < 1e-5);
+});
+
+test('sheds outside neighbourhood styles replace matching BAG meshes and keep adjacent houses', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { isEdeShed } = loadModule(read('ede-neighbourhood-facades.js'), {
+    imports: { './city-config.js': { toPts: () => [] }, './ede-geometry.js': {} }
+  });
+  assert.equal(isEdeShed({ kind: 'shed' }, 4), true);
+  assert.equal(isEdeShed({ kind: 'yes', heightSource: 'default' }, 18), true);
+  assert.equal(isEdeShed({ kind: 'yes', heightSource: 'default' }, 48), false);
+  assert.equal(isEdeShed({ kind: 'house', heightSource: 'default' }, 18), false);
+  assert.equal(isEdeShed({ kind: 'barn' }, 455), false);
+  assert.equal(isEdeShed({ kind: 'yes', name: 'Utility building', heightSource: 'default' }, 18), false);
+  const block = {
+    osmId: 'shed', area: 9, minX: 0, minZ: 0, maxX: 3, maxZ: 3, holes: [],
+    poly: [{ x: 0, z: 0 }, { x: 3, z: 0 }, { x: 3, z: 3 }, { x: 0, z: 3 }],
+    source: { kind: 'shed' }
+  };
+  const { bakeTile } = loadBag({ three: T, blocks: [block], isEdeShed });
+  const src = new T.BufferGeometry();
+  src.setAttribute('position', new T.Float32BufferAttribute([
+    0,0,0, 3,0,0, 0,8,3,
+    -2,0,0, 5,0,0, 0,8,3
+  ], 3));
+  src.setAttribute('normal', new T.Float32BufferAttribute(new Float32Array(18).fill(0), 3));
+  src.setAttribute('_feature_id_0', new T.Float32BufferAttribute([0,0,0,1,1,1], 1));
+  const scene = new T.Group();
+  scene.add(new T.Mesh(src));
+  const [geometry] = bakeTile({ scene }, new T.Matrix4());
+  assert.deepEqual(Array.from(geometry.index.array), [3, 4, 5]);
 });
 
 test('BAG coverage requires building geometry rather than the tile bounds', async () => {
@@ -222,6 +273,17 @@ test('the ten new landmarks exclude only their surveyed buildings across both bu
       assert.equal(excluded.has('0228100000999999'), false);
     }
   }
+});
+
+test('Concordia replaces the four surveyed building features without excluding its neighbors', async () => {
+  const { CONCORDIA_SURVEY } = await import('../js/ede-concordia-survey.js');
+  const { EDE_MODELED_LANDMARKS, landmarkBagExclusions, modeledLandmarkFootprints } = await import('../js/ede-landmark-sites.js');
+  const site = EDE_MODELED_LANDMARKS.find(item => item.id === 'concordiamolen');
+  const bounds = { min: { x: -423, z: -126 }, max: { x: -358, z: -63 } };
+  const surveyed = Object.values(CONCORDIA_SURVEY).map(part => part.id).sort();
+  assert.deepEqual([...landmarkBagExclusions(bounds).keys()].sort(), surveyed);
+  assert.equal(modeledLandmarkFootprints(site).length, surveyed.length + 1);
+  assert.ok(!landmarkBagExclusions(bounds).has('0228100000000210')); // Molenstaete and Concordiastaete
 });
 
 test('BAG removes the old ENKA shaft and keeps geometry outside its mapped footprint', async () => {
@@ -369,6 +431,25 @@ test('BAG colors roofs once per feature and keeps shared wall vertices and under
   ]);
 });
 
+test('Kernhem roof colours apply to pitched BAG faces when aerial imagery is unavailable', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const tiles = 0xb85b36;
+  const { bakeTile } = loadBag({ three: T, facadeStyle: () => ({ color: 0x995a45, layout: [3, 3, 0.6, 0.56], roofColor: tiles }) });
+  const source = new T.BufferGeometry();
+  source.setAttribute('position', new T.Float32BufferAttribute([0,6,0, 0,6,6, 6,9,0, -6,6,0, 0,0,0], 3));
+  source.setAttribute('normal', new T.Float32BufferAttribute([0,1,0, 0,1,0, 0,1,0, 0,1,0, 0,1,0], 3));
+  source.setAttribute('_feature_id_0', new T.Float32BufferAttribute([0,0,0,0,0], 1));
+  source.setIndex([0, 1, 2, 0, 3, 1, 0, 4, 1]);
+  const scene = new T.Group();
+  scene.add(new T.Mesh(source));
+  const [baked] = bakeTile({ scene }, new T.Matrix4());
+  const { color } = baked.attributes;
+  const reds = Array.from(baked.index.array, i => color.getX(i));
+  const expectedRed = new T.Color(tiles).r;
+  assert.ok(reds.slice(0, 3).every(red => Math.abs(red - expectedRed) < 1e-5));
+  assert.ok(reds.slice(3).every(red => Math.abs(red - expectedRed) > 0.05));
+});
+
 test('OSM roofs use their mapped tint on the slopes and the existing color on gable ends', () => {
   const source = read('buildings.js');
   const imports = Object.fromEntries(Array.from(source.matchAll(/from '([^']+)';/g), ([, specifier]) => [specifier, {}]));
@@ -392,6 +473,10 @@ test('OSM roofs use their mapped tint on the slopes and the existing color on ga
   assert.deepEqual(Array.from(roof.attributes.color.array), [...tint, ...fallback, ...fallback]);
   colorEdeRoof(roof, 'unmapped', fallback, []);
   assert.deepEqual(Array.from(roof.attributes.color.array), [...fallback, ...fallback, ...fallback]);
+  const tiles = [0.5, 0.25, 0.125];
+  colorEdeRoof(roof, 'roof-id', fallback, [], tiles);
+  assert.equal(sampledId, 'unmapped');
+  assert.deepEqual(Array.from(roof.attributes.color.array), [...tiles, ...fallback, ...fallback]);
 });
 
 test('shop signs keep the same wall position and inherit facade or local street height', () => {

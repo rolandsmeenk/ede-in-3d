@@ -982,7 +982,7 @@ function buildRoofRails(spec) {
   return list;
 }
 
-// NYC medallion roof light: a lit, gently tapered box on a black mount
+// Illuminated taxi roof sign on a black mount
 function taxiSignPlacement(spec) {
   const L = carLayout(spec);
   const cab = spec.cabin;
@@ -1283,58 +1283,51 @@ function createCarWheelMaterial({ instanced = false, style = 0, wheelRadius = BO
 const CAR_DECAL_ROWS = 8;
 const POLICE_PLATE_ROW = 4;
 const POLICE_WORDMARK_ROW = 5;
+const TAXI_PLATE_ROW = 6;
+const TAXI_SIGN_ROW = 7;
 
-// Generated plates and the police wordmark share an atlas and use mipmaps for distant traffic.
+// Model 27.1 uses the EU band. The light-blue taxi plate uses model 27.30.
 function carPlateTexture() {
   if (_carPlateTexture) return _carPlateTexture;
   const canvas = document.createElement('canvas');
-  canvas.width = 128;
+  canvas.width = 256;
   canvas.height = CAR_DECAL_ROWS * 64;
   const ctx = canvas.getContext('2d');
-  const rows = [
-    { bg: '#f2b718', bar: '#14233c', fg: '#14233c', label: 'KBM-4728' },
-    { bg: '#e8edf2', bar: '#162b4c', fg: '#162b4c', label: 'JTR-8319' },
-    { bg: '#f2b718', bar: '#14233c', fg: '#14233c', label: 'HXL-2506' },
-    { bg: '#f0b416', bar: '#14233c', fg: '#14233c', label: 'T748219C' }
-  ];
-  rows.forEach(({ bg, bar, fg, label }, row) => {
-    const y0 = (CAR_DECAL_ROWS - rows.length + row) * 64;
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, y0, 128, 64);
-    ctx.fillStyle = bar;
-    ctx.fillRect(0, y0, 128, 13);
-    ctx.fillRect(0, y0 + 56, 128, 8);
-    ctx.fillStyle = bg;
-    ctx.font = 'bold 9px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('NEW YORK', 64, y0 + 7);
-    ctx.fillStyle = fg;
-    ctx.font = 'bold 21px monospace';
-    ctx.fillText(label, 64, y0 + 35);
+  const labels = ['54-GKV-2', 'P-274-XK', '81-NTB-7', 'G-631-VD', 'ED-07-P', null, 'GX-123-B'];
+  const atRow = (row) => (CAR_DECAL_ROWS - 1 - row) * 64;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  labels.forEach((label, row) => {
+    if (!label) return;
+    const y = atRow(row), taxi = row === TAXI_PLATE_ROW;
+    ctx.fillStyle = '#141921';
+    ctx.fillRect(0, y, 256, 64);
+    ctx.fillStyle = taxi ? '#80c3e5' : '#ffce21';
+    ctx.fillRect(5, y + 4, 246, 56);
+    if (!taxi) {
+      ctx.fillStyle = '#154795';
+      ctx.fillRect(5, y + 4, 24, 56);
+      ctx.fillStyle = '#ffdd40';
+      for (let i = 0; i < 12; i++) {
+        const angle = i * Math.PI / 6;
+        ctx.fillRect(16.2 + Math.cos(angle) * 6, y + 21 + Math.sin(angle) * 7, 1.5, 1.5);
+      }
+      ctx.fillStyle = '#f2f5ff';
+      ctx.font = 'bold 12px Arial, sans-serif';
+      ctx.fillText('NL', 17, y + 45);
+    }
+    ctx.fillStyle = '#13191d';
+    ctx.font = 'bold 48px Arial, sans-serif';
+    ctx.fillText(label, taxi ? 128 : 142, y + 34, taxi ? 221 : 209);
   });
-  // Canvas rows count from the top, while the decal UVs count from the bottom.
-  const plateY = (CAR_DECAL_ROWS - 1 - POLICE_PLATE_ROW) * 64;
-  const wordmarkY = (CAR_DECAL_ROWS - 1 - POLICE_WORDMARK_ROW) * 64;
-  ctx.fillStyle = '#f6bf18';
-  ctx.fillRect(0, plateY, 128, 64);
-  ctx.fillStyle = '#174895';
-  ctx.fillRect(0, plateY, 15, 64);
-  ctx.fillStyle = '#ffda38';
-  ctx.font = 'bold 11px sans-serif';
-  ctx.fillText('✦', 7, plateY + 19);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 9px sans-serif';
-  ctx.fillText('NL', 7, plateY + 46);
-  ctx.fillStyle = '#141921';
-  ctx.font = 'bold 23px sans-serif';
-  ctx.fillText('ED-07-P', 71, plateY + 33);
-
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(0, wordmarkY, 128, 64);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 27px sans-serif';
-  ctx.fillText('POLITIE', 64, wordmarkY + 32);
+  for (const [row, label] of [[POLICE_WORDMARK_ROW, 'POLITIE'], [TAXI_SIGN_ROW, 'TAXI']]) {
+    const y = atRow(row);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, y, 256, 64);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 41px Arial, sans-serif';
+    ctx.fillText(label, 128, y + 33, 238);
+  }
   _carPlateTexture = new THREE.CanvasTexture(canvas);
   _carPlateTexture.colorSpace = THREE.SRGBColorSpace;
   _carPlateTexture.anisotropy = 16;
@@ -1463,7 +1456,6 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
 
   const isPolice = fixed ? float(0.0) : isLivery(1.0);
   const isBoro = fixed ? float(0.0) : isLivery(2.0);
-  const isTLC = fixed ? float(0.0) : isLivery(3.0);
   const isTwoTone = fixed ? float(0.0) : max(isLivery(4.0), step(abs(trimCode.sub(3.0)), 0.25));
   const isBlackout = step(abs(trimCode.sub(2.0)), 0.25);
   const hasChrome = max(float(spec.chrome ? 1.0 : 0.0), step(abs(trimCode.sub(1.0)), 0.25)).mul(one.sub(isBlackout));
@@ -1551,10 +1543,12 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
       ledBar: max(band(tlUV.y.sub(tlH * 0.36), 0.0085, fwY), band(tlUV.y.add(tlH * 0.02), 0.0085, fwY))
     };
   };
-  const signGlyphMask = () => smoothstep(0.25, 0.58, sin(p.x.mul(90.0)))
-    .mul(band(p.x, 0.17, fwX))
-    .mul(band(p.y.sub(signY), 0.042, fwY))
-    .mul(fadeFine(fwX));
+  const signGlyphMask = () => spec.sign
+    ? texture(carPlateTexture(), vec2(
+      clamp(p.x.div(mix(float(-0.43), float(0.43), step(0, n.z))).add(0.5), 0.015, 0.985),
+      clamp(p.y.sub(signY - 0.025).div(0.09).add(0.5), 0.04, 0.96).add(TAXI_SIGN_ROW).div(CAR_DECAL_ROWS)
+    )).level(0).r.mul(band(p.x, 0.21, fwX)).mul(fadeFine(fwX))
+    : float(0);
   const chmslMask = (rearGlass) => spec.barnDoors
     ? rrect(vec2(p.x, p.y.sub(spec.barnDoors[1] + 0.055)), vec2(0.16, 0.015), 0.005, fwXY)
         .mul(smoothstep(-0.15, -0.45, n.z))
@@ -1568,14 +1562,15 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
     const outCol = vec3(color(0x181b1f)).toVar();
 
     // Sample plate texture outside If() so hardware mipmaps + anisotropy filter cleanly without derivative issues
-    const plateVariant = mix(floor(fract(paint.r.mul(7).add(paint.g.mul(13)).add(paint.b.mul(17)).add(isTLC.mul(0.75))).mul(4)), POLICE_PLATE_ROW, isPolice);
-    const plateHalfWidth = mix(float(0.155), float(0.245), isPolice);
+    const plateVariant = spec.name === 'taxi' ? float(TAXI_PLATE_ROW)
+      : mix(floor(fract(paint.r.mul(7).add(paint.g.mul(13)).add(paint.b.mul(17))).mul(4)), POLICE_PLATE_ROW, isPolice);
+    const plateHalfWidth = float(0.26);
     const isFrontSide = smoothstep(-0.02, 0.02, n.z);
     const plateSignX = plateHalfWidth.mul(mix(float(-2), float(2), isFrontSide));
     const plateCenterY = mix(float(plateR), float(plateF), isFrontSide);
     const plateUV = vec2(
       clamp(p.x.div(plateSignX).add(0.5), 0.02, 0.98),
-      clamp(p.y.sub(plateCenterY).div(0.115).add(0.5), 0.06, 0.94).add(plateVariant).div(CAR_DECAL_ROWS)
+      clamp(p.y.sub(plateCenterY).div(0.11).add(0.5), 0.02, 0.98).add(plateVariant).div(CAR_DECAL_ROWS)
     );
     const plateCol = texture(carPlateTexture(), plateUV).rgb;
     const doorTextZ = p.z.sub(0.18);
@@ -1698,7 +1693,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
         const lampColor = mix(mix(lampBezel, color(0xf4f8ff), headlightLens), color(0xffffff), drl);
         bCol.assign(mix(bCol, mix(lampColor, color(0xb85e16), turnFront), headlight));
 
-        const frontPlateEdge = rrectEdge(vec2(p.x, p.y.sub(plateF)), vec2(plateHalfWidth, mix(float(0.055), float(0.048), isPolice)), 0.008, fwXY);
+        const frontPlateEdge = rrectEdge(vec2(p.x, p.y.sub(plateF)), vec2(plateHalfWidth, 0.055), 0.008, fwXY);
         const plateRecessF = cov(frontPlateEdge.d.sub(0.015), frontPlateEdge.w).mul(front);
         const plateFront = cov(frontPlateEdge.d, frontPlateEdge.w).mul(front);
         bCol.assign(mix(bCol, color(0x1e2227), plateRecessF));
@@ -1715,7 +1710,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
           bCol.assign(mix(bCol, color(0x18448a).mul(ao), blue.mul(panel)));
           bCol.assign(mix(bCol, color(0xeb482d).mul(ao), red.mul(panel)));
         });
-        const rearPlateEdge = rrectEdge(vec2(p.x, p.y.sub(plateR)), vec2(plateHalfWidth, mix(float(0.06), float(0.048), isPolice)), 0.008, fwXY);
+        const rearPlateEdge = rrectEdge(vec2(p.x, p.y.sub(plateR)), vec2(plateHalfWidth, 0.055), 0.008, fwXY);
         const platePocket = rrect(vec2(p.x, p.y.sub(plateR + 0.01)), vec2(0.24, 0.105), 0.03, fwXY).mul(rear);
         let trunkSeam;
         if (spec.barnDoors) {
@@ -1786,10 +1781,6 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
         : float(0.0);
 
       const glassBase = mix(color(0x0a1016), color(0x1a2632), max(smoothstep(0.2, 0.9, n.y), fresnel.mul(0.55)));
-      const tlcSticker = rrect(vec2(p.x.add(bc.x - 0.16), p.z.sub(cab.cowl - 0.14)), vec2(0.045, 0.03), 0.008, fwXZ)
-        .mul(frontGlass)
-        .mul(isTLC);
-      const glassCol = mix(glassBase, color(0x3a88e8), tlcSticker.mul(0.65));
       let roofPaint = mix(basePaint.mul(ao), color(0x111418), isTwoTone.mul(cov(float(rf.y - 0.04).sub(p.y), fwY)));
       if (spec.slidingDoor) {
         const [sdFront, sdRear, sdTop] = spec.slidingDoor;
@@ -1815,7 +1806,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
         roofPaint = mix(roofPaint.mul(one.sub(barnSeamW.mul(0.58))), color(0x14171b), barnHinge);
       }
       const wCol = mix(
-        mix(mix(mix(roofPaint, color(0x111315), max(seal, beltStrip)), glassCol, glass), color(0xd2d8de), chromeBelt),
+        mix(mix(mix(roofPaint, color(0x111315), max(seal, beltStrip)), glassBase, glass), color(0xd2d8de), chromeBelt),
         color(0x6a0a0e),
         chmsl
       );

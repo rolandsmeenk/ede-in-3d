@@ -5,22 +5,25 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const read = (path) => readFileSync(join(__dirname, '..', path), 'utf8');
-let TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, ISLAND_BOUNDS;
+let TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, waterAt, ISLAND_BOUNDS;
 test.before(async () => {
-  ({ TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, ISLAND_BOUNDS } = await import('../js/city-config.js'));
+  ({ TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, waterAt, ISLAND_BOUNDS } = await import('../js/city-config.js'));
 });
 
-test('every teleport button has a destination on a real roadway in Ede', () => {
+test('the ten scenic teleport buttons land in clear space and face their targets', () => {
   const buttons = [...read('index.html').matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(Object.keys(TELEPORT_LOCATIONS).sort(), buttons.sort());
-  for (const [name, point] of Object.entries(TELEPORT_LOCATIONS)) {
-    assert.ok(Number.isFinite(point.heading), `${name} has a heading`);
-    const block = blockAt(point.x, point.z);
-    assert.ok(!block || block.sidewalk, `${name} lands outside building blocks`);
-    assert.ok(point.x > ISLAND_BOUNDS.minX && point.x < ISLAND_BOUNDS.maxX);
-    assert.ok(point.z > ISLAND_BOUNDS.minZ && point.z < ISLAND_BOUNDS.maxZ);
-    const nearby = nearestRoads(point.x, point.z, 20);
-    assert.ok(nearby.some(({ road, dist }) => dist < road.w / 2), `${name} lands within a street's width`);
+  assert.equal(buttons.length, 10);
+  const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([, point]) => point.focus);
+  assert.deepEqual(scenic.map(([name]) => name).sort(), buttons.sort());
+  for (const [name, point] of scenic) {
+    const { x, z, focus } = point;
+    const block = blockAt(x, z);
+    assert.ok(!block || block.sidewalk || block.park, `${name} lands outside buildings`);
+    assert.ok(!waterAt(x, z), `${name} lands outside water`);
+    assert.ok(x > ISLAND_BOUNDS.minX && x < ISLAND_BOUNDS.maxX);
+    assert.ok(z > ISLAND_BOUNDS.minZ && z < ISLAND_BOUNDS.maxZ);
+    assert.ok(Number.isFinite(focus.height) && focus.height > 0);
+    assert.equal(point.heading, Math.atan2(focus.x - x, focus.z - z));
   }
 });
 
@@ -36,13 +39,12 @@ test('the player starts on Driehoek and the Oude Kerk teleport faces the church 
   assert.ok(alignment > 0.999, 'face the church');
 });
 
-test('the Openluchttheater teleport lands on Van Pabstlaan facing the venue', () => {
+test('the Eder Kuil teleport frames the stage from above the seating', () => {
   const point = TELEPORT_LOCATIONS.openluchttheater;
   const venue = LANDMARK_SITES['Openluchttheater Ede'];
-  const dx = venue.x - point.x, dz = venue.z - point.z;
   assert.match(point.name, /^van Pabstlaan$/i);
-  assert.ok(Math.hypot(dx, dz) < 100);
-  assert.equal(point.heading, Math.atan2(dx, dz));
+  assert.ok(point.z > point.focus.z && point.focus.z > venue.z);
+  assert.ok(Math.hypot(point.focus.x - point.x, point.focus.z - point.z) < 40);
 });
 
 test('preset and map teleports share arrival resets and mark the resolved landing point', () => {
@@ -55,12 +57,15 @@ test('preset and map teleports share arrival resets and mark the resolved landin
   let map;
   const environment = {
     TELEPORT_LOCATIONS,
+    terrainHeightAt: () => 4,
     controllerManager: {
       teleportActiveTo: (...args) => { calls.push(['teleport', ...args]); return landed; }
     },
     touchControls: { reset: () => calls.push(['touch']) },
     gamepadControls: { reset: () => calls.push(['gamepad']) },
-    cameraSystem: { resetForTeleport: () => calls.push(['camera']) },
+    cameraSystem: {
+      resetForTeleport: (focus) => calls.push(focus ? ['camera', focus.x, focus.y, focus.z] : ['camera'])
+    },
     selectCamera: (...args) => calls.push(['selectCamera', ...args]),
     getLocationLabel: (x, z) => `${x}, ${z}`,
     cityBlocks: { allBlocks: [] },
@@ -78,8 +83,10 @@ test('preset and map teleports share arrival resets and mark the resolved landin
   for (const [name, point] of Object.entries(TELEPORT_LOCATIONS)) {
     calls.length = 0;
     handlers.get(name)();
+    const focus = point.focus;
+    const camera = focus ? ['camera', focus.x, focus.height + 4, focus.z] : ['camera'];
     assert.deepEqual(calls, [
-      ['teleport', point.x, point.z, point.heading, null], ['touch'], ['gamepad'], ['camera'], ['selectCamera', 'chase', true]
+      ['teleport', point.x, point.z, point.heading, null], ['touch'], ['gamepad'], camera, ['selectCamera', 'chase', true]
     ]);
     assert.equal(map.waypoint.x, landed.x);
     assert.equal(map.waypoint.z, landed.z);
