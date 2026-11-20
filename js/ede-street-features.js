@@ -1,4 +1,4 @@
-import { roadEdgeKey } from './road-network.js';
+import { roadEdgeKey } from './road-network.js?v=20261120-acv-truck';
 
 export function streetRoadKey(edge) {
   return `${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer ?? 0}`;

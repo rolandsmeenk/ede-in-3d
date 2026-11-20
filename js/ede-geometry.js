@@ -233,7 +233,7 @@ function emitSurface(polygon, positions, lift = 0) {
   }
 }
 
-export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false) {
+export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false, keepAttribute) {
   const field = getTerrain();
   if (!field || !geometry) return geometry;
   const { step, minX, minZ, columns, rows } = field;
@@ -320,13 +320,32 @@ export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavemen
     } else emit(polygon);
   };
   const count = index ? index.count : position.count;
-  const point = i => {
-    const v = index ? index.getX(i) : i;
-    return { x: position.getX(v), z: position.getZ(v) };
-  };
-  for (let i = 0; i < count; i += 3) visit([point(i), point(i + 1), point(i + 2)]);
+  const source = keepAttribute && geometry.getAttribute(keepAttribute);
+  const attributeValues = [];
+  const vertexIndex = i => index ? index.getX(i) : i;
+  const point = i => ({ x: position.getX(i), z: position.getZ(i) });
+  for (let i = 0; i < count; i += 3) {
+    const ia = vertexIndex(i), ib = vertexIndex(i + 1), ic = vertexIndex(i + 2);
+    const a = point(ia), b = point(ib), c = point(ic);
+    const start = positions.length;
+    visit([a, b, c]);
+    if (!source || positions.length === start) continue;
+    // Every emitted point stays on this source triangle in plan.
+    const bx = b.x - a.x, bz = b.z - a.z, cx = c.x - a.x, cz = c.z - a.z;
+    const det = bx * cz - bz * cx;
+    for (let j = start; j < positions.length; j += 3) {
+      const x = positions[j] - a.x, z = positions[j + 2] - a.z;
+      const wb = (x * cz - z * cx) / det, wc = (bx * z - bz * x) / det;
+      const wa = 1 - wb - wc;
+      for (let k = 0; k < source.itemSize; k++) {
+        attributeValues.push(wa * source.getComponent(ia, k) + wb * source.getComponent(ib, k) + wc * source.getComponent(ic, k));
+      }
+    }
+  }
   geometry.dispose();
-  return surfaceGeometry(positions);
+  const result = surfaceGeometry(positions);
+  if (source) result.setAttribute(keepAttribute, new THREE.Float32BufferAttribute(attributeValues, source.itemSize));
+  return result;
 }
 
 export function drapeEdeVertices(geometry) {

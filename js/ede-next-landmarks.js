@@ -3,7 +3,7 @@ import { CivicBatch, along, facePanel, offsetEdge, wallExtent, wallColliders, po
 import { edePolygonGeometry, edeStrip, drapeEdeSurface } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
 import { pointInPoly } from './city-config.js';
-import { KUIL_SHELLS, PALLAS_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS, TESQUA_COURTS } from './ede-next-survey.js';
+import { KUIL_SHELLS, PALLAS_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS } from './ede-next-survey.js';
 
 const steel = 0x515c60, blueGlass = 0x536e72, pale = 0xd0d0bf;
 const up = new THREE.Vector3(0, 1, 0);
@@ -15,11 +15,6 @@ function beam(batch, a, b, radius, color) {
   const rotation = new THREE.Quaternion().setFromUnitVectors(up, direction.divideScalar(length));
   batch.solid(new THREE.CylinderGeometry(radius, radius, length, 6)
     .applyQuaternion(rotation).translate(...start.lerp(end, 0.5).toArray()), color);
-}
-
-function groundPatch(batch, shape, tint, lift = 0.055) {
-  const ring = shape.map(([x, z]) => ({ x, z }));
-  batch.solid(drapeEdeSurface(edePolygonGeometry(ring, [], lift)), tint);
 }
 
 function top(batch, a, b, c, d, color) {
@@ -244,41 +239,6 @@ export function createPallasAthene() {
   return group;
 }
 
-function courtPoint(ring, u, v) {
-  return [0, 1].map(k => (1 - v) * ((1 - u) * ring[0][k] + u * ring[1][k]) +
-    v * ((1 - u) * ring[3][k] + u * ring[2][k]));
-}
-
-function courts(batch, details) {
-  for (const [kind, ring, count] of TESQUA_COURTS) {
-    const tennis = kind.startsWith('clay'), longX = kind === 'clay-cross';
-    groundPatch(batch, ring, tennis ? 0xac704f : 0x477c9d);
-    for (let i = 0; i < count; i++) {
-      const m = (s, t) => longX ? courtPoint(ring, (i + t) / count, s) : courtPoint(ring, (i + s) / count, t);
-      const lines = [
-        [[0.14,0.14],[0.86,0.14]], [[0.14,0.86],[0.86,0.86]],
-        [[0.14,0.14],[0.14,0.86]], [[0.86,0.14],[0.86,0.86]],
-        [[0.14,0.29],[0.86,0.29]], [[0.14,0.71],[0.86,0.71]], [[0.5,0.29],[0.5,0.71]],
-      ];
-      if (tennis) lines.push([[0.23,0.14],[0.23,0.86]], [[0.77,0.14],[0.77,0.86]]);
-      for (const [a, b] of lines) {
-        const [ax, az] = m(...a), [bx, bz] = m(...b);
-        details.solid(drapeEdeSurface(edeStrip({ x: ax, z: az }, { x: bx, z: bz }, 0.045, 0.073)), 0xf3eddc);
-      }
-      const net = [m(0.13, 0.5), m(0.87, 0.5)].map(([x, z]) => [x, terrainHeightAt(x, z) + 0.97, z]);
-      beam(details, ...net, 0.025, 0xf1eee2);
-      for (const p of net) beam(details, [p[0], p[1] - 0.9, p[2]], p, 0.037, steel);
-    }
-    if (kind !== 'padel') continue;
-    for (let i = 0; i < 4; i++) {
-      const [x, z] = ring[i], [bx, bz] = ring[(i + 1) % 4];
-      const y = terrainHeightAt(x, z), by = terrainHeightAt(bx, bz);
-      beam(details, [x, y, z], [x, y + 2.8, z], 0.043, steel);
-      beam(details, [x, y + 2.8, z], [bx, by + 2.8, bz], 0.035, steel);
-    }
-  }
-}
-
 export function createTesqua() {
   const batch = new CivicBatch(), details = new CivicBatch(), colliders = [];
   placeShell(batch, colliders, TESQUA_SHELLS, {
@@ -293,7 +253,6 @@ export function createTesqua() {
       }
     },
   });
-  courts(batch, details);
   const a = { x: -1864.8, z: 1298.25 }, b = { x: -1852.2, z: 1295.91 };
   const normal = { x: -0.183, z: -0.983 };
   const lift = terrainHeightAt(-1858.5, 1292);

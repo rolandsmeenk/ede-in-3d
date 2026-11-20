@@ -186,8 +186,23 @@ test('directional sign faces look toward the approach at the baked NAP height', 
   const { position, normal } = face.geometry.attributes;
   assert.equal(face.material.map, texture);
   assert.ok(normal.getX(0) > 0.99);
-  assert.ok(Math.abs(position.getX(0) - 12.05) < 1e-6);
+  assert.ok(Math.abs(position.getX(0) - 12.0475) < 1e-6);
   assert.equal(position.getY(0), 6);
+});
+
+test('a directional panel has a single front surface and its roadside post sits behind it', async () => {
+  const { buildEdeDetail, THREE } = await fixture();
+  const { group } = buildEdeDetail(new THREE.Scene(), [{ id: 'roadside', source: 'nbd', type: 'directionalSign',
+    position: [0, 0], centerY: 28.54, angle: 0, width: 2, height: 2, support: true, uv: [0, 0, 0.5, 0.5] }],
+    { nbdTexture: new THREE.Texture() });
+  group.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(new THREE.Vector3(0.025, 5.2, 25), new THREE.Vector3(0, 0, -1));
+  const panel = group.children.find(mesh => mesh.name === 'NBD detail directionalSign');
+  const backing = group.children.find(mesh => mesh.name === 'NBD detail solid');
+  const support = group.children.find(mesh => mesh.name === 'NBD detail pole');
+  assert.equal(ray.intersectObject(group, true)[0].object, panel);
+  assert.ok(ray.intersectObject(backing)[0].point.z < -0.04);
+  assert.ok(ray.intersectObject(support)[0].point.z < -0.04);
 });
 
 test('BGT stages admit only the intended props and fetch the land mask for all', async () => {

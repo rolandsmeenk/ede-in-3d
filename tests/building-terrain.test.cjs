@@ -324,6 +324,9 @@ test('surveyed landmarks exclude only their surveyed buildings across both build
   const { NIZO_SURVEY, GELDERSE_VALLEI_SURVEY } = await import('../js/ede-research-survey.js');
   const { KUIL_SHELLS, PALLAS_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS } = await import('../js/ede-next-survey.js');
   const { REEHORST, BUITENZORG, JOHANNUS } = await import('../js/ede-venue-survey.js');
+  const { OTHER_CHURCH_SHELLS } = await import('../js/ede-other-church-shells.js');
+  const { CHURCH_STYLES } = await import('../js/ede-church-styles.js');
+  assert.deepEqual(Object.keys(CHURCH_STYLES).sort(), Object.keys(OTHER_CHURCH_SHELLS).sort());
   const sites = new Map(landmarks.EDE_MODELED_LANDMARKS.map(site => [site.id, site]));
   const osm = new Set(EDE_DATA.buildings.map(building => building.id));
   const newSites = [
@@ -333,7 +336,8 @@ test('surveyed landmarks exclude only their surveyed buildings across both build
     ['reehorst', [REEHORST]], ['buitenzorg', [BUITENZORG]], ['johannus-orgelbouw', [JOHANNUS]],
     ['technova', TECHNOVA_SHELLS],
     ['gasfabriek', ['works', 'purifier', 'wkeeper'].map(key => ESTATE_SURVEY[key])],
-    ['tesqua', TESQUA_SHELLS], ['pallas-athene', PALLAS_SHELLS]
+    ['tesqua', TESQUA_SHELLS], ['pallas-athene', PALLAS_SHELLS],
+    ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, shell]) => [id, [shell]]),
   ];
   for (const [key, models] of newSites) {
     const site = sites.get(key);

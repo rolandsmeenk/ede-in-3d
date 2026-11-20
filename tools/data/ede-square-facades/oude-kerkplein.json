@@ -1,0 +1,425 @@
+{
+  "version": 1,
+  "walls": [
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "37.54,51.72,29.52,48.34,0.00",
+      "a": [37.54, 51.72],
+      "b": [29.52, 48.34],
+      "minY": -0.46,
+      "height": 14.88,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.76,
+        "wallMaterial": "brick",
+        "wallColor": "#936248",
+        "frameColor": "#dce0dc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.35, "y": 0.23, "width": 2.12, "height": 3.08, "panes": 2, "frame": 0.084, "depth": 0.14, "transom": 0.77},
+          {"kind": "door", "x": 2.76, "y": 0.19, "width": 1.84, "height": 3.02, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "storefront", "x": 4.88, "y": 0.23, "width": 3.25, "height": 3.08, "panes": 3, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 0.62, "y": 4.25, "width": 2.7, "height": 2.28, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 4.54, "y": 4.25, "width": 3.37, "height": 2.28, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.62, "y": 7.17, "width": 2.7, "height": 2.21, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 4.54, "y": 7.17, "width": 3.37, "height": 2.21, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.62, "y": 10.08, "width": 2.7, "height": 1.78, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 4.54, "y": 10.08, "width": 3.37, "height": 1.78, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "East terrace corner by Oude Kerkplein 20. Light window framing and broad café glazing follow the oblique overview. Recesses and the partially screened upper openings are estimates."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "18.65,48.45,8.39,45.92,0.00",
+      "a": [18.65, 48.45],
+      "b": [8.39, 45.92],
+      "minY": -0.46,
+      "height": 7.31,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.76,
+        "wallMaterial": "brick",
+        "wallColor": "#864f40",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.38, "y": 0.23, "width": 2.84, "height": 2.63, "panes": 3, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "door", "x": 3.53, "y": 0.19, "width": 1.55, "height": 2.57, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "storefront", "x": 5.41, "y": 0.23, "width": 4.36, "height": 2.63, "panes": 4, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 0.64, "y": 4.14, "width": 1.24, "height": 1.81, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 2.59, "y": 4.14, "width": 1.24, "height": 1.81, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 4.52, "y": 4.14, "width": 1.24, "height": 1.81, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 6.61, "y": 4.14, "width": 1.24, "height": 1.81, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 8.67, "y": 4.14, "width": 1.24, "height": 1.81, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "Lower brick section between the east terrace and the east gable. Rectangular white sashes and broad display bays were estimated from the oblique reference."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "6.98,45.83,3.22,44.24,0.00",
+      "a": [6.98, 45.83],
+      "b": [3.22, 44.24],
+      "minY": -0.46,
+      "height": 16.46,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.84,
+        "wallMaterial": "brick",
+        "wallColor": "#a2664e",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.34, "y": 0.23, "width": 2.15, "height": 2.63, "panes": 2, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "door", "x": 2.78, "y": 0.19, "width": 1.06, "height": 2.57, "panes": 1, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "window", "x": 0.83, "y": 4.53, "width": 1.72, "height": 2.18, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.83, "y": 7.38, "width": 1.72, "height": 2.18, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 2.59, "y": 10.26, "width": 1.43, "height": 2.13, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "One half of the east red-brick gable, with two rows of tall sashes and one divided attic window across the BAG seam. Lower bays partly screened by terrace furniture."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "3.22,44.24,0.10,42.93,0.00",
+      "a": [3.22, 44.24],
+      "b": [0.1, 42.93],
+      "minY": -0.46,
+      "height": 16.46,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.84,
+        "wallMaterial": "brick",
+        "wallColor": "#a2664e",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.32, "y": 0.23, "width": 2.71, "height": 2.63, "panes": 3, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 0.83, "y": 4.53, "width": 1.65, "height": 2.18, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.83, "y": 7.38, "width": 1.65, "height": 2.18, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.05, "y": 10.26, "width": 1.18, "height": 2.13, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "One half of the east red-brick gable, with two rows of tall sashes and one divided attic window across the BAG seam. Lower bays partly screened by terrace furniture."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "-0.65,42.85,-3.31,41.73,0.00",
+      "a": [-0.65, 42.85],
+      "b": [-3.31, 41.73],
+      "minY": -0.46,
+      "height": 14.67,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.85,
+        "wallMaterial": "brick",
+        "wallColor": "#c59c5e",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#6f746d",
+        "openings": [
+          {"kind": "storefront", "x": 0.21, "y": 0.23, "width": 2.21, "height": 2.44, "panes": 2, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 0.36, "y": 4.49, "width": 1.54, "height": 2.11, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.36, "y": 7.42, "width": 1.54, "height": 2.04, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.4, "y": 10.51, "width": 1.64, "height": 3.08, "panes": 1, "frame": 0.08, "depth": 0.15, "sill": 0.085, "arch": "round"}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/a2c3f8efb653cfddd99cabc500375c2d.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.91, "referenceDate": "2026-11-20"},
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "Warm yellow-brick bay and tower. White casements follow the photographed vertical rhythm. The shaded arches use the same procedural opening geometry."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "-3.31,41.73,-4.98,41.03,0.00",
+      "a": [-3.31, 41.73],
+      "b": [-4.98, 41.03],
+      "minY": -0.46,
+      "height": 14.67,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.85,
+        "wallMaterial": "brick",
+        "wallColor": "#c59c5e",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#6f746d",
+        "openings": [
+          {"kind": "door", "x": 0.19, "y": 0.19, "width": 1.4, "height": 2.42, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "window", "x": 0.21, "y": 4.49, "width": 1.29, "height": 2.11, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.21, "y": 7.42, "width": 1.29, "height": 2.04, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.2, "y": 10.51, "width": 1.32, "height": 2.76, "panes": 1, "frame": 0.08, "depth": 0.15, "sill": 0.085, "arch": "round"}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/a2c3f8efb653cfddd99cabc500375c2d.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.91, "referenceDate": "2026-11-20"},
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "Warm yellow-brick bay and tower. White casements follow the photographed vertical rhythm. The shaded arches use the same procedural opening geometry."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "-4.98,41.03,-6.55,40.36,0.00",
+      "a": [-4.98, 41.03],
+      "b": [-6.55, 40.36],
+      "minY": -0.46,
+      "height": 10.99,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.85,
+        "wallMaterial": "brick",
+        "wallColor": "#c59c5e",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#6f746d",
+        "openings": [
+          {"kind": "storefront", "x": 0.18, "y": 0.23, "width": 1.24, "height": 2.42, "panes": 2, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 0.23, "y": 4.49, "width": 1.18, "height": 2.11, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.23, "y": 7.42, "width": 1.18, "height": 2.04, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/a2c3f8efb653cfddd99cabc500375c2d.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.91, "referenceDate": "2026-11-20"},
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "Warm yellow-brick bay and tower. White casements follow the photographed vertical rhythm. The shaded arches use the same procedural opening geometry."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "-7.02,40.47,-10.75,38.90,0.00",
+      "a": [-7.02, 40.47],
+      "b": [-10.75, 38.9],
+      "minY": -0.46,
+      "height": 16.87,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.88,
+        "wallMaterial": "brick",
+        "wallColor": "#a96b53",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.28, "y": 0.23, "width": 1.98, "height": 2.88, "panes": 2, "frame": 0.084, "depth": 0.14, "transom": 0.77},
+          {"kind": "door", "x": 2.35, "y": 0.19, "width": 1.32, "height": 2.87, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "window", "x": 0.82, "y": 4.48, "width": 1.77, "height": 2.23, "panes": 2, "frame": 0.08, "depth": 0.15, "sill": 0.085},
+          {"kind": "window", "x": 0.82, "y": 7.4, "width": 1.77, "height": 2.2, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 2.76, "y": 10.28, "width": 1.22, "height": 2.17, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/a2c3f8efb653cfddd99cabc500375c2d.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.91, "referenceDate": "2026-11-20"},
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "One half of the west red-brick café gable. The single high double opening is divided at the BAG seam. Only the exposed glazing and entrance positions are estimated through the terrace umbrellas."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "-10.75,38.90,-13.82,37.60,0.00",
+      "a": [-10.75, 38.9],
+      "b": [-13.82, 37.6],
+      "minY": -0.46,
+      "height": 16.87,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.88,
+        "wallMaterial": "brick",
+        "wallColor": "#a96b53",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.23, "y": 0.23, "width": 2.83, "height": 2.88, "panes": 3, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 0.74, "y": 4.48, "width": 1.66, "height": 2.23, "panes": 2, "frame": 0.08, "depth": 0.15, "sill": 0.085},
+          {"kind": "window", "x": 0.74, "y": 7.4, "width": 1.66, "height": 2.2, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.04, "y": 10.28, "width": 1.27, "height": 2.17, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/a2c3f8efb653cfddd99cabc500375c2d.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.91, "referenceDate": "2026-11-20"},
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "One half of the west red-brick café gable. The single high double opening is divided at the BAG seam. Only the exposed glazing and entrance positions are estimated through the terrace umbrellas."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000000143",
+      "wallId": "-14.34,37.10,-27.47,29.56,0.00",
+      "a": [-14.34, 37.1],
+      "b": [-27.47, 29.56],
+      "minY": -0.46,
+      "height": 12.19,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.83,
+        "wallMaterial": "brick",
+        "wallColor": "#804b40",
+        "frameColor": "#e1dbcc",
+        "doorColor": "#48403a",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.45, "y": 0.23, "width": 3.87, "height": 2.82, "panes": 3, "frame": 0.084, "depth": 0.14, "transom": 0.77},
+          {"kind": "door", "x": 4.64, "y": 0.19, "width": 1.42, "height": 2.78, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "storefront", "x": 6.39, "y": 0.23, "width": 3.58, "height": 2.82, "panes": 3, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "door", "x": 10.23, "y": 0.19, "width": 1.35, "height": 2.78, "panes": 1, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "storefront", "x": 11.84, "y": 0.23, "width": 2.82, "height": 2.82, "panes": 2, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 0.93, "y": 4.38, "width": 1.83, "height": 2.09, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 3.62, "y": 4.38, "width": 1.14, "height": 2.09, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 6.06, "y": 4.38, "width": 1.77, "height": 2.09, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 8.81, "y": 4.38, "width": 1.21, "height": 2.09, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 11.07, "y": 4.38, "width": 1.81, "height": 2.09, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 13.54, "y": 4.38, "width": 1.05, "height": 2.09, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 0.93, "y": 7.14, "width": 1.83, "height": 2.09, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 3.62, "y": 7.14, "width": 1.14, "height": 2.09, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 6.06, "y": 7.14, "width": 1.77, "height": 2.09, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 8.81, "y": 7.14, "width": 1.21, "height": 2.09, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 11.07, "y": 7.14, "width": 1.81, "height": 2.09, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 13.54, "y": 7.14, "width": 1.05, "height": 2.09, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/a2c3f8efb653cfddd99cabc500375c2d.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.91, "referenceDate": "2026-11-20"},
+          {"url": "https://www.vendomemakelaardij.nl/files/2018003/dist/675a023b5f51f572c10d984a957d4531.jpg", "creator": "Vendôme Makelaardij exterior photographs", "confidence": 0.88, "referenceDate": "2026-11-20"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "Dark red west shop row north elevation. Alternating tall French-window bays and narrow single sashes follow the frontage photo. The more oblique western bays use its visible spacing."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000034016",
+      "wallId": "-6.62,-41.08,23.19,-35.33,0.00",
+      "a": [-6.62, -41.08],
+      "b": [23.19, -35.33],
+      "minY": -0.53,
+      "height": 6.49,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.8,
+        "wallMaterial": "brick",
+        "wallColor": "#a18577",
+        "frameColor": "#b9b5a6",
+        "doorColor": "#333c40",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.66, "y": 0.23, "width": 2.7, "height": 2.63, "panes": 2, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "door", "x": 3.69, "y": 0.19, "width": 1.36, "height": 2.57, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "storefront", "x": 5.31, "y": 0.23, "width": 3.89, "height": 2.63, "panes": 3, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "storefront", "x": 10.05, "y": 0.23, "width": 3.15, "height": 2.63, "panes": 3, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "door", "x": 13.52, "y": 0.19, "width": 1.55, "height": 2.57, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "storefront", "x": 15.27, "y": 0.23, "width": 3.13, "height": 2.63, "panes": 2, "frame": 0.084, "depth": 0.14, "transom": 0.77},
+          {"kind": "storefront", "x": 19.14, "y": 0.23, "width": 3.43, "height": 2.63, "panes": 2, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "door", "x": 22.83, "y": 0.19, "width": 1.71, "height": 2.57, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "storefront", "x": 24.82, "y": 0.23, "width": 3.59, "height": 2.63, "panes": 2, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 1.01, "y": 3.93, "width": 1.43, "height": 1.8, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 3.5, "y": 3.93, "width": 1.45, "height": 1.8, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 6.2, "y": 3.66, "width": 2.15, "height": 2.08, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 9.15, "y": 3.93, "width": 1.5, "height": 1.8, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 11.56, "y": 3.93, "width": 1.36, "height": 1.8, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 14.12, "y": 3.66, "width": 1.8, "height": 2.08, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 17.32, "y": 3.66, "width": 1.8, "height": 2.08, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 20.23, "y": 3.93, "width": 1.44, "height": 1.8, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 22.25, "y": 3.93, "width": 1.48, "height": 1.8, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 25.05, "y": 3.93, "width": 1.28, "height": 1.8, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 27.47, "y": 3.93, "width": 1.44, "height": 1.8, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://www.ilocate.nl/bedrijfspanden-high/1350/900/huur/winkel-met-showroom/155662/ede-oude-kerkplein-5-6711az.jpg", "creator": "iLocate exterior listing, Oude Kerkplein 5", "confidence": 0.88, "referenceDate": "2026-11-20"},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/zw04ky/oudekerk_20210417_115125800.jpg", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.8, "capturedAt": "2021-04-17"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "North shop strip facing the church. The dark shopfronts and pale first-floor window rhythm follow the exterior of no. 5 and the wider square view. Parts obscured by trees use estimated spacing."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000034016",
+      "wallId": "-15.75,-42.87,-6.62,-41.08,0.00",
+      "a": [-15.75, -42.87],
+      "b": [-6.62, -41.08],
+      "minY": -0.53,
+      "height": 6.62,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.73,
+        "wallMaterial": "brick",
+        "wallColor": "#a18577",
+        "frameColor": "#b9b5a6",
+        "doorColor": "#333c40",
+        "sillColor": "#a89a87",
+        "glazingColor": "#65717b",
+        "openings": [
+          {"kind": "storefront", "x": 0.42, "y": 0.23, "width": 2.77, "height": 2.63, "panes": 2, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "door", "x": 3.42, "y": 0.19, "width": 1.31, "height": 2.57, "panes": 2, "frame": 0.082, "depth": 0.19, "transom": 0.81},
+          {"kind": "storefront", "x": 5.17, "y": 0.23, "width": 3.51, "height": 2.63, "panes": 3, "frame": 0.084, "depth": 0, "transom": 0.77},
+          {"kind": "window", "x": 0.63, "y": 3.83, "width": 1.55, "height": 1.82, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 2.77, "y": 3.61, "width": 2.04, "height": 2.02, "panes": 2, "frame": 0.08, "depth": 0, "sill": 0.085},
+          {"kind": "window", "x": 6.12, "y": 3.85, "width": 1.72, "height": 1.82, "panes": 1, "frame": 0.08, "depth": 0, "sill": 0.085}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/zw04ky/oudekerk_20210417_115125800.jpg", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.8, "capturedAt": "2021-04-17"}
+        ]
+      },
+      "site": "Oude Kerkplein",
+      "notes": "West end of the north shop strip. Repeated pale casements and a broad storefront are inferred at obstructed parts of the wider exterior view."
+    }
+  ]
+}

@@ -47,7 +47,7 @@ function setAerialSurfaceColors(geometry, segment, asphalt) {
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4, true));
 }
 
-function buildCityGrid(scene, treeInventory, landCover, canopyDensity) {
+function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
@@ -119,7 +119,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity) {
     }
   }
   for (const park of [...(EDE_DATA.parks || []), ...(EDE_DATA.squares || [])]) {
-    if (!park.ring || park.ring.length < 6) continue;
+    if (!park.ring || park.ring.length < 6 || park.kind === 'pitch' && replacedPitches?.has(park.id)) continue;
     const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints);
     const paved = ['square', 'pedestrian', 'plaza'].includes(park.kind);
     const geometry = polygon(ring, holes, paved ? 0.05 : 0.045);

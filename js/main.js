@@ -10,10 +10,11 @@ import { createEdeMurals } from './ede-murals.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildStreetDetails } from './street-details.js';
-import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261119-fitted-lanes';
+import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261120-acv-truck';
 import { loadEdeParking } from './ede-parking.js';
 import { buildRoadPaint } from './road-paint.js';
-import { ThirdPersonControllerManager } from './controllers.js';
+import { ThirdPersonControllerManager } from './controllers.js?v=20261120-dutch-bikes';
+import { EDE_BIKE_STYLES } from './ede-bikes.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
@@ -23,13 +24,14 @@ import { createWeatherPrecipitation } from './weather-precipitation.js';
 import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
-import { CityAudioSystem } from './audio-system.js';
+import { CityAudioSystem } from './audio-system.js?v=20261120-acv-truck';
 import { loadTerrain, terrainHeightAt } from './terrain.js';
 import { loadAerialColors } from './aerial-colors.js';
 import { loadEdeTrees } from './ede-tree-data.js';
 import { TREE_SEASONS, setTreeSeason, getTreeSeason, refreshTreeSeason } from './tree-seasons.js';
 import { loadEdeLamps } from './ede-lamp-data.js';
 import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdeHelipads, setEdePlatforms, setEdeStructureRoofs } from './ede-grade.js';
+import { buildEdeSports, loadEdeSports } from './ede-sports.js';
 import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
@@ -44,7 +46,7 @@ import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
-import { buildEdeDetail, loadEdeDetail } from './ede-detail.js';
+import { buildEdeDetail, loadEdeDetail } from './ede-detail.js?v=20261120-sign-faces';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
@@ -144,13 +146,14 @@ async function initApp() {
 
   await showLoadingStage('Loading Ede’s map and timetables…');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult] = await Promise.allSettled([
     loadTerrain(), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
       motorway: enabled('motorwayDetail'),
       directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null,
-    enabled('laneFits') ? loadEdeFittedLanes() : null
+    enabled('laneFits') ? loadEdeFittedLanes() : null,
+    enabled('sports') ? loadEdeSports() : null,
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -182,7 +185,15 @@ async function initApp() {
     credit.href = 'https://geo.ede.nl/geoserver/Ede/wfs?service=WFS&request=GetCapabilities';
     credit.textContent = 'MOR trees by Gemeente Ede';
   }
-  const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity);
+  let replacedPitches;
+  try {
+    if (sportsResult.status === 'rejected') throw sportsResult.reason;
+    if (sportsResult.value) replacedPitches = buildEdeSports(scene, sportsResult.value);
+  } catch (error) {
+    console.warn('[sports] using basic pitch surfaces:', error);
+  }
+  markInit('sports fields');
+  const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity, replacedPitches);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
   const gradeWorld = buildEdeGradeWorld(scene);
@@ -325,6 +336,7 @@ async function initApp() {
   try {
     const saved = JSON.parse(localStorage.getItem('slop-ede-player-state'));
     if (saved?.version === 1 || saved?.version === 2) {
+      if (saved.bikeStyle) controllerManager.setBikeStyle(saved.bikeStyle);
       for (const mode of Object.keys(controllerManager.entities)) {
         const p = saved.entities?.[mode];
         if (!p || ![p.x, p.y, p.z, p.heading].every(Number.isFinite)) continue;
@@ -341,7 +353,9 @@ async function initApp() {
         x: entity.position.x, z: entity.position.z, heading: entity.heading,
         y: entity.position.y - terrainHeightAt(entity.position.x, entity.position.z)
       }]));
-      localStorage.setItem('slop-ede-player-state', JSON.stringify({ version: 2, activeMode: controllerManager.activeMode, entities }));
+      localStorage.setItem('slop-ede-player-state', JSON.stringify({
+        version: 2, activeMode: controllerManager.activeMode, bikeStyle: controllerManager.entities.cyclist.bikeStyle, entities
+      }));
     } catch { /* Storage may be disabled or full. */ }
   }
 
@@ -375,7 +389,7 @@ async function initApp() {
   // Island-wide static geometry: chunk & distance-cull the small props, shadow stand-ins for the big casters
   // (scene-culling.js)
   await showLoadingStage('Preparing scene visibility and shadows...');
-  const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'EdeGradeWorld', 'Ede BGT structures',
+  const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'EdeGradeWorld', 'Ede BGT structures', 'Ede sports fields',
     'ManhattanLandmarks', 'EdeBoundaryContext', 'RoadMarkings', 'EdeStreetFeatures', 'EdeImportedDetail']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
@@ -472,8 +486,9 @@ async function initApp() {
       else if (status === 'unavailable') weatherStatus.textContent = 'Weather unavailable · using preset';
       else if (status === 'expired') weatherStatus.textContent = 'Weather expired · using preset';
       else if (current) {
-        const wind = `Wind ${Math.round(current.windSpeed)} km/h`;
-        weatherStatus.textContent = `${weatherCondition(current.code)} · ${Math.round(current.temperature)} °C · ${wind}${status === 'stale' ? ' · Stale' : ''}`;
+        const wind = `Wind ${Math.round(current.windSpeed)} km/h at 10 m`;
+        const hub = current.turbineWind ? ` · Maanderbroek hubs ${Math.round(current.turbineWind.windSpeed)} km/h` : '';
+        weatherStatus.textContent = `${weatherCondition(current.code)} · ${Math.round(current.temperature)} °C · ${wind}${hub}${status === 'stale' ? ' · Stale' : ''}`;
       } else weatherStatus.textContent = '';
     }
   });
@@ -485,6 +500,16 @@ async function initApp() {
 
   const elFps = document.getElementById('hud-fps');
   const elMode = document.getElementById('hud-active-mode');
+  const bikeStyleControl = document.getElementById('bike-style-control');
+  const bikeStyleSelect = document.getElementById('bike-style');
+  for (const style of EDE_BIKE_STYLES) bikeStyleSelect.add(new Option(style.label, style.id));
+  bikeStyleSelect.value = controllerManager.entities.cyclist.bikeStyle;
+  bikeStyleSelect.addEventListener('change', () => {
+    if (!controllerManager.setBikeStyle(bikeStyleSelect.value)) return;
+    if (elMode) elMode.textContent = controllerManager.entities.cyclist.label;
+    bikeStyleSelect.blur();
+    savePlayerState();
+  });
   const elCamera = document.getElementById('hud-active-camera');
   const elSpeed = document.getElementById('hud-speed');
   const elSpeedMeter = document.getElementById('hud-speed-meter');
@@ -546,6 +571,7 @@ async function initApp() {
       btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
     });
     document.body.dataset.mode = mode;
+    bikeStyleControl.hidden = mode !== 'cyclist';
     placeModeIndicator();
     const ent = controllerManager.getActiveEntity();
     if (elMode) elMode.textContent = ent.label;
@@ -837,7 +863,7 @@ async function initApp() {
     });
   }
 
-  // Global keyboard shortcuts for modes (1-3, 5), cameras (V / 6-0), and HUD (H)
+  // Global keyboard shortcuts for modes (1-4), cameras (V / 6-0), and HUD (H)
   window.addEventListener('keydown', (e) => {
     if (isTypingInField(e)) return;
     switch (e.code) {
@@ -850,7 +876,7 @@ async function initApp() {
       case 'Digit3':
         selectMode('cyclist');
         break;
-      case 'Digit5':
+      case 'Digit4':
         selectMode('helicopter');
         break;
       case 'Digit6':
@@ -1053,8 +1079,8 @@ async function initApp() {
     const windReading = liveWeather.windReading;
     const windDt = fixedStep ? dt : THREE.MathUtils.clamp(rawDt, 0, 0.25);
     landmarks.updateWind(windDt, windReading);
-    bgtWorld?.updateWind(windDt, windReading);
     lightingSystem.update(cameraSystem.currentPos, weatherEffects);
+    bgtWorld?.updateWind(windDt, liveWeather.turbineWind, now / 1000, lightingSystem.uNightFactor.value);
     precipitation.update(dt, cameraSystem.camera, weatherEffects);
     profiler?.stage('Lighting and weather');
     mapSystem.update();

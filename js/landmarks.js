@@ -15,7 +15,8 @@ import { createMauritskazerne, createVuurvogel } from './ede-heritage-landmarks.
 import { createEdeCentrumStation, createHuisKernhem } from './ede-historic-landmarks.js';
 import { createKeetmolen, createDePeppel } from './ede-north-landmarks.js';
 import { createCheCampus } from './ede-campus-landmark.js';
-import { createNieuweKerk, createNoorderkerk, createSintAntoniuskerk, createBeatrixkerk } from './ede-church-landmarks.js';
+import { createNieuweKerk, createNoorderkerk, createSintAntoniuskerk, createBeatrixkerk, createAdditionalChurch } from './ede-church-landmarks.js';
+import { CHURCH_STYLES } from './ede-church-styles.js';
 import { createLukkien } from './ede-lukkien.js';
 import { createHoekelum, createGasfabriek } from './ede-estate-landmarks.js';
 import { createNizoLandmark, createGelderseValleiLandmark } from './ede-research-landmarks.js';
@@ -128,7 +129,8 @@ export function buildLandmarks(scene) {
   };
   for (const site of EDE_MODELED_LANDMARKS) {
     const footprints = modeledLandmarkFootprints(site);
-    const model = models[site.id](footprints, site);
+    const model = site.churchSurvey ? createAdditionalChurch(site, site.churchSurvey, CHURCH_STYLES[site.id])
+      : models[site.id](footprints, site);
     model.name = site.name;
     platforms.push(...(model.userData.platforms ?? []));
     helipads.push(...(model.userData.helipads ?? []));

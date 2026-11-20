@@ -1,4 +1,6 @@
 import * as THREE from 'three/webgpu';
+import { color, length, smoothstep, uv } from 'three/tsl';
+import { transparentEffectMRT } from './tsl-materials.js';
 import { edeBounds, edePoints, edePolygonGeometry, EDE_RENDER_CELL } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
 import { createWindmillRig } from './ede-windmill.js';
@@ -79,7 +81,14 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   const group = new THREE.Group();
   group.name = 'Ede BGT structures';
   const colliders = [], platforms = [], weatherCovers = [], batches = new Map(), materials = new Map();
-  const turbineUpdates = [];
+  const turbineUpdates = [], turbineBeacons = [];
+  const beaconMaterial = new THREE.SpriteNodeMaterial({
+    transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
+  });
+  const radius = length(uv().sub(0.5)).mul(2);
+  beaconMaterial.colorNode = color(0xff3425).mul(smoothstep(0, 0.48, radius).oneMinus().mul(4).add(1.4));
+  beaconMaterial.opacityNode = smoothstep(0.14, 1, radius).oneMinus();
+  beaconMaterial.mrtNode = transparentEffectMRT;
   const up = new THREE.Vector3(0, 1, 0);
   const deckProfiles = new Map(structures
     .filter(feature => feature.kind === 'deck' && feature.axis)
@@ -238,6 +247,13 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     cap.name = 'Wind turbine nacelle';
     sails.name = 'Wind turbine blades';
     turbineUpdates.push(cap.userData.updateWind);
+    const beacon = new THREE.Sprite(beaconMaterial);
+    beacon.name = 'Turbine obstruction beacon';
+    beacon.position.set(0, hubHeight + 1.9, -2.95);
+    beacon.scale.set(4.8, 4.8, 1);
+    beacon.visible = false;
+    cap.add(beacon);
+    turbineBeacons.push(beacon);
     const material = materialFor('turbine');
     const nacelle = new THREE.CylinderGeometry(1.42, 1.65, 6.6, 12)
       .rotateX(Math.PI / 2).translate(0, hubHeight, 0);
@@ -374,8 +390,10 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   scene.add(group);
   return {
     group, colliders, counts, platforms, weatherCovers, deckProfiles,
-    updateWind(dt, reading) {
+    updateWind(dt, reading, seconds, nightFactor) {
       for (const update of turbineUpdates) update(dt, reading);
+      const flash = nightFactor > 0.2 && seconds % 1.6 < 0.42;
+      for (const beacon of turbineBeacons) beacon.visible = flash;
     },
   };
 }

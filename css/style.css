@@ -793,6 +793,28 @@ body.hud-minimized .icon-show {
   margin-left: 4px;
 }
 
+.bike-style:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bike-style select {
+  min-height: 32px;
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(10, 15, 20, 0.54);
+  color: inherit;
+  color-scheme: dark;
+  font: inherit;
+}
+
+body.touch-enabled .bike-style select { min-height: 44px; }
+
 .mode-switch {
   position: relative;
   display: flex;

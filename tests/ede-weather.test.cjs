@@ -152,3 +152,26 @@ test('calm live wind overrides the preset breeze until Live Weather is switched 
   weather.setEnabled(false);
   assert.equal(weather.windReading, preset);
 });
+
+test('Maanderbroek hub wind stays separate from town wind and follows the shortest change in bearing', async t => {
+  const { createLiveWeather, parseWeather } = await import('../js/ede-weather.js');
+  const city = reading({ wind_speed_10m: 6.1 });
+  const park = { time: city.current.time, wind_speed_80m: 18.6, wind_speed_120m: 19.5,
+    wind_direction_80m: 359, wind_direction_120m: 1 };
+  const weather = createLiveWeather({
+    now: () => observedAt, page: { hidden: false, addEventListener() {} },
+    request: async () => [city, { current: park }]
+  });
+  t.after(() => weather.setEnabled(false));
+  weather.setEnabled(true);
+  await setImmediate();
+  assert.equal(weather.windReading.windSpeed, 6.1);
+  assert.ok(Math.abs(weather.turbineWind.windSpeed - 19.03875) < 1e-6);
+  assert.ok(Math.abs(weather.turbineWind.windDirection - 359.975) < 1e-6);
+  assert.equal(weather.turbineWind.atHubHeight, true);
+  assert.deepEqual(parseWeather({ ...city, parkWind: park }, observedAt).turbineWind, weather.turbineWind);
+  assert.equal(parseWeather({ ...city, parkWind: { ...park, time: park.time - 900 } }, observedAt).turbineWind, undefined);
+  assert.equal(parseWeather({ ...city, parkWind: { ...park, wind_speed_120m: null } }, observedAt).turbineWind, undefined);
+  weather.setEnabled(false);
+  assert.equal(weather.turbineWind, weather.windReading);
+});

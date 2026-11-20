@@ -80,7 +80,7 @@ counts = Counter()
 size = 0
 builder = runpy.run_path('tools/build-ede-facades.py')
 reviews, squares = builder['load_square_walls'](builder['SQUARE_REVIEWS'])
-assert set(squares) == {'Marktplein', 'Kuiperplein', 'Museumplein'}
+assert set(squares) == {'Marktplein', 'Kuiperplein', 'Museumplein', 'Oude Kerkplein'}
 assert squares == report['reviewedSquares']
 for key, name in manifest['tiles'].items():
     path = base / name

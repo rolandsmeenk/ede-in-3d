@@ -5,6 +5,9 @@ const RETRY_MS = 60 * 1000;
 const STALE_MS = 30 * 60 * 1000;
 const EXPIRE_MS = 60 * 60 * 1000;
 const PRESET_WIND = Object.freeze({ windSpeed: 18, windDirection: 225 });
+const MAANDERBROEK = { latitude: 52.03207, longitude: 5.61268 };
+const HUB_WEIGHT = (99.5 - 80) / (120 - 80);
+const PARK_FIELDS = ['wind_speed_80m', 'wind_direction_80m', 'wind_speed_120m', 'wind_direction_120m'];
 const CURRENT_FIELDS = [
   'temperature_2m', 'weather_code', 'cloud_cover', 'rain', 'showers', 'snowfall',
   'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m'
@@ -29,8 +32,22 @@ export function weatherCondition(code) {
   return 'Cloud conditions';
 }
 
+function parseTurbineWind(park, time) {
+  if (park?.time !== time || !PARK_FIELDS.every(key => Number.isFinite(park[key]))) return;
+  const { wind_speed_80m: low, wind_speed_120m: high, wind_direction_80m: from, wind_direction_120m: to } = park;
+  if (low < 0 || high < 0 || from < 0 || from > 360 || to < 0 || to > 360) return;
+
+  const turn = (to - from + 540) % 360 - 180;
+  return Object.freeze({
+    windSpeed: low + (high - low) * HUB_WEIGHT,
+    windDirection: (from + turn * HUB_WEIGHT + 360) % 360,
+    atHubHeight: true
+  });
+}
+
 export function parseWeather(payload, now = Date.now()) {
-  const p = payload?.current;
+  const [town, park] = Array.isArray(payload) ? payload : [payload];
+  const p = town?.current;
   if (!p || !CURRENT_FIELDS.every(key => Number.isFinite(p[key]))) throw new Error('Incomplete weather reading');
   const observedAt = p.time * 1000;
   if (!Number.isInteger(p.time) || observedAt <= 0 || observedAt > now + 5 * 60 * 1000 ||
@@ -41,12 +58,14 @@ export function parseWeather(payload, now = Date.now()) {
       [p.rain, p.showers, p.snowfall, p.wind_speed_10m, p.wind_gusts_10m].some(value => value < 0)) {
     throw new Error('Invalid weather reading');
   }
+  const turbineWind = parseTurbineWind(park?.current ?? town.parkWind, p.time);
   return Object.freeze({
     source: 'Open-Meteo', observedAt,
-    fetchedAt: Number.isFinite(payload.fetchedAt) ? payload.fetchedAt : now,
+    fetchedAt: Number.isFinite(town.fetchedAt) ? town.fetchedAt : now,
     interval: p.interval, temperature: p.temperature_2m, code: p.weather_code, cloudCover: p.cloud_cover,
     rain: p.rain, showers: p.showers, snowfall: p.snowfall,
-    windSpeed: p.wind_speed_10m, windDirection: p.wind_direction_10m, windGusts: p.wind_gusts_10m
+    windSpeed: p.wind_speed_10m, windDirection: p.wind_direction_10m, windGusts: p.wind_gusts_10m,
+    ...(turbineWind && { turbineWind })
   });
 }
 
@@ -58,7 +77,9 @@ async function fetchWeather(signal) {
     const { lat0, lon0 } = EDE_DATA.meta.lonLatAffine;
     const url = new URL('https://api.open-meteo.com/v1/forecast');
     url.search = new URLSearchParams({
-      latitude: lat0, longitude: lon0, current: CURRENT_FIELDS.join(','),
+      latitude: [lat0, MAANDERBROEK.latitude].join(','),
+      longitude: [lon0, MAANDERBROEK.longitude].join(','),
+      current: [...CURRENT_FIELDS, ...PARK_FIELDS].join(','),
       timezone: 'GMT', timeformat: 'unixtime', temperature_unit: 'celsius',
       wind_speed_unit: 'kmh', precipitation_unit: 'mm'
     });
@@ -196,6 +217,7 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
     setEnabled, update: transition.update,
     get state() { return state; },
     get activeReading() { return active; },
-    get windReading() { return active ?? PRESET_WIND; }
+    get windReading() { return active ?? PRESET_WIND; },
+    get turbineWind() { return active?.turbineWind ?? active ?? PRESET_WIND; }
   };
 }

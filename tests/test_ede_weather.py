@@ -3,6 +3,7 @@
 import json
 import sys
 import unittest
+from urllib.parse import parse_qs, urlsplit
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
@@ -25,6 +26,21 @@ class EdeWeatherTest(unittest.TestCase):
         with patch('ede_weather.urlopen', return_value=BytesIO(json.dumps({'current': current}).encode())):
             with self.assertRaises(ValueError):
                 fetch_weather()
+
+    def test_requests_town_and_park_in_one_call_and_preserves_hub_fields(self):
+        current = {key: 0 for key in FIELDS}
+        current.update(time=1795042800, interval=900)
+        park = dict(time=current['time'], wind_speed_80m=18.6, wind_speed_120m=19.5,
+                    wind_direction_80m=351, wind_direction_120m=351)
+        with patch('ede_weather.urlopen', return_value=BytesIO(json.dumps([
+            {'current': current}, {'current': park},
+        ]).encode())) as request:
+            data = json.loads(fetch_weather())
+        args = parse_qs(urlsplit(request.call_args.args[0]).query)
+        self.assertEqual(len(args['latitude'][0].split(',')), 2)
+        self.assertIn('wind_speed_120m', args['current'][0].split(','))
+        self.assertEqual(data['current'], current)
+        self.assertEqual(data['parkWind'], park)
 
     def test_shared_cache_refreshes_and_keeps_last_success_on_failure(self):
         with patch('ede_weather.fetch_weather', side_effect=[b'first', OSError('timeout'), b'second']) as fetch, \

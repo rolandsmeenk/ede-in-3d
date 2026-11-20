@@ -58,7 +58,7 @@ export function createWindmillRig(tower, hubHeight, hubOffset, shaftSlope, { tur
   cap.add(shaft);
   tower.add(cap);
 
-  // Estimate hub-height wind from the shared 10 m reading with the 1/7 power law.
+  // Use the 1/7 power law when only 10 m wind is available.
   const hubWindFactor = turbine ? (hubHeight / 10) ** (1 / 7) : 1;
   const rotationSign = turbine ? -1 : 1;
   let angularSpeed = 0;
@@ -66,7 +66,7 @@ export function createWindmillRig(tower, hubHeight, hubOffset, shaftSlope, { tur
   cap.userData.updateWind = (dt, reading) => {
     let speed = 0;
     let turn = 0;
-    const wind = (reading?.windSpeed ?? 0) / 3.6 * hubWindFactor;
+    const wind = (reading?.windSpeed ?? 0) / 3.6 * (reading?.atHubHeight ? 1 : hubWindFactor);
     if (wind > 0) {
       // Meteorological bearings point toward the source of the wind. Local +Z is the front of the cap.
       const heading = Math.PI - reading.windDirection * Math.PI / 180;

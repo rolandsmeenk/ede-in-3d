@@ -80,8 +80,8 @@ test('the cap takes the short turn across north and the sails accelerate and coa
 
 test('Maanderbroek turbines start at 3 m/s at hub height and follow the Siemens speed range', async () => {
   const turbine = await windmill(0, { turbine: true });
-  const rpmAt = windSpeed => {
-    const wind = { windDirection: 90, windSpeed };
+  const rpmAt = (windSpeed, atHubHeight = false) => {
+    const wind = { windDirection: 90, windSpeed, atHubHeight };
     turbine.tick(wind, 1200);
     const previous = turbine.sails.rotation.z;
     turbine.tick(wind);
@@ -95,6 +95,9 @@ test('Maanderbroek turbines start at 3 m/s at hub height and follow the Siemens 
   assert.ok(breeze < -10 && breeze > -12, breeze);
   assert.ok(Math.abs(rpmAt(40) + 19) < 0.01);
   assert.equal(rpmAt(66), 0);
+  assert.equal(rpmAt(9, true), 0);
+  assert.ok(Math.abs(rpmAt(19.04, true) + 9.1) < 0.01);
+  assert.equal(rpmAt(90, true), 0);
 });
 
 test('the four cloth panels move with the wooden sails, reef in stronger wind and furl at rest', async () => {

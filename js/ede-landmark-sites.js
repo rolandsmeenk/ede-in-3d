@@ -1,5 +1,6 @@
 import { EDE_DATA } from './ede-geodata.js';
 import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
+import { OTHER_CHURCH_SHELLS } from './ede-other-church-shells.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -113,6 +114,10 @@ export const EDE_MODELED_LANDMARKS = [
     osmId: 'w272136145', bagIds: ['0228100000041390'], x: -1859, z: 1330, height: 11, worldSpace: true,
     approach: { x: -1856, z: 1283 } },
 
+  ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, churchSurvey]) => {
+    const { name, osm, bag, center: [x, z], road, district, approach, height } = churchSurvey;
+    return { id, name, osmId: osm, bagIds: [bag], x, z, road, district, approach, height, churchSurvey, worldSpace: true };
+  }),
 ];
 
 const sources = new Set(EDE_MODELED_LANDMARKS.flatMap(site => [site.osmId, ...(site.annexOsmIds ?? [])]));
@@ -132,6 +137,14 @@ for (const { id, ring } of EDE_DATA.buildings) {
 }
 
 export function modeledLandmarkFootprints(site) {
+  if (site.churchSurvey) {
+    const { ground, points } = site.churchSurvey;
+    const [outer, ...holes] = ground.map(ring => ring.map(index => {
+      const [x, , z] = points[index];
+      return { x, z };
+    }));
+    return [{ outer, holes }];
+  }
   const primary = footprintById.get(site.osmId) ?? { outer: circle(site, 4), holes: [] };
   return [primary, ...(site.annexOsmIds ?? []).map(id => footprintById.get(id)).filter(Boolean)];
 }

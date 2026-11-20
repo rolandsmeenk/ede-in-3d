@@ -252,21 +252,33 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const { angle, width, height } = feature;
     const y = feature.centerY - (getTerrain()?.napOrigin ?? SCENE_NAP_ORIGIN);
     const cos = Math.cos(angle), sin = Math.sin(angle);
+    const backing = 0.095;
     if (feature.support) {
       const base = resolveGround(feature, x, z, feature.surveyY);
       const poleHeight = y - base - height * 0.25;
       if (!(poleHeight > 0.5)) return false;
+      const diameter = 0.12;
+      const depth = -(backing + diameter) / 2;
       for (const offset of width > 2.5 ? [-width * 0.31, width * 0.31] : [0]) {
-        instance(feature.source, 'pole', x + cos * offset, base + poleHeight / 2, z - sin * offset,
-          0.12, poleHeight, 0.12, angle, GALVANIZED);
+        instance(feature.source, 'pole', x + cos * offset + sin * depth, base + poleHeight / 2,
+          z - sin * offset + cos * depth, diameter, poleHeight, diameter, angle, GALVANIZED);
       }
     }
-    const backing = 0.095;
-    instance(feature.source, 'box', x, y, z, width, height, backing, angle, STEEL);
-    const corner = (u, v) => ({ x: x + cos * u + sin * 0.05, z: z - sin * u + cos * 0.05, y: y + v });
+    const corners = depth => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => ({
+      x: x + cos * u * width / 2 + sin * depth,
+      z: z - sin * u * width / 2 + cos * depth,
+      y: y + v * height / 2
+    }));
+    const front = corners(backing / 2), back = corners(-backing / 2);
     const tile = batch('directionalSign', x, z, feature.source);
-    quad(tile, [corner(-width / 2, -height / 2), corner(width / 2, -height / 2),
-      corner(width / 2, height / 2), corner(-width / 2, height / 2)]);
+    quad(tile, front);
+    // The textured face closes the panel. A metal front behind it can compete in the depth buffer.
+    const shell = batch('solid', x, z, feature.source);
+    quad(shell, [back[3], back[2], back[1], back[0]], STEEL);
+    for (let i = 0; i < front.length; i++) {
+      const next = (i + 1) % front.length;
+      quad(shell, [back[i], back[next], front[next], front[i]], STEEL);
+    }
     const [u0, v0, u1, v1] = feature.uv;
     tile.uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
     if (feature.mountId) {

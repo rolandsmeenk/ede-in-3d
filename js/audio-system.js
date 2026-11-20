@@ -1,6 +1,6 @@
 import { createSynthResources, createMotorVoice, setControlRate } from './audio-synthesis.js';
 import { createEventResources, playEvent, createWindVoice } from './audio-events.js';
-import { CityAudioSources } from './audio-sources.js';
+import { CityAudioSources } from './audio-sources.js?v=20261120-acv-truck';
 import { CityAcoustics } from './audio-acoustics.js';
 import { terrainHeightAt } from './terrain.js';
 

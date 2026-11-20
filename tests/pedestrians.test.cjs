@@ -651,6 +651,7 @@ test('poseCharacters skips stationary inactive cyclist IK/uploads and culls park
       './tsl-materials.js': {},
       './cars.js': {},
       './helicopter.js': {},
+      './ede-bikes.js': {},
       './terrain.js': { terrainHeightAt: () => 0 },
       './pedestrians.js': {},
       './vehicle-lights.js': {},

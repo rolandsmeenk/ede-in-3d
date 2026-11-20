@@ -618,6 +618,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
         turnTagsAtEnd: !!run.turnTagsAtEnd[direction] && laneDefinition.lanes.some(lane => lane.turns), headings: run.headings[direction] } : {}),
       osmStart: direction ? run.osmEnd : run.osmStart, osmEnd: direction ? run.osmStart : run.osmEnd,
+      roadKind: road?.kind,
       motorway: road?.kind === 'motorway' && (road.ref === 'A12' || road.ref === 'A30'),
       motorwayLink: road?.kind === 'motorway_link',
       underpass, tunnelType: road?.tunnelType, bridge, boundary, keepShape, wayId: road?.id, layer: road?.layer || 0, limits: road?.limits });
@@ -1217,16 +1218,23 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   edges.forEach((e, i) => (e.id = i));
   for (const e of edges) e.motorwayExit = e.motorway && e.moves.length === 0;
   for (const e of edges) e.unmodeledTunnel = !!gradeWays && e.underpass && e.tunnelType !== 'building_passage' && !gradeWays.has(e.wayId);
-  for (const [mode, vehicle, lanes, moves] of [
+  const refuseClearance = { height: 3.42, width: 2.54, weight: 23.6, length: 8.55, axleLoad: 11.5 };
+  const residential = e => e.roadKind === 'residential' || e.roadKind === 'living_street';
+  for (const [mode, vehicle, lanes, moves, allowed] of [
     [CAR, VEHICLE_CLEARANCE.car, 'ambientLanes', 'ambientMoves'],
-    [VAN, VEHICLE_CLEARANCE.van, 'vanLanes', 'vanMoves']
+    [VAN, VEHICLE_CLEARANCE.van, 'vanLanes', 'vanMoves'],
+    [VAN, refuseClearance, 'refuseLanes', 'refuseMoves', residential]
   ]) {
-    const eligible = edges.filter(e => !e.boundary && !e.unmodeledTunnel && ((e.modes ?? MOTOR) & mode) && fitsRoad(vehicle, e.limits, mode));
+    const eligible = edges.filter(e => (!allowed || allowed(e)) && !e.boundary && !e.unmodeledTunnel &&
+      ((e.modes ?? MOTOR) & mode) && fitsRoad(vehicle, e.limits, mode));
     for (const e of edges) e[lanes] = [];
     for (const e of eligible) e[lanes] = e.lanes.flatMap((_, i) => (e.laneModes?.[i] ?? mode) & mode ? [i] : []);
     const onward = (e, i) => e.moves.some(m => (m.modes & mode) && m.to[lanes].includes(m.out[i]));
-    const live = largestComponent(eligible, (e) => e.moves.filter(m => (m.modes & mode) && e[lanes].some(i => m.to[lanes].includes(m.out[i]))).map(m => m.to));
-    for (const e of eligible) if (!live.has(e)) e[lanes] = [];
+    // Collection trucks can circle in separate neighborhoods. Pruning the dead ends below keeps each loop usable.
+    if (!allowed) {
+      const live = largestComponent(eligible, (e) => e.moves.filter(m => (m.modes & mode) && e[lanes].some(i => m.to[lanes].includes(m.out[i]))).map(m => m.to));
+      for (const e of eligible) if (!live.has(e)) e[lanes] = [];
+    }
     let changed;
     do {
       changed = false;

@@ -25,6 +25,7 @@ import {
   buildHelicopterTailRotorGeometry,
   createLoftedHelicopterMaterial
 } from './helicopter.js';
+import { buildEdeBike, EDE_BIKE_FIT, EDE_BIKE_STYLES } from './ede-bikes.js';
 import { PersonCrowd, PersonRig } from './pedestrians.js';
 import { HEADLIGHTS, createVehicleHeadlight, placeVehicleHeadlight } from './vehicle-lights.js';
 import { bryantParkLawn } from './landmarks.js';
@@ -37,7 +38,7 @@ import { buildingPassageHeadingAt, gradeDeckAt, gradeGroundHeightAt, gradeHeight
 // for Third-Person Navigation:
 // 1. Person (Skinned Pedestrian: planted-footstep IK walk/run/jump, see pedestrians.js)
 // 2. Car (Aerodynamic Sculpted NYC Medallion Yellow Taxi with Sloped Windshield & Clearcoat)
-// 3. Cyclist (Sculpted Road Cyclist with Drop-Bar Frame & Aero Helmet)
+// 3. Cyclist (Dutch city bikes with an animated rider)
 // 4. Cargo Bike (front-loader frame with an upright rider)
 // 5. Helicopter (Manhattan Sightseeing Twin-Turbine Chopper)
 
@@ -823,7 +824,7 @@ class ThirdPersonControllerManager {
   }
 
   // =========================================================================
-  // 3. CYCLIST (original road bike)
+  // 3. CYCLIST
   // =========================================================================
   createCyclistEntity() {
     const root = new THREE.Group();
@@ -832,88 +833,37 @@ class ThirdPersonControllerManager {
     const leanPivot = new THREE.Group();
     root.add(leanPivot);
 
-    const frameMat = createCarPaintMaterial(0x0078e8);
-    const tireMat = new THREE.MeshStandardNodeMaterial({
-      color: 0x181a1e,
-      roughness: 0.60
-    });
-    const chromeMat = new THREE.MeshStandardNodeMaterial({
-      color: 0xe0e8f0,
-      roughness: 0.16,
-      metalness: 0.78
-    });
-    const shortsMat = new THREE.MeshStandardNodeMaterial({
-      color: 0x1c2028,
-      roughness: 0.55
-    });
+    const style = EDE_BIKE_STYLES[0];
+    const { axle, seat, head, grip, bracket } = EDE_BIKE_FIT;
+    const model = buildEdeBike(style, true);
+    const bikeMat = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.52, metalness: 0.15 });
+    const body = new THREE.Mesh(model.body, bikeMat);
+    const frontSteerPivot = new THREE.Group();
+    frontSteerPivot.position.set(...head);
+    const fork = new THREE.Mesh(model.fork.translate(-head[0], -head[1], -head[2]), bikeMat);
+    const frontWheel = new THREE.Mesh(model.wheel, bikeMat);
+    frontWheel.position.set(0, style.radius - head[1], axle - head[2]);
+    frontSteerPivot.add(fork, frontWheel);
+
+    const rearWheel = new THREE.Mesh(model.wheel, bikeMat);
+    rearWheel.position.set(0, style.radius, -axle);
+    leanPivot.add(body, frontSteerPivot, rearWheel);
+
+    const tireMat = new THREE.MeshStandardNodeMaterial({ color: 0x181a1e, roughness: 0.60 });
+    const chromeMat = new THREE.MeshStandardNodeMaterial({ color: 0xe0e8f0, roughness: 0.16, metalness: 0.78 });
     const helmetMat = new THREE.MeshStandardNodeMaterial({
-      color: 0xf4f7fb,
-      emissive: 0x181c22,
-      roughness: 0.22,
-      metalness: 0.25
+      color: 0xf4f7fb, emissive: 0x181c22, roughness: 0.22, metalness: 0.25
     });
-
-    const wheelTorusGeo = new THREE.TorusGeometry(0.35, 0.038, 12, 24);
-    wheelTorusGeo.rotateY(Math.PI * 0.5);
-    const rimTorusGeo = new THREE.TorusGeometry(0.31, 0.018, 8, 24);
-    rimTorusGeo.rotateY(Math.PI * 0.5);
-
-    const frontWheel = new THREE.Mesh(wheelTorusGeo, tireMat);
-    frontWheel.add(new THREE.Mesh(rimTorusGeo, chromeMat));
-    frontWheel.position.set(0, 0.38, 0.58);
-    leanPivot.add(frontWheel);
-
-    const rearWheel = new THREE.Mesh(wheelTorusGeo, tireMat);
-    rearWheel.add(new THREE.Mesh(rimTorusGeo, chromeMat));
-    rearWheel.position.set(0, 0.38, -0.58);
-    leanPivot.add(rearWheel);
-
-    // Rear red LED safety strobe on seatpost
-    const tailLed = new THREE.Mesh(
-      new THREE.SphereGeometry(0.032, 8, 8),
-      new THREE.MeshBasicNodeMaterial({ color: 0xff1e26 })
-    );
-    tailLed.position.set(0, 0.86, -0.32);
-    leanPivot.add(tailLed);
-
-    const topTube = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.72, 10), frameMat);
-    topTube.rotation.x = Math.PI * 0.46;
-    topTube.position.set(0, 0.78, 0.04);
-    leanPivot.add(topTube);
-
-    const downTube = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.78, 10), frameMat);
-    downTube.rotation.x = Math.PI * 0.28;
-    downTube.position.set(0, 0.58, 0.16);
-    leanPivot.add(downTube);
-
-    const seatTube = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.64, 10), frameMat);
-    seatTube.rotation.x = -0.22;
-    seatTube.position.set(0, 0.66, -0.22);
-    leanPivot.add(seatTube);
-
-    const saddle = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.16, 8, 10), shortsMat);
-    saddle.rotation.x = Math.PI * 0.5;
-    saddle.scale.set(1.15, 1.0, 0.55);
-    saddle.position.set(0, 0.96, -0.28);
-    leanPivot.add(saddle);
-
-    const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.016, 0.68, 10), chromeMat);
-    fork.rotation.x = -0.24;
-    fork.position.set(0, 0.68, 0.48);
-    leanPivot.add(fork);
-
-    const handlebar = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.48, 10), chromeMat);
-    handlebar.rotation.z = Math.PI * 0.5;
-    handlebar.position.set(0, 0.98, 0.40);
-    leanPivot.add(handlebar);
-
-    // Pedal cranks at the bottom bracket (they turn with the pedal phase, the pedals stay level)
+    // The rig's hand target is 2 cm above and 7 cm behind the bar reference.
     const bikeFrame = {
-      seat: new THREE.Vector3(0, 0.98, -0.28),
-      bars: new THREE.Vector3(0, 0.98, 0.4),
-      gripHalf: 0.22,
-      bracket: new THREE.Vector3(0, 0.34, -0.145),
-      crankLength: 0.17
+      seat: new THREE.Vector3(...seat),
+      bars: new THREE.Vector3(0, grip[1] - 0.02, grip[2] + 0.07),
+      steerPivot: frontSteerPivot.position,
+      steerAngle: 0,
+      gripHalf: grip[0],
+      bracket: new THREE.Vector3(...bracket),
+      crankLength: 0.17,
+      lean: 0.16
     };
     const crankPivot = new THREE.Group();
     crankPivot.position.copy(bikeFrame.bracket);
@@ -950,19 +900,26 @@ class ThirdPersonControllerManager {
     root.add(bikeShadow);
 
     const headLight = new THREE.SpotLight(0xf2f7ff, 0, 20, 0.34, 0.76, 1.25);
-    headLight.position.set(0, 1.32, 0.62);
-    headLight.target.position.set(0, 0.0, 7.6);
-    leanPivot.add(headLight, headLight.target);
+    headLight.position.set(...model.lamp).sub(frontSteerPivot.position);
+    headLight.position.z += 0.045;
+    headLight.target.position.set(0, -head[1], 7.6 - head[2]);
+    frontSteerPivot.add(headLight, headLight.target);
 
     this.scene.add(root);
 
     return {
       type: 'cyclist',
-      label: 'Ede Cyclist',
+      label: style.label,
+      bikeStyle: style.id,
       mesh: root,
       leanPivot,
+      frontSteerPivot,
+      body,
+      fork,
       frontWheel,
       rearWheel,
+      frontWheelRadius: style.radius,
+      rearWheelRadius: style.radius,
       crankPivot,
       pedals,
       bikeFrame,
@@ -979,6 +936,31 @@ class ThirdPersonControllerManager {
       chaseDistance: 4.8,
       chaseHeight: 2.05
     };
+  }
+
+  setBikeStyle(id) {
+    const bike = this.entities.cyclist;
+    const style = EDE_BIKE_STYLES.find(candidate => candidate.id === id);
+    if (!style || id === bike.bikeStyle) return false;
+    const model = buildEdeBike(style, true);
+    const { position: pivot } = bike.frontSteerPivot;
+
+    bike.body.geometry.dispose();
+    bike.fork.geometry.dispose();
+    bike.frontWheel.geometry.dispose(); // Both wheels share this geometry.
+    bike.body.geometry = model.body;
+    bike.fork.geometry = model.fork.translate(-pivot.x, -pivot.y, -pivot.z);
+    bike.frontWheel.geometry = bike.rearWheel.geometry = model.wheel;
+    bike.frontWheelRadius = bike.rearWheelRadius = style.radius;
+    bike.frontWheel.position.y = style.radius - pivot.y;
+    bike.rearWheel.position.y = style.radius;
+    bike.headLight.position.set(...model.lamp).sub(pivot);
+    bike.headLight.position.z += 0.045;
+    bike.bikeStyle = id;
+    bike.label = style.label;
+    bike.bikeFrame.lean = id === 'fatbike' ? 0.29 : 0.16;
+    bike._posedX = NaN;
+    return true;
   }
 
   // =========================================================================

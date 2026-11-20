@@ -36,6 +36,7 @@ function keyboardHarness(nyc = {}, terrainHeightAt = () => 0, buildingPassageHea
       './tsl-materials.js': {},
       './cars.js': {},
       './helicopter.js': {},
+      './ede-bikes.js': {},
       './pedestrians.js': {},
       './vehicle-lights.js': {},
       './landmarks.js': {},

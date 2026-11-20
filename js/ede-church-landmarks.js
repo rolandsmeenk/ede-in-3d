@@ -871,8 +871,8 @@ function bar(batch, wall, a, b, width, color, depth) {
   panel(batch, wall, [[x + nx, y + ny], [u + nx, v + ny], [u - nx, v - ny], [x - nx, y - ny]], color, depth);
 }
 
-function windowBand(batch, wall, u, width, lo, hi, { columns = 2, rows = 3, tint = GLASS, trim = STEEL } = {}) {
-  rect(batch, wall, u, width + 0.14, lo - 0.06, hi + 0.065, FRAME, 0.04);
+function windowBand(batch, wall, u, width, lo, hi, { columns = 2, rows = 3, tint = GLASS, trim = STEEL, border = FRAME } = {}) {
+  rect(batch, wall, u, width + 0.14, lo - 0.06, hi + 0.065, border, 0.04);
   const cell = width / columns, rise = (hi - lo) / rows;
   for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) {
     rect(batch, wall, u - width / 2 + (i + 0.5) * cell, cell - 0.036,
@@ -1149,5 +1149,231 @@ export function createBeatrixkerk() {
     }
     const annex = frontage([-637.67, 1393.10], [-651.59, 1383.58]);
     for (let i = -2; i <= 2; i++) windowBand(batch, annex, i * 2.39, 1.17, 19.98, 21.76, { rows: 2 });
+  });
+}
+
+// Extra exteriors share the masonry and glazing above. Choose each frontage on
+// its surveyed wall plane so the trim stays aligned with curved or angled sites.
+function surveyWalls(survey) {
+  return survey.faces.flatMap(([roof, ring]) => {
+    if (roof) return [];
+    const points = ring.map(i => survey.points[i]);
+    const normal = polygonNormal(points);
+    if (Math.abs(normal.y) > 0.12) return [];
+    const { a, b, width } = wallExtent(points, normal);
+    if (width < 1.9) return [];
+    const wall = frontage([b.x, b.z], [a.x, a.z]);
+    const outline = points.map(([x, y, z]) => [(x - wall.x) * wall.ux + (z - wall.z) * wall.uz, y]);
+    const bottom = Math.min(...points.map(p => p[1])), top = Math.max(...points.map(p => p[1]));
+    // Stay on the vertical part of a gable for regular bays.
+    const shoulder = u => Math.max(...outline.flatMap(([x, y], i) => {
+      const [nextX, nextY] = outline[(i + 1) % outline.length];
+      if ((x <= u && nextX > u) || (nextX <= u && x > u))
+        return [y + (nextY - y) * (u - x) / (nextX - x)];
+      return [];
+    }));
+    const cap = Math.min(shoulder(-width * 0.45), shoulder(width * 0.45));
+    return [{ ...wall, bottom, top, cap, topAt: shoulder }];
+  });
+}
+
+const CREAM_GLASS = [0x475559, 0x627076, 0x434b54, 0x535e64];
+const STAINED_GLASS = [0x317894, 0xa37458, 0x69618b, 0x6b8652, 0x576782];
+
+function measuredBays(batch, wall, kind, u, width, lo, hi) {
+  if (kind === 'arch' || kind === 'lancet') {
+    const shape = kind === 'lancet' ? (batch, wall, u, w, lo, hi, tint, d) => panel(batch, wall,
+      [[u - w / 2, lo], [u + w / 2, lo], [u + w / 2, hi - w * 0.72], [u + w * 0.33, hi - w * 0.28],
+        [u, hi], [u - w * 0.33, hi - w * 0.28], [u - w / 2, hi - w * 0.72]], tint, d) : arch;
+    shape(batch, wall, u, width + 0.19, lo - 0.07, hi + 0.10, STONE, 0.038);
+    shape(batch, wall, u, width, lo, hi, GLASS[0], 0.063);
+    rect(batch, wall, u, 0.045, lo, hi - width * 0.37, STONE, 0.080);
+    rect(batch, wall, u, width + 0.25, lo - 0.16, lo - 0.065, STONE, 0.13);
+    return;
+  }
+  const grid = kind === 'glass' || kind === 'stained';
+  windowBand(batch, wall, u, width, lo, hi, {
+    columns: grid ? Math.max(2, Math.round(width / 0.78)) : kind === 'slit' ? 1 : 2,
+    rows: grid ? Math.max(2, Math.round((hi - lo) / (kind === 'stained' ? 1.40 : 0.82))) : kind === 'clerestory' ? 1 : 2,
+    tint: kind === 'stained' ? STAINED_GLASS : CREAM_GLASS,
+    border: kind === 'stained' || kind === 'clerestory' ? 0xb1ac99 : FRAME,
+  });
+}
+
+function fitChurchEntry(site, base, walls, approach, style) {
+  const low = walls.filter(wall => wall.bottom <= base + (style.raisedEntry ? 4 : 1.8) && wall.cap - wall.bottom > 2.25);
+  const facing = style.facing ?? [approach.x - site.x, approach.z - site.z];
+  const direction = Math.hypot(...facing) || 1;
+  const score = wall => {
+    const towardStreet = (facing[0] * wall.nx + facing[1] * wall.nz) / direction;
+    const offset = style.entryPoint ? Math.hypot(style.entryPoint[0] - wall.x, style.entryPoint[1] - wall.z)
+      : Math.hypot(approach.x - wall.x, approach.z - wall.z);
+    return towardStreet * 4 + Math.min(13, wall.width) * 0.19 - offset * (style.entryPoint ? 0.75 : 0.033);
+  };
+  return low.sort((a, b) => score(b) - score(a))[0];
+}
+
+function churchWindowRow(batch, wall, kind, threshold, bays, minU, maxU) {
+  const rise = wall.cap - threshold;
+  if (rise < 2.5 || maxU - minU < 1.7) return;
+  const lo = threshold + (kind === 'clerestory' ? Math.max(2.24, rise * 0.62)
+    : kind === 'lancet' ? Math.max(1.23, rise * 0.27) : 1.12);
+  const hi = Math.min(wall.cap - 0.20, kind === 'clerestory' ? lo + 0.85 : lo + (kind === 'lancet' ? 3.5 : 2.3));
+  if (hi - lo < 0.40) return;
+  const step = (maxU - minU) / bays;
+  const width = Math.min(step * 0.75, kind === 'slit' ? 0.65 : kind === 'clerestory' ? 2.85 : 1.4);
+  for (let i = 0; i < bays; i++) measuredBays(batch, wall, kind, minU + step * (i + 0.5), width, lo, hi);
+}
+
+function churchClock(batch, wall, u, nap, size) {
+  circle(batch, wall, u, nap, size + 0.05, 0x737164, 0.055);
+  circle(batch, wall, u, nap, size, 0x242d2e, 0.076);
+  for (let i = 0; i < 12; i++) {
+    const x = Math.cos(i * Math.PI / 6), y = Math.sin(i * Math.PI / 6);
+    bar(batch, wall, [u + x * size * 0.81, nap + y * size * 0.81],
+      [u + x * size * 0.91, nap + y * size * 0.91], 0.044, 0xe4d6ab, 0.093);
+  }
+  bar(batch, wall, [u, nap], [u - size * 0.30, nap + size * 0.23], 0.050, 0xe4d6ab, 0.101);
+  bar(batch, wall, [u, nap], [u + size * 0.39, nap + size * 0.55], 0.031, 0xe4d6ab, 0.101);
+}
+
+export function createAdditionalChurch(site, survey, style) {
+  return church(site.name, survey, style, batch => {
+    const walls = surveyWalls(survey);
+    const approach = site.approach ?? { x: site.x, z: site.z - 20 };
+    const front = style.rose ? { ...frontage([-348.77, 736.35], [-351.19, 735.03]), cap: 24.25 }
+      : fitChurchEntry(site, survey.base, walls, approach, style);
+    if (!front) return;
+    const threshold = Math.max(front.bottom ?? survey.base, terrainHeightAt(front.x, front.z) + SCENE_NAP_ORIGIN + 0.075);
+    const portal = Math.min(style.doorWidth ?? 2.1, front.width * 0.68);
+    const entry = front.width * (style.entryOffset ?? 0);
+    const rise = front.cap - threshold;
+    if (rise < 2.17) return;
+    const roofLine = front.cap - 0.20;
+    const articulated = style.front === 'glass' || style.front === 'stained';
+    const doorTop = threshold + Math.min(style.doorHeight ?? 2.35, rise - 0.24);
+    if (style.curtain) {
+      // The old nave's three tall saw-edged wall runs are glazed up to the roof.
+      for (const wall of walls.filter(wall => wall.nx < -0.65 && wall.x > -903 && wall.x < -891 &&
+          wall.z > 607 && wall.z < 627 && wall.cap >= 28.9 && wall.bottom < 23)) {
+        measuredBays(batch, wall, 'stained', 0, wall.width * 0.82,
+          Math.max(wall.bottom + 0.35, 20.0), wall.cap - 0.25);
+      }
+    } else if (articulated && roofLine - doorTop >= 0.45) {
+      const center = front.width * (style.windowOffset ?? 0);
+      const width = Math.min(front.width * (style.glazing ?? 0.75), style.glassWidth ?? 17);
+      measuredBays(batch, front, style.front, center, width, doorTop + 0.12,
+        Math.min(roofLine, doorTop + (style.glassHeight ?? 14)));
+    } else if (style.front) {
+      const margin = Math.min(0.55, front.width * 0.1);
+      const lo = -front.width / 2 + margin, hi = front.width / 2 - margin;
+      for (const [a, b] of [[lo, entry - portal / 2 - 0.32], [entry + portal / 2 + 0.32, hi]]) {
+        churchWindowRow(batch, front, style.front, threshold, Math.max(1, Math.min(5, Math.round((b - a) / 1.7))), a, b);
+      }
+    }
+    if (style.portal === 'glass') {
+      measuredBays(batch, front, 'glass', entry, portal, threshold + 0.02, doorTop);
+    } else {
+      door(batch, front, entry, portal, threshold, doorTop, {
+        wood: style.door ?? WOOD, stone: style.trim ?? STONE, rounded: style.portal === 'arch',
+      });
+    }
+    steps(batch, front, entry, portal + 0.45, threshold, style.steps ?? 2);
+    if (style.canopy && front.cap > doorTop + 0.26) {
+      const [x, y, z] = point(front, entry, doorTop + 0.24, 0.61);
+      batch.solid(new THREE.BoxGeometry(Math.min(front.width, portal + 1.35), 0.17, 1.27)
+        .rotateY(Math.atan2(-front.uz, front.ux)).translate(x, y, z), style.trim ?? STONE);
+    }
+    if (style.gableGlass) {
+      const gable = walls.filter(wall => wall.width >= 4 && wall.top - wall.cap > 1.2 &&
+        front.nx * wall.nx + front.nz * wall.nz > 0.5).sort((a, b) => b.width - a.width)[0];
+      if (gable) {
+        const lo = Math.max(gable.bottom + 0.25, gable.cap - 1.15);
+        const bays = Math.max(3, Math.round(gable.width / 0.86));
+        const span = gable.width * 0.87 / bays;
+        for (let i = 0; i < bays; i++) {
+          const u = (i - (bays - 1) / 2) * span;
+          const h = Math.min(gable.topAt(u - span * 0.39), gable.topAt(u + span * 0.39)) - 0.20;
+          if (h - lo > 0.35) measuredBays(batch, gable, 'slit', u, span * 0.82, lo, h);
+        }
+      }
+    }
+    if (style.eave || style.upper || style.piers) {
+      for (const wall of walls.filter(wall => wall.width > 5.0 && wall.cap - wall.bottom > 3.4)) {
+        if (style.eave) rect(batch, wall, 0, wall.width - 0.11, wall.cap - 0.55, wall.cap - 0.10, style.eave, 0.105);
+        if (style.upper) rect(batch, wall, 0, wall.width - 0.12,
+          Math.max(wall.bottom + 3.20, wall.cap - 2.35), wall.cap - 0.10, style.upper, 0.020);
+        if (style.piers) {
+          for (const u of [-0.45, -0.16, 0.16, 0.45]) rect(batch, wall, u * wall.width, 0.25,
+            wall.bottom + 0.25, wall.cap - 0.15, style.trim, 0.030);
+        }
+      }
+    }
+    if (style.side) {
+      // One wall per bearing avoids duplicating windows on small returns and entry recesses.
+      const sides = walls.filter(wall => wall !== front && wall.width > 5 &&
+        wall.bottom <= survey.base + 1.8 && Math.abs(front.nx * wall.nx + front.nz * wall.nz) < 0.8)
+        .sort((a, b) => b.width - a.width);
+      const left = sides[0], right = left && sides.find(w => w.nx * left.nx + w.nz * left.nz < -0.5);
+      for (const wall of [left, right].filter(Boolean)) {
+        churchWindowRow(batch, wall, style.side, Math.max(threshold - 0.3, wall.bottom),
+          style.sideBays ?? Math.min(10, Math.max(2, Math.round(wall.width / 3.25))),
+          -wall.width * 0.44, wall.width * 0.44);
+      }
+    }
+    if (style.upperWindows) {
+      for (const wall of walls.filter(wall => wall.nx < -0.88 || wall.nx > 0.88)) {
+        if (wall.width < 7 || wall.bottom - survey.base < 4 || wall.cap - wall.bottom < 6) continue;
+        churchWindowRow(batch, wall, 'lancet', wall.bottom + 2.2, 3, -wall.width * 0.42, wall.width * 0.42);
+      }
+    }
+    if (style.hallClerestory) {
+      for (const wall of walls.filter(wall => wall.width > 3.3 && wall.cap >= 26.35 && wall.cap <= 26.62)) {
+        const bays = Math.max(1, Math.round(wall.width / 2));
+        windowBand(batch, wall, 0, wall.width - 0.43, wall.cap - 2.12, wall.cap - 0.66, {
+          columns: bays, rows: 1, border: 0xb4ab98, tint: CREAM_GLASS,
+        });
+      }
+    }
+    if (style.belfry) {
+      for (const wall of walls.filter(wall => wall !== front && wall.width <= 4.9 &&
+          wall.cap - survey.base >= style.belfry - 0.25 && wall.top - wall.cap < 5)) {
+        const y = wall.cap - (style.clock ? 3.10 : 1.28);
+        const width = Math.min(wall.width * 0.52, 1.12);
+        rect(batch, wall, 0, width, y - 0.75, y + 0.42, LOUVER, 0.055);
+        for (let i = 0; i < 5; i++) rect(batch, wall, 0, width * 0.95, y - 0.61 + i * 0.20,
+          y - 0.57 + i * 0.20, FRAME, 0.076);
+        if (style.clock && wall.cap - threshold > 7) churchClock(batch, wall, 0, y + 1.36, 0.51);
+      }
+    }
+    if (style.spire) {
+      const [x, base, z, radius, top, tint] = style.spire;
+      spindle(batch, x, z, 8, [[radius, base - 0.04], [radius, base + 0.34],
+        [radius * 1.13, base + 0.42], [radius * 0.62, base + 0.64],
+        [radius * 0.045, top]], tint);
+      if (style.rose) {
+        // The timber porch sits in front of a larger gable with a five-light rosette.
+        const gable = frontage([-345.66, 736.92], [-353.36, 732.66]);
+        circle(batch, gable, 0, 27.37, 0.56, STONE, 0.035);
+        for (let i = 0; i < 5; i++) {
+          const angle = i * Math.PI * 2 / 5;
+          circle(batch, gable, Math.cos(angle) * 0.28, 27.37 + Math.sin(angle) * 0.28, 0.16, GLASS[i % GLASS.length], 0.055);
+        }
+        batch.solid(new THREE.SphereGeometry(0.14, 8, 6).scale(1.65, 0.88, 0.53)
+          .translate(x, top - SCENE_NAP_ORIGIN + 0.22, z), tint);
+      }
+    }
+    if (style.bellHood) {
+      const [x, z, lo, hi, yaw] = style.bellHood;
+      const box = (width, height, depth, u, y, tint) => batch.solid(new THREE.BoxGeometry(width, height, depth)
+        .translate(u, y - SCENE_NAP_ORIGIN, 0).rotateY(yaw).translate(x, 0, z), tint);
+      for (const u of [-0.32, 0.32]) box(0.21, hi - lo, 0.44, u, (hi + lo) / 2, style.wall);
+      box(0.95, 0.15, 0.57, 0, hi - 0.075, style.roof);
+      spindle(batch, x, z, 8, [[0.18, hi - 0.65], [0.10, hi - 0.31]], 0x5b5140);
+    }
+    if (style.finial) {
+      const [x, nap, z] = style.finialAnchor ?? survey.points.reduce((a, b) => a[1] >= b[1] ? a : b);
+      cross(batch, x, z, nap - 0.02, style.finial, style.finialTint ?? style.trim ?? 0x636b59);
+    }
   });
 }

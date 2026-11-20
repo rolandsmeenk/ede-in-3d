@@ -37,9 +37,13 @@ After updating the offline wall assignments or WebP assets, run:
 node tools/build-ede-murals.mjs
 ```
 
-Map search includes De Keetmolen, De Peppel, CHE and Van der Knaaphal, four churches, and Lukkien. The marked Lukkien rooftop deck supports landing in Fly mode. See the [survey sources and in-game checks](../tools/data/ede-landmark-batch.md).
+Map search includes De Keetmolen, De Peppel, CHE and Van der Knaaphal, and Lukkien. The marked Lukkien rooftop deck supports landing in Fly mode. See the [survey sources and in-game checks](../tools/data/ede-landmark-batch.md).
+
+Search the map for the surveyed churches, including Bethelkerk, Evangelisch-Lutherse Kerk, Goede Herderkerk, Petrakerk, and the former Ericakerk. Their exteriors use surveyed footprints and photo-informed trim. [Church exterior references](../tools/data/ede-other-churches.md) · [Shell rebuild](../tools/data/ede-other-churches.sources.md)
 
 The next ten locations include Kasteel Hoekelum, NIZO, Ziekenhuis Gelderse Vallei, De Eder Kuil, De ReeHorst, Buitenzorg, Johannus, Technova, De Gasfabriek and Tesqua. Hoekelum has a walkable moat bridge and the Eder Kuil has revised amphitheatre grading. [Sources, offline refresh and verification](../tools/data/ede-next-landmarks.md)
+
+The sports generator fits markings and equipment to 169 mapped outdoor playing areas. It uses OSM footprints, the Tesqua court survey, and PDOK imagery to orient the Moorfielders diamonds. Unsupported layouts retain a mapped playing surface. [Sports inventory and refresh command](../tools/data/ede-sports.sources.md)
 
 ## Refresh the Ede map
 
@@ -241,7 +245,7 @@ python3 tools/build-ede-facades.py /tmp/ede-facades-walls.json tools/data/ede-fa
   --report tools/data/ede-facade-coverage.json
 ```
 
-The full bake includes the reviewed layouts for Marktplein, Kuiperplein and Museumplein. To apply those reviews to an existing façade bake, run the following command. The reviews apply to the surveyed walls and stay out of neighbourhood profile training. [Square review records](../tools/data/ede-square-facades)
+The full bake includes the reviewed layouts for Marktplein, Kuiperplein, Museumplein and Oude Kerkplein. To apply those reviews to an existing façade bake, run the following command. The reviews apply to the surveyed walls and stay out of neighbourhood profile training. [Square review records](../tools/data/ede-square-facades)
 
 ```sh
 python3 tools/build-ede-facades.py --report tools/data/ede-facade-coverage.json

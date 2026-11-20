@@ -70,3 +70,9 @@ All 377 JavaScript tests passed. The offline Python suite reported 33 passes and
 The square bake updates two compressed cells and adds 6.2 KiB. All 35 segments matched triangles in the pinned 3DBAG tiles. Four Kuiperplein rows also matched Cultura’s custom mesh, which owns the Brouwerstraat wall. The reviewed openings fit in the existing mask allocation after lowering the mask resolution on crowded tiles. The second bake reproduced both cells byte for byte.
 
 The walking-height and oblique WebGPU views showed the stepped Marktplein bays, the Brouwerstraat shopfronts and the Museumplein café row. Awnings, trees and viewing angle obscure some openings. The review notes mark the corresponding layout, colour and depth estimates. Other frontages use the existing building materials. [Reference credits](../../assets/ede-facades.SOURCES.md) · [Review coverage](ede-facade-coverage.json)
+
+## Oude Kerkplein
+
+The photo review covers the red gables and yellow bay on the south frontage, the café glazing toward Stadspark, and the pink brick shop strip on the north side. Two BAG buildings supply 12 wall segments with 89 openings. The game uses material masks for the opening layouts and models the recesses of 19 entrances, storefronts and feature windows. The façade dimensions and depth are estimates from exterior photos registered to the BAG walls. Tree cover and umbrellas obscure parts of both shop rows. [Photo credits](../../assets/ede-facades.SOURCES.md) · [Wall records](ede-square-facades/oude-kerkplein.json)
+
+All 12 segments matched the published LoD 2.2 triangles within 2.5 cm of their wall planes. All 12 received material masks. The four modified layout cells add 2,574 compressed bytes. The previous records in these cells were preserved. The existing façade tests check the new rows against the layout index and coverage counts.
