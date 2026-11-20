@@ -3,7 +3,7 @@
 
 PDOK input is active tree Points in RD New (EPSG:28992). Municipal input is
 Ede:monumentale-bomen in WGS84. Optionally supply the source Overpass JSON.
-Requires gdaltransform on PATH.
+Uses the pinned Ede GIS datum grid.
 """
 
 import argparse
@@ -15,7 +15,6 @@ import math
 from pathlib import Path
 import re
 import struct
-import subprocess
 
 from ede_map import load_scene
 
@@ -49,6 +48,7 @@ class Tree:
     sources: int = 0
     crown_width: float = 0
     season_group: int = 0
+    source_ids: tuple = ()
 
 
 def read_json(path):
@@ -58,22 +58,24 @@ def read_json(path):
     return json.loads(raw)
 
 
-def read_geojson(path, crs, geometry_type):
+def read_geojson(path, geometry_type):
+    from ede_gis import Frame, source_crs
+
     data = read_json(path)
     if data.get('type') != 'FeatureCollection' or not isinstance(data.get('features'), list):
         raise ValueError(f'Expected a GeoJSON FeatureCollection in {path}')
-    crs_name = (data.get('crs') or {}).get('properties', {}).get('name', '')
-    if crs_name and not re.search(rf'EPSG:+{crs}$', crs_name, re.IGNORECASE):
-        if crs != 4326 or not crs_name.endswith('CRS84'):
-            raise ValueError(f'{path} must use EPSG:{crs}, found {crs_name}')
+    crs = source_crs(data)
     for feature in data['features']:
         geometry = feature.get('geometry') or {}
         if geometry.get('type') != geometry_type:
             raise ValueError(f'Expected {geometry_type} features in {path}')
         coordinates = geometry['coordinates']
         points = [coordinates] if geometry_type == 'Point' else coordinates
+        properties = feature.get('properties') or {}
+        identity = properties.get('lokaal_id') or feature.get('id')
         for point in points:
-            yield coordinate(point), feature.get('properties') or {}
+            # GeoJSON ordinates are x/y even if an older source declares EPSG:4326.
+            yield Frame.to_rd(*coordinate(point), crs, axis_order='xy'), properties, identity
 
 
 def coordinate(point):
@@ -81,20 +83,6 @@ def coordinate(point):
     if not math.isfinite(x) or not math.isfinite(y):
         raise ValueError(f'Invalid tree coordinate {point}')
     return x, y
-
-
-def transform(points, source, target):
-    if not points:
-        return []
-    stdin = ''.join(f'{x} {y}\n' for x, y in points)
-    result = subprocess.run(
-        ['gdaltransform', '-s_srs', f'EPSG:{source}', '-t_srs', f'EPSG:{target}'],
-        input=stdin, capture_output=True, text=True, check=True,
-    )
-    rows = result.stdout.splitlines()
-    if len(rows) != len(points):
-        raise ValueError(f'Could not project all tree coordinates to EPSG:{target}: {result.stderr.strip()}')
-    return [coordinate([float(n) for n in row.split()[:2]]) for row in rows]
 
 
 def measure(value, unit):
@@ -122,7 +110,7 @@ def osm_points(osm_path, scene, unproject):
     if osm_path is None:
         print('OSM source: existing EDE_DATA tree positions')
         for t in scene['trees']:
-            yield unproject(t['x'], t['z']), t['h'] if t['h'] != 8 else 0, 0, UNKNOWN
+            yield unproject(t['x'], t['z']), t['h'] if t['h'] != 8 else 0, 0, UNKNOWN, None
         return
 
     data = read_json(osm_path)
@@ -139,7 +127,7 @@ def osm_points(osm_path, scene, unproject):
         diameter = measure(tags.get('diameter'), 'm') * 100
         if not diameter:
             diameter = measure(tags.get('circumference'), 'm') * 100 / math.pi
-        yield coordinate((entry['lon'], entry['lat'])), measure(tags.get('height'), 'm'), diameter, species
+        yield coordinate((entry['lon'], entry['lat'])), measure(tags.get('height'), 'm'), diameter, species, entry.get('id')
 
 
 class SpatialGrid:
@@ -167,6 +155,7 @@ def merge(site, extra):
     if site.species == UNKNOWN:
         site.species = extra.species
     site.sources |= extra.sources
+    site.source_ids += extra.source_ids
 
 
 def unique(trees):
@@ -202,9 +191,10 @@ def join(sites, extra, radius):
 def merge_surveyed(sites, records, frame):
     for record in records:
         rd = coordinate(record['rd'])
+        identity = record.get('id')
         surveyed = Tree(rd, frame.rd_to_scene(*rd), float(record['height']),
                         float(record['trunkDiameterCm']), int(record['species']), SURVEYED,
-                        float(record['crownWidth']))
+                        float(record['crownWidth']), source_ids=((SURVEYED, identity),) if identity else ())
         nearest = min(sites, key=lambda t: math.dist(t.world, surveyed.world), default=None)
         if nearest and math.dist(nearest.world, surveyed.world) <= MUNICIPAL_REACH:
             merge(nearest, surveyed)
@@ -252,52 +242,54 @@ def unpack_baseline(path, frame):
         raise ValueError('Invalid baseline tree inventory size')
     return sites
 
-def build(pdok_path, municipal_path, osm_path, output):
+def build(pdok_path, municipal_path, osm_path, output, audit=None):
+    from ede_gis import Frame
+
     scene = load_scene()
-    south, west, north, east = scene['meta']['geographicBounds']
-    affine = scene['meta']['lonLatAffine']
-    lon0, lat0 = affine['lon0'], affine['lat0']
-    x0, kx, _ = affine['x']
-    z0, _, kz = affine['z']
+    west, north, east, south = scene['meta']['bounds']
+    frame = Frame(scene['meta']['lonLatAffine'])
 
-    def inside(ll):
-        return west <= ll[0] <= east and south <= ll[1] <= north
+    def inside(world):
+        return west <= world[0] <= east and north <= world[1] <= south
 
-    def project(ll):
-        return x0 + (ll[0] - lon0) * kx, z0 + (ll[1] - lat0) * kz
+    def source_id(kind, identity):
+        return ((kind, identity),) if audit and identity is not None else ()
 
-    def unproject(x, z):
-        return lon0 + (x - x0) / kx, lat0 + (z - z0) / kz
-
-    rd = [xy for xy, p in read_geojson(pdok_path, 28992, 'Point')
-          if p.get('plus_type', 'boom') == 'boom' and p.get('status', 'bestaand') == 'bestaand']
-    municipal = [(ll, measure(p.get('boomhoogte'), 'm'), measure(p.get('diameter_n'), 'cm'),
-                  classify(p.get('boomsoort_')))
-                 for ll, p in read_geojson(municipal_path, 4326, 'MultiPoint') if inside(ll)]
-    osm = [r for r in osm_points(osm_path, scene, unproject) if inside(r[0])]
-    pdok = [Tree(xy, project(ll), sources=PDOK)
-            for xy, ll in zip(rd, transform(rd, 28992, 4326), strict=True) if inside(ll)]
+    pdok = [Tree(rd, world, sources=PDOK, source_ids=source_id(PDOK, identity))
+            for rd, properties, identity in read_geojson(pdok_path, 'Point')
+            if properties.get('plus_type', 'boom') == 'boom' and properties.get('status', 'bestaand') == 'bestaand'
+            and inside(world := frame.rd_to_scene(*rd))]
+    municipal = [Tree(rd, world, measure(p.get('boomhoogte'), 'm'), measure(p.get('diameter_n'), 'cm'),
+                      classify(p.get('boomsoort_')), MUNICIPAL, source_ids=source_id(MUNICIPAL, identity))
+                 for rd, p, identity in read_geojson(municipal_path, 'MultiPoint')
+                 if inside(world := frame.rd_to_scene(*rd))]
+    osm = [Tree(Frame.to_rd(*ll, 'OGC:CRS84'), world, height, diameter, species, OSM,
+                source_ids=source_id(OSM, identity))
+           for ll, height, diameter, species, identity in osm_points(osm_path, scene, frame.scene_to_lon_lat)
+           if inside(world := frame.lon_lat_to_scene(*ll))]
     if not pdok:
         raise ValueError('No active PDOK trees in the Ede scene')
 
-    def in_rd(rows, source):
-        rd_coords = transform([ll for ll, *_ in rows], 4326, 28992)
-        return [Tree(xy, project(ll), height, diameter, species, source)
-                for xy, (ll, height, diameter, species) in zip(rd_coords, rows, strict=True)]
-
     sites = unique(pdok)
     print(f'PDOK {len(pdok)} in bounds, {len(sites)} after same-source deduplication')
-    for name, rows, source, radius in (('Municipal', municipal, MUNICIPAL, MUNICIPAL_REACH),
-                                       ('OSM', osm, OSM, OSM_REACH)):
-        extras = unique(in_rd(rows, source))
+    for name, rows, radius in (('Municipal', municipal, MUNICIPAL_REACH), ('OSM', osm, OSM_REACH)):
+        extras = unique(rows)
         before = len(sites)
         join(sites, extras, radius)
         added = len(sites) - before
         print(f'{name} {len(rows)} in bounds, {len(extras) - added} matched, {added} added')
-    from ede_gis import Frame
-    merge_surveyed(sites, read_json(ROOT / 'tools/data/ede-surveyed-trees.json'), Frame(affine))
+    merge_surveyed(sites, read_json(ROOT / 'tools/data/ede-surveyed-trees.json'), frame)
     data = pack(sites)
     output.write_bytes(data)
+    if audit:
+        audit.write_text(json.dumps({
+            'assetSha256': hashlib.sha256(data).hexdigest(),
+            'sourceSha256': {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                             for path in (pdok_path, municipal_path, osm_path) if path},
+            'sourceFlags': {'1': 'PDOK BGT', '2': 'Gemeente Ede', '4': 'OpenStreetMap', '8': 'surveyed'},
+            'trees': [[t.rd, [round(value / STEP) for value in t.world], t.source_ids] for t in sites],
+            'scenePositionQuantumM': STEP,
+        }, separators=(',', ':')) + '\n')
     flags = ', '.join(f'{sources}: {count}' for sources, count in sorted(Counter(t.sources for t in sites).items()))
     print(f'{len(sites)} trees, {len(data)} bytes, source flag counts {{{flags}}}')
     print(f'{sum(t.height > 0 for t in sites)} heights, {sum(t.diameter > 0 for t in sites)} diameters, '
@@ -325,4 +317,4 @@ if __name__ == '__main__':
     else:
         if not args.pdok or not args.municipal:
             parser.error('both baseline snapshots or --mor and --roadside are required')
-        build(args.pdok, args.municipal, args.osm, args.output or ROOT / 'assets/ede-trees.bin')
+        build(args.pdok, args.municipal, args.osm, args.output or ROOT / 'assets/ede-trees.bin', args.audit)

@@ -23,4 +23,10 @@ python3 -B tools/build-ede-parking.py --osm utrecht.osm.pbf gelderland.osm.pbf \
 python3 -B -m unittest discover -s tests -p test_ede_parking_inventory.py
 ```
 
+After refreshing the terrain, existing bays with unambiguous ground support can update Y offline. This keeps all bay geometry, access, the aisle graph and original source dates. Bays with fitted or potentially fitted support keep the reviewed heights. The asset records the new terrain digest.
+
+```sh
+python3 -B tools/build-ede-parking.py --rebase-ground assets/ede-parking-spaces.json.gz
+```
+
 Parking geometries incorporate © OpenStreetMap contributors, licensed under the Open Database License. PDOK BGT is available under CC0 1.0.

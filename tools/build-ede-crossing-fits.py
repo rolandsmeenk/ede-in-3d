@@ -9,10 +9,12 @@ from pathlib import Path
 import runpy
 from statistics import median
 
-from pyproj import Transformer
 import rasterio
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
+
+from ede_gis import Frame
+from ede_raster import require_rd_raster
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -133,14 +135,14 @@ def bospoort_north_controls(line, start, portal, portal_height, grid, dtm, dsm, 
 def build(survey_directory):
     scene = GRADE['load_scene']()
     grid = GRADE['Terrain']()
-    frame = scene['meta']['lonLatAffine']
-    rd = Transformer.from_crs(4326, 28992, always_xy=True)
+    affine = scene['meta']['lonLatAffine']
+    frame = Frame(affine)
     catalog = json.loads((ROOT / 'tools/data/ede-crossing-sites.json').read_text())
     widths = json.loads((ROOT / 'tools/data/ede-bgt-road-evidence.json').read_text())['ways']
     asset = json.loads((ROOT / 'assets/ede-bgt.json').read_text())
     area = Polygon.from_bounds(*scene['meta']['bounds'])
     tunnels = json.loads((ROOT / 'tools/data/ede-crossing-tunnels.geojson').read_text())['features']
-    footprints = {f['properties']['lokaal_id']: WORLD['world_geometry'](f, frame, area) for f in tunnels}
+    footprints = {f['properties']['lokaal_id']: WORLD['world_geometry'](f, affine, area) for f in tunnels}
     for group in asset['structures']:
         if group['kind'] != 'deck':
             continue
@@ -155,7 +157,7 @@ def build(survey_directory):
         endpoints[points[-1]].append((way, -1))
 
     def elevation(raster, point):
-        e, n = rd.transform(frame['lon0'] + point.x / frame['x'][1], frame['lat0'] + point.y / frame['z'][2])
+        e, n = frame.scene_to_rd(point.x, point.y)
         v = float(next(raster.sample([(e, n)]))[0])
         return v if -2 < v < 95 else None
 
@@ -194,6 +196,8 @@ def build(survey_directory):
         built = {'upper': {}, 'lower': {}}
         with ExitStack() as stack:
             dtm, dsm = [stack.enter_context(rasterio.open(survey_directory / f"{site['id']}-{r}.tif")) for r in ('dtm', 'dsm')]
+            require_rd_raster(dtm)
+            require_rd_raster(dsm)
             for role, lines in [('upper', upper), ('lower', lower)]:
                 for way_id, (line, parts) in lines.items():
                     if not cross[way_id]:
@@ -365,6 +369,7 @@ def build(survey_directory):
     _, west_a, west_b = next(part for part in parts if part[0] == way_id)
     start, end = max(0, west_a - 14), min(line.length, west_b + 14)
     with rasterio.open(survey_directory / 'westtunnel-dsm.tif') as surface:
+        require_rd_raster(surface)
         stations = [west_a, (west_a + west_b) / 2, west_b]
         measured = [elevation(surface, line.interpolate(s)) for s in stations]
     if all(y is not None and 19 < y < 22 for y in measured):

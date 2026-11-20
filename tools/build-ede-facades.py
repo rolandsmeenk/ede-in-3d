@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 from statistics import median
 import tempfile
+from urllib.parse import urlsplit
 
 
 BUILDING_TYPES = {'terraced', 'apartments', 'detached', 'semi-detached', 'shop', 'mixed-use'}
@@ -23,6 +24,7 @@ APPEARANCE_COLORS = ('wallColor', 'roofColor', 'frameColor', 'doorColor', 'sillC
 OPENING_DIMENSIONS = {'frame': 0.3, 'sill': 0.3, 'surround': 0.5, 'depth': 3.0, 'arch': 2.0}
 OPENING_DETAILS = ('frame', 'sill', 'surround', 'depth', 'arch', 'panes', 'transom', 'tracery')
 TILE_SIZE = 384
+SQUARE_REVIEWS = Path(__file__).resolve().parent / 'data/ede-square-facades'
 MIN_BUILDINGS = 3
 MIN_CONFIDENCE = 0.7
 ATTRIBUTION = {
@@ -117,12 +119,29 @@ def checked_opening(item, width, height):
     return out
 
 
+def source_key(source):
+    return source.get('imageId') or source['url']
+
+
+def source_date(source):
+    return source.get('capturedAt') or source['referenceDate']
+
+
 def checked_source(source):
-    clean = {k: source[k] for k in ('imageId', 'capturedAt', 'creator', 'confidence') if k in source}
-    if not re.fullmatch(r'[0-9]+', str(clean.get('imageId', ''))):
-        raise ValueError('A Mapillary source requires a numeric image ID')
-    clean['imageId'] = str(clean['imageId'])
-    date.fromisoformat(clean['capturedAt'][:10])
+    fields = ('imageId', 'url', 'capturedAt', 'referenceDate', 'creator', 'confidence')
+    clean = {name: source[name] for name in fields if name in source}
+    if 'imageId' in clean:
+        if not re.fullmatch(r'[0-9]+', str(clean['imageId'])):
+            raise ValueError('A Mapillary source requires a numeric image ID')
+        clean['imageId'] = str(clean['imageId'])
+    if 'url' in clean:
+        url = urlsplit(clean['url'])
+        if url.scheme != 'https' or not url.hostname or url.username or url.password:
+            raise ValueError('An exterior reference requires a public HTTPS URL')
+    elif 'imageId' not in clean:
+        raise ValueError('A façade source requires an image ID or an exterior reference URL')
+    when = source_date(clean)
+    date.fromisoformat(when[:10] if clean.get('capturedAt') or len(when) != 4 else f'{when}-01-01')
     confidence = clean.get('confidence', 1)
     if not number(confidence) or not 0 <= confidence <= 1:
         raise ValueError('Invalid source confidence')
@@ -233,14 +252,14 @@ def overlap(a, b):
 def merge_views(views):
     # Quality decides ambiguous overlaps. Date breaks ties and favours newer alterations.
     ordered = sorted(views, key=lambda v: (v['confidence'], max(
-        (s['capturedAt'], s['imageId']) for s in v['sources'])), reverse=True)
+        (source_date(s), source_key(s)) for s in v['sources'])), reverse=True)
     merged = {k: v for k, v in ordered[0].items() if k not in ('detail', 'openings', 'sources', 'occludedKinds')}
     if hidden := set.intersection(*(set(view.get('occludedKinds', ())) for view in ordered)):
         merged['occludedKinds'] = sorted(hidden)
     openings, sources, detail = [], {}, None
     for view in ordered:
         for source in view['sources']:
-            sources.setdefault(source['imageId'], source)
+            sources.setdefault(source_key(source), source)
         for name in (*APPEARANCE_COLORS, 'wallMaterial', 'storeySpacing'):
             if name in view:
                 merged.setdefault(name, view[name])
@@ -726,15 +745,117 @@ def tile_assets(path, value):
     return {'tiles': len(tiles), 'tileBytes': tile_bytes, 'indexBytes': index_bytes}
 
 
+def load_square_walls(directory):
+    rows = [row for path in sorted(directory.glob('*.json')) for row in load(path, 'walls')['walls']]
+    if not rows:
+        return {}, {}
+    walls = checked_walls(rows)
+    measurements = checked_observations(
+        [{**row['appearance'], 'bagId': row['bagId'], 'wallId': row['wallId']} for row in rows], walls)
+    if set(measurements) != set(walls) or any(walls[identity]['wallType'] != 'street' for identity in walls):
+        raise ValueError('Each reviewed square wall must be street-facing and have attributed observations')
+    counts = defaultdict(lambda: {'walls': 0, 'openings': 0, 'buildings': set()})
+    tiles = defaultdict(list)
+    for identity, observation in measurements.items():
+        wall = walls[identity]
+        site = counts[wall['site']]
+        site['walls'] += 1
+        site['openings'] += len(observation['openings'])
+        site['buildings'].add(wall['bagId'])
+        cell = ','.join(str(math.floor((a + b) / (2 * TILE_SIZE))) for a, b in zip(wall['a'], wall['b']))
+        fields = ('bagId', 'wallId', 'a', 'b', 'minY', 'height', 'baseOffset', 'wallType')
+        tiles[cell].append(rounded({k: wall[k] for k in fields if k in wall} | observation))
+    for site in counts.values():
+        site['buildings'] = len(site['buildings'])
+    return tiles, dict(counts)
+
+
+def same_wall(a, b):
+    return (a['bagId'][-16:] == b['bagId'][-16:] and (
+        a['wallId'] == b['wallId'] or (
+            max(math.dist(a[end], b[end]) for end in ('a', 'b')) <= .25
+            and abs(a.get('baseOffset', 0) - b.get('baseOffset', 0)) <= .15)))
+
+
+def update_square_tiles(manifest_path, reviews, report, squares):
+    manifest = json.loads(manifest_path.read_text())
+    if manifest.get('version') != 2 or manifest.get('tileSize') != TILE_SIZE:
+        raise ValueError('Expected the published 384 m façade manifest')
+    manifest_tiles = manifest['tiles']
+    updates, insertions = {}, defaultdict(list)
+    for cell, new in reviews.items():
+        name = manifest_tiles.get(cell) or f'{manifest_path.stem}/{cell.replace(",", "_")}.json.gz'
+        manifest_tiles[cell] = name
+        insertions[name].extend(new)
+    # Include neighbouring cells so a small catalogue correction across a tile boundary keeps one wall.
+    neighbours = {f'{int(ix) + dx},{int(iz) + dz}' for cell in reviews for ix, iz in [cell.split(',')]
+                  for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
+    by_building = defaultdict(list)
+    for group in reviews.values():
+        for wall in group:
+            by_building[wall['bagId'][-16:]].append(wall)
+    for cell in sorted(neighbours):
+        if cell not in manifest_tiles:
+            continue
+        name = manifest_tiles[cell]
+        path = manifest_path.parent / name
+        previous = json.loads(gzip.decompress(path.read_bytes())) if path.is_file() else {'version': 2, 'walls': []}
+        kept = []
+        for row in previous['walls']:
+            candidates = by_building.get(row['bagId'][-16:], ())
+            if any(same_wall(row, new) for new in candidates):
+                if row['wallType'] == 'shared':
+                    raise ValueError(f"Reviewed wall overlaps a published party wall: {row['bagId']}/{row['wallId']}")
+            else:
+                kept.append(row)
+        updated = kept + insertions[name]
+        if updated != previous['walls']:
+            updates[path] = {'version': 2, 'walls': updated}
+    if list(manifest_tiles) != sorted(manifest_tiles, key=lambda key: tuple(map(int, key.split(',')))):
+        manifest['tiles'] = dict(sorted(manifest_tiles.items(), key=lambda item: tuple(map(int, item[0].split(',')))))
+    for path, value in updates.items():
+        save(path, value)
+    if json.loads(manifest_path.read_text()) != manifest:
+        save(manifest_path, manifest)
+    if report is not None:
+        observed = inferred = blank = size = 0
+        for name in manifest_tiles.values():
+            path = manifest_path.parent / name
+            size += path.stat().st_size
+            walls = json.loads(gzip.decompress(path.read_bytes()))['walls']
+            observed += sum(wall['status'] == 'observed' for wall in walls)
+            blank += sum(wall['wallType'] == 'shared' for wall in walls)
+            inferred += sum(wall['wallType'] != 'shared' and wall['status'] == 'inferred' for wall in walls)
+        report.update(observedWalls=observed, inferredWalls=inferred, blankSharedWalls=blank,
+                      proceduralWalls=report['catalogueWalls'] - observed - inferred - blank,
+                      reliableObservedWalls=observed, reviewedSquares=squares,
+                      assets={'tiles': len(manifest_tiles), 'tileBytes': size, 'indexBytes': manifest_path.stat().st_size})
+    return len(updates)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('catalogue', type=Path)
-    parser.add_argument('observations', type=Path)
+    parser.add_argument('catalogue', type=Path, nargs='?')
+    parser.add_argument('observations', type=Path, nargs='?')
     parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[1] / 'assets/ede-facades.json')
     parser.add_argument('--report', type=Path, help='Write whole-building holdout errors and profile coverage')
+    parser.add_argument('--square-reviews', type=Path, default=SQUARE_REVIEWS,
+                        help='Reviewed square layouts. With no city inputs, update only the affected published tiles.')
     parser.add_argument('--hold-out', action='append', metavar='BAG_ID', help='Override the automatic BAG ID holdout selection')
     args = parser.parse_args()
+    if bool(args.catalogue) != bool(args.observations):
+        parser.error('Provide both the wall catalogue and observations, or update the published square tiles')
     try:
+        reviews, squares = load_square_walls(args.square_reviews)
+        if not args.catalogue:
+            if not reviews:
+                parser.error('No square review files to bake')
+            report = json.loads(args.report.read_text()) if args.report else None
+            changed = update_square_tiles(args.output, reviews, report, squares)
+            if args.report:
+                save(args.report, report)
+            print(json.dumps({'updatedTiles': changed, 'reviewedSquares': squares}, ensure_ascii=False))
+            return
         catalogue = load(args.catalogue, 'walls')
         observations = load(args.observations, 'observations')['observations']
         asset, report = bake(catalogue['walls'], observations, holdout=())
@@ -752,6 +873,8 @@ def main():
         report['neighbourhoodNames'] = catalogue.get('neighbourhoodNames', {})
         report['catalogueSources'] = catalogue.get('source', {})
         report['assets'] = tile_assets(args.output, asset)
+        if reviews:
+            update_square_tiles(args.output, reviews, report, squares)
         if args.report:
             save(args.report, report)
     except (ValueError, KeyError, TypeError, OSError) as error:

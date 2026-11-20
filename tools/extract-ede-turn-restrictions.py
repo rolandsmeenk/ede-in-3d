@@ -9,6 +9,7 @@ from pathlib import Path
 import osmium
 
 from ede_map import load_scene
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = {f'{prefix}_{turn}' for prefix in ('no', 'only')
@@ -103,14 +104,13 @@ def extract(paths, data):
 
     needed = {node for *_, nodes in rows for node in nodes}
     points = {}
-    affine = data['meta']['lonLatAffine']
+    frame = SceneAffine(data['meta']['lonLatAffine'])
     class Junctions(osmium.SimpleHandler):
         def node(self, node):
             if node.id not in needed:
                 return
-            lon, lat = node.location.lon - affine['lon0'], node.location.lat - affine['lat0']
-            points[node.id] = [math.floor((offset + x * lon + y * lat) * 10 + 0.5) / 10
-                               for offset, x, y in (affine['x'], affine['z'])]
+            points[node.id] = [math.floor(value * 10 + 0.5) / 10
+                               for value in frame.lon_lat_to_scene(node.location.lon, node.location.lat)]
 
     reader = Junctions()
     for path in paths:

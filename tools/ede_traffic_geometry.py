@@ -6,6 +6,8 @@ import subprocess
 from collections import defaultdict
 from pathlib import Path
 
+from ede_scene import SceneAffine
+
 TOOLS = Path(__file__).resolve().parent
 CELL = 40
 
@@ -73,13 +75,13 @@ class RoadGraph:
         self.bounds = payload['bounds']
         self.geographic_bounds = payload['geographicBounds']
         self.affine = payload['lonLatAffine']
+        self.frame = SceneAffine(self.affine)
         self.edges = [Segment(edge['a'], edge['b'], edge) for edge in payload['edges']]
         self.index = SegmentIndex(self.edges, margin=22)
         self.paths = [Segment(edge['a'], edge['b'], edge) for edge in payload.get('paths', ())]
 
     def project(self, lon, lat):
-        a, b = lon - self.affine['lon0'], lat - self.affine['lat0']
-        return tuple(p[0] + p[1] * a + p[2] * b for p in (self.affine['x'], self.affine['z']))
+        return self.frame.lon_lat_to_scene(lon, lat)
 
     def point_matches(self, x, z, heading=None, lane_count=None, carriageway=None, layer=None):
         candidates = []

@@ -24,6 +24,7 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import nearest_points
 
 from ede_map import load_scene
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 BGT = runpy.run_path(str(Path(__file__).with_name('build-ede-bgt.py')))
@@ -84,18 +85,7 @@ GATE_TAGS = 'gate|lift_gate|swing_gate|kissing_gate|entrance|cycle_barrier'
 
 
 def geographic_bounds(bounds, affine):
-    x0, x_lon, x_lat = affine['x']
-    z0, z_lon, z_lat = affine['z']
-    determinant = x_lon * z_lat - x_lat * z_lon
-    min_x, min_z, max_x, max_z = bounds
-    corners = []
-    for x in (min_x, max_x):
-        for z in (min_z, max_z):
-            dx, dz = x - x0, z - z0
-            corners.append((affine['lon0'] + (dx * z_lat - dz * x_lat) / determinant,
-                            affine['lat0'] + (dz * x_lon - dx * z_lon) / determinant))
-    lons, lats = zip(*corners)
-    return min(lons), min(lats), max(lons), max(lats)
+    return SceneAffine(affine).geographic_bounds(bounds)
 
 
 def write_json(path, document):
@@ -545,15 +535,6 @@ def prop_record(geometry, kind, level, nearby, boarding, stops, trees, lamps, bu
     return data, 'unmatched-shelter' if kind == 'shelter' and not stop_id else None
 
 
-def scene_to_lon_lat(affine, x, z):
-    x0, x_lon, x_lat = affine['x']
-    z0, z_lon, z_lat = affine['z']
-    determinant = x_lon * z_lat - x_lat * z_lon
-    dx, dz = x - x0, z - z0
-    return (affine['lon0'] + (dx * z_lat - dz * x_lat) / determinant,
-            affine['lat0'] + (dz * x_lon - dx * z_lon) / determinant)
-
-
 AHN6 = {
     'dsm': ('22f5740b-1276-42e0-9d2d-dd2a9745e928', 'c936131a-2c4f-44ce-b321-a085c6c0ce3b'),
     'dtm': ('231a4c66-9de9-4f41-91af-e4e991df9160', '05df775a-ae39-4bb0-a52e-d3044c993d1e'),
@@ -561,12 +542,14 @@ AHN6 = {
 
 
 def fetch_station_heights(directory, affine):
-    from pyproj import Transformer
+    from ede_gis import TransformDirection, geographic_pipeline
 
-    mercator = Transformer.from_crs(4326, 3857, always_xy=True)
+    frame = SceneAffine(affine)
+    mercator = geographic_pipeline()
     x0, z0, x1, z1 = STATION_FRONT
-    easts, norths = zip(*[mercator.transform(*scene_to_lon_lat(affine, x, z))
-                          for x in (x0 - 10, x1 + 10) for z in (z0, z1 + 10)])
+    easts, norths = zip(*(mercator.transform(*frame.scene_to_lon_lat(x, z),
+                                            direction=TransformDirection.INVERSE, errcheck=True)
+                          for x in (x0 - 10, x1 + 10) for z in (z0, z1 + 10)))
     west, south = math.floor(min(easts)), math.floor(min(norths))
     east, north = math.ceil(max(easts)), math.ceil(max(norths))
     crs = 'urn:ogc:def:crs:EPSG::3857'
@@ -580,6 +563,12 @@ def fetch_station_heights(directory, affine):
                            'gridOrigin': f'{west},{north}', 'gridOffsets': '0.8,-0.8'})
         raw = subprocess.check_output(['curl', '-fsSL', '--max-time', '40',
                                        f'https://api.ellipsis-drive.com/v3/ogc/wcs/{service}?{query}'])
+        # Ellipsis Drive can append the closing MIME marker immediately after the TIFF.
+        # Insert its separator before parsing so a final TIFF newline stays part of the raster.
+        closing = b'--wcs--'
+        if not raw.endswith(closing):
+            raise ValueError(f'Expected the final AHN6 WCS boundary for station {model}')
+        raw = raw.removesuffix(closing) + b'\r\n' + closing
         message = BytesParser(policy=MIME_POLICY).parsebytes(b'Content-Type: multipart/mixed; boundary=wcs\r\n\r\n' + raw)
         payload = next((part.get_payload(decode=True) for part in message.iter_parts()
                         if part.get_content_type() == 'image/tiff'), None)
@@ -592,10 +581,30 @@ def station_heights(directory, affine):
     dtm_path, dsm_path = [directory / f'station-canopy-ahn6-{model}.tif' for model in ('dtm', 'dsm')]
     if not (dtm_path.exists() and dsm_path.exists()):
         return None
-    from pyproj import Transformer
+    import numpy as np
     import rasterio
 
-    mercator = Transformer.from_crs(4326, 3857, always_xy=True)
+    from ede_gis import Frame, TransformDirection, geographic_pipeline, rd_pipeline, source_crs
+    from ede_raster import sample_bilinear
+
+    frame = Frame(affine)
+    rasters = []
+    for path in (dtm_path, dsm_path):
+        with rasterio.open(path) as raster:
+            code = source_crs({'crs': raster.crs.to_wkt()} if raster.crs else {}).to_epsg()
+            nominal = {28992: 0.5, 3857: 0.8}.get(code)
+            if nominal is None or any(abs(step - nominal) > .02 for step in raster.res):
+                raise ValueError('Expected the AHN6 station survey at nominal half-metre resolution')
+            rasters.append((code, raster.transform, raster.read(1, masked=True).astype(float).filled(np.nan)))
+
+    def sample(points):
+        easting, northing = frame.scene_to_rd(*np.asarray(points).T)
+        for code, transform, pixels in rasters:
+            x, y = easting, northing
+            if code == 3857:
+                lon, lat = rd_pipeline().transform(x, y, errcheck=True)
+                x, y = geographic_pipeline().transform(lon, lat, direction=TransformDirection.INVERSE, errcheck=True)
+            yield sample_bilinear(pixels, transform, x, y)
 
     def canopy(polygon):
         usable = polygon.buffer(-.32)
@@ -606,13 +615,7 @@ def station_heights(directory, affine):
                   for x in range(math.ceil(x0), math.floor(x1) + 1) if contains_xy(usable, x, z)]
         if len(points) < 5:
             return []
-        locations = [mercator.transform(*scene_to_lon_lat(affine, x, z)) for x, z in points]
-        with rasterio.open(dtm_path) as dtm, rasterio.open(dsm_path) as dsm:
-            if any(raster.crs.to_epsg() != 3857 or any(abs(step - .8) > .02 for step in raster.res)
-                   for raster in (dtm, dsm)):
-                raise ValueError('Expected the AHN6 station survey at nominal half-metre resolution')
-            ground = [float(value[0]) for value in dtm.sample(locations)]
-            roof = [float(value[0]) for value in dsm.sample(locations)]
+        ground, roof = sample(points)
         floor_samples = [value for value in ground if 12 <= value <= 40]
         # Some station ground pixels are voids beneath roofs or the split-level concourse.
         if len(floor_samples) < len(points) * .45:

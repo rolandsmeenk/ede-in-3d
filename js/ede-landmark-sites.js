@@ -1,4 +1,5 @@
 import { EDE_DATA } from './ede-geodata.js';
+import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -105,6 +106,9 @@ export const EDE_MODELED_LANDMARKS = [
     osmId: 'w271516508', annexOsmIds: ['w271515352', 'w271509527'],
     bagIds: ['0228100000073672', '0228100000000200', '0228100000057655'],
     x: -431, z: 668, height: 17, worldSpace: true, approach: { x: -461, z: 675 } },
+  { id: 'pallas-athene', name: 'Pallas Athene College', district: 'Veldhuizen', road: 'Koekeltse Boslaan',
+    osmId: 'w272141214', bagIds: ['0228100000057211'], x: -2050, z: 994, height: 12.68, worldSpace: true,
+    approach: { x: -2002, z: 988 } },
   { id: 'tesqua', name: 'Tesqua', district: 'Veldhuizen', road: 'Horsterweg',
     osmId: 'w272136145', bagIds: ['0228100000041390'], x: -1859, z: 1330, height: 11, worldSpace: true,
     approach: { x: -1856, z: 1283 } },
@@ -178,6 +182,15 @@ const bagReplacements = EDE_MODELED_LANDMARKS.filter(site => site.bagIds?.length
   return { ids: site.bagIds, minX: Math.min(...points.map(p => p.x)), maxX: Math.max(...points.map(p => p.x)),
     minZ: Math.min(...points.map(p => p.z)), maxZ: Math.max(...points.map(p => p.z)) };
 });
+
+for (const site of EDE_FUEL_SITES) {
+  for (const [part, id] of [[site, site.canopyBagId], [site.shop, site.shop?.bagId]]) {
+    if (!id) continue;
+    const radius = Math.hypot(part.width, part.length) / 2;
+    const { x, z } = part;
+    bagReplacements.push({ ids: [id], minX: x - radius, maxX: x + radius, minZ: z - radius, maxZ: z + radius });
+  }
+}
 
 export function landmarkBagExclusions({ min, max }) {
   const ids = new Map();

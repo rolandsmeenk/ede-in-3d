@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import runpy
 import sys
+from types import SimpleNamespace
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,6 +80,21 @@ class ParkingInventoryTest(unittest.TestCase):
             for a, b in zip(*tree.query(footprints, predicate='intersects')):
                 if a < b:
                     self.assertLess(footprints[a].intersection(footprints[b]).area, .12)
+
+    @unittest.skipUnless(BUILDER, 'requires the parking builder’s geometry dependencies')
+    def test_terrain_refresh_preserves_fitted_and_unresolved_layers(self):
+        feature, spatial = BUILDER['Feature'], BUILDER['Spatial']
+        fits = spatial([feature('deck', LineString(((0, 0), (10, 0))), 0, {'ways': ['w1'], 'width': 5})])
+        spaces = [
+            {'x': 3, 'z': 1, 'layer': 0, 'wayId': 'w1', 'y': 2},
+            {'x': 3, 'z': 1, 'layer': 0, 'wayId': None, 'y': 2},
+            {'x': 3, 'z': 1, 'layer': 0, 'wayId': 'w2', 'y': 2},
+            {'x': 3, 'z': 9, 'layer': 0, 'wayId': None, 'y': 2},
+            {'x': 3, 'z': 9, 'layer': 1, 'wayId': 'w3', 'y': 2},
+        ]
+        terrain = SimpleNamespace(nap=22.54, at=lambda xy: 20.54)
+        BUILDER['rebase_ground']({'spaces': spaces}, fits, terrain)
+        self.assertEqual([space['y'] for space in spaces], [2, 2, -2, -2, 2])
 
     def test_kuiperplein_uses_scene_relative_ground_height(self):
         sys.path.insert(0, str(TOOLS))

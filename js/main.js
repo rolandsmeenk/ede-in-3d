@@ -212,7 +212,6 @@ async function initApp() {
       if (kind === 'raised-wall') return rail;
       return rail === undefined ? undefined : rail + 0.89;
     });
-    setEdeStructureRoofs(bgtWorld.weatherCovers);
   } catch (error) {
     console.warn('[bgt] structure layer unavailable:', error);
   }
@@ -221,6 +220,7 @@ async function initApp() {
   const landmarks = buildLandmarks(scene);
   setEdePlatforms([...(bgtWorld?.platforms ?? []), ...landmarks.platforms]);
   setEdeHelipads(landmarks.helipads);
+  setEdeStructureRoofs([...(bgtWorld?.weatherCovers ?? []), ...landmarks.weatherCovers]);
   markInit('landmarks');
   const eagerBag = graphics.buildingDetail && profiling && query.get('bag') === 'eager';
   const streamBag = graphics.buildingDetail && !eagerBag;

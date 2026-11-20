@@ -8,6 +8,7 @@ import argparse
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 import gzip
+from hashlib import sha256
 import json
 import math
 from pathlib import Path
@@ -20,6 +21,8 @@ import osmium
 from shapely import STRtree, from_wkb, make_valid, transform, union_all
 from shapely.affinity import rotate, translate
 from shapely.geometry import LineString, Point, Polygon, box
+
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 GRADE = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))
@@ -408,14 +411,38 @@ def grade_profiles():
     return Spatial(records)
 
 
+def nearby_fits(profiles, point, level):
+    return (profile for profile in profiles.nearby(point, 12, level)
+            if profile.shape.distance(point) <= profile.tags['width'] / 2 + 3)
+
+
 def grade_at(profiles, terrain, point, level, way_id):
-    for profile in sorted(profiles.nearby(point, 12, level), key=lambda p: p.shape.distance(point)):
-        if way_id in profile.tags['ways'] and profile.shape.distance(point) <= profile.tags['width'] / 2 + 3:
+    for profile in sorted(nearby_fits(profiles, point, level), key=lambda p: p.shape.distance(point)):
+        if way_id in profile.tags['ways']:
             blend = profile.shape.project(point, normalized=True)
             return profile.tags['a'] + (profile.tags['b'] - profile.tags['a']) * blend
     if level == 0:
         return terrain.at((point.x, point.y)) - terrain.nap
     return None
+
+
+def rebase_ground(payload, profiles, terrain):
+    changes = []
+    for space in payload['spaces']:
+        if space['layer'] != 0:
+            continue
+        point = Point(space['x'], space['z'])
+        way = space.get('wayId')
+        # A retained bay without a way ID may still have used a fitted surface.
+        # Keep its checked seat wherever a same-level profile can support it.
+        nearby = nearby_fits(profiles, point, 0)
+        if any(not way or way in profile.tags['ways'] for profile in nearby):
+            continue
+        height = round(terrain.at((point.x, point.y)) - terrain.nap, 3)
+        if space['y'] != height:
+            changes.append(abs(space['y'] - height))
+            space['y'] = height
+    return changes
 
 
 def build(osm, wkd_path):
@@ -424,9 +451,7 @@ def build(osm, wkd_path):
     south, west, north, east = scene_meta['geographicBounds']
     area = box(*scene_meta['bounds'])
 
-    def project(lon, lat):
-        frame = scene_meta['lonLatAffine']
-        return (lon - frame['lon0']) * frame['x'][1], (lat - frame['lat0']) * frame['z'][2]
+    project = SceneAffine(scene_meta['lonLatAffine']).lon_lat_to_scene
 
     graph = json.loads(subprocess.check_output(['node', '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON',
                                               str(ROOT / 'tools/export-ede-traffic-graph.mjs'), '--street-features']))
@@ -695,11 +720,21 @@ def build(osm, wkd_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--osm', required=True, nargs='+', type=Path, help='Geofabrik extracts covering the Ede bounds')
-    parser.add_argument('--wkd', required=True, type=Path, help='Complete clipped WKD parkeervlakken WFS GeoJSON')
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--osm', nargs='+', type=Path, help='Geofabrik extracts covering the Ede bounds')
+    mode.add_argument('--rebase-ground', type=Path, help='Re-seat unambiguously terrain-backed bays in an existing asset')
+    parser.add_argument('--wkd', type=Path, help='Complete clipped WKD parkeervlakken WFS GeoJSON')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-parking-spaces.json.gz')
     args = parser.parse_args()
-    payload = build(args.osm, args.wkd)
+    if args.rebase_ground:
+        payload = read(args.rebase_ground)
+        changes = rebase_ground(payload, grade_profiles(), GRADE['Terrain']())
+        payload['sources']['terrainSha256'] = sha256((ROOT / 'assets/ede-ahn.bin').read_bytes()).hexdigest()
+        print(f'Updated {len(changes)} terrain-backed seats. Maximum elevation change {max(changes, default=0):.3f} m.')
+    else:
+        if not args.wkd:
+            parser.error('--wkd is required with --osm')
+        payload = build(args.osm, args.wkd)
     args.output.write_bytes(gzip.compress(json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode(), mtime=0))
     print(f'{len(payload["spaces"])} parking spaces, {len(payload["areas"])} areas, {len(payload["aisles"])} aisle ways')
     print(json.dumps(payload['counts'], sort_keys=True))

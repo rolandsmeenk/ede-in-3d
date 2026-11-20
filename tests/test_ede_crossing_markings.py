@@ -10,7 +10,7 @@ import unittest
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 
 
-@unittest.skipUnless(find_spec('shapely'), 'requires Shapely for the surface importer')
+@unittest.skipUnless(find_spec('shapely') and find_spec('pyproj'), 'requires Shapely and pyproj')
 class CrossingMarkingsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -18,6 +18,8 @@ class CrossingMarkingsTest(unittest.TestCase):
         importer = runpy.run_path(str(TOOLS / 'build-ede-street-surfaces.py'))
         cls.resolve = staticmethod(importer['apply_crossing_marking'])
         cls.review = staticmethod(importer['marking_reviews'])
+        features = runpy.run_path(str(TOOLS / 'build-ede-street-features.py'))
+        cls.preserve_ids = staticmethod(features['preserve_surface_ids'])
 
     def test_non_zebra_styles_do_not_change_signal_control(self):
         for raw, style in [(None, None), ('no', 'no'), ('dots', 'dots'), ('dashes', 'dashes'), ('zebrafake', 'zebrafake')]:
@@ -65,3 +67,19 @@ class CrossingMarkingsTest(unittest.TestCase):
         self.assertEqual(crossing['markingColour'], 'white;red')
         self.assertEqual(crossing['markingEvidence'], 'vop')
         self.assertEqual(crossing['control'], 'uncontrolled')
+
+
+    def test_regrouped_crossing_keeps_existing_id_through_same_level_source(self):
+        def feature(identity, sources, layer=0):
+            return dict(id=identity, sources=sources, layer=layer, bridge=False, tunnel=False)
+
+        osm = dict(source='osm', id='n12')
+        vop = dict(source='vop', id='32451')
+        previous = {'bumps': [], 'crossings': [feature('osm-crossing-n12', [osm])]}
+        current = {'bumps': [], 'crossings': [feature('ndw-vop-32451', [vop, osm])]}
+        self.preserve_ids(current, previous)
+        self.assertEqual(current['crossings'], [feature('osm-crossing-n12', [vop, osm])])
+
+        current = {'bumps': [], 'crossings': [feature('ndw-vop-32451', [vop, osm], layer=1)]}
+        self.preserve_ids(current, previous)
+        self.assertEqual(current['crossings'][0]['id'], 'ndw-vop-32451')

@@ -1,11 +1,14 @@
-"""Pinned, horizontal GIS conversions for the offline Ede lane bake."""
+"""Pinned horizontal GIS conversions in Slop Ede’s offline pipeline."""
 
 from functools import cache
 from hashlib import sha256
 from pathlib import Path
+import struct
 
 from pyproj import CRS, Transformer, __version__ as pyproj_version, proj_version_str
 from pyproj.enums import TransformDirection
+
+from ede_scene import SCENE_NAP_ORIGIN, SceneAffine
 
 VERSION = 1
 PYPROJ_VERSION = '3.8.0'
@@ -49,7 +52,7 @@ def horizontal_crs(value):
 def source_crs(document, *, default=None):
     """Read the source CRS declaration or the caller's explicit format default."""
     declaration = (document.get('horizontalCrs') or document.get('spatialReference')
-                   or document.get('crs') or document.get('coordRefSys')
+                   or document.get('crs') or document.get('coordRefSys') or document.get('referenceSystem')
                    or document.get('coordinateSystem'))
     if isinstance(declaration, dict):
         declaration = (declaration.get('latestWkid') or declaration.get('wkid')
@@ -109,30 +112,11 @@ def raster_pixel_to_rd(dataset, col, row, *, center=True):
     return to_rd(x, y, dataset.crs.to_wkt(), axis_order='xy')
 
 
-class Frame:
+class Frame(SceneAffine):
     """Bridge RD measurements and the map's unchanged Oude Kerk affine."""
 
     to_rd = staticmethod(to_rd)
     raster_pixel_to_rd = staticmethod(raster_pixel_to_rd)
-
-    def __init__(self, affine):
-        self.lon0 = affine['lon0']
-        self.lat0 = affine['lat0']
-        self.x0, self.x_lon, self.x_lat = affine['x']
-        self.z0, self.z_lon, self.z_lat = affine['z']
-        self.determinant = self.x_lon * self.z_lat - self.x_lat * self.z_lon
-        if not self.determinant:
-            raise ValueError('The Oude Kerk affine is singular')
-
-    def lon_lat_to_scene(self, lon, lat):
-        dl, dp = lon - self.lon0, lat - self.lat0
-        return (self.x0 + self.x_lon * dl + self.x_lat * dp,
-                self.z0 + self.z_lon * dl + self.z_lat * dp)
-
-    def scene_to_lon_lat(self, x, z):
-        dx, dz = x - self.x0, z - self.z0
-        return (self.lon0 + (dx * self.z_lat - dz * self.x_lat) / self.determinant,
-                self.lat0 + (dz * self.x_lon - dx * self.z_lon) / self.determinant)
 
     def scene_to_rd(self, x, z):
         lon, lat = self.scene_to_lon_lat(x, z)
@@ -144,3 +128,35 @@ class Frame:
 
     def to_scene(self, x, y, crs, *, axis_order=None):
         return self.rd_to_scene(*to_rd(x, y, crs, axis_order=axis_order))
+
+
+
+def geopackage_crs(connection, table, column='geom'):
+    row = connection.execute(
+        '''SELECT c.srs_id, s.organization, s.organization_coordsys_id, s.definition
+           FROM gpkg_geometry_columns AS c JOIN gpkg_spatial_ref_sys AS s USING(srs_id)
+           WHERE c.table_name = ? AND c.column_name = ?''', (table, column),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f'Missing GeoPackage CRS for {table}.{column}')
+    srs_id, authority, code, definition = row
+    crs = horizontal_crs(f'{authority}:{code}' if authority.upper() not in ('NONE', '') else definition)
+    return srs_id, crs
+
+
+def geopackage_wkb(blob, srs_id):
+    if blob[:2] != b'GP' or int.from_bytes(blob[4:8], 'little' if blob[3] & 1 else 'big', signed=True) != srs_id:
+        raise ValueError('GeoPackage geometry SRS ID does not match the column declaration')
+    envelope = (blob[3] >> 1) & 7
+    if envelope > 4:
+        raise ValueError('Invalid GeoPackage geometry envelope')
+    return memoryview(blob)[8 + (0, 32, 48, 48, 64)[envelope]:]
+
+
+def geopackage_linestring(blob, srs_id):
+    wkb = geopackage_wkb(blob, srs_id)
+    endian = '<' if wkb[0] == 1 else '>'
+    geometry_type, count = struct.unpack_from(endian + 'II', wkb, 1)
+    if geometry_type != 2:
+        raise ValueError('Expected a 2D LineString')
+    return struct.unpack_from(endian + 'dd' * count, wkb, 9)

@@ -26,7 +26,10 @@ function facadeWalk(name, a, b, distance, lookHeight) {
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = suite === 'municipal' ? [
+const shots = suite === 'bag' ? [
+  { name: 'Fast helicopter pass', from: [-1400, 95, 660], to: [-515, 95, 848],
+    look: [-940, 18, 860], lookTo: [-140, 17, 1035], waitForBag: true },
+] : suite === 'municipal' ? [
   { name: 'De Oude Hofstede walk', from: [-594, 1.65, 3344], to: [-590, 1.65, 3350], look: [-578, 1.25, 3371] },
   { name: 'De Oude Hofstede aerial', from: [-624, 39, 3356], to: [-617, 27, 3360], look: [-577, 1, 3379] },
   { name: 'Proosdijpark walk', from: [-1363, 1.65, 596], to: [-1367, 1.65, 589], look: [-1382, 1.2, 582] },
@@ -197,7 +200,12 @@ function sampleShot(shot, frames) {
       const deadline = performance.now() + 5500;
       while (!bagCoversLook() && performance.now() < deadline) await frame();
     }
+    if (shot.waitForBag) {
+      const deadline = performance.now() + 18000;
+      while (!(bagGroup?.userData.stats?.completed > 0) && performance.now() < deadline) await frame();
+    }
     await wait(36);
+    const bagAtStart = shot.waitForBag && bagGroup ? { ...bagGroup.userData.stats } : undefined;
     const textureBytes = () => {
       const s = bagGroup?.userData.stats;
       return (s?.maskTextureBytes ?? 0) + (s?.photoTextureBytes ?? 0) + (s?.surfaceTextureBytes ?? 0);
@@ -277,7 +285,7 @@ function sampleShot(shot, frames) {
     });
     const travelledMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
     const drivenMetres = shot.travel?.[0] === 'car' ? travelledMetres : undefined;
-    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, travelledMetres, drivenMetres, coverage,
+    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, bagAtStart, travelledMetres, drivenMetres, coverage,
       ...(shot.facade && { bagCoversLook: bagCoversLook(), facadeTextureBytes,
         facadeRequests: [...new Set(facadeRequests)], textureCount: app.renderer.info.memory?.textures }) };
   }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic}, ${suite === 'trees'})`);

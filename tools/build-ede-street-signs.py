@@ -14,6 +14,7 @@ import subprocess
 from urllib.parse import urlencode, urljoin
 
 from ede_map import load_scene
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / 'tools/data/ede-street-signs.snapshot.json.gz'
@@ -101,13 +102,7 @@ def snapshot(bounds):
     }
 
 
-def project(point, affine):
-    dlon = point[0] - affine['lon0']
-    dlat = point[1] - affine['lat0']
-    return tuple(base + lon * dlon + lat * dlat for base, lon, lat in (affine['x'], affine['z']))
-
-
-def road_match(point, feature, affine):
+def road_match(point, feature, frame):
     geometry = feature['geometry']
     parts = geometry['coordinates']
     if geometry['type'] == 'LineString':
@@ -117,7 +112,7 @@ def road_match(point, feature, affine):
     x, z = point
     matches = []
     for part in parts:
-        points = [project(coordinate, affine) for coordinate in part]
+        points = [frame.lon_lat_to_scene(*coordinate[:2]) for coordinate in part]
         for (x0, z0), (x1, z1) in zip(points, points[1:]):
             dx, dz = x1 - x0, z1 - z0
             length2 = dx * dx + dz * dz
@@ -143,7 +138,7 @@ def sign_records(raw, meta):
         raise ValueError('Sign snapshot and game have different geographic bounds. Refresh with --fetch.')
     south, west, north, east = raw['bounds']
     min_x, min_z, max_x, max_z = meta['bounds']
-    affine = meta['lonLatAffine']
+    frame = SceneAffine(meta['lonLatAffine'])
     roads = {feature['properties']['wvk_id']: feature for feature in raw['nwb']}
     signs = []
     for source in ('ndw', 'bgt'):
@@ -163,7 +158,7 @@ def sign_records(raw, meta):
                 raise ValueError(f"Invalid WGS84 coordinates for {source} sign {feature['id']}")
             if not (west <= lon <= east and south <= lat <= north):
                 continue
-            x, z = point = project((lon, lat), affine)
+            x, z = point = frame.lon_lat_to_scene(lon, lat)
             if not (min_x <= x <= max_x and min_z <= z <= max_z):
                 continue
             props = feature['properties']
@@ -182,7 +177,7 @@ def sign_records(raw, meta):
                     # NDW reports the road user's viewing direction, opposite the face normal.
                     record['bearing'] = (bearing + 180) % 360
                 road = roads.get(record.get('roadSectionId'))
-                if road and (matched := road_match(point, road, affine)):
+                if road and (matched := road_match(point, road, frame)):
                     distance, near, forward = matched
                     road_props = road['properties']
                     record.update(roadPoint=[round(v, 2) for v in near], nwbDistance=round(distance, 2),

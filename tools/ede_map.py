@@ -2,6 +2,7 @@
 
 import gzip
 import json
+from functools import cache
 from pathlib import Path
 
 MAP_ASSET = 'assets/ede-map-v1.json.gz'
@@ -33,3 +34,9 @@ def load_scene(include_shorelines=True):
     scene['water'] = shoreline['water']
     scene['meta']['counts']['water'] = len(shoreline['water'])
     return scene
+
+
+@cache
+def load_scene_metadata():
+    """Expose the unchanged source frame to importers and live services."""
+    return load_scene(include_shorelines=False)['meta']

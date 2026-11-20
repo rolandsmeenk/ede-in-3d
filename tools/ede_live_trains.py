@@ -14,7 +14,8 @@ from urllib.request import Request, urlopen
 from xml.etree.ElementTree import ParseError, fromstring
 from zlib import error as ZlibError
 
-from ede_live_buses import ROOT, fields, local_map, project_lon_lat, string
+from ede_live_buses import ROOT, fields, local_map, string
+from ede_scene import SceneAffine
 
 
 NS_URL = 'tcp://pubsub.besteffort.ndovloket.nl:7664'
@@ -69,7 +70,8 @@ def unpack_gzip(body, limit):
 
 
 def decode_ns_positions(body, now, map_reference=None):
-    bounds, projection = local_map() if map_reference is None else map_reference
+    bounds, affine = local_map() if map_reference is None else map_reference
+    projection = SceneAffine(affine)
     min_x, min_z, max_x, max_z = bounds
     root = fromstring(unpack_gzip(body, GPS_MAX_BYTES))
     if root.tag != NS_NAMESPACE + 'ArrayOfTreinLocation':
@@ -88,7 +90,7 @@ def decode_ns_positions(body, now, map_reference=None):
             record = {'operator': 'NS', 'number': number, 'timestamp': fix_timestamp(unit)}
             if not fresh(record, now, GPS_MAX_AGE):
                 continue
-            x, z = project_lon_lat(lon, lat, projection)
+            x, z = projection.lon_lat_to_scene(lon, lat)
             record.update(x=round(x, 1), z=round(z, 1))
             speed = value_as_float(unit.get('Snelheid', ''))
             if 0 <= speed <= 400:

@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from ede_map import load_scene
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 PPM = 64
@@ -24,12 +25,11 @@ def read(path):
 
 
 def scene_frame():
-    return load_scene()['meta']['lonLatAffine']
+    return SceneAffine(load_scene(include_shorelines=False)['meta']['lonLatAffine'])
 
 
 def project(frame, lonlat):
-    lon, lat = lonlat
-    return np.array([(lon - frame["lon0"]) * frame["x"][1], (lat - frame["lat0"]) * frame["z"][2]])
+    return np.array(frame.lon_lat_to_scene(*lonlat))
 
 
 class Ground:

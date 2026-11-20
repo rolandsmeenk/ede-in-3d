@@ -1,8 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { CivicBatch, facePanel, wallExtent, wallColliders, polygonNormal, civicSigns } from './ede-civic-landmarks.js';
+import { CivicBatch, along, facePanel, offsetEdge, wallExtent, wallColliders, polygonNormal, civicSigns } from './ede-civic-landmarks.js';
 import { edePolygonGeometry, edeStrip, drapeEdeSurface } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
-import { KUIL_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS, TESQUA_COURTS } from './ede-next-survey.js';
+import { pointInPoly } from './city-config.js';
+import { KUIL_SHELLS, PALLAS_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS, TESQUA_COURTS } from './ede-next-survey.js';
 
 const steel = 0x515c60, blueGlass = 0x536e72, pale = 0xd0d0bf;
 const up = new THREE.Vector3(0, 1, 0);
@@ -105,6 +106,142 @@ export function createTechnova() {
   const sign = { a: { x: -649.5, z: 2721.88 }, b: { x: -660.7, z: 2723.84 }, lo: -2.42, hi: -1.16,
     color: '#dedfd6', textColor: '#293f41', text: 'TECHNOVA COLLEGE' };
   return finish(batch, details, colliders, [sign]);
+}
+
+const pallasBrick = 0xd7d8d0;
+const pallasGreen = 0x91b830;
+const pallasBase = -8.54, pallasBand = -4.98;
+
+function pallasScreenMaterial() {
+  const material = new THREE.MeshStandardMaterial({ color: pallasGreen, roughness: 0.63, side: THREE.DoubleSide });
+  if (typeof document === 'undefined') return material;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#90b232';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#b4cc61';
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(13, 512);
+  ctx.bezierCurveTo(93, 388, 35, 242, 112, 10);
+  for (const [x, y, tipX, tipY] of [[55,337,4,196],[63,277,123,178],[68,228,19,125],[82,151,127,81],[91,102,55,23]]) {
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo((x + tipX) / 2, y - 43, tipX, tipY);
+  }
+  ctx.stroke();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath();
+  for (let y = 5; y < 510; y += 6) for (let x = 5; x < 125; x += 6) {
+    ctx.moveTo(x + 1.85, y);
+    ctx.arc(x, y, 1.85, 0, Math.PI * 2);
+  }
+  ctx.fill();
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 4;
+  material.color.set(0xffffff);
+  material.map = map;
+  material.alphaTest = 0.42;
+  return material;
+}
+
+function pallasSolar(batch, ring) {
+  const topY = Math.max(...ring.map(point => point[1]));
+  const northWing = topY < 0 && ring.some(([x, , z]) => x < -2090 && z < 979);
+  if (!northWing && !(topY >= 2.2 && topY <= 2.5)) return;
+  const outline = ring.map(([x, , z]) => ({ x, z }));
+  const uv = outline.map(({ x, z }) => [x * 0.984 - z * 0.178, x * 0.178 + z * 0.984]);
+  const point = (u, v, y) => [u * 0.984 + v * 0.178, y, -u * 0.178 + v * 0.984];
+  const us = uv.map(p => p[0]), vs = uv.map(p => p[1]);
+  let row = 0;
+  for (let v = Math.min(...vs) + 1.5; v < Math.max(...vs) - 1.5; v += 1.34, row++) {
+    if (row % 6 === 4) continue;
+    for (let u = Math.min(...us) + 1.25; u < Math.max(...us) - 1.25; u += 2.13) {
+      const corners = [point(u, v, topY + 0.08), point(u + 1.90, v, topY + 0.08),
+        point(u + 1.90, v + 1.04, topY + 0.23), point(u, v + 1.04, topY + 0.23)];
+      if (corners.every(([x, , z]) => pointInPoly(outline, x, z))) top(batch, ...corners, 0x334959);
+    }
+  }
+}
+
+function pallasSign(signs, batch, edge, normal, centre) {
+  const span = 4.6 / edge.width;
+  const [left, right] = offsetEdge(along(edge.a, edge.b, centre - span), along(edge.a, edge.b, centre + span), normal, 0.09);
+  signs.push({ a: right, b: left, lo: -3.86, hi: -2.92, color: '#d7d8d0',
+    textColor: '#ad353d', text: 'Pallas Athene College' });
+  const wingPoint = (u, y) => {
+    const p = along(left, right, u);
+    return [p.x, y, p.z];
+  };
+  const emblem = (p, q, r) => {
+    if (polygonNormal([p, q, r]).dot(normal) > 0) batch.triangle(p, q, r, 0xad353d);
+    else batch.triangle(p, r, q, 0xad353d);
+  };
+  for (const side of [-1, 1]) {
+    emblem(wingPoint(0.5, -2.83), wingPoint(0.5 + side * 0.43, -2.23), wingPoint(0.5 + side * 0.30, -2.60));
+    emblem(wingPoint(0.5, -2.83), wingPoint(0.5 + side * 0.29, -2.62), wingPoint(0.5 + side * 0.12, -2.73));
+  }
+  emblem(wingPoint(0.46, -2.73), wingPoint(0.54, -2.73), wingPoint(0.5, -2.98));
+}
+
+export function createPallasAthene() {
+  const batch = new CivicBatch(), details = new CivicBatch(), colliders = [], signs = [], screens = [];
+  placeShell(batch, colliders, PALLAS_SHELLS, {
+    roof(_, ring) {
+      pallasSolar(details, ring);
+      return 0x858b87;
+    },
+    wall: (_, edge) => edge.low > 2.2 ? 0xb3b9b5 : pallasBrick,
+    detail(edge, normal) {
+      const { a, b, width, low, high } = edge;
+      const mid = along(a, b, 0.5);
+      const juniorWing = low < -8 && mid.x < -2101 && mid.z < 982 && normal.x < -0.55;
+      if (juniorWing) {
+        const count = Math.max(1, Math.round(width / 1.46));
+        for (const [row, floor, ceiling] of [[0, low + 0.16, pallasBand], [1, pallasBand + 0.1, high - 0.18]]) {
+          panes(batch, edge, normal, floor, ceiling, 1.46, 0.98);
+          for (let i = row % 2; i < count; i += 2) {
+            const center = (i + 0.49) / count;
+            const [p] = offsetEdge(along(a, b, center), along(a, b, center), normal, 0.38);
+            screens.push(new THREE.PlaneGeometry(Math.min(1.12, width / count * 0.76), ceiling - floor)
+              .rotateY(Math.atan2(normal.x, normal.z)).translate(p.x, (floor + ceiling) / 2, p.z));
+          }
+        }
+        facePanel(batch, a, b, normal, 0, 1, high - 0.18, high, 0x73898a, 0.10);
+        return;
+      }
+      if (width < 1.35) return;
+      if (low < -7.5) facePanel(batch, a, b, normal, 0, 1, low + 0.04, low + 0.42, 0x505f63);
+      const courtyardSign = normal.z > 0.95 && width > 40 && mid.z < 982;
+      const streetSign = normal.x > 0.9 && width > 18 && mid.z < 964 && low < -7.5;
+      if (courtyardSign || streetSign) {
+        pallasSign(signs, batch, edge, normal, courtyardSign ? 0.17 : 0.52);
+        if (courtyardSign) panes(batch, { a: along(a, b, 0.32), b, width: width * 0.68 }, normal,
+          pallasBase + 1.0, pallasBand - 0.3, 2.15, 0.63);
+        return;
+      }
+      const mainEntrance = normal.x > 0.9 && width > 18 && mid.z > 1007 && mid.z < 1022 && low < -7.5;
+      if (mainEntrance) {
+        panes(batch, { a, b: along(a, b, 0.25), width: width * 0.25 }, normal, low + 0.9, pallasBand - 0.24, 1.95, 0.8);
+        panes(batch, { a: along(a, b, 0.53), b, width: width * 0.47 }, normal, low + 0.9, pallasBand - 0.24, 1.95, 0.8);
+        facePanel(batch, a, b, normal, 0.285, 0.495, low + 0.10, low + 2.71, pallasGreen, 0.10);
+        for (const [u, v] of [[0.298, 0.38], [0.400, 0.482]]) {
+          facePanel(batch, a, b, normal, u, v, low + 0.57, low + 2.51, blueGlass, 0.13, 1);
+        }
+      }
+      for (const floor of [pallasBase, pallasBand, -1.62]) {
+        if (floor < low - 0.2 || floor + 2.6 > high - 0.07 || mainEntrance && floor === pallasBase) continue;
+        const curved = width < 3.6 && high < -4.2;
+        panes(batch, edge, normal, floor + 0.94, floor + 2.68, 2.26, curved ? 0.97 : 0.70);
+      }
+    },
+  });
+  const group = finish(batch, details, colliders, signs);
+  const material = pallasScreenMaterial();
+  for (const geometry of screens) group.add(new THREE.Mesh(geometry, material));
+  return group;
 }
 
 function courtPoint(ring, u, v) {

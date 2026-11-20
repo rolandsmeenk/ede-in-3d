@@ -9,10 +9,11 @@ from pathlib import Path
 from statistics import median
 import subprocess
 
-from pyproj import Transformer
 import rasterio
 
+from ede_gis import Frame
 from ede_map import load_scene
+from ede_raster import require_rd_raster
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +27,8 @@ RADIUS = 180
 
 def validate(path, bounds):
     with rasterio.open(path) as raster:
-        if (raster.crs.to_epsg() != 28992 or raster.res != (0.5, 0.5)
+        require_rd_raster(raster)
+        if (raster.res != (0.5, 0.5)
                 or tuple(raster.bounds) != bounds or raster.count != 1):
             raise ValueError(f'{path} must be native 0.5 m AHN in RD New covering {bounds}')
 
@@ -55,8 +57,7 @@ def fetch(directory, site, bounds, model):
 def rail_survey(directory, output):
     scene = load_scene()
     min_x, min_z, max_x, max_z = scene['meta']['bounds']
-    frame = scene['meta']['lonLatAffine']
-    rd = Transformer.from_crs(4326, 28992, always_xy=True)
+    frame = Frame(scene['meta']['lonLatAffine'])
     tiles = defaultdict(list)
     observations = {}
     for way in scene['railways']:
@@ -76,8 +77,7 @@ def rail_survey(directory, output):
                 x, z = ax + ux * at, az + uz * at
                 if not (min_x - 250 <= x <= max_x + 250 and min_z - 250 <= z <= max_z + 250):
                     continue
-                coords = [rd.transform(frame['lon0'] + (x - uz * offset) / frame['x'][1],
-                                       frame['lat0'] + (z + ux * offset) / frame['z'][2])
+                coords = [frame.scene_to_rd(x - uz * offset, z + ux * offset)
                           for offset in (-0.6, 0, 0.6)]
                 e, n = coords[1]
                 model = 'dsm' if way.get('bridge') else 'dtm'
@@ -119,16 +119,14 @@ def main():
         rail_survey(args.directory, args.rail_output)
         return
     catalog = json.loads((ROOT / 'tools/data/ede-crossing-sites.json').read_text())
-    affine = load_scene()['meta']['lonLatAffine']
-    rd = Transformer.from_crs(4326, 28992, always_xy=True)
+    frame = Frame(load_scene()['meta']['lonLatAffine'])
     with ThreadPoolExecutor(max_workers=4) as workers:
         jobs = []
         for site in catalog['sites']:
             if site['id'] not in PILOT_SITES:
                 continue
             x, z = site['center']
-            east, north = map(round, rd.transform(affine['lon0'] + x / affine['x'][1],
-                                                  affine['lat0'] + z / affine['z'][2]))
+            east, north = map(round, frame.scene_to_rd(x, z))
             bounds = (east - RADIUS, north - RADIUS, east + RADIUS, north + RADIUS)
             for model in ('dtm', 'dsm'):
                 jobs.append(workers.submit(fetch, args.directory, site['id'], bounds, model))

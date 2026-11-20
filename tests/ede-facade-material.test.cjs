@@ -9,7 +9,7 @@ class DataTexture {
 }
 let turns = 0;
 const facadeSource = readFileSync(join(__dirname, '../js/ede-facades.js'), 'utf8');
-const facade = loadModule(facadeSource.replace(/export async function loadEdeFacades[\s\S]*?\nconst scalarSize/, 'const scalarSize')
+const facade = loadModule(facadeSource.replace(/let facadeIndex;[\s\S]*?\nconst scalarSize/, 'const scalarSize')
   .replaceAll('export async function', 'async function'));
 const { buildFacadeMaskAtlas, buildFacadeMaskAtlasIncrementally, projectFacadeUv } = loadModule(
   readFileSync(join(__dirname, '../js/ede-facade-material.js'), 'utf8'),
@@ -75,4 +75,15 @@ test('the mask keeps an arched window corner blank and shows measured panes and 
   assert.ok(sample(2.48, 1.28)[2] > 180, 'vertical pane division');
   assert.ok(sample(1.65, 2.20)[2] > 180, 'horizontal transom');
   assert.equal(atlas.palette.image.data[3], 2, 'stone finish slot');
+});
+
+test('dense square tiles keep measured layouts within the existing mask budget', () => {
+  const walls = Array.from({ length: 18 }, (_, i) => ({
+    a: [i * 16, 0], b: [i * 16 + 15, 0], height: 8, minY: 0,
+    status: 'observed', confidence: 0.8, wallType: 'street',
+    openings: [{ kind: 'window', x: 3, y: 2, width: 1.2, height: 1.8 }],
+  }));
+  const atlas = buildFacadeMaskAtlas(walls);
+  assert.ok(atlas.texture.image.width * atlas.texture.image.height <= 512 * 512);
+  assert.ok(walls.every(wall => atlas.rects.get(wall)[2] > 0));
 });

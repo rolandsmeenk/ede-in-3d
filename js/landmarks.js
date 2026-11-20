@@ -20,12 +20,14 @@ import { createLukkien } from './ede-lukkien.js';
 import { createHoekelum, createGasfabriek } from './ede-estate-landmarks.js';
 import { createNizoLandmark, createGelderseValleiLandmark } from './ede-research-landmarks.js';
 import { createReehorst, createBuitenzorg, createJohannus } from './ede-venue-landmarks.js';
-import { createEderKuil, createTechnova, createTesqua } from './ede-next-landmarks.js';
+import { createEderKuil, createPallasAthene, createTechnova, createTesqua } from './ede-next-landmarks.js';
 import { createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
 import { createRiedelSilos, createKappaDocie } from './ede-riedel-silos.js';
 import { buildMuralWalls } from './ede-mural-surfaces.js';
 import { createRaadhuis, createCultura } from './ede-civic-landmarks.js';
 import { createWorkGarden } from './ede-work-garden.js';
+import { buildEdeFuelStations } from './ede-fuel-stations.js';
+import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
 
 // The engine's hand-built New York monuments are removed. Legacy exports keep the upstream controllers working.
 export let bryantParkLawn = null;
@@ -33,6 +35,7 @@ export const LANDMARKS = [];
 export const BERGHAIN_TREE_SITES = [];
 export const LANDMARK_SOURCE_EXCLUSIONS = new Set([
   ...EDE_MODELED_LANDMARKS.flatMap(site => [site.osmId, ...(site.annexOsmIds ?? []), ...(site.excludeOsmIds ?? [])]),
+  ...EDE_FUEL_SITES.flatMap(site => [site.canopyOsmId, site.shop?.osmId].filter(Boolean)),
   // The second outline is over the real station steps and bicycle parking.
   'w1156797030', 'w1156797029',
 ]);
@@ -53,7 +56,7 @@ export const LANDMARK_EXCLUSIONS = [
 export function buildLandmarks(scene) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
-  const colliders = [], platforms = [], helipads = [], nearDetails = [], windmills = [];
+  const colliders = [], platforms = [], helipads = [], nearDetails = [], windmills = [], weatherCovers = [];
   scene.add(group);
 
   function place(model, { x, z }, heading, footprints = [], baseY, colliderHeights = [], worldSpace = false) {
@@ -120,6 +123,7 @@ export function buildLandmarks(scene) {
     'johannus-orgelbouw': createJohannus,
     technova: createTechnova,
     gasfabriek: createGasfabriek,
+    'pallas-athene': createPallasAthene,
     tesqua: createTesqua,
   };
   for (const site of EDE_MODELED_LANDMARKS) {
@@ -132,6 +136,14 @@ export function buildLandmarks(scene) {
     model.traverse(detail => {
       if (detail.userData.nearDetail) nearDetails.push({ detail, bounds: new THREE.Box3().setFromObject(detail) });
       if (detail.userData.updateWind) windmills.push(detail.userData.updateWind);
+    });
+  }
+  for (const model of buildEdeFuelStations()) {
+    group.add(model);
+    colliders.push(...model.userData.colliders);
+    weatherCovers.push(...model.userData.weatherCovers);
+    model.traverse(detail => {
+      if (detail.userData.nearDetail) nearDetails.push({ detail, bounds: new THREE.Box3().setFromObject(detail) });
     });
   }
   for (const model of buildMuralWalls()) {
@@ -152,5 +164,5 @@ export function buildLandmarks(scene) {
   function updateWind(dt, reading) {
     for (const update of windmills) update(dt, reading);
   }
-  return { group, colliders, platforms, helipads, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
+  return { group, colliders, platforms, helipads, weatherCovers, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
 }

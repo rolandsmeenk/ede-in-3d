@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GEO } from './nyc-geodata.js';
+import { projectLonLatInto } from './ede-scene-coordinates.js';
 import { BLOCKS } from './city-config.js';
 import { polygonContains } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
@@ -14,7 +15,7 @@ import { EDE_BUILDING_BASES } from './ede-building-bases.js';
 import { edeFacadeAt, isEdeShed } from './ede-neighbourhood-facades.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
-// https://3dbag.nl — tiles are glTF with node matrices in ECEF (glTF axes: x = X, y = Z, z = -Y).
+// https://3dbag.nl — LoD 2.2 tile bounds are ECEF boxes and content is glTF.
 const BAG_BASE = 'https://3dbag.fsn1.your-objectstorage.com/v20250903/cesium3dtiles/lod22/';
 const BASES_BY_TILE = new Map();
 for (const record of EDE_BUILDING_BASES) {
@@ -25,90 +26,127 @@ for (const record of EDE_BUILDING_BASES) {
 const AFF = GEO.ede.meta.lonLatAffine;
 const [MIN_X, MIN_Z, MAX_X, MAX_Z] = GEO.ede.meta.bounds;
 
-const WGS84_A = 6378137, WGS84_E2 = 0.00669437999014;
-const rad = (d) => d * Math.PI / 180;
+const WGS84_A = 6378137;
+const WGS84_B = 6356752.314245179;
+const WGS84_E2 = 1 - (WGS84_B / WGS84_A) ** 2;
+const WGS84_EP2 = (WGS84_A / WGS84_B) ** 2 - 1;
+const DEG = 180 / Math.PI;
 
-function ecefFromLonLat(lon, lat, h = 0) {
-  const sin = Math.sin(rad(lat)), cos = Math.cos(rad(lat));
-  const n = WGS84_A / Math.sqrt(1 - WGS84_E2 * sin * sin);
-  return new THREE.Vector3((n + h) * cos * Math.cos(rad(lon)), (n + h) * cos * Math.sin(rad(lon)), (n * (1 - WGS84_E2) + h) * sin);
+export function projectEcefToScene(affine, point) {
+  const { x, y, z } = point;
+  const p = Math.sqrt(x * x + y * y);
+  // Bowring inverse. Normalize the auxiliary vector to get sine and cosine without two extra trig calls.
+  const za = z * WGS84_A, pb = p * WGS84_B;
+  const auxiliary = 1 / Math.sqrt(za * za + pb * pb);
+  const sinTheta = za * auxiliary, cosTheta = pb * auxiliary;
+  const vertical = z + WGS84_EP2 * WGS84_B * sinTheta ** 3;
+  const horizontal = p - WGS84_E2 * WGS84_A * cosTheta ** 3;
+  const upright = 1 / Math.sqrt(vertical * vertical + horizontal * horizontal);
+  const sinLat = vertical * upright, cosLat = horizontal * upright;
+  // This is ellipsoid height. Use it only for relief. NAP comes from the scene terrain or survey.
+  point.y = p * cosLat + z * sinLat - WGS84_A * Math.sqrt(1 - WGS84_E2 * sinLat ** 2);
+  return projectLonLatInto(affine, Math.atan2(y, x) * DEG, Math.atan2(vertical, horizontal) * DEG, point);
 }
 
-// Matrix (double precision) from glTF-world ECEF coordinates to engine coordinates (x east, y up, z south, metres).
-export function ecefToLocalMatrix(lon0 = AFF.lon0, lat0 = AFF.lat0) {
-  const lon = rad(lon0), lat = rad(lat0);
-  const e = new THREE.Vector3(-Math.sin(lon), Math.cos(lon), 0);
-  const n = new THREE.Vector3(-Math.sin(lat) * Math.cos(lon), -Math.sin(lat) * Math.sin(lon), Math.cos(lat));
-  const u = new THREE.Vector3(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat));
-  const w = Math.sqrt(1 - WGS84_E2 * Math.sin(lat) ** 2);
-  const prime = WGS84_A / w, meridian = WGS84_A * (1 - WGS84_E2) / (w * w * w);
-  // Match the OSM data's equirectangular affine so that BAG and OSM layers coincide.
-  const sx = AFF.x[1] / (rad(1) * prime * Math.cos(lat));
-  const sz = -AFF.z[2] / (rad(1) * meridian);
-  const origin = ecefFromLonLat(lon0, lat0);
-  // ECEF -> engine: x = sx * E, y = U, z = -sz * N
-  const ecefToLocal = new THREE.Matrix4().set(
-    sx * e.x, sx * e.y, sx * e.z, 0,
-    u.x, u.y, u.z, 0,
-    -sz * n.x, -sz * n.y, -sz * n.z, 0,
-    0, 0, 0, 1
-  );
-  const shift = new THREE.Matrix4().makeTranslation(-origin.x, -origin.y, -origin.z);
-  return new THREE.Matrix4().multiplyMatrices(ecefToLocal, shift);
-}
+const projectBagVertex = point => projectEcefToScene(AFF, point);
 
-// glTF world (y-up: X, Z, -Y of ECEF) -> engine coordinates.
-export function gltfToLocalMatrix(ecefToLocal = ecefToLocalMatrix()) {
-  const gltfToEcef = new THREE.Matrix4().set(
+export function gltfToEcefMatrix(tileToEcef) {
+  // glTF y-up becomes 3D Tiles z-up before the tile hierarchy transform.
+  const yUp = new THREE.Matrix4().set(
     1, 0, 0, 0,
     0, 0, -1, 0,
     0, 1, 0, 0,
     0, 0, 0, 1
   );
-  return new THREE.Matrix4().multiplyMatrices(ecefToLocal, gltfToEcef);
+  return new THREE.Matrix4().multiplyMatrices(tileToEcef, yUp);
 }
 
-const boxCorners = (box) => {
-  const c = box.slice(0, 3), a = box.slice(3, 6), b = box.slice(6, 9), d = box.slice(9, 12);
-  const out = [];
-  for (const i of [-1, 1]) for (const j of [-1, 1]) for (const k of [-1, 1]) {
-    out.push([0, 1, 2].map((m) => c[m] + i * a[m] + j * b[m] + k * d[m]));
+export function boxLocalBounds(box, tileToEcef) {
+  const bounds = new THREE.Box3(), corner = new THREE.Vector3();
+  for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) {
+    corner.set(
+      box[0] + a * box[3] + b * box[6] + c * box[9],
+      box[1] + a * box[4] + b * box[7] + c * box[10],
+      box[2] + a * box[5] + b * box[8] + c * box[11]
+    ).applyMatrix4(tileToEcef);
+    bounds.expandByPoint(projectBagVertex(corner));
   }
-  return out;
-};
-
-// Local-space AABB of a 3D Tiles oriented box (given in glTF-world ECEF coordinates as used by the tileset).
-export function boxLocalBounds(box, matrix) {
-  const bounds = new THREE.Box3();
-  const v = new THREE.Vector3();
-  for (const [x, y, z] of boxCorners(box)) bounds.expandByPoint(v.set(x, y, z).applyMatrix4(matrix));
   return bounds;
 }
 
-// Traverse the catalogue without starting one fetch for every matching external subtree.
-async function selectTileRecords(matrix, { minX = MIN_X, maxX = MAX_X, minZ = MIN_Z, maxZ = MAX_Z, margin = 60, fetchJson } = {}) {
-  const getJson = fetchJson || (async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.json(); });
+function terrainCullingBounds(bounds) {
+  const { min, max } = bounds;
+  const relief = max.y - min.y;
+  let groundLow = Infinity, groundHigh = -Infinity;
+  for (const x of [min.x, (min.x + max.x) / 2, max.x]) {
+    for (const z of [min.z, (min.z + max.z) / 2, max.z]) {
+      const y = terrainHeightAt(x, z);
+      groundLow = Math.min(groundLow, y);
+      groundHigh = Math.max(groundHigh, y);
+    }
+  }
+  // Culling precedes per-building seating. Leave room for unsampled slopes and corrected bases.
+  min.y = groundLow - 24;
+  max.y = groundHigh + relief + 24;
+  return bounds;
+}
+
+// Transform accumulation crosses external tilesets, whose URIs resolve from their own catalogue.
+async function selectTileRecords({ minX = MIN_X, maxX = MAX_X, minZ = MIN_Z, maxZ = MAX_Z, margin = 60, fetchJson } = {}) {
+  const getJson = fetchJson || (async url => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    return response.json();
+  });
   const tiles = [], pending = [];
-  const visit = (node) => {
+  const visit = (node, baseUrl, parent) => {
     if (!node.boundingVolume?.box) return;
-    const bounds = boxLocalBounds(node.boundingVolume.box, matrix);
-    if (bounds.max.x < minX - margin || bounds.min.x > maxX + margin || bounds.max.z < minZ - margin || bounds.min.z > maxZ + margin) return;
-    if (node.children?.length) { node.children.forEach(visit); return; }
-    const uri = node.content?.uri;
-    if (!uri) return;
-    if (uri.endsWith('.json')) pending.push(BAG_BASE + uri);
-    else tiles.push({ url: BAG_BASE + uri, bounds });
+    const transform = node.transform ? parent.clone().multiply(new THREE.Matrix4().fromArray(node.transform)) : parent;
+    const bounds = boxLocalBounds(node.boundingVolume.box, transform);
+    // The projection is nonlinear. Allow for bowing between corners of large parent boxes.
+    const pad = ((bounds.max.x - bounds.min.x) ** 2 + (bounds.max.z - bounds.min.z) ** 2) / WGS84_A;
+    if (bounds.max.x + pad < minX - margin || bounds.min.x - pad > maxX + margin
+        || bounds.max.z + pad < minZ - margin || bounds.min.z - pad > maxZ + margin) return;
+    if (node.children?.length) {
+      for (const child of node.children) visit(child, baseUrl, transform);
+      return;
+    }
+    if (!node.content?.uri) return;
+    const url = new URL(node.content.uri, baseUrl);
+    if (url.pathname.endsWith('.json')) pending.push({ url: url.href, transform });
+    else tiles.push({ url: url.href, bounds: terrainCullingBounds(bounds), transform });
   };
-  visit((await getJson(BAG_BASE + 'tileset.json')).root);
+  const root = BAG_BASE + 'tileset.json';
+  visit((await getJson(root)).root, root, new THREE.Matrix4());
   while (pending.length) {
-    const subtrees = await Promise.all(pending.splice(0, 4).map(getJson));
-    for (const subtree of subtrees) visit(subtree.root);
+    await Promise.all(pending.splice(0, 4).map(async ({ url, transform }) => {
+      visit((await getJson(url)).root, url, transform);
+    }));
   }
   return tiles;
 }
 
-export async function selectTiles(matrix, options) {
-  return (await selectTileRecords(matrix, options)).map(tile => tile.url);
+export { selectTileRecords };
+
+// Use a local Jacobian for source shading normals. Each vertex uses the full nonlinear position transform.
+function projectedNormalMatrix(transform, position, project) {
+  const matrix = new THREE.Matrix3();
+  if (!project || !position.count) return matrix.getNormalMatrix(transform);
+  const reference = new THREE.Vector3().fromBufferAttribute(position, 0).applyMatrix4(transform);
+  const axes = ['x', 'y', 'z'].map(key => {
+    const plus = reference.clone(), minus = reference.clone();
+    plus[key] += 2;
+    minus[key] -= 2;
+    return project(plus).sub(project(minus)).multiplyScalar(0.25);
+  });
+  const [x, y, z] = axes;
+  const local = new THREE.Matrix4().set(
+    x.x, y.x, z.x, 0,
+    x.y, y.y, z.y, 0,
+    x.z, y.z, z.z, 0,
+    0, 0, 0, 1
+  );
+  return matrix.getNormalMatrix(local.multiply(transform));
 }
 
 function hash(n) {
@@ -343,8 +381,8 @@ function* colorBagRoofs(geometry, featureIds, roofColors, useAerial) {
   return geometry;
 }
 
-function* correctedBagBases(gltf, matrix, tables, meshes) {
-  const byMesh = new Map(), rawById = new Map();
+function* correctedBagBases(gltf, matrix, tables, meshes, project) {
+  const byMesh = new Map(), rawById = new Map(), projected = new Map();
   const point = new THREE.Vector3();
   for (const o of meshes) {
     const matches = meshBagFacadeFeatures(gltf, o, tables);
@@ -352,21 +390,25 @@ function* correctedBagBases(gltf, matrix, tables, meshes) {
     if (!matches?.size || !featureIds) continue;
     const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
     const found = new Map();
+    const positions = new Float32Array(position.count * 3);
     for (let i = 0; i < position.count; i++) {
       if ((i & 1023) === 0) yield;
+      point.fromBufferAttribute(position, i).applyMatrix4(full);
+      if (project) project(point);
+      positions[i * 3] = point.x; positions[i * 3 + 1] = point.y; positions[i * 3 + 2] = point.z;
       const seed = Math.round(featureIds.getX(i));
       const record = matches.get(seed);
       if (!record) continue;
       found.set(seed, record);
-      point.fromBufferAttribute(position, i).applyMatrix4(full);
-      rawById.set(record.bagId, Math.min(rawById.get(record.bagId) ?? Infinity, Math.fround(point.y)));
+      rawById.set(record.bagId, Math.min(rawById.get(record.bagId) ?? Infinity, positions[i * 3 + 1]));
     }
+    projected.set(o, positions);
     if (found.size) byMesh.set(o, found);
   }
   for (const table of tables) for (const { bagId } of table.values()) {
     if (!rawById.has(bagId)) throw new Error(`Building elevation feature ${bagId} has no BAG geometry`);
   }
-  return { byMesh, rawById };
+  return { byMesh, rawById, projected };
 }
 
 // Bakes a loaded tile into one engine-space mesh geometry with per-building colour variation.
@@ -374,7 +416,7 @@ export function bakeTile(...args) {
   return finishBagWork(bakeTileChunks(...args));
 }
 
-function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, yearTables) {
+function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, yearTables, project) {
   const geometries = [];
   const useAerial = getAerialColors();
   mappedRoofs ??= mappedRoofIndex();
@@ -382,7 +424,7 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
   const meshes = [];
   gltf.scene.traverse(object => { if (object.isMesh) meshes.push(object); });
   // Give all primitives of a BAG building a common source bottom before shifting its base.
-  const bases = baseTables && (yield* correctedBagBases(gltf, matrix, baseTables, meshes));
+  const bases = baseTables && (yield* correctedBagBases(gltf, matrix, baseTables, meshes, project));
   let completed = false;
   try {
     for (const o of meshes) {
@@ -391,17 +433,22 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
       const meshBases = bases?.byMesh.get(o);
       const src = o.geometry;
       const full = new THREE.Matrix4().multiplyMatrices(matrix, o.matrixWorld);
-      const normalMatrix = new THREE.Matrix3().getNormalMatrix(full);
       const pos = src.attributes.position, nor = src.attributes.normal, fid = src.attributes._feature_id_0;
+      const normalMatrix = projectedNormalMatrix(full, pos, project);
       const count = pos.count;
       const excluded = exclusions && meshBagFacadeFeatures(gltf, o, exclusions);
-      const positions = new Float32Array(count * 3), normals = new Float32Array(count * 3), colors = new Float32Array(count * 3);
+      const projected = bases?.projected.get(o);
+      const positions = projected ?? new Float32Array(count * 3);
+      const normals = new Float32Array(count * 3), colors = new Float32Array(count * 3);
       const v = new THREE.Vector3(), c = new THREE.Color();
       const baseByBuilding = new Map(), extents = new Map();
       for (let i = 0; i < count; i++) {
         if ((i & 1023) === 0) yield;
-        v.fromBufferAttribute(pos, i).applyMatrix4(full);
-        positions[i * 3] = v.x; positions[i * 3 + 1] = v.y; positions[i * 3 + 2] = v.z;
+        if (!projected) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(full);
+          if (project) project(v);
+          positions[i * 3] = v.x; positions[i * 3 + 1] = v.y; positions[i * 3 + 2] = v.z;
+        }
         v.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
         normals[i * 3] = v.x; normals[i * 3 + 1] = v.y; normals[i * 3 + 2] = v.z;
         const seed = fid ? Math.round(fid.getX(i)) : 0;
@@ -660,7 +707,7 @@ function disposeFacadeAtlas(atlas) {
   atlas?.palette.dispose();
 }
 
-async function bagGeometry(gltf, matrix, facades, tile, stillWanted = () => true, pacing) {
+async function bagGeometry(gltf, facades, tile, stillWanted = () => true, pacing) {
   let features, atlas;
   const excluded = landmarkBagExclusions(tile.bounds);
   let byId = facades && await facades.forBounds(tile.bounds);
@@ -691,7 +738,8 @@ async function bagGeometry(gltf, matrix, facades, tile, stillWanted = () => true
     }
     const exclusions = excluded.size ? await readBagFacadeFeatures(gltf, excluded) : null;
     const years = await readBagBuildYears(gltf).catch(() => []);
-    const work = bakeTileChunks(gltf, matrix, atlas ? features : null, atlas, bases, exclusions, years);
+    const matrix = gltfToEcefMatrix(tile.transform);
+    const work = bakeTileChunks(gltf, matrix, atlas ? features : null, atlas, bases, exclusions, years, projectBagVertex);
     const geometries = pacing ? await finishBagWorkIncrementally(work, stillWanted, pacing) : finishBagWork(work);
     if (!geometries) {
       disposeFacadeAtlas(atlas);
@@ -741,10 +789,8 @@ function addBagGeometry(group, geometries, material, detailedMaterial) {
 }
 
 export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fetchJson, loader } = {}) {
-  const ecefMatrix = ecefToLocalMatrix();
-  const matrix = gltfToLocalMatrix(ecefMatrix);
   const [tiles, facades] = await Promise.all([
-    selectTileRecords(ecefMatrix, { fetchJson }),
+    selectTileRecords({ fetchJson }),
     loadEdeFacades().catch(error => {
       console.warn('[facades] using procedural walls:', error.message);
       return null;
@@ -761,7 +807,7 @@ export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fet
     while (next < tiles.length) {
       const tile = tiles[next++];
       const gltf = await gltfLoader.loadAsync(tile.url);
-      const { geometries, atlas } = await bagGeometry(gltf, matrix, facades, tile);
+      const { geometries, atlas } = await bagGeometry(gltf, facades, tile);
       let detailedMaterial;
       if (atlas) {
         surface ??= createFacadeSurfaceTexture();
@@ -798,8 +844,6 @@ async function fetchTile(url, signal) {
 }
 
 export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer = fetchTile, loader } = {}) {
-  const origin = ecefToLocalMatrix();
-  const matrix = gltfToLocalMatrix(origin);
   const group = new THREE.Group();
   group.name = 'bag3d-buildings';
   scene.add(group);
@@ -837,7 +881,7 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
   function requestCatalogue() {
     if (catalogueRequested) return;
     catalogueRequested = true;
-    selectTileRecords(origin, { fetchJson }).then(value => {
+    selectTileRecords({ fetchJson }).then(value => {
       if (disposed) return;
       tiles = value;
       stats.catalogue = value.length;
@@ -920,7 +964,7 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     try {
       const gltf = await gltfLoader.parseAsync(buffer, new URL('.', tile.url).href);
       if (!stillWanted()) return;
-      const appearance = await bagGeometry(gltf, matrix, await facades, tile, stillWanted, pacing);
+      const appearance = await bagGeometry(gltf, await facades, tile, stillWanted, pacing);
       if (!appearance) return;
       ({ geometries, atlas } = appearance);
       const covered = await finishBagWorkIncrementally(coveredFallbackChunks(geometries, fallback), stillWanted, pacing);

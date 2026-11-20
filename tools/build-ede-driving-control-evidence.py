@@ -9,6 +9,8 @@ from math import hypot
 
 import osmium
 
+from ede_scene import SceneAffine
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -34,7 +36,7 @@ def extract(source, data):
     for road in roads.values():
         for node in road['nodeIds']:
             by_node[node].append(road)
-    frame = data['meta']['lonLatAffine']
+    frame = SceneAffine(data['meta']['lonLatAffine'])
     rings, points = set(), {}
 
     class Collector(osmium.SimpleHandler):
@@ -58,8 +60,7 @@ def extract(source, data):
             sign = 1 if direction == 'forward' else -1
             if not road['modes'][0 if sign > 0 else 1] & 7:
                 return
-            delta = (1, node.location.lon - frame['lon0'], node.location.lat - frame['lat0'])
-            x, z = (sum(v * coef for v, coef in zip(delta, frame[key])) for key in ('x', 'z'))
+            x, z = frame.lon_lat_to_scene(node.location.lon, node.location.lat)
             heading = unit_at(road, x, z, sign)
             if heading:
                 points[node.id] = [f'n{node.id}', 'stop' if kind == 'stop' else 'yield',

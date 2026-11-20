@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "walls": [
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000019061",
+      "wallId": "-196.23,258.79,-179.17,264.84,0.00",
+      "a": [
+        -196.23,
+        258.79
+      ],
+      "b": [
+        -179.17,
+        264.84
+      ],
+      "minY": -1.27,
+      "height": 30.57,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.79,
+        "wallMaterial": "brick",
+        "wallColor": "#5f5350",
+        "frameColor": "#aaa49c",
+        "doorColor": "#363838",
+        "sillColor": "#807c74",
+        "glazingColor": "#65717a",
+        "openings": [
+          {"kind": "storefront", "x": 0.95, "y": 0.42, "width": 2.14, "height": 2.69, "frame": 0.086, "panes": 2, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "door", "x": 4.25, "y": 0.35, "width": 1.82, "height": 2.66, "frame": 0.085, "panes": 2, "sill": 0, "depth": 0.19, "transom": 0.78},
+          {"kind": "storefront", "x": 6.32, "y": 0.42, "width": 2.36, "height": 2.74, "frame": 0.086, "panes": 2, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "window", "x": 3.1, "y": 4.25, "width": 2.9, "height": 2.82, "frame": 0.095, "panes": 3, "sill": 0.085, "depth": 0.18, "transom": 0.5},
+          {"kind": "window", "x": 1.22, "y": 7.2, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 5.92, "y": 7.2, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 10.15, "y": 7.2, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 14.15, "y": 7.2, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 1.22, "y": 9.86, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 6.37, "y": 9.86, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 11.8, "y": 9.86, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 14.15, "y": 9.86, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 2.27, "y": 12.52, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 10.18, "y": 12.52, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 12.3, "y": 12.52, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 15.7, "y": 12.52, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 1.22, "y": 15.18, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 10.18, "y": 15.18, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 13.3, "y": 15.18, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 15.7, "y": 15.18, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 1.22, "y": 17.84, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 9.65, "y": 17.84, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 12.15, "y": 17.84, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 15.72, "y": 17.84, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 1.22, "y": 20.5, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 9.65, "y": 20.5, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 13.5, "y": 20.5, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 15.72, "y": 20.5, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 2.05, "y": 23.16, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 9.6, "y": 23.16, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 13.7, "y": 23.16, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 15.72, "y": 23.16, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 6.44, "y": 25.82, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 9.6, "y": 25.82, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 11.1, "y": 25.82, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 12.62, "y": 25.82, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 15.72, "y": 25.82, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 2.95, "y": 28.48, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 6.44, "y": 28.48, "width": 0.96, "height": 1.46, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.17},
+          {"kind": "window", "x": 3.78, "y": 15.8, "width": 3.62, "height": 2.65, "frame": 0.09, "panes": 3, "sill": 0.075, "depth": 0.15, "transom": 0.51},
+          {"kind": "window", "x": 3.78, "y": 18.55, "width": 3.62, "height": 2.65, "frame": 0.09, "panes": 3, "sill": 0.075, "depth": 0.15, "transom": 0.51},
+          {"kind": "window", "x": 3.78, "y": 21.3, "width": 3.62, "height": 2.65, "frame": 0.09, "panes": 3, "sill": 0.075, "depth": 0.15, "transom": 0.51}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_pxl_20240305_0947475962_800.jpg", "capturedAt": "2024-03-05", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.89},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_20211022_125631_800_800-1.jpg", "capturedAt": "2021-10-22", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.87},
+          {"url": "https://www.tva-architecten.nl/project/de-griek-ede/", "referenceDate": "2016-01-06", "creator": "TVA architecten", "confidence": 0.7}
+        ]
+      },
+      "site": "Museumplein",
+      "notes": "De Griek, square-facing elevation at Nieuwe Stationsstraat 9–11. The narrow staggered windows and three tall glazed bay sections follow the March 2024 photo. Tree-screened ground openings and balcony depths are approximated using the published exterior views. The architects’ 2016 reference date is the page publication date."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000004013",
+      "wallId": "-182.77,270.37,-184.01,297.08,0.00",
+      "a": [
+        -182.77,
+        270.37
+      ],
+      "b": [
+        -184.01,
+        297.08
+      ],
+      "minY": -1.3,
+      "height": 10.34,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.83,
+        "wallMaterial": "brick",
+        "wallColor": "#73453e",
+        "frameColor": "#ccc9bb",
+        "doorColor": "#4a4540",
+        "sillColor": "#aaa399",
+        "glazingColor": "#636d75",
+        "openings": [
+          {"kind": "storefront", "x": 0.66, "y": 0.35, "width": 4.9, "height": 2.53, "frame": 0.086, "panes": 4, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "door", "x": 5.89, "y": 0.28, "width": 1.51, "height": 2.58, "frame": 0.085, "panes": 2, "sill": 0, "depth": 0.19, "transom": 0.78},
+          {"kind": "storefront", "x": 8.03, "y": 0.34, "width": 4.15, "height": 2.53, "frame": 0.086, "panes": 3, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "door", "x": 13.08, "y": 0.22, "width": 1.42, "height": 2.57, "frame": 0.085, "panes": 2, "sill": 0, "depth": 0.19, "transom": 0.78},
+          {"kind": "storefront", "x": 15.15, "y": 0.33, "width": 4.9, "height": 2.52, "frame": 0.086, "panes": 4, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "door", "x": 20.57, "y": 0.22, "width": 1.5, "height": 2.63, "frame": 0.085, "panes": 2, "sill": 0, "depth": 0.19, "transom": 0.78},
+          {"kind": "storefront", "x": 22.6, "y": 0.33, "width": 3.45, "height": 2.54, "frame": 0.086, "panes": 3, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "window", "x": 0.84, "y": 4.05, "width": 2.2, "height": 1.91, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14, "transom": 0.74},
+          {"kind": "window", "x": 3.58, "y": 4.05, "width": 1.88, "height": 1.91, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14, "transom": 0.74},
+          {"kind": "window", "x": 7.1, "y": 4.05, "width": 2.18, "height": 1.91, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14, "transom": 0.74},
+          {"kind": "window", "x": 10.34, "y": 4.05, "width": 2.06, "height": 1.91, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14, "transom": 0.74},
+          {"kind": "window", "x": 13.84, "y": 4.05, "width": 2.09, "height": 1.91, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14, "transom": 0.74},
+          {"kind": "window", "x": 17.32, "y": 4.05, "width": 2.46, "height": 1.91, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14, "transom": 0.74},
+          {"kind": "window", "x": 21.17, "y": 4.05, "width": 2.04, "height": 1.91, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14, "transom": 0.74},
+          {"kind": "window", "x": 24.1, "y": 4.05, "width": 1.75, "height": 1.91, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14, "transom": 0.74},
+          {"kind": "window", "x": 0.84, "y": 6.93, "width": 2.2, "height": 2.12, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 3.58, "y": 6.93, "width": 1.88, "height": 2.12, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 7.1, "y": 6.93, "width": 2.18, "height": 2.12, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 10.34, "y": 6.93, "width": 2.06, "height": 2.12, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 13.84, "y": 6.93, "width": 2.09, "height": 2.12, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 17.32, "y": 6.93, "width": 2.46, "height": 2.12, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 21.17, "y": 6.93, "width": 2.04, "height": 2.12, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 24.1, "y": 6.93, "width": 1.75, "height": 2.12, "frame": 0.078, "panes": 2, "sill": 0.075, "depth": 0.14}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_pxl_20240305_0947475962_800.jpg", "capturedAt": "2024-03-05", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.89},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_pxl_20240305_094909806_800.jpg", "capturedAt": "2024-03-05", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.88},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_20230525_104741_1250.jpg", "capturedAt": "2023-05-25", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.82},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_20211022_125631_800_800-1.jpg", "capturedAt": "2021-10-22", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.87}
+        ]
+      },
+      "site": "Museumplein",
+      "notes": "Nieuwe Stationsstraat 13A–13C mixed-use row. The grouped upstairs bays and taller upper glazing follow the west-facing frontage. The three adjacent brick tones are represented by their dominant warm brick colour on this single LoD 2.2 wall. Ground-floor bays are estimated where terrace screens obscure the joinery."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000080041",
+      "wallId": "-185.11,297.47,-185.25,302.24,3.07",
+      "a": [
+        -185.11,
+        297.47
+      ],
+      "b": [
+        -185.25,
+        302.24
+      ],
+      "minY": 1.83,
+      "height": 8.35,
+      "baseOffset": 3.07,
+      "wallType": "street",
+      "buildingType": "shop",
+      "appearance": {
+        "confidence": 0.9,
+        "wallMaterial": "brick",
+        "wallColor": "#605650",
+        "frameColor": "#d5d0c3",
+        "doorColor": "#403a38",
+        "sillColor": "#a9a297",
+        "glazingColor": "#66727a",
+        "openings": [
+          {"kind": "window", "x": 0.77, "y": 0.57, "width": 1.56, "height": 2.71, "frame": 0.092, "panes": 1, "sill": 0.075, "depth": 0.16, "transom": 0.76},
+          {"kind": "window", "x": 3.4, "y": 0.26, "width": 1.17, "height": 3.13, "frame": 0.086, "panes": 1, "sill": 0.075, "depth": 0.15, "transom": 0.75}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_pxl_20240305_094909806_800.jpg", "capturedAt": "2024-03-05", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.88},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_20211022_125631_800_800-1.jpg", "capturedAt": "2021-10-22", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.87}
+        ]
+      },
+      "site": "Museumplein",
+      "notes": "Nieuwe Stationsstraat 17, former La Cubanita gable, north half. The tall centre pair is split at the two surveyed façade planes. Dimensions are estimated from the visible brick joints and roofline."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000080041",
+      "wallId": "-185.25,302.24,-185.38,306.75,3.08",
+      "a": [
+        -185.25,
+        302.24
+      ],
+      "b": [
+        -185.38,
+        306.75
+      ],
+      "minY": 1.84,
+      "height": 8.34,
+      "baseOffset": 3.08,
+      "wallType": "street",
+      "buildingType": "shop",
+      "appearance": {
+        "confidence": 0.9,
+        "wallMaterial": "brick",
+        "wallColor": "#605650",
+        "frameColor": "#d5d0c3",
+        "doorColor": "#403a38",
+        "sillColor": "#a9a297",
+        "glazingColor": "#66727a",
+        "openings": [
+          {"kind": "window", "x": 0.16, "y": 0.25, "width": 1.17, "height": 3.13, "frame": 0.086, "panes": 1, "sill": 0.075, "depth": 0.15, "transom": 0.75},
+          {"kind": "window", "x": 2.57, "y": 0.57, "width": 1.56, "height": 2.71, "frame": 0.092, "panes": 1, "sill": 0.075, "depth": 0.16, "transom": 0.76}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_pxl_20240305_094909806_800.jpg", "capturedAt": "2024-03-05", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.88},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_20211022_125631_800_800-1.jpg", "capturedAt": "2021-10-22", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.87}
+        ]
+      },
+      "site": "Museumplein",
+      "notes": "Nieuwe Stationsstraat 17, former La Cubanita gable, south half. The tall centre pair aligns with its continuation on the neighbouring face."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000080041",
+      "wallId": "-187.05,297.41,-187.37,307.26,0.00",
+      "a": [
+        -187.05,
+        297.41
+      ],
+      "b": [
+        -187.37,
+        307.26
+      ],
+      "minY": -1.24,
+      "height": 2.75,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "shop",
+      "appearance": {
+        "confidence": 0.76,
+        "wallMaterial": "brick",
+        "wallColor": "#605650",
+        "frameColor": "#d5d0c3",
+        "doorColor": "#403a38",
+        "sillColor": "#a9a297",
+        "glazingColor": "#66727a",
+        "openings": [
+          {"kind": "storefront", "x": 0.35, "y": 0.3, "width": 3.47, "height": 2.14, "frame": 0.086, "panes": 3, "sill": 0, "depth": 0.12, "transom": 0.77},
+          {"kind": "door", "x": 4.12, "y": 0.19, "width": 1.57, "height": 2.25, "frame": 0.085, "panes": 2, "sill": 0, "depth": 0.19, "transom": 0.75},
+          {"kind": "storefront", "x": 6.01, "y": 0.3, "width": 3.49, "height": 2.14, "frame": 0.086, "panes": 3, "sill": 0, "depth": 0.12, "transom": 0.77}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_pxl_20240318_132807891_800.jpg", "capturedAt": "2024-03-18", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.74},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_pxl_20240305_094909806_800.jpg", "capturedAt": "2024-03-05", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.88},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_20211022_125631_800_800-1.jpg", "capturedAt": "2021-10-22", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.87}
+        ]
+      },
+      "site": "Museumplein",
+      "notes": "Nieuwe Stationsstraat 17, glazed ground-floor projection. The full-height glass frontage is visible behind the terrace and awnings. Door width and mullion positions are estimated."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000006197",
+      "wallId": "-183.53,307.84,-184.27,319.32,0.00",
+      "a": [
+        -183.53,
+        307.84
+      ],
+      "b": [
+        -184.27,
+        319.32
+      ],
+      "minY": -1.65,
+      "height": 7.82,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "shop",
+      "appearance": {
+        "confidence": 0.88,
+        "wallMaterial": "brick",
+        "wallColor": "#3a4148",
+        "frameColor": "#e3ded1",
+        "doorColor": "#403f3d",
+        "sillColor": "#d0cabc",
+        "glazingColor": "#66747d",
+        "openings": [
+          {"kind": "storefront", "x": 0.63, "y": 0.32, "width": 3.69, "height": 2.63, "frame": 0.086, "panes": 4, "sill": 0, "depth": 0.12, "transom": 0.81},
+          {"kind": "door", "x": 4.56, "y": 0.19, "width": 1.74, "height": 2.73, "frame": 0.085, "panes": 2, "sill": 0, "depth": 0.19, "transom": 0.79},
+          {"kind": "storefront", "x": 6.52, "y": 0.32, "width": 4.29, "height": 2.63, "frame": 0.086, "panes": 4, "sill": 0, "depth": 0.12, "transom": 0.81},
+          {"kind": "window", "x": 0.8, "y": 3.88, "width": 2.58, "height": 1.59, "frame": 0.094, "panes": 5, "sill": 0.075, "depth": 0.16, "transom": 0.73},
+          {"kind": "window", "x": 4.45, "y": 3.88, "width": 2.61, "height": 1.59, "frame": 0.094, "panes": 5, "sill": 0.075, "depth": 0.16, "transom": 0.73},
+          {"kind": "window", "x": 8.08, "y": 3.88, "width": 2.67, "height": 1.59, "frame": 0.094, "panes": 5, "sill": 0.075, "depth": 0.16, "transom": 0.73}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_pxl_20240305_094909806_800.jpg", "capturedAt": "2024-03-05", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.88},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_herinrichting_pxl_20240305_0947475962_800.jpg", "capturedAt": "2024-03-05", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.89},
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/museumplein_20211022_125631_800_800-1.jpg", "capturedAt": "2021-10-22", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.87}
+        ]
+      },
+      "site": "Museumplein",
+      "notes": "Café Premier, Nieuwe Stationsstraat 19. Three wide gridded white upper windows contrast with the painted blue-grey brick. Lower door positions are estimated behind the terrace canopy. Roof glazing belongs to the BAG roof."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000058648",
+      "wallId": "-196.29,341.27,-205.31,340.93,0.00",
+      "a": [
+        -196.29,
+        341.27
+      ],
+      "b": [
+        -205.31,
+        340.93
+      ],
+      "minY": -1.32,
+      "height": 6.26,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "shop",
+      "appearance": {
+        "confidence": 0.81,
+        "wallMaterial": "timber",
+        "wallColor": "#313537",
+        "frameColor": "#bcb7a8",
+        "doorColor": "#373734",
+        "sillColor": "#77796f",
+        "glazingColor": "#616d72",
+        "openings": [
+          {"kind": "storefront", "x": 0.33, "y": 0.38, "width": 2.7, "height": 2.62, "frame": 0.086, "panes": 3, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "door", "x": 3.39, "y": 0.19, "width": 1.52, "height": 2.76, "frame": 0.085, "panes": 2, "sill": 0, "depth": 0.19, "transom": 0.78},
+          {"kind": "storefront", "x": 5.26, "y": 0.39, "width": 3.43, "height": 2.6, "frame": 0.086, "panes": 3, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "window", "x": 0.58, "y": 3.8, "width": 1.37, "height": 1.15, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 2.55, "y": 3.8, "width": 1.56, "height": 1.17, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 5.17, "y": 3.8, "width": 1.58, "height": 1.17, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.14},
+          {"kind": "window", "x": 7.28, "y": 3.8, "width": 1.2, "height": 1.15, "frame": 0.078, "panes": 1, "sill": 0.075, "depth": 0.14}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/b907xo/museumplein_herinrichting_20230525_104821_800.jpg", "capturedAt": "2023-05-25", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.84}
+        ]
+      },
+      "site": "Museumplein",
+      "notes": "Café de Pineut, Museumplein 1. Dark horizontal cladding, short pale upper windows and a ground-floor glazed terrace frontage. Lower bays are estimated through partially closed umbrellas and the awning."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000058648",
+      "wallId": "-205.31,340.93,-213.95,340.64,0.00",
+      "a": [
+        -205.31,
+        340.93
+      ],
+      "b": [
+        -213.95,
+        340.64
+      ],
+      "minY": -1.32,
+      "height": 6.79,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "shop",
+      "appearance": {
+        "confidence": 0.78,
+        "wallMaterial": "brick",
+        "wallColor": "#514e49",
+        "frameColor": "#a3a29a",
+        "doorColor": "#464848",
+        "sillColor": "#8b8981",
+        "glazingColor": "#616e76",
+        "openings": [
+          {"kind": "storefront", "x": 0.38, "y": 0.38, "width": 3.12, "height": 2.68, "frame": 0.086, "panes": 3, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "door", "x": 3.82, "y": 0.2, "width": 1.52, "height": 2.8, "frame": 0.085, "panes": 2, "sill": 0, "depth": 0.19, "transom": 0.78},
+          {"kind": "storefront", "x": 5.62, "y": 0.38, "width": 2.62, "height": 2.68, "frame": 0.086, "panes": 3, "sill": 0, "depth": 0.12, "transom": 0.78},
+          {"kind": "window", "x": 0.45, "y": 3.79, "width": 3.56, "height": 1.95, "frame": 0.094, "panes": 3, "sill": 0.068, "depth": 0.16, "transom": 0.66},
+          {"kind": "window", "x": 4.17, "y": 3.79, "width": 4.08, "height": 1.95, "frame": 0.094, "panes": 4, "sill": 0.068, "depth": 0.16, "transom": 0.66}
+        ],
+        "sources": [
+          {"url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/b907xo/museumplein_herinrichting_20230525_104821_800.jpg", "capturedAt": "2023-05-25", "creator": "Allard Bijlsma / Atlas van Ede", "confidence": 0.84}
+        ]
+      },
+      "site": "Museumplein",
+      "notes": "Museumplein 2, Red’s frontage in the May 2023 reference. The dark elevation has continuous upper glazing split into framed sections. Lower bays partly hidden by the terrace are approximated."
+    }
+  ]
+}

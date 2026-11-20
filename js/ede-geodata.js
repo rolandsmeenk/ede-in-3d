@@ -1,5 +1,6 @@
 // Ede map in local metres around Oude Kerk. © OpenStreetMap contributors (ODbL).
 import { EDE_ROAD_TAGS } from './ede-road-tags.js';
+import { EDE_FUEL_FALLBACK_FOOTPRINTS } from './ede-fuel-sites.js';
 
 const mapUrl = new URL('../assets/ede-map-v1.json.gz', import.meta.url);
 const shorelineUrl = new URL('../assets/ede-shorelines.json.gz', import.meta.url);
@@ -95,6 +96,10 @@ async function loadMap() {
     }
   }
   if (years) applyBuildingYears(data.buildings, years);
+  for (const { id, ring, holes } of EDE_FUEL_FALLBACK_FOOTPRINTS) {
+    const building = data.buildings.find(row => row.id === id);
+    if (building) Object.assign(building, { ring, holes });
+  }
   for (const road of data.roads) Object.assign(road, EDE_ROAD_TAGS[road.id]);
   return data;
 }

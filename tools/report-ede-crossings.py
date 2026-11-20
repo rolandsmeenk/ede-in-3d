@@ -2,6 +2,7 @@
 
 import argparse
 from collections import Counter
+from functools import cache
 import json
 from pathlib import Path
 
@@ -26,19 +27,28 @@ def span(values):
     return f'{min(numbers):.2f}–{max(numbers):.2f}'
 
 
+@cache
+def frame():
+    from ede_gis import Frame
+    from ede_map import load_scene
+
+    return Frame(load_scene()['meta']['lonLatAffine'])
+
+
 def surveyed_heights(directory, site, samples):
     if not directory:
         return ''
-    from pyproj import Transformer
     import rasterio
-    rd = Transformer.from_crs(4326, 28992, always_xy=True)
+    from ede_raster import require_rd_raster
+
+    coords = [frame().scene_to_rd(p['x'], p['z']) for p in samples]
     parts = []
     for kind in ('dtm', 'dsm'):
         source = directory / f"{site['id']}-{kind}.tif"
         if not source.exists():
             continue
-        coords = [rd.transform(5.671553 + p['x'] / 68464.6685, 52.0460029 - p['z'] / 111319.4908) for p in samples]
         with rasterio.open(source) as raster:
+            require_rd_raster(raster)
             values = [float(v[0]) for v in raster.sample(coords)]
         plausible = [v for v in values if -2 < v < 95]
         if plausible:

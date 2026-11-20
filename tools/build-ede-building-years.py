@@ -15,6 +15,7 @@ from shapely import STRtree, make_valid, transform
 from shapely.geometry import Polygon, shape
 
 from ede_map import ROOT, load_scene
+from ede_scene import SceneAffine
 
 
 PAND = 'https://api.pdok.nl/kadaster/bag/ogc/v2/collections/pand/items'
@@ -47,13 +48,8 @@ def download(bounds):
 
 def source_rows(scene):
     min_x, min_z, max_x, max_z = scene['meta']['bounds']
-    frame = scene['meta']['lonLatAffine']
-    # The Ede map axes run east and south.
-    assert frame['x'][2] == frame['z'][1] == 0
-    west = frame['lon0'] + (min_x - frame['x'][0] - 50) / frame['x'][1]
-    east = frame['lon0'] + (max_x - frame['x'][0] + 50) / frame['x'][1]
-    south = frame['lat0'] + (max_z - frame['z'][0] + 50) / frame['z'][2]
-    north = frame['lat0'] + (min_z - frame['z'][0] - 50) / frame['z'][2]
+    frame = SceneAffine(scene['meta']['lonLatAffine'])
+    west, south, east, north = frame.geographic_bounds((min_x - 50, min_z - 50, max_x + 50, max_z + 50))
     lon = [west + i * (east - west) / 6 for i in range(7)]
     lat = [south + i * (north - south) / 5 for i in range(6)]
     boxes = [(w, s, e, n) for w, e in zip(lon, lon[1:]) for s, n in zip(lat, lat[1:])]
@@ -73,11 +69,7 @@ def ordered_ids(buildings):
 
 
 def periods(scene, rows):
-    affine = scene['meta']['lonLatAffine']
-
-    def project(lon, lat):
-        return (affine['x'][0] + affine['x'][1] * (lon - affine['lon0']),
-                affine['z'][0] + affine['z'][2] * (lat - affine['lat0']))
+    project = SceneAffine(scene['meta']['lonLatAffine']).lon_lat_to_scene
 
     candidates = [(year, make_valid(transform(shape(geometry), project, interleaved=False)))
                   for year, geometry in rows.values()]

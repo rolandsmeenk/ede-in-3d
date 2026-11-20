@@ -1,5 +1,6 @@
 import { EDE_MODELED_LANDMARKS, modeledLandmarkFootprints } from './ede-landmark-sites.js';
 import { GEO } from './nyc-geodata.js';
+import { projectLonLatInto, unprojectScene } from './ede-scene-coordinates.js';
 import { FOOT } from './road-access.js';
 
 // Ede spatial adapter for mrdoob/slop-newyork's engine, via an irregular-city data path.
@@ -8,8 +9,7 @@ import { FOOT } from './road-access.js';
 const EDE_DATA = GEO.ede;
 const toPts = (flat) => { const out=[]; for(let i=0;i<flat.length;i+=2)out.push({x:flat[i],z:flat[i+1]});return out; };
 const AFF = EDE_DATA.meta.lonLatAffine;
-// Equirectangular fit around the Oude Kerk (meta.lonLatAffine): enough for teleports.
-const projectLonLat = (lon,lat) => { const a=lon-AFF.lon0, b=lat-AFF.lat0; return {x:AFF.x[0]+AFF.x[1]*a+AFF.x[2]*b, z:AFF.z[0]+AFF.z[1]*a+AFF.z[2]*b}; };
+const projectLonLat = (lon, lat) => projectLonLatInto(AFF, lon, lat, {});
 const [minX,minZ,maxX,maxZ] = EDE_DATA.meta.bounds;
 const ISLAND_BOUNDS = {minX,maxX,minZ,maxZ,sidewalkHeight:0.22,waterLevel:-2.2};
 const CUT_Z=minZ;
@@ -293,8 +293,7 @@ const NYC_LANDMARKS=[
  return {id,name,short,x,z,district,road,lon,lat};
 }).concat(EDE_MODELED_LANDMARKS.map(site => ({
  ...site, short: site.name,
- lon: AFF.lon0 + (site.x - AFF.x[0]) / AFF.x[1],
- lat: AFF.lat0 + (site.z - AFF.z[0]) / AFF.z[2],
+ ...unprojectScene(AFF, site.x, site.z),
 })));
 // Specific approaches point toward the entrance or main façade from a mapped street.
 const LANDMARK_APPROACHES={

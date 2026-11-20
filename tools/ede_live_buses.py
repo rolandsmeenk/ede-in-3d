@@ -7,7 +7,8 @@ import re
 import struct
 from urllib.request import urlopen
 
-from ede_map import load_scene
+from ede_map import load_scene_metadata
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 URL = 'https://gtfs.ovapi.nl/nl/vehiclePositions.pb'
@@ -63,13 +64,8 @@ def float_field(value):
 
 @lru_cache(maxsize=1)
 def local_map():
-    meta = load_scene()['meta']
+    meta = load_scene_metadata()
     return meta['bounds'], meta['lonLatAffine']
-
-
-def project_lon_lat(lon, lat, projection):
-    dx, dy = lon - projection['lon0'], lat - projection['lat0']
-    return tuple(zero + a * dx + b * dy for zero, a, b in (projection['x'], projection['z']))
 
 
 @lru_cache(maxsize=1)
@@ -97,7 +93,7 @@ def local_vehicle(data, trips, bounds, projection):
     lat, lon = float_field(position.get(1)), float_field(position.get(2))
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None
-    x, z = project_lon_lat(lon, lat, projection)
+    x, z = projection.lon_lat_to_scene(lon, lat)
     min_x, min_z, max_x, max_z = bounds
     if not (min_x - 100 <= x <= max_x + 100 and min_z - 100 <= z <= max_z + 100):
         return None
@@ -121,7 +117,8 @@ def local_vehicle(data, trips, bounds, projection):
 
 
 def decode_ede_bus_feed(body, network=None):
-    trips, bounds, projection = network if network is not None else local_network()
+    trips, bounds, affine = network if network is not None else local_network()
+    projection = SceneAffine(affine)
     timestamp, vehicles = 0, []
     header_found = False
     for number, value in fields(memoryview(body)):

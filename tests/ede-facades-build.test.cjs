@@ -68,6 +68,7 @@ test('shipped spatial tiles contain only façade parameters and leave party wall
   execFileSync('python3', ['-B', '-c', `
 import gzip
 import json
+import runpy
 from pathlib import Path
 from collections import Counter
 
@@ -77,12 +78,22 @@ report = json.loads(Path('tools/data/ede-facade-coverage.json').read_text())
 assert manifest['version'] == 2 and manifest['tileSize'] == 384
 counts = Counter()
 size = 0
+builder = runpy.run_path('tools/build-ede-facades.py')
+reviews, squares = builder['load_square_walls'](builder['SQUARE_REVIEWS'])
+assert set(squares) == {'Marktplein', 'Kuiperplein', 'Museumplein'}
+assert squares == report['reviewedSquares']
 for key, name in manifest['tiles'].items():
     path = base / name
     size += path.stat().st_size
     with gzip.open(path, 'rt') as source:
         block = json.load(source)
     assert block['version'] == 2
+    if key in reviews:
+        walls = {(wall['bagId'], wall['wallId']): wall for wall in block['walls']}
+        for review in reviews[key]:
+            assert walls[review['bagId'], review['wallId']] == review
+            assert sum(builder['same_wall'](wall, review) for wall in block['walls']) == 1
+            assert review['status'] == 'observed' and review['sources']
     ix, iz = map(int, key.split(','))
     for wall in block['walls']:
         assert 'photos' not in wall

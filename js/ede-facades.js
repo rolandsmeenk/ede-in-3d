@@ -15,7 +15,17 @@ function indexWalls(walls) {
   return byId;
 }
 
-export async function loadEdeFacades() {
+let facadeIndex;
+
+export function loadEdeFacades() {
+  facadeIndex ??= readEdeFacades().catch(error => {
+    facadeIndex = null;
+    throw error;
+  });
+  return facadeIndex;
+}
+
+async function readEdeFacades() {
   const source = new URL('../assets/ede-facades.json', import.meta.url);
   const response = await fetch(source);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

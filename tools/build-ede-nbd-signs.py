@@ -14,14 +14,14 @@ from urllib.request import urlopen
 
 from PIL import Image, ImageOps
 
+from ede_gis import Frame, source_crs
 from ede_map import load_scene
-from ede_traffic_geometry import RoadGraph, Segment
+from ede_traffic_geometry import Segment
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = 'https://downloads.rijkswaterstaatdata.nl/bewegwijzering/'
 LICENSE = 'Public domain, Nationale Bewegwijzeringsdienst (Rijkswaterstaat)'
 REVIEW = ROOT / 'tools/data/ede-nbd-signs.review.json'
-RD_TO_LON_LAT = runpy.run_path(str(ROOT / 'tools/build-ede-posted-speeds.py'))['rd_to_lon_lat']
 TERRAIN = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']
 
 
@@ -39,18 +39,25 @@ def fetch(directory, review):
             (directory / entry['drawing']).write_bytes(response.read())
 
 
-def joined_signs(directory, frame):
+def joined_signs(directory, frame, bounds):
     signs = {}
-    xmin, zmin, xmax, zmax = frame.bounds
+    xmin, zmin, xmax, zmax = bounds
+    # The national file includes coordinates beyond the pinned Dutch shift grid.
+    # Pad the corner-based RD window before the exact scene-rectangle test.
+    east, north = zip(*(frame.scene_to_rd(x, z) for x in (xmin, xmax) for z in (zmin, zmax)))
+    rd_west, rd_south, rd_east, rd_north = min(east) - 10, min(north) - 10, max(east) + 10, max(north) + 10
     with (directory / 'wwxy.csv').open(encoding='utf-8-sig', newline='') as source:
         for row in csv.DictReader(source):
             if row['klasse'].strip() != 'WEGWIJZER':
                 continue
+            # NBd wwxy.csv specifies RD easting and northing in its x and y columns.
             rd = float(row['x']), float(row['y'])
-            x, z = frame.project(*RD_TO_LON_LAT(*rd))
+            if not (rd_west <= rd[0] <= rd_east and rd_south <= rd[1] <= rd_north):
+                continue
+            x, z = frame.rd_to_scene(*rd)
             if xmin <= x <= xmax and zmin <= z <= zmax:
                 sign_id = row['kpnr'] + row['wwnr']
-                signs[sign_id] = {'rd': rd, 'destinations': [], 'position': (x, z)}
+                signs[sign_id] = {'rd': rd, 'destinations': []}
     with (directory / 'doelen_nbd.csv').open(encoding='utf-8-sig', newline='') as source:
         for row in csv.DictReader(source):
             sign = signs.get(row['nummer'])
@@ -65,20 +72,28 @@ def joined_signs(directory, frame):
 
 
 def load_gis(directory, frame):
+    survey = None
+    if directory.is_file():
+        contents = directory.read_bytes()
+        snapshot = json.loads(gzip.decompress(contents) if directory.suffix == '.gz' else contents)
+        if snapshot.get('verticalDatum') != 'NAP':
+            raise ValueError('1GIS snapshot must use NAP heights')
+        survey = {int(layer): {'horizontalCrs': snapshot['horizontalCrs'], 'features': features}
+                  for layer, features in snapshot['layers'].items()}
     result = {}
     for layer, source_type, field in ((13, 'Wegwijzer', 'objectid'), (31, 'Verkeersportaal', 'gisobjid')):
-        document = json.loads((directory / f'{layer}.json').read_bytes())
-        if document.get('spatialReference', {}).get('wkid') != 28992:
+        document = survey[layer] if survey else json.loads((directory / f'{layer}.json').read_bytes())
+        if source_crs(document).to_epsg() != 28992:
             raise ValueError(f'1GIS layer {layer} must contain RD New geometry')
         for row in document['features']:
             properties, geometry = row['attributes'], row['geometry']
             if properties['type'] != source_type:
                 continue
             if layer == 13:
-                shape = (*frame.project(*RD_TO_LON_LAT(geometry['x'], geometry['y'])), geometry.get('z'))
+                shape = (*frame.rd_to_scene(geometry['x'], geometry['y']), geometry.get('z'))
             else:
-                shape = [Segment((*frame.project(*RD_TO_LON_LAT(*p[:2])), p[2]),
-                                 (*frame.project(*RD_TO_LON_LAT(*q[:2])), q[2]), properties)
+                shape = [Segment((*frame.rd_to_scene(*p[:2]), p[2]),
+                                 (*frame.rd_to_scene(*q[:2]), q[2]), properties)
                          for path in geometry['paths'] for p, q in zip(path, path[1:]) if p[:2] != q[:2]]
             result[layer, str(properties[field])] = (shape, properties)
     return result
@@ -91,11 +106,16 @@ def path_segments(flat, properties):
     return [Segment(a, b, properties) for a, b in zip(points, points[1:]) if a != b]
 
 
-def nearest(segments, position):
-    def distance_to(segment):
-        along, across = segment.project(*position)
-        return math.hypot(across, max(-along, along - segment.length, 0))
-    return min(segments, key=distance_to, default=None)
+def nearest(segments, position, frame):
+    rd = frame.scene_to_rd(*position)
+    candidates = []
+    for segment in segments:
+        metric = Segment(frame.scene_to_rd(*segment.a[:2]), frame.scene_to_rd(*segment.b[:2]), None)
+        along, across = metric.project(*rd)
+        beyond = max(-along, along - metric.length, 0)
+        candidates.append((math.hypot(across, beyond), segment, across, beyond))
+    _, segment, across, beyond = min(candidates, key=lambda row: row[0])
+    return segment, across, beyond
 
 
 def crop_board(path):
@@ -147,18 +167,17 @@ def project_height(segment, position):
     return segment.a[2] + t * (segment.b[2] - segment.a[2])
 
 
-def placement(sign_id, sign, chosen, gis, roads, terrain, profiles):
+def placement(sign_id, sign, chosen, gis, roads, terrain, profiles, frame):
     surveyed, attributes = gis[13, str(chosen['point'])]
     x, z, nap = surveyed
-    if not isinstance(nap, (int, float)) or math.dist(sign['position'], (x, z)) > chosen.get('pointReach', 2.5):
+    if not isinstance(nap, (int, float)) or math.dist(sign['rd'], frame.scene_to_rd(x, z)) > chosen.get('pointReach', 2.5):
         raise ValueError('1GIS point is too far from NBd location or lacks height')
     position = x, z
-    edge = nearest(roads[chosen['way']], position)
-    along, lateral = edge.project(*position)
-    if abs(lateral) > 22 or max(-along, along - edge.length) > 13:
+    edge, lateral, beyond = nearest(roads[chosen['way']], position, frame)
+    if lateral > 22 or beyond > 13:
         raise ValueError('reviewed approach is too far from the mount')
     angle = math.atan2(-edge.ux, -edge.uz)
-    along = min(edge.length, max(0, along))
+    along = min(edge.length, max(0, edge.project(*position)[0]))
     road_point = edge.a[0] + edge.ux * along, edge.a[1] + edge.uz * along
     ground = terrain.at(position)
     deck, profile = terrain.at(road_point), None
@@ -171,9 +190,9 @@ def placement(sign_id, sign, chosen, gis, roads, terrain, profiles):
     mount = chosen.get('portal')
     if mount:
         lines, portal_attributes = gis[31, mount]
-        axis = nearest(lines, position)
-        along, across = axis.project(*position)
-        if across > 2.25 or not -1 <= along <= axis.length + 1 or abs(axis.ux * edge.ux + axis.uz * edge.uz) > .55:
+        axis, across, beyond = nearest(lines, position, frame)
+        along = axis.project(*position)[0]
+        if across > 2.25 or beyond > 1 or abs(axis.ux * edge.ux + axis.uz * edge.uz) > .55:
             raise ValueError('reviewed portal disagrees with the point or carriageway axis')
         # Use the portal normal, oriented toward the incoming directed carriageway.
         nx, nz = axis.uz, -axis.ux
@@ -209,8 +228,8 @@ def placement(sign_id, sign, chosen, gis, roads, terrain, profiles):
 
 def bake(directory, survey, mounts, review, date, atlas, output):
     scene = load_scene()
-    frame = RoadGraph({**scene['meta'], 'edges': []})
-    signs = joined_signs(directory, frame)
+    frame = Frame(scene['meta']['lonLatAffine'])
+    signs = joined_signs(directory, frame, scene['meta']['bounds'])
     gis = load_gis(survey, frame)
     with gzip.open(mounts, 'rt') as source:
         beam_heights = {row['id']: row['beamY'] for row in json.load(source)['features'] if row['type'] == 'gantry'}
@@ -230,7 +249,7 @@ def bake(directory, survey, mounts, review, date, atlas, output):
             sign = signs[sign_id]
             if not sign['destinations']:
                 raise ValueError('NBd destination entry missing')
-            row = placement(sign_id, sign, chosen, gis, roads, terrain, profiles)
+            row = placement(sign_id, sign, chosen, gis, roads, terrain, profiles, frame)
             graphic = crop_board(directory / chosen['drawing'])
             width, height = chosen['size']
             if not height:
@@ -284,7 +303,7 @@ def bake(directory, survey, mounts, review, date, atlas, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path, help='Saved NBd CSVs and official drawings')
-    parser.add_argument('survey', type=Path, help='1GIS ArcGIS JSON cache from build-ede-1gis.py')
+    parser.add_argument('survey', type=Path, help='Saved 1GIS snapshot or ArcGIS JSON cache')
     parser.add_argument('--date', required=True, help='Publication date of the NBd export used')
     parser.add_argument('--fetch', action='store_true', help='Download NBd CSVs and reviewed drawings first')
     parser.add_argument('--mounts', type=Path, default=ROOT / 'assets/ede-1gis-detail.json.gz', help='Fitted 1GIS gantries')

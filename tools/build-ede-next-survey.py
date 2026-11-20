@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake De Eder Kuil's native AHN terrain patch and three local 3DBAG surveys."""
+"""Bake De Eder Kuil's native AHN terrain patch and local 3DBAG landmark surveys."""
 
 import argparse
 import gzip
@@ -11,15 +11,14 @@ from struct import unpack_from
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from PIL import Image
-
-from ede_gis import Frame, source_crs
+from ede_gis import Frame
 
 ROOT = Path(__file__).resolve().parents[1]
 SITES = {
     'kuil': ((174849, 450195, 175065, 450379), ('0228100000006512', '0228100000037062', '0228100000069647')),
     'technova': ((173764, 448108, 173994, 448278), ('0228100000028941',)),
     'tesqua': ((172530, 449407, 172790, 449643), ('0228100000041390',)),
+    'pallas': ((172393, 449817, 172493, 449936), ('0228100000057211',)),
 }
 SURFACES = {'WallSurface': 0, 'RoofSurface': 1}
 COURT_FRAME = (172440, 449407, 172790, 449643)
@@ -105,21 +104,24 @@ def bake_buildings(cache, fetch, frame, origin):
 
 
 def bake_terrain(cache, fetch, frame, coarse):
+    import rasterio
+    from ede_raster import require_rd_raster
+
     west, south, east, north = SITES['kuil'][0]
     query = urlencode([('service', 'WCS'), ('request', 'GetCoverage'), ('version', '2.0.1'),
                        ('coverageId', 'dtm_05m'), ('format', 'image/tiff'),
                        ('subset', f'x({west},{east})'), ('subset', f'y({south},{north})')])
     url = 'https://service.pdok.nl/rws/ahn/wcs/v1_0?' + query
-    image = Image.open(cached(cache / 'kuil-dtm.tif', fetch, url))
-    keys = image.tag_v2[34735]
-    crs = next(keys[i + 3] for i in range(4, len(keys), 4) if keys[i:i + 3] == (3072, 0, 1))
-    if source_crs({}, default=f'EPSG:{crs}').to_epsg() != 28992:
-        raise ValueError('Unexpected AHN horizontal datum')
-    px, py, _, easting, northing, _ = image.tag_v2[33922]
-    dx, dz, _ = image.tag_v2[33550]
+    with rasterio.open(cached(cache / 'kuil-dtm.tif', fetch, url)) as raster:
+        require_rd_raster(raster)
+        if raster.res != (0.5, 0.5):
+            raise ValueError('Expected native 0.5 m AHN')
+        pixels = raster.read(1, masked=True).filled(float('nan'))
+        inverse = ~raster.transform
+    height, width = pixels.shape
     magic, cols, rows, x0, z0, town_step, datum = unpack_from('<4sIIffff', coarse)
-    if magic != b'AHN1' or town_step != 12 or (dx, dz) != (0.5, 0.5):
-        raise ValueError('Expected the 12 m town grid and 0.5 m native AHN')
+    if magic != b'AHN1' or town_step != 12:
+        raise ValueError('Expected the 12 m town grid')
 
     def town_height(x, z):
         u, v = (x - x0) / town_step, (z - z0) / town_step
@@ -134,11 +136,11 @@ def bake_terrain(cache, fetch, frame, coarse):
 
     def native_height(x, z, fallback):
         e, n = frame.scene_to_rd(x, z)
-        col, row = int(px + (e - easting) / dx), int(py + (northing - n) / dz)
+        col, row = map(floor, inverse * (e, n))
         for reach in (1, 3, 7):
-            samples = [y for i in range(max(0, col - reach), min(image.width, col + reach + 1))
-                       for j in range(max(0, row - reach), min(image.height, row + reach + 1))
-                       if abs(y := image.getpixel((i, j))) < 1000]
+            samples = [y for i in range(max(0, col - reach), min(width, col + reach + 1))
+                       for j in range(max(0, row - reach), min(height, row + reach + 1))
+                       if abs(y := pixels[j, i]) < 1000]
             if len(samples) >= 3:
                 return median(samples) - datum
         return fallback

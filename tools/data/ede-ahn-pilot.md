@@ -2,6 +2,8 @@
 
 The source survey uses native 0.5 m PDOK DTM and DSM GeoTIFFs in RD New (EPSG:28992) with heights in NAP. Each cached site uses a 360 × 360 m window on the native raster grid. The import checks the pixel size, projection and extent. The town-wide runtime grid stays at 12 m and the Oude Kerk datum stays at 22.54 m NAP. [PDOK AHN service](https://www.pdok.nl/ogc-webservices/-/article/actueel-hoogtebestand-nederland-ahn)
 
+The pilot measurements and benchmarks below describe the original release. The pinned-coordinate refresh retained the same base and rebuilt the station footway lift and its coarse terrain inputs. [Pinned raster and tree verification](ede-raster-tree-gis-verification.md)
+
 ## Elevation checks
 
 | Site | Retained correction | Outstanding measurement |
@@ -43,10 +45,10 @@ The WebGPU route replay passed 127 direction and mode checks, with no failures o
 
 ```sh
 survey=/tmp/ede-crossing-survey
-uv run --python 3.12 --with rasterio --with pyproj python tools/fetch-ede-ahn-survey.py "$survey"
-uv run --python 3.12 --with rasterio --with pyproj --with shapely python tools/build-ede-ahn-surfaces.py "$survey"
+uv run --python 3.12 --with rasterio --with pyproj==3.8.0 python tools/fetch-ede-ahn-survey.py "$survey"
+uv run --python 3.12 --with rasterio --with pyproj==3.8.0 --with shapely python tools/build-ede-ahn-surfaces.py "$survey"
 curl -fsS 'https://api.pdok.nl/kadaster/bag/ogc/v2/collections/pand/items/6cc1a6a1-2450-5bc5-9c93-33cf738916a5?f=json' -o "$survey/bospoorttunnel-bag.geojson"
-uv run --python 3.12 --with rasterio --with pyproj --with 'shapely>=2.1' python tools/build-ede-building-bases.py "$survey" "$survey"
+uv run --python 3.12 --with rasterio --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-building-bases.py "$survey" "$survey"
 ```
 
 The Bospoort and Frans Halslaan profiles use `tools/build-ede-crossing-fits.py` with the full existing crossing survey cache. The Stadspoort profile uses `tools/build-ede-interior-fits.py`. Rebuild the combined asset with the [existing OSM and ProRail refresh commands](ede-grade-sources.md).

@@ -56,6 +56,7 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}
       'three/tsl': {},
       'three/addons/loaders/GLTFLoader.js': {},
       'three/addons/libs/meshopt_decoder.module.js': {},
+      './ede-scene-coordinates.js': loadModule(read('ede-scene-coordinates.js')),
       './nyc-geodata.js': { GEO: { ede: { meta: { bounds: [0, 0, 30, 30], ...meta } } } },
       './city-config.js': { BLOCKS: blocks },
       './building-collision.js': loadModule(read('building-collision.js')),
@@ -154,19 +155,92 @@ test('BAG coverage requires building geometry rather than the tile bounds', asyn
   assert.deepEqual(Array.from(coveredFallbackBuildings([a, b], fallback)), ['present']);
 });
 
+const frame = { lon0: 5.67, lat0: 52.04, x: [0, 68600, 0], z: [0, 0, -111300] };
+
+function sceneEcef(T, x, z, height = 0, affine = frame) {
+  const { unprojectScene } = loadModule(read('ede-scene-coordinates.js'));
+  const { lon, lat } = unprojectScene(affine, x, z);
+  const phi = lat * Math.PI / 180, lambda = lon * Math.PI / 180;
+  const e2 = 0.0066943799901413165;
+  const n = 6378137 / Math.sqrt(1 - e2 * Math.sin(phi) ** 2);
+  return new T.Vector3(
+    (n + height) * Math.cos(phi) * Math.cos(lambda), (n + height) * Math.cos(phi) * Math.sin(lambda),
+    (n * (1 - e2) + height) * Math.sin(phi)
+  );
+}
+
+test('BAG follows parent, external tileset, and glTF node matrices before projecting into the scene', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { bakeTile, selectTileRecords, gltfToEcefMatrix, projectEcefToScene } = loadBag({
+    three: T, meta: { bounds: [-100, -100, 100, 100], lonLatAffine: frame }, globals: { URL },
+  });
+  const center = sceneEcef(T, 25, -45, 100);
+  const parent = new T.Matrix4().makeRotationZ(0.7).setPosition(center);
+  const child = new T.Matrix4().makeTranslation(25, -12, 17);
+  const local = new T.Matrix4().makeScale(1, 2, 3);
+  const nested = new T.Matrix4().makeTranslation(-5, -2, 3);
+  const expected = parent.clone().multiply(child).multiply(local);
+  const box = [0, 0, 0, 50, 0, 0, 0, 50, 0, 0, 0, 50];
+  const request = [];
+  const [tile] = await selectTileRecords({ fetchJson: async url => {
+    request.push(url);
+    if (request.length === 1) return { root: {
+      boundingVolume: { box }, transform: parent.toArray(),
+      children: [{ boundingVolume: { box }, transform: child.toArray(), content: { uri: 'region/sub.json' } }]
+    } };
+    return { root: {
+      boundingVolume: { box }, transform: local.toArray(), content: { uri: '../building.glb' }
+    } };
+  } });
+  assert.ok(request[1].endsWith('/region/sub.json'));
+  assert.ok(tile.url.endsWith('/lod22/building.glb'));
+  assert.deepEqual(tile.transform.elements, expected.elements);
+
+  const geometry = new T.PlaneGeometry(4, 4);
+  const mesh = new T.Mesh(geometry);
+  mesh.position.set(3, 4, 5);
+  const root = new T.Group(), node = new T.Group();
+  node.matrixAutoUpdate = false;
+  node.matrix.copy(nested);
+  root.add(node.add(mesh));
+  const convert = p => projectEcefToScene(frame, p);
+  const content = gltfToEcefMatrix(tile.transform);
+  const [result] = bakeTile({ scene: root }, content, null, null, null, null, null, convert);
+  const sourcePosition = new T.Vector3().fromBufferAttribute(geometry.attributes.position, 0);
+  const expectedPosition = convert(sourcePosition.applyMatrix4(mesh.matrixWorld).applyMatrix4(content));
+  const position = result.attributes.position;
+  assert.ok(Math.abs(position.getX(0) - expectedPosition.x) < 1e-5);
+  assert.ok(Math.abs(position.getZ(0) - expectedPosition.z) < 1e-5);
+  assert.ok(tile.bounds.containsPoint(new T.Vector3(position.getX(0), position.getY(0), position.getZ(0))));
+  const independentControl = convert(sceneEcef(T, 80, 78, 125));
+  assert.ok(Math.hypot(independentControl.x - 80, independentControl.z - 78) < 1e-7);
+  assert.ok(Math.abs(independentControl.y - 125) < 1e-7);
+});
+
+test('ECEF controls agree with the stored geographic affine at every playable corner', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const [west, north, east, south] = EDE_DATA.meta.bounds;
+  const affine = EDE_DATA.meta.lonLatAffine;
+  const { projectEcefToScene } = loadBag({ three: T });
+  for (const [x, z] of [[0, 0], [west, north], [west, south], [east, north], [east, south]]) {
+    const p = projectEcefToScene(affine, sceneEcef(T, x, z, 75, affine));
+    assert.ok(Math.hypot(p.x - x, p.z - z) < 1e-7);
+    assert.ok(Math.abs(p.y - 75) < 1e-7);
+  }
+});
+
 test('BAG starts from fallback, bounds downloads, cancels stale work on a jump, and restores evicted coverage', async () => {
   const T = await import('../vendor/three/build/three.webgpu.js');
-  const { createBagBuildingStream, ecefToLocalMatrix, gltfToLocalMatrix } = loadBag({ three: T,
-    meta: { bounds: [-200, -200, 2200, 200], lonLatAffine: { lon0: 5.67, lat0: 52.04, x: [0, 68600], z: [0, 0, -111300] } },
+  const { createBagBuildingStream, gltfToEcefMatrix } = loadBag({ three: T,
+    meta: { bounds: [-200, -200, 2200, 200], lonLatAffine: frame },
     globals: { performance, URL, AbortController, setTimeout, document: { hidden: false }, console },
     facadeStubs: { loadEdeFacades: async () => null, createBagFacadeMaterial: () => new T.MeshBasicMaterial() }
   });
-  const toEcef = ecefToLocalMatrix().invert(), toGltf = gltfToLocalMatrix().invert();
+  const toGltf = gltfToEcefMatrix(new T.Matrix4()).invert();
   function tile(x, extent, uri) {
-    const center = new T.Vector3(x, 0, 0).applyMatrix4(toEcef);
-    const axes = [[extent, 0, 0], [0, extent, 0], [0, 0, extent]];
-    const box = [...center.toArray(), ...axes.flatMap(offset => new T.Vector3(x + offset[0], offset[1], offset[2])
-      .applyMatrix4(toEcef).sub(center).toArray())];
+    const center = sceneEcef(T, x, 0);
+    const box = [...center.toArray(), extent, 0, 0, 0, extent, 0, 0, 0, extent];
     return { boundingVolume: { box }, ...(uri && { content: { uri } }) };
   }
   const root = { ...tile(800, 1600), children: [tile(0, 20, 'start.glb'), tile(75, 20, 'cancel.glb'), tile(170, 20, 'queue.glb'), tile(1800, 20, 'jump.glb')] };
@@ -177,10 +251,13 @@ test('BAG starts from fallback, bounds downloads, cancels stale work on a jump, 
   });
   const loader = { async parseAsync(buffer) {
     const x = new Float64Array(buffer)[0];
-    const geo = new T.PlaneGeometry(10, 10).rotateX(-Math.PI / 2).translate(x, 0, 0);
+    const geo = new T.PlaneGeometry(10, 10).rotateX(-Math.PI / 2);
     const mesh = new T.Mesh(geo);
     mesh.matrixAutoUpdate = false;
-    mesh.matrix.copy(toGltf);
+    const center = sceneEcef(T, x, 0);
+    const axes = [sceneEcef(T, x + 1, 0), sceneEcef(T, x, 0, 1), sceneEcef(T, x, 1)];
+    const toEcef = new T.Matrix4().makeBasis(...axes.map(v => v.sub(center))).setPosition(center);
+    mesh.matrix.multiplyMatrices(toGltf, toEcef);
     return { scene: new T.Group().add(mesh) };
   } };
   const changes = [];
@@ -240,12 +317,12 @@ test('BAG replaces only the named landmark features in a shared tile', () => {
   assert.equal(bakeTile(gltf, {}, null, null, null, [new Map([[6, true], [7, true]])]).length, 0);
 });
 
-test('the ten new landmarks exclude only their surveyed buildings across both building sources', async () => {
+test('surveyed landmarks exclude only their surveyed buildings across both building sources', async () => {
   const { EDE_DATA } = await import('../js/ede-geodata.js');
   const landmarks = await import('../js/ede-landmark-sites.js');
   const { ESTATE_SURVEY } = await import('../js/ede-estate-survey.js');
   const { NIZO_SURVEY, GELDERSE_VALLEI_SURVEY } = await import('../js/ede-research-survey.js');
-  const { KUIL_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS } = await import('../js/ede-next-survey.js');
+  const { KUIL_SHELLS, PALLAS_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS } = await import('../js/ede-next-survey.js');
   const { REEHORST, BUITENZORG, JOHANNUS } = await import('../js/ede-venue-survey.js');
   const sites = new Map(landmarks.EDE_MODELED_LANDMARKS.map(site => [site.id, site]));
   const osm = new Set(EDE_DATA.buildings.map(building => building.id));
@@ -256,7 +333,7 @@ test('the ten new landmarks exclude only their surveyed buildings across both bu
     ['reehorst', [REEHORST]], ['buitenzorg', [BUITENZORG]], ['johannus-orgelbouw', [JOHANNUS]],
     ['technova', TECHNOVA_SHELLS],
     ['gasfabriek', ['works', 'purifier', 'wkeeper'].map(key => ESTATE_SURVEY[key])],
-    ['tesqua', TESQUA_SHELLS]
+    ['tesqua', TESQUA_SHELLS], ['pallas-athene', PALLAS_SHELLS]
   ];
   for (const [key, models] of newSites) {
     const site = sites.get(key);

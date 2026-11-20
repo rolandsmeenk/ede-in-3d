@@ -7,11 +7,12 @@ from pathlib import Path
 import runpy
 from statistics import median
 
-from pyproj import Transformer
 import rasterio
 from shapely.geometry import LineString
 
+from ede_gis import Frame
 from ede_map import load_scene
+from ede_raster import require_rd_raster
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,24 +42,23 @@ def fewest_knots(samples):
 
 def build(directory):
     scene = load_scene()
-    frame = scene['meta']['lonLatAffine']
+    frame = Frame(scene['meta']['lonLatAffine'])
     road = next(road for road in scene['roads'] if road['id'] == WAY)
     axis = LineString(zip(road['pts'][::2], road['pts'][1::2]))
-    project = Transformer.from_crs(4326, 28992, always_xy=True)
     terrain = Terrain()
     samples = []
     with (rasterio.open(directory / 'oosttunnel-dtm.tif') as dtm,
           rasterio.open(directory / 'oosttunnel-dsm.tif') as dsm):
         for raster in (dtm, dsm):
-            if raster.crs.to_epsg() != 28992 or raster.res != (0.5, 0.5):
+            require_rd_raster(raster)
+            if raster.res != (0.5, 0.5):
                 raise ValueError('Expected a native AHN 0.5 m raster in RD New')
         for station in range(FROM, TO + 1):
             point = axis.interpolate(station)
             a, b = axis.interpolate(station - 0.5), axis.interpolate(station + 0.5)
             nx, nz = a.y - b.y, b.x - a.x
             q = math.hypot(nx, nz)
-            xy = [project.transform(frame['lon0'] + (point.x + offset * nx / q) / frame['x'][1],
-                                    frame['lat0'] + (point.y + offset * nz / q) / frame['z'][2])
+            xy = [frame.scene_to_rd(point.x + offset * nx / q, point.y + offset * nz / q)
                   for offset in (-1.5, -1, -0.5, 0, 0.5, 1, 1.5)]
             ground = [float(y[0]) for y in dtm.sample(xy)]
             surface = [float(y[0]) for y in dsm.sample(xy)]

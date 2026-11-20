@@ -6,16 +6,19 @@ import json
 import sqlite3
 from datetime import date
 from pathlib import Path
-from runpy import run_path
+
+from ede_gis import geopackage_crs, geopackage_linestring, rd_pipeline, to_rd
 
 BOUNDS = (5.5925, 52.012, 5.7005, 52.0605)
 
 
 def extract(package):
-    geometry = run_path(str(Path(__file__).with_name('build-ede-posted-speeds.py')))
-    read_linestring, rd_to_lon_lat = geometry['read_linestring'], geometry['rd_to_lon_lat']
+    to_geographic = rd_pipeline().transform
     west, south, east, north = BOUNDS
     with sqlite3.connect(package.resolve().as_uri() + '?mode=ro', uri=True) as db:
+        srs_id, crs = geopackage_crs(db, 'WKD_FIETSSTRK')
+        if crs.to_epsg() != 28992:
+            raise ValueError('WKD cycle-strip spatial index must be in RD New')
         rows = db.execute('''
             SELECT t.id, t.geom, t.WVK_ID, t.BEGINDAT, t.FTS_SUG_H, t.FTS_SUG_T
             FROM WKD_FIETSSTRK AS t JOIN rtree_WKD_FIETSSTRK_geom AS r ON t.id = r.id
@@ -25,8 +28,9 @@ def extract(package):
         for feature_id, blob, way_id, valid_from, forward, reverse in rows:
             if forward not in ('0', '1') or reverse not in ('0', '1'):
                 continue
-            rd = read_linestring(blob)
-            coords = [tuple(round(v, 8) for v in rd_to_lon_lat(x, y)) for x, y in zip(rd[::2], rd[1::2])]
+            raw = geopackage_linestring(blob, srs_id)
+            coords = [tuple(round(v, 8) for v in to_geographic(*to_rd(x, y, crs, axis_order='xy'), errcheck=True))
+                      for x, y in zip(raw[::2], raw[1::2])]
             xs, ys = zip(*coords)
             if max(xs) < west or min(xs) > east or max(ys) < south or min(ys) > north:
                 continue

@@ -2,6 +2,8 @@
 
 This report covers the expanded tree asset from 20 November 2026. The original inventory remains available as `assets/ede-trees.bin`. The expanded build stores `assets/ede-trees-expanded.bin` and five woodland-coverage values. The WFS response, source images, LERC tiles and AHN rasters stay in the offline cache.
 
+The figures in the original expansion report below describe its 20 November 2026 baseline. The later pinned GIS refresh rebuilt both assets from the dated sources. It yielded 50,355 baseline placements and 70,124 expanded placements. The baseline importer can save stable source ID associations and input hashes with `--audit`. [Pinned raster and tree verification](ede-raster-tree-gis-verification.md)
+
 ## Sources and reuse
 
 | Source | Use in the bake | Reuse and attribution |

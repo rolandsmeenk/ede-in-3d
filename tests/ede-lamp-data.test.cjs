@@ -18,7 +18,7 @@ test('the checked-in BGT lamp posts cover the Ede scene and reject an incomplete
     Math.abs(Math.hypot(lamp.nx, lamp.nz) - 1) < 1e-12));
   assert.throws(() => decodeEdeLamps(buffer.slice(0, -4)), /asset length/);
   const doubleArm = lamps.filter(lamp => lamp.doubleArm);
-  assert.equal(doubleArm.length, 94);
+  assert.equal(doubleArm.length, 93);
   assert.ok(doubleArm.every(lamp => lamp.surveyed));
   assert.ok(doubleArm.some(lamp => lamp.layer === 1 && lamp.fitted));
 
@@ -27,7 +27,7 @@ test('the checked-in BGT lamp posts cover the Ede scene and reject an incomplete
   assert.equal(upper.filter(lamp => lamp.surveyed).length, 25);
   assert.ok(upper.every(lamp => lamp.fitted && lamp.baseY > -4.6 && Math.abs(lamp.targetY - lamp.baseY) < 0.7));
   const corrected = upper.find(lamp => Math.hypot(lamp.x + 1395.17, lamp.z - 3489.69) < 0.15);
-  assert.ok(corrected && Math.abs(corrected.baseY + 3.57) < 0.03);
+  assert.ok(corrected && Math.abs(corrected.baseY - (19.14 - 22.54)) < 0.03);
   for (const [x, z] of [[-1418.45, 3529.93], [-1445.24, 3529.76]]) {
     const under = lamps.filter(lamp => lamp.layer === 0 && Math.hypot(lamp.x - x, lamp.z - z) < 0.15);
     assert.equal(under.length, 1);

@@ -62,10 +62,10 @@ function fillOpening(data, stride, tile, opening) {
   }
 }
 
-function pack(walls, density) {
+function pack(walls, density, measuredMinimum = 12) {
   const tiles = walls.map((wall) => {
     const metres = wallWidth(wall);
-    const scale = wall.status === 'inferred' ? density * 0.55 : Math.max(density, 12);
+    const scale = wall.status === 'inferred' ? density * 0.55 : Math.max(density, measuredMinimum);
     return { wall, metres, width: clamp(Math.ceil(metres * scale), 2, 512),
       height: clamp(Math.ceil(wall.height * scale), 2, 512) };
   }).sort((a, b) => b.height - a.height);
@@ -171,13 +171,16 @@ function* bakeFacadeMaskAtlas(walls) {
     detailed = detailed.sort((a, b) => (Number(Boolean(b.detail)) - Number(Boolean(a.detail)))
       || Number(b.status === 'observed') - Number(a.status === 'observed')
       || b.confidence - a.confidence);
+    const measured = detailed.filter(wall => wall.status === 'observed');
+    // Reduce mask resolution before dropping measured openings from a crowded tile.
+    const measuredMinimum = [12, 8, 6].find(density => pack(measured, 3, density)) ?? 6;
     let low = 0, high = detailed.length;
     while (low < high) {
       const count = Math.ceil((low + high) / 2);
-      if (pack(detailed.slice(0, count), 3)) low = count;
+      if (pack(detailed.slice(0, count), 3, measuredMinimum)) low = count;
       else high = count - 1;
     }
-    atlas = pack(detailed.slice(0, low), 3);
+    atlas = pack(detailed.slice(0, low), 3, measuredMinimum);
   }
   const { width, height } = atlas;
   const data = new Uint8Array(width * height * 4);
@@ -287,22 +290,25 @@ export function createEdeFacadeBoxMaterial({ layout, shed }) {
   return material;
 }
 
-export function createBagFacadeMaterial(atlas = null, surfaceTexture = null) {
+export function createBagFacadeMaterial(atlas = null, surfaceTexture = null, useBuildingProfiles = true) {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.92, metalness: 0 });
   const grain = mx_noise_float(positionWorld.mul(0.7)).mul(0.1).add(0.95);
   const masonry = vertexColor().mul(grain);
-  const wall = step(normalWorld.y.abs(), 0.35);
-  const along = positionWorld.x.mul(normalWorld.z.abs()).add(positionWorld.z.mul(normalWorld.x.abs()));
-  const height = attribute('buildingHeight', 'float');
-  const u = fract(along.div(3.1)), v = fract(height.div(3.2));
-  const above = step(2.6, height);
-  const win = smoothstep(0.18, 0.22, u).mul(smoothstep(0.82, 0.78, u)).mul(smoothstep(0.34, 0.38, v)).mul(smoothstep(0.82, 0.78, v));
-  const generic = masonry.mul(float(1).sub(win.mul(wall).mul(above).mul(0.55)));
-  const layout = attribute('edeFacadeLayout', 'vec4');
-  const bay = attribute('edeFacadeBay', 'vec2');
-  const local = neighbourhoodWindows(masonry, layout, bay.x,
-    height.div(layout.y.max(0.1)), wall.mul(step(0.15, height)), float(0), bay.y);
-  const procedural = mix(generic, local, step(0.1, layout.x));
+  let procedural = masonry;
+  if (useBuildingProfiles) {
+    const wall = step(normalWorld.y.abs(), 0.35);
+    const along = positionWorld.x.mul(normalWorld.z.abs()).add(positionWorld.z.mul(normalWorld.x.abs()));
+    const height = attribute('buildingHeight', 'float');
+    const u = fract(along.div(3.1)), v = fract(height.div(3.2));
+    const above = step(2.6, height);
+    const win = smoothstep(0.18, 0.22, u).mul(smoothstep(0.82, 0.78, u)).mul(smoothstep(0.34, 0.38, v)).mul(smoothstep(0.82, 0.78, v));
+    const generic = masonry.mul(float(1).sub(win.mul(wall).mul(above).mul(0.55)));
+    const layout = attribute('edeFacadeLayout', 'vec4');
+    const bay = attribute('edeFacadeBay', 'vec2');
+    const local = neighbourhoodWindows(masonry, layout, bay.x,
+      height.div(layout.y.max(0.1)), wall.mul(step(0.15, height)), float(0), bay.y);
+    procedural = mix(generic, local, step(0.1, layout.x));
+  }
   material.colorNode = procedural;
   if (!atlas) return material;
 

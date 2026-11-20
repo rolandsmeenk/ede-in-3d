@@ -2,7 +2,7 @@
 """Match surveyed Ede street furniture and surfaces to directed game edges."""
 
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 import gzip
 import json
 import math
@@ -220,15 +220,27 @@ def crossing_segments(crossing):
     return crossing.get('segments') or [crossing]
 
 
-def crossing_links(crossing, roads, paths):
+def crossing_links(crossing, roads, paths, previous=None):
     result, sidewalks = [], []
     road_tiers = set()
     complete = True
+    # Keep a previously corroborated signal link when the same OSM crossing
+    # strip still crosses that way but the simulated edge straightens the bend.
+    audited = (previous is not None and crossing['control'] == previous['control'] == 'signal'
+               and set(crossing.get('osmNodeIds', ())) == set(previous.get('osmNodeIds', ())))
     for segment in crossing_segments(crossing):
         before = len(result)
         ends = segment.get('ends') or crossing['ends']
         line = LineString(ends)
         hints = way_hints(segment) or way_hints(crossing)
+        verified = set()
+        way = segment.get('wayId')
+        if audited and way and any(
+                old['wayId'] == way and old['layer'] == segment['layer']
+                and line.hausdorff_distance(LineString(old['ends'])) <= 0.5
+                for old in crossing_segments(previous)):
+            verified = {ref['key'] for ref in previous['edges'] if ref['way'] == way
+                        and ref['modes'] & MOTOR and ref['confidence'] >= 0.95}
         x, z = line.interpolate(0.5, normalized=True).coords[0]
         near = indexed(roads, (x, z), min(22, line.length / 2))
         for edge in near:
@@ -242,7 +254,8 @@ def crossing_links(crossing, roads, paths):
                 # Marked crossings can occupy the mouth of a split edge.
                 road = LineString([edge.a, edge.b])
                 node = road.interpolate(road.project(line.interpolate(.5, normalized=True)))
-                if edge.data['way'] not in hints or node.distance(line) > 1.7:
+                if (edge.data['key'] not in verified
+                        and (edge.data['way'] not in hints or node.distance(line) > 1.7)):
                     continue
                 hits = [node]
             stations = [along(edge, geometry.representative_point().coords[0])[0] for geometry in hits]
@@ -320,10 +333,44 @@ def finalize(feature, refs, reason):
     return result
 
 
-def build(sign_source, surface_source, graph):
+def preserve_surface_ids(surface_source, previous):
+    # A rebuilt physical crossing can gain or lose a provider match while keeping
+    # one verified source identity. Carry forward only unambiguous same-level IDs.
+    bump_ids = {}
+    for kind in ('bumps', 'crossings'):
+        def source_keys(row):
+            return ((item['source'], item['id'], row['layer'], row.get('bridge'), row.get('tunnel'))
+                    for item in row['sources'])
+
+        previous_by_source = defaultdict(set)
+        for prior in previous[kind]:
+            for key in source_keys(prior):
+                previous_by_source[key].add(prior['id'])
+        previous_ids = {row['id'] for row in previous[kind]}
+        rows = surface_source[kind]
+        reserved = {row['id'] for row in rows}
+        candidates = [set().union(*(previous_by_source.get(key, ()) for key in source_keys(row))) - reserved
+                      for row in rows]
+        use_count = Counter(candidate for matched in candidates for candidate in matched)
+        for row, matched in zip(rows, candidates):
+            if len(matched) == 1 and use_count[stable_id := next(iter(matched))] == 1:
+                # Keep the canonical ID when the current ID still exists in both bundles.
+                if row['id'] in previous_ids:
+                    continue
+                if kind == 'bumps':
+                    bump_ids[row['id']] = stable_id
+                row['id'] = stable_id
+    for crossing in surface_source['crossings']:
+        for row in (crossing, *crossing.get('segments', ())):
+            if row.get('bumpId') in bump_ids:
+                row['bumpId'] = bump_ids[row['bumpId']]
+
+
+def build(sign_source, surface_source, graph, previous=None):
     paths = SegmentIndex(graph.paths, margin=24)
     signs, bumps, crossings = [], [], []
     bounds = graph.bounds
+    previous_crossings = {feature['id']: feature for feature in previous['crossings']} if previous else {}
     in_bounds = lambda f: bounds[0] <= f['x'] <= bounds[2] and bounds[1] <= f['z'] <= bounds[3]
     for sign in sorted(filter(in_bounds, sign_source['signs']), key=lambda f: f['id']):
         refs, reason = match_sign(sign, graph.index, paths)
@@ -340,7 +387,7 @@ def build(sign_source, surface_source, graph):
         refs, reason = bump_links(bump, graph.index, paths)
         bumps.append(finalize(bump, refs, reason))
     for crossing in sorted(filter(in_bounds, surface_source['crossings']), key=lambda f: f['id']):
-        refs, sidewalks, reason = crossing_links(crossing, graph.index, paths)
+        refs, sidewalks, reason = crossing_links(crossing, graph.index, paths, previous_crossings.get(crossing['id']))
         crossings.append(finalize({**crossing, 'sidewalks': sidewalks}, refs, reason))
     return dict(version=1, sources={'signs': sign_source.get('meta'), **surface_source.get('sources', {})},
                 signs=signs, bumps=bumps, crossings=crossings)
@@ -351,9 +398,17 @@ def main():
     parser.add_argument('signs', type=Path)
     parser.add_argument('surfaces', type=Path)
     parser.add_argument('--output', type=Path, default=ROOT / 'assets' / 'ede-street-features.json.gz')
+    parser.add_argument('--previous', type=Path, help='Previously published JSON or gzip asset for stable surface IDs')
     args = parser.parse_args()
-    data = build(json.loads(args.signs.read_text()), json.loads(args.surfaces.read_text()),
-                 load_graph(street_features=True))
+    surfaces = json.loads(args.surfaces.read_bytes())
+    previous = None
+    if args.previous:
+        previous = args.previous.read_bytes()
+        if args.previous.suffix == '.gz':
+            previous = gzip.decompress(previous)
+        previous = json.loads(previous)
+        preserve_surface_ids(surfaces, previous)
+    data = build(json.loads(args.signs.read_bytes()), surfaces, load_graph(street_features=True), previous)
     encoded = (json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf-8')
     args.output.write_bytes(gzip.compress(encoded, mtime=0) if args.output.suffix == '.gz' else encoded)
     for key in ('signs', 'bumps', 'crossings'):

@@ -21,6 +21,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Polygon, box, shape
 
 from ede_map import load_scene
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 API = 'https://api.pdok.nl/lv/bgt/ogc/v1'
@@ -106,15 +107,11 @@ def read_snapshot(directory):
 
 
 def world_geometry(feature, affine, area):
-    lon0, lat0 = affine['lon0'], affine['lat0']
-    x0, x_lon, x_lat = affine['x']
-    z0, z_lon, z_lat = affine['z']
     geom = shape(feature['geometry'])
     min_lon, min_lat, max_lon, max_lat = geom.bounds
     if not (-180 <= min_lon <= max_lon <= 180 and -90 <= min_lat <= max_lat <= 90):
         raise ValueError('Expected PDOK GeoJSON longitude/latitude coordinates')
-    transform = (x_lon, x_lat, z_lon, z_lat,
-                 x0 - lon0 * x_lon - lat0 * x_lat, z0 - lon0 * z_lon - lat0 * z_lat)
+    transform = SceneAffine(affine).shapely_coefficients()
     return make_valid(affine_transform(geom, transform)).intersection(area)
 
 

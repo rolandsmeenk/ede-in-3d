@@ -4,7 +4,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { projectLonLatInto } from '../js/ede-scene-coordinates.js';
 import { CAR, VAN, BUS, BICYCLE, FOOT, MOTOR } from '../js/road-access.js';
 import { cycleFacilities, readWkd, roadAccess } from './ede-road-access.mjs';
 import { buildRoadTags, writeRoadTags } from './build-ede-road-tags.mjs';
@@ -19,14 +20,13 @@ if (!Array.isArray(osm.elements) || !osm.elements.length || osm.remark) throw ne
 const bgt = JSON.parse(fs.readFileSync(path.join(DIR, 'data', 'ede-bgt-road-evidence.json'), 'utf8'));
 const log = (...a) => console.log('[ede-geodata]', ...a);
 
-const BBOX = [52.012, 5.5925, 52.0605, 5.7005]; // S, W, N, E: must match q_ede.overpassql
-const LAT0 = 52.0460029; // Oude Kerk
-const LON0 = 5.671553;
-const R = 6378137;
-const KY = (Math.PI / 180) * R;
-const KX = KY * Math.cos((LAT0 * Math.PI) / 180);
+// Keep graph geometry and saved scenes on the coefficients of the checked-in map.
+const { geographicBounds, lonLatAffine } = JSON.parse(gunzipSync(fs.readFileSync(MAP_ASSET))).meta;
 const r1 = (v) => Math.round(v * 10) / 10;
-const toWorld = (lon, lat) => [(lon - LON0) * KX, -(lat - LAT0) * KY];
+const toWorld = (lon, lat) => {
+  const { x, z } = projectLonLatInto(lonLatAffine, lon, lat, {});
+  return [x, z];
+};
 const cycleStripPath = path.join(DIR, 'data', 'ede-wkd-cycle-strips.json');
 const cycleStripFile = fs.existsSync(cycleStripPath) ? cycleStripPath : null;
 const wkd = readWkd(process.argv[4], toWorld, cycleStripFile);
@@ -310,17 +310,16 @@ const AREAS = [
   ['Bedrijventerrein', 5.61885, 52.03292]
 ].map(([name, lon, lat]) => ({ name, labelPoint: toWorld(lon, lat).map(r1) }));
 
-const [s, w, n, eLon] = BBOX;
-const [minX, maxZ0] = toWorld(w, s);
-const [maxX, minZ] = toWorld(eLon, n);
+const [s, w, n, e] = geographicBounds;
+const { x0, x1, z0, z1 } = bbox([toWorld(w, s), toWorld(w, n), toWorld(e, s), toWorld(e, n)]);
 const data = {
   meta: {
     name: 'Ede', city: 'Ede',
-    bounds: [r1(minX), r1(minZ), r1(maxX), r1(maxZ0)],
-    geographicBounds: [s, w, n, eLon],
+    bounds: [r1(x0), r1(z0), r1(x1), r1(z1)],
+    geographicBounds,
     frame: 'x = east, z = south, metres; origin at the Oude Kerk',
     coordinateSystem: 'x east, z south, metres',
-    lonLatAffine: { lon0: LON0, lat0: LAT0, x: [0, r1(KX * 1e3) / 1e3, 0], z: [0, 0, -r1(KY * 1e3) / 1e3], maxErrorM: 0.5 },
+    lonLatAffine,
     sources: [
       { name: 'OpenStreetMap contributors', license: 'ODbL 1.0', attribution: '© OpenStreetMap contributors' },
       { name: 'CBS Wijk- en Buurtkaart 2025', url: 'https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025' },

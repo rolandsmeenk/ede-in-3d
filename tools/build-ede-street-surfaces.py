@@ -8,21 +8,21 @@ Use the OSM road snapshot used by build-ede-geodata.mjs and the street-surfaces 
 import argparse
 from collections import Counter, defaultdict
 from contextlib import contextmanager
+from datetime import datetime
 import json
 import math
 from pathlib import Path
-import runpy
 import shutil
 import sqlite3
 import tempfile
 from zipfile import ZipFile
 
 from shapely import STRtree, from_wkb, make_valid
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry import LineString, Point, Polygon
 
-TOOLS = Path(__file__).resolve().parent
-GRADE = runpy.run_path(str(TOOLS / 'build-ede-grade.py'))
-RD_TO_LON_LAT = runpy.run_path(str(TOOLS / 'build-ede-posted-speeds.py'))['rd_to_lon_lat']
+from ede_gis import Frame, geopackage_crs, geopackage_wkb
+from ede_map import load_scene
+
 PORTAL = 'https://verkeersveiligheid.ndw.nu'
 FILES = PORTAL + '/cms/api/dataset-files/file/'
 SOURCES = {
@@ -39,7 +39,7 @@ ZEBRA_MARKINGS = {'zebra', 'zebra:double', 'zebra:paired', 'zebra:bicolour'}
 
 
 def pair(point, marks=2):
-    return [round(v, marks) for v in (point.coords[0] if isinstance(point, Point) else point)]
+    return [round(v, marks) for v in point]
 
 
 def vector(a, b):
@@ -59,16 +59,13 @@ def normal(direction):
     return -direction[1], direction[0]
 
 
-def ndw_polygon(blob, project):
-    if blob[:2] != b'GP' or int.from_bytes(blob[4:8], 'little' if blob[3] & 1 else 'big') != 28992:
-        raise ValueError('Expected an NDW GeoPackage geometry with EPSG:28992')
-    offset = 8 + (0, 32, 48, 48, 64)[(blob[3] >> 1) & 7]
-    shape = from_wkb(blob[offset:])
+def ndw_polygon(blob, srs_id, project_rd):
+    shape = from_wkb(bytes(geopackage_wkb(blob, srs_id)))
     parts = shape.geoms if shape.geom_type == 'MultiPolygon' else [shape]
     for p in parts:
         if p.geom_type != 'Polygon':
             raise ValueError(f'Expected an NDW footprint polygon, got {p.geom_type}')
-        rings = [[project(*RD_TO_LON_LAT(x, y)) for x, y, *_ in r.coords] for r in (p.exterior, *p.interiors)]
+        rings = [[project_rd(x, y) for x, y, *_ in r.coords] for r in (p.exterior, *p.interiors)]
         valid = make_valid(Polygon(rings[0], rings[1:]))
         for item in getattr(valid, 'geoms', [valid]):
             if item.geom_type == 'Polygon' and item.area >= 0.5:
@@ -90,7 +87,7 @@ def package(path, member):
         yield destination
 
 
-def source_rows(path, project, bounds, bumps):
+def source_rows(path, project_rd, bounds, bumps):
     if bumps:
         member, table, key = 'E046_Verkeersdrempels.gpkg', 'verkeersdrempels', 'DrempelID'
         columns = 'typering, bron, WVK_ID'
@@ -100,6 +97,9 @@ def source_rows(path, project, bounds, bumps):
         columns = 'VOP_ID, WVK_ID, rvvCode_wvk, DrempelID_WVK, DrempelID_any'
         predicate = ''
     with package(path, member) as file, sqlite3.connect(file.resolve().as_uri() + '?mode=ro', uri=True) as db:
+        srs_id, crs = geopackage_crs(db, table)
+        if crs.to_epsg() != 28992:
+            raise ValueError(f'NDW {table} spatial index must be in RD New')
         # Window covers the Ede play area and a buffer in Rijksdriehoek metres.
         rows = db.execute(f'''
             SELECT t.{key}, t.geom, {columns} FROM {table} AS t
@@ -108,7 +108,7 @@ def source_rows(path, project, bounds, bumps):
             ORDER BY t.{key}
         ''')
         for key, blob, *values in rows:
-            for index, polygon in enumerate(ndw_polygon(blob, project)):
+            for index, polygon in enumerate(ndw_polygon(blob, srs_id, project_rd)):
                 if bounds.covers(polygon.centroid):
                     yield str(key) if not index else f'{key}-{index}', polygon, values
 
@@ -145,8 +145,9 @@ def cross_path(tags):
 
 
 class Map:
-    def __init__(self, scene, rows, project):
-        self.bounds = box(*scene['meta']['bounds'])
+    def __init__(self, scene, rows, geographic_to_grid, scene_to_grid, bounds):
+        self.bounds = bounds
+        project = geographic_to_grid
         self.nodes = {e['id']: e for e in rows.values() if e['type'] == 'node'}
         self.point = lambda e: Point(project(e['lon'], e['lat']))
         self.roads, self.lines = [], []
@@ -162,7 +163,7 @@ class Map:
                 continue
             points = [project(p['lon'], p['lat']) for p in source.get('geometry', [])]
             if len(points) < 2:
-                points = list(zip(road['pts'][::2], road['pts'][1::2]))
+                points = [scene_to_grid(x, z) for x, z in zip(road['pts'][::2], road['pts'][1::2])]
             line = LineString(points)
             if line.length < 0.1:
                 continue
@@ -214,7 +215,7 @@ def same_level(a, b):
 
 
 def road_pose(road, point, direction, width, length, **values):
-    return dict(x=round(point.x, 2), z=round(point.y, 2), tangent=pair(direction, 5), width=round(width, 2),
+    return dict(x=point.x, z=point.y, tangent=direction, width=round(width, 2),
                 length=round(length, 2), wayId=road['id'], layer=road['layer'], bridge=road['bridge'],
                 tunnel=road['tunnel'], street=road['name'], **values)
 
@@ -226,7 +227,7 @@ def dimension(polygon, center, axis):
 
 
 def footprint(polygon):
-    return [pair(p) for p in polygon.exterior.coords[:-1]]
+    return list(polygon.exterior.coords[:-1])
 
 
 def tied_ways(ranked, best):
@@ -432,7 +433,7 @@ def ndw_crossings(map_, rows, omitted):
             if other_score - score < 1.1 and abs(dot(direction, other_direction)) > 0.85:
                 plausible.append((other_score, other))
         center_coords = center.coords[0]
-        ends = [pair(advance(center_coords, axis, length)) for length in across]
+        ends = [advance(center_coords, axis, length) for length in across]
         result.append(road_pose(road, center, (axis[1], -axis[0]), width, length, id='ndw-vop-' + key,
                                 candidateWayIds=tied_ways(plausible, road), marked=True, markings='zebra',
                                 markingEvidence='vop',
@@ -479,7 +480,7 @@ def osm_crossing_nodes(map_, omitted):
             if dot(axis, normal(direction)) < 0:
                 axis = -axis[0], -axis[1]
         center, width = point.coords[0], road['width'] / abs(dot(axis, normal(direction)))
-        ends = [pair(advance(center, axis, side * width / 2)) for side in (-1, 1)]
+        ends = [advance(center, axis, side * width / 2) for side in (-1, 1)]
         related = map_.related_paths(point, road, direction, ends, [node_id])
         source = {'source': 'osm', 'id': f'n{node_id}', 'crossing': tags.get('crossing'),
                   'signals': tags.get('crossing:signals'), 'markings': tags.get('crossing:markings')}
@@ -498,7 +499,7 @@ def osm_crossing_nodes(map_, omitted):
         yield crossing
 
 
-def merge_sources(map_, crossings, osm, reviews):
+def merge_sources(map_, crossings, osm, reviews, *, published_scope=False):
     polygons = [Polygon(c['footprint']) for c in crossings]
     tree = STRtree(polygons)
     for c in osm:
@@ -518,8 +519,8 @@ def merge_sources(map_, crossings, osm, reviews):
                 ndw['control'] = 'signal'
             apply_crossing_marking(ndw)
             continue
-        if (c['marked'] or c['control'] == 'signal' or c['markings'] is not None or c.get('markingReview')
-                or c['id'] in reviews):
+        if (c['marked'] or c['control'] == 'signal' or c['id'] in reviews
+                or not published_scope and (c['markings'] is not None or c.get('markingReview'))):
             crossings.append(c)
     for c in crossings:
         road = map_.by_id[c['wayId']]
@@ -620,27 +621,54 @@ def pack_crossings(map_, strips):
                 combined.update(marked=True, markings=zebra_part['markings'], markingEvidence=zebra_part['markingEvidence'])
             inner_a = max(group[0]['ends'], key=lambda p: dot(p, axis))
             inner_b = min(group[1]['ends'], key=lambda p: dot(p, axis))
-            combined['refugePoint'] = pair([(a + b) / 2 for a, b in zip(inner_a, inner_b)])
-            combined['x'], combined['z'] = pair([(a + b) / 2 for a, b in zip(ends[0], ends[-1])])
+            combined['refugePoint'] = [(a + b) / 2 for a, b in zip(inner_a, inner_b)]
+            combined['x'], combined['z'] = [(a + b) / 2 for a, b in zip(ends[0], ends[-1])]
         yield combined
 
 
+def export_scene(feature, project):
+    result = dict(feature)
+    if 'x' in result:
+        x, z = result['x'], result['z']
+        dx, dz = result['tangent']
+        origin = project(x, z)
+        result['x'], result['z'] = pair(origin)
+        result['tangent'] = pair(vector(origin, project(x + dx, z + dz)), 5)
+    for field in ('ends', 'footprint'):
+        if field in result:
+            result[field] = [pair(project(*p)) for p in result[field]]
+    if 'refugePoint' in result:
+        result['refugePoint'] = pair(project(*result['refugePoint']))
+    if 'segments' in result:
+        result['segments'] = [export_scene(segment, project) for segment in result['segments']]
+    return result
+
+
 def build(args):
-    scene = GRADE['load_scene']()
-    frame = scene['meta']['lonLatAffine']
-    project = lambda lon, lat: GRADE['project'](frame, lon, lat)
+    scene = load_scene()
+    frame = Frame(scene['meta']['lonLatAffine'])
+    origin_e, origin_n = frame.scene_to_rd(0, 0)
+
+    # Measurements use RD New metres, with a translated south-positive axis so
+    # the same road, carriageway and left/right conventions apply during matching.
+    project_rd = lambda e, n: (e - origin_e, origin_n - n)
+    project_geographic = lambda lon, lat: project_rd(*frame.to_rd(lon, lat, 'OGC:CRS84'))
+    scene_to_grid = lambda x, z: project_rd(*frame.scene_to_rd(x, z))
+    to_scene = lambda x, z: frame.rd_to_scene(x + origin_e, origin_n - z)
+    x0, z0, x1, z1 = scene['meta']['bounds']
+    bounds = Polygon([scene_to_grid(x, z) for x, z in ((x0, z0), (x1, z0), (x1, z1), (x0, z1))])
     snapshot = elements(args.osm)
     supplement = elements(args.osm_features)
     rows = {(e['type'], e['id']): e for e in (*snapshot['elements'], *supplement['elements'])}
-    map_ = Map(scene, rows, project)
+    map_ = Map(scene, rows, project_geographic, scene_to_grid, bounds)
     omitted = Counter()
-    bumps, polygons = ndw_bumps(map_, source_rows(args.drempels, project, map_.bounds, True), omitted)
+    bumps, polygons = ndw_bumps(map_, source_rows(args.drempels, project_rd, map_.bounds, True), omitted)
     osm_bumps(map_, rows, bumps, polygons, omitted)
-    crossings = ndw_crossings(map_, source_rows(args.vops, project, map_.bounds, False), omitted)
+    crossings = ndw_crossings(map_, source_rows(args.vops, project_rd, map_.bounds, False), omitted)
     reviews = json.loads(args.marking_review.read_bytes()) if args.marking_review else {}
     if not isinstance(reviews, dict):
         raise ValueError('Expected marking reviews keyed by crossing ID')
-    merge_sources(map_, crossings, osm_crossing_nodes(map_, omitted), reviews)
+    merge_sources(map_, crossings, osm_crossing_nodes(map_, omitted), reviews, published_scope=args.published_crossings)
     marking_reviews(crossings, reviews)
     link_bumps(crossings, bumps)
     crossings = list(pack_crossings(map_, crossings))
@@ -651,9 +679,11 @@ def build(args):
     for c in crossings:
         if c.get('bumpId') and not any(c['bumpId'] == b['id'] and same_level(c, b) for b in bumps):
             raise ValueError(f"Crossing {c['id']} links to a hump on another level")
-    return {'version': 1, 'sources': {**SOURCES, 'osm': {**SOURCES['osm'], 'timestamp': supplement.get('osm3s', {}).get('timestamp_osm_base')}},
-            'bounds': scene['meta']['bounds'], 'omitted': dict(sorted(omitted.items())), 'bumps': sorted(bumps, key=lambda b: b['id']),
-            'crossings': sorted(crossings, key=lambda c: c['id'])}
+    osm_timestamp = args.osm_date or supplement.get('osm3s', {}).get('timestamp_osm_base')
+    return {'version': 1, 'sources': {**SOURCES, 'osm': {**SOURCES['osm'], 'timestamp': osm_timestamp}},
+            'bounds': scene['meta']['bounds'], 'omitted': dict(sorted(omitted.items())),
+            'bumps': [export_scene(b, to_scene) for b in sorted(bumps, key=lambda b: b['id'])],
+            'crossings': [export_scene(c, to_scene) for c in sorted(crossings, key=lambda c: c['id'])]}
 
 
 def main():
@@ -663,6 +693,10 @@ def main():
     parser.add_argument('drempels', type=Path)
     parser.add_argument('vops', type=Path)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--osm-date', type=lambda value: datetime.fromisoformat(value).isoformat().replace('+00:00', 'Z'),
+                        help='Historical date explicitly requested in both Overpass queries')
+    parser.add_argument('--published-crossings', action='store_true',
+                        help='Limit OSM-only crossings to zebra, signal-controlled or individually reviewed markings')
     parser.add_argument('--marking-review', type=Path, help='PDOK imagery decisions keyed by crossing ID')
     args = parser.parse_args()
     result = build(args)

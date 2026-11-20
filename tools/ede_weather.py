@@ -9,22 +9,25 @@ from threading import Lock
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from ede_map import load_scene_metadata
+
 FIELDS = (
     'temperature_2m', 'weather_code', 'cloud_cover', 'rain', 'showers', 'snowfall',
     'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m',
 )
-URL = 'https://api.open-meteo.com/v1/forecast?' + urlencode({
-    'latitude': 52.0460029, 'longitude': 5.671553,  # lonLatAffine in the Ede map asset
-    'current': ','.join(FIELDS), 'timezone': 'GMT', 'timeformat': 'unixtime',
-    'temperature_unit': 'celsius', 'wind_speed_unit': 'kmh', 'precipitation_unit': 'mm',
-})
 FRESH_SECONDS = 900
 RETRY_SECONDS = 60
 
 
 def fetch_weather():
     limit = 16 * 1024
-    with urlopen(URL, timeout=5) as response:
+    affine = load_scene_metadata()['lonLatAffine']
+    url = 'https://api.open-meteo.com/v1/forecast?' + urlencode({
+        'latitude': affine['lat0'], 'longitude': affine['lon0'],
+        'current': ','.join(FIELDS), 'timezone': 'GMT', 'timeformat': 'unixtime',
+        'temperature_unit': 'celsius', 'wind_speed_unit': 'kmh', 'precipitation_unit': 'mm',
+    })
+    with urlopen(url, timeout=5) as response:
         body = response.read(limit + 1)
     if len(body) > limit:
         raise ValueError('Open-Meteo response exceeded the expected size')

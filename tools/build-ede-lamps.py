@@ -16,8 +16,9 @@ from urllib.parse import urlencode
 
 from shapely.geometry import Point, Polygon
 
+from ede_gis import Frame, source_crs
 from ede_map import load_scene
-from ede_traffic_geometry import RoadGraph, Segment, SegmentIndex
+from ede_traffic_geometry import Segment, SegmentIndex
 
 ROOT = Path(__file__).resolve().parents[1]
 PDOK = 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal/items'
@@ -41,11 +42,17 @@ def bgt_tile(bounds):
     url = PDOK + '?' + urlencode({'bbox': ','.join(map(str, bounds)), 'limit': 1000,
                                   'f': 'json', 'plus_type': 'lichtmast'})
     seen = set()
+    rows = []
+    crs = None
     while url:
         if url in seen:
             raise ValueError('PDOK returned a repeated page')
         seen.add(url)
         page = json.loads(subprocess.check_output(['curl', '-fsSL', '--max-time', '25', '--retry', '2', url]))
+        page_crs = source_crs(page)
+        if crs is not None and page_crs != crs:
+            raise ValueError('PDOK changed pole coordinates CRS between pages')
+        crs = page_crs
         for feature in page['features']:
             p = feature['properties']
             if (p['plus_type'] != 'lichtmast' or p['status'] != 'bestaand'
@@ -54,9 +61,10 @@ def bgt_tile(bounds):
             geom = feature['geometry']
             if geom['type'] != 'Point' or len(geom['coordinates']) != 2:
                 raise ValueError('Expected two-dimensional BGT pole coordinates')
-            yield [p['lokaal_id'], p['version'], int(p.get('relatieve_hoogteligging') or 0),
-                   *geom['coordinates'], p['tijdstip_registratie'][:10]]
+            rows.append([p['lokaal_id'], p['version'], int(p.get('relatieve_hoogteligging') or 0),
+                         *geom['coordinates'], p['tijdstip_registratie'][:10]])
         url = next((link['href'] for link in page['links'] if link['rel'] == 'next'), None)
+    return crs, rows
 
 
 def fetch_bgt(bounds):
@@ -65,14 +73,19 @@ def fetch_bgt(bounds):
     boxes = [(a, c, b, d) for a, b in ((west, mid_x), (mid_x, east))
              for c, d in ((south, mid_y), (mid_y, north))]
     latest = {}
+    crs = None
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for rows in pool.map(lambda b: list(bgt_tile(b)), boxes):
+        for page_crs, rows in pool.map(bgt_tile, boxes):
+            if crs is not None and page_crs != crs:
+                raise ValueError('PDOK returned different pole coordinates CRS by tile')
+            crs = page_crs
             for row in rows:
                 if row[0] not in latest or latest[row[0]][-1] < row[-1]:
                     latest[row[0]] = row
     if not latest:
         raise ValueError('PDOK returned no active lamp posts in Ede')
-    return {'date': date.today().isoformat(), 'source': PDOK, 'rows': sorted(latest.values())}
+    return {'date': date.today().isoformat(), 'source': PDOK, 'horizontalCrs': crs.to_string(),
+            'rows': sorted(latest.values())}
 
 
 def edges(points, data):
@@ -86,7 +99,7 @@ def projection(edge, x, z):
 
 
 class LampSurfaces:
-    def __init__(self, scene):
+    def __init__(self, scene, frame):
         self.bounds = scene['meta']['bounds']
         self.terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']()
         grade = read(ROOT / 'assets/ede-grade.json')
@@ -120,11 +133,13 @@ class LampSurfaces:
                 self.profile_spans[profile['id']] = spans
         self.fitted = SegmentIndex(fitted, margin=24)
         self.corridor = SegmentIndex([
-            edge for edge in road_edges if edge.data['kind'] in ('motorway', 'motorway_link')
+            Segment(frame.scene_to_rd(*edge.a), frame.scene_to_rd(*edge.b), edge.data)
+            for edge in road_edges if edge.data['kind'] in ('motorway', 'motorway_link')
         ], margin=45)
 
-    def in_corridor(self, x, z):
-        return any(projection(edge, x, z)[1] <= 45 for edge in self.corridor.near(x, z))
+    def in_corridor(self, easting, northing):
+        return any(projection(edge, easting, northing)[1] <= 45
+                   for edge in self.corridor.near(easting, northing))
 
     def terrain_at(self, x, z):
         x0, z0, x1, z1 = self.bounds
@@ -187,15 +202,17 @@ def source_date(props):
     return None
 
 
-def read_gis(path, graph, surfaces):
+def read_gis(path, frame, surfaces):
     raw = read(path)
-    if raw.get('horizontalCrs') == 28992 and raw.get('verticalDatum') == 'NAP':
+    if source_crs(raw).to_epsg() != 28992:
+        raise ValueError('1GIS light points require outSR=28992')
+    if 'layers' in raw and raw.get('verticalDatum') == 'NAP':
         features = raw['layers']['6']
-    elif raw.get('spatialReference', {}).get('wkid') == 28992 and raw.get('hasZ'):
+    elif 'features' in raw and raw.get('hasZ'):
+        # Raw ArcGIS layer 6 uses NAP for its Z samples, as supplied by returnZ=true.
         features = raw['features']
     else:
-        raise ValueError('1GIS light points require outSR=28992 and returnZ=true')
-    rd_to_lon_lat = runpy.run_path(str(ROOT / 'tools/build-ede-posted-speeds.py'))['rd_to_lon_lat']
+        raise ValueError('1GIS light points require NAP elevation samples')
     out = []
     counts = Counter()
     levels = {'Maaiveld': 0, 'MaaiveldPlus1': 1, 'MaaiveldMin1': -1}
@@ -208,17 +225,18 @@ def read_gis(path, graph, surfaces):
         if p['niveau'] not in levels or height is None or not math.isfinite(height):
             counts['missingZOrLevel'] += 1
             continue
-        x, z = graph.project(*rd_to_lon_lat(g['x'], g['y']))
+        rd = g['x'], g['y']
+        x, z = frame.rd_to_scene(*rd)
         x0, z0, x1, z1 = surfaces.bounds
-        if not (x0 <= x <= x1 and z0 <= z <= z1 and surfaces.in_corridor(x, z)):
+        if not (x0 <= x <= x1 and z0 <= z <= z1 and surfaces.in_corridor(*rd)):
             counts['outsideCorridor'] += 1
             continue
         out.append({'id': str(p.get('globalid') or p['objectid']), 'objectId': p['objectid'],
-                    'x': x, 'z': z, 'nap': height, 'rd': [round(g['x'], 3), round(g['y'], 3)],
+                    'x': x, 'z': z, 'nap': height, 'rd': rd,
                     'level': levels[p['niveau']], 'type': p['type'], 'fixture': p.get('armatuurtype'),
                     'lamp': p.get('lamptype'), 'height': p.get('lichtpunthoogte'), 'mast': p.get('lengte'),
                     'doubleArm': p.get('type_2') == 'Lichtmast-Dubbele uitlegger', 'date': source_date(p)})
-    return out, counts
+    return out, counts, raw.get('date')
 
 
 def encode(rows, datum):
@@ -234,20 +252,24 @@ def encode(rows, datum):
 
 
 def bake(scene, snapshot, gis_path):
-    graph = RoadGraph({**scene['meta'], 'edges': []})
-    surfaces = LampSurfaces(scene)
-    official, counts = read_gis(gis_path, graph, surfaces) if gis_path else ([], Counter())
+    frame = Frame(scene['meta']['lonLatAffine'])
+    surfaces = LampSurfaces(scene, frame)
+    official, counts, gis_date = read_gis(gis_path, frame, surfaces) if gis_path else ([], Counter(), None)
+    crs = source_crs(snapshot, default='OGC:CRS84')  # Older snapshots used the GeoJSON default.
     poles = []
-    review = {'date': snapshot['date'], 'BGT': {'source': PDOK, 'license': 'CC0-1.0', 'count': len(snapshot['rows'])},
-              '1GIS': {'source': RWS, 'license': 'CC0-1.0', 'eligible': len(official)},
+    review = {'date': snapshot['date'], 'BGT': {'source': PDOK, 'license': 'CC0-1.0', 'count': len(snapshot['rows']), 'horizontalCrs': crs.to_string()},
+              '1GIS': {'source': RWS, 'license': 'CC0-1.0', 'eligible': len(official), 'verticalDatum': 'NAP',
+                       'horizontalCrs': 'EPSG:28992', 'snapshotDate': gis_date},
               'duplicates': [], 'ambiguous': [], 'matches': [], 'poortwachter': []}
     overlap = {}
     used = set()
-    source_rows = [(identity, version, level, *graph.project(lon, lat), updated)
-                   for identity, version, level, lon, lat, updated in snapshot['rows']]
+    source_rows = []
+    for identity, version, level, x, y, updated in snapshot['rows']:
+        rd = frame.to_rd(x, y, crs, axis_order='xy')
+        source_rows.append((identity, version, level, *frame.rd_to_scene(*rd), updated, rd))
 
     def add(row, candidates, native=False):
-        identity, version, level, x, z, updated = row
+        identity, version, level, x, z, updated, _ = row
         hit = surfaces.surface(level, x, z)
         profile = hit[0].data[0]['id'] if hit else None
         fitted = surfaces.height(hit, x, z)
@@ -301,22 +323,21 @@ def bake(scene, snapshot, gis_path):
             counts['new1gis'] += 1
 
     for row in source_rows:
-        _, _, level, x, z, _ = row
-        candidates = [(math.hypot(x - g['x'], z - g['z']), g) for g in official
-                      if abs(x - g['x']) <= 1.3 and abs(z - g['z']) <= 1.3 and g['id'] not in used]
+        rd = row[-1]
+        candidates = [(math.dist(rd, g['rd']), g) for g in official
+                      if abs(rd[0] - g['rd'][0]) <= 1.3 and abs(rd[1] - g['rd'][1]) <= 1.3 and g['id'] not in used]
         add(row, sorted(((d, g) for d, g in candidates if d <= 1.3), key=lambda item: (item[0], item[1]['objectId'])))
 
     for g in official:
         if g['id'] in used:
             continue
-        if any(abs(x - g['x']) <= 2 and abs(z - g['z']) <= 2 and math.hypot(x - g['x'], z - g['z']) <= 2
-               for _, _, level, x, z, _ in source_rows):
+        if any(math.dist(row[-1], g['rd']) <= 2 for row in source_rows):
             counts['overlapping1gis'] += 1
             continue
         if g['type'] not in ('Lichtmast', 'Lijnverlichtingsmast') or g['level']:
             counts['unplaced1gis'] += 1
             continue
-        add((g['id'], None, g['level'], g['x'], g['z'], g['date']), [(0, g)], native=True)
+        add((g['id'], None, g['level'], g['x'], g['z'], g['date'], g['rd']), [(0, g)], native=True)
     review['counts'] = {**counts, 'BGT duplicate placements': len(review['duplicates']), 'rendered': len(poles)}
     return gzip.compress(encode(poles, surfaces.nap), mtime=0), review
 

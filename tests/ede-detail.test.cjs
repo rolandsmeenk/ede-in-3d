@@ -23,6 +23,7 @@ async function fixture(grade = {}, fetch = globalThis.fetch) {
     ...loadModule(detail, {
       imports: { ...imports, './ede-geometry.js': geometry, './ede-grade.js': grade,
         './ede-playground-equipment.js': loadModule(source('ede-playground-equipment.js')),
+        './ede-scene-coordinates.js': loadModule(source('ede-scene-coordinates.js')),
         './terrain.js': { getTerrain: () => ({ napOrigin: 22.54 }), terrainHeightAt: () => 2 } },
       globals: { fetch, URL, Response, DecompressionStream }
     }),

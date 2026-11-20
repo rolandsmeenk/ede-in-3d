@@ -89,7 +89,7 @@ All 385 Node tests passed, including survey replacements, the AHN seam, the tree
 Reuse the cached surveys for repeatable bakes. Add `--fetch` to retrieve missing files. Review updated exterior references and wall or entrance anchors before accepting a different upstream survey. The NIZO mural uses its separate [offline paint bake](ede-research-landmarks.md#nizo-food-research).
 
 ```sh
-uv run --with pyproj==3.8.0 --with pillow python -B tools/build-ede-next-survey.py /tmp/ede-next
+uv run --with pyproj==3.8.0 --with rasterio python -B tools/build-ede-next-survey.py /tmp/ede-next
 uv run --with pyproj==3.8.0 python -B tools/build-ede-estate-survey.py /tmp/ede-estate
 uv run --with pyproj==3.8.0 python -B tools/build-ede-venue-survey.py /tmp/ede-venues
 uv run --with pyproj==3.8.0 python -B tools/build-ede-research-survey.py /tmp/ede-research

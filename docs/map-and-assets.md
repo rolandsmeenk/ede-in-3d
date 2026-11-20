@@ -10,7 +10,7 @@ Most map layers are built offline and bundled with the game. Nearby 3DBAG tiles 
 | --- | --- | --- |
 | Base map and routing | Street and path connections, parks, waterways, tracks and fallback building footprints | [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) |
 | Terrain and surface colours | Ground elevations, local height checks and colour samples for roofs, roads and land cover | [AHN via PDOK](https://www.ahn.nl/dataroom) · [2025 aerial imagery via PDOK](https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566) |
-| Buildings and façades | LoD 2.2 building shapes, offline façade measurements and neighbourhood profiles | [3DBAG](https://docs.3dbag.nl/en/) · [Mapillary evidence credits](../assets/ede-facades.SOURCES.md) · [CBS neighbourhood boundaries](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025) |
+| Buildings and façades | LoD 2.2 building shapes, offline façade measurements and neighbourhood profiles | [3DBAG](https://docs.3dbag.nl/en/) · [Façade evidence credits](../assets/ede-facades.SOURCES.md) · [CBS neighbourhood boundaries](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025) |
 | Street art | Wall assignments, real-reference paint decals and two approved painted reconstructions | [Mural sources and wall assignments](../tools/data/ede-murals.md) |
 | Streets and greenery | Surveyed road surfaces, bridges, platforms, shorelines, street furniture, lamps and trees | [PDOK BGT](https://www.pdok.nl/introductie/-/article/basisregistratie-grootschalige-topografie-bgt-) · [Municipal tree inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) |
 | Motorways and traffic rules | Road sections, lane counts, infrastructure, access restrictions, signs, speed bumps and crossings | [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer) · [NWB and WEGGEG](../tools/data/ede-motorway-lanes.sources.md) · [NDW and WKD](../tools/data/ede-traffic-sources.md) · [NBd direction signs](https://downloads.rijkswaterstaatdata.nl/bewegwijzering/) |
@@ -24,6 +24,8 @@ See [License and data](#license-and-data) for attribution and the sections below
 The **Teleport** menu offers ten framed arrivals, including the Johan Willem Friso-kazerne and station Ede-Wageningen. Use map search to find other landmarks such as Astrant, the Van Eekelenflat, Plantion and Work Garden.
 
 The historic exterior models include ENKA Westhal and Poortgebouw, Mauritskazerne, Oude Kerk, the old Ede Centrum station, Huis Kernhem and its coach house, De Vuurvogel, Raadhuis Ede and Cultura. See the [exterior references and fitted details](../tools/data/ede-landmark-exteriors.md).
+
+The 17 fuel station sites share a parametric model with canopy outlines, brand-coloured trim, a shared wordmark texture, pump islands and optional shops. The local inventory covers 15 OpenStreetMap entries and two additional sites confirmed by the operator and PDOK imagery. It includes the separate Shell and Greenpoint forecourts on Bonnetstraat and the uncovered CNG dispenser on Radonstraat. The A30 service areas lie north of the playable bounds. Pump counts and vertical clearances use estimates where a survey is unavailable. Canopies shelter the forecourt and the model leaves clearance between pumps. [Station inventory and source links](../js/ede-fuel-sites.js)
 
 Stadspoort and Pathé Ede have custom exteriors based on surveyed building shapes and public exterior references. Find the shopping-centre entrance, cinema, Riedel silos and Kappa Docie on the map. Stadspoort’s upper walking passage and the lower roads and paths use their fitted grade profiles.
 
@@ -53,13 +55,13 @@ Rebuild the aerial palettes after refreshing the map so their records follow the
 Rebuild the bus routes after changing the road graph.
 See the [traffic data notes](../tools/data/ede-traffic-sources.md) for the WKD input and the access review.
 
-The roughly 7.4 × 5.4 km extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the town-wide view. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain.
+The roughly 7.4 × 5.4 km extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the town-wide view. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain. [Coordinate conversion and verification](../tools/data/ede-gis-unification.md)
 
 ## Refresh the AHN terrain
 
 Terrain comes from the PDOK AHN ground model (DTM). The input raster uses RD New (EPSG:28992) horizontally and metres NAP vertically. The checked-in asset samples it every 12 m across the map and its surroundings. Scene Y is relative to the AHN height at Oude Kerk, 22.54 m NAP in this asset. The existing true-north scene X/Z and saved map positions keep their coordinates.
 
-With Python 3 and GDAL on your PATH:
+Use the pinned Python GIS environment and the PDOK WCS download:
 
 ```sh
 curl -fsSG https://service.pdok.nl/rws/ahn/wcs/v1_0 \
@@ -69,7 +71,7 @@ curl -fsSG https://service.pdok.nl/rws/ahn/wcs/v1_0 \
   --data-urlencode 'subset=x(168650,176950)' \
   --data-urlencode 'subset=y(446650,452950)' \
   --data-urlencode 'scalesize=x(1384),y(1050)' -o /tmp/ede-ahn-rd.tif
-python3 tools/build-ede-terrain.py /tmp/ede-ahn-rd.tif
+uv run --with pyproj==3.8.0 --with rasterio python -B tools/build-ede-terrain.py /tmp/ede-ahn-rd.tif
 ```
 
 Existing OSM street, cycleway, park and water outlines follow the terrain. Fitted bridges and tunnels have their own travel surfaces. The browser loads the local terrain asset and can fall back to level ground if the file is unavailable.
@@ -145,22 +147,22 @@ python3 tools/build-ede-street-signs.py --output /tmp/ede-street/signs.json
 bash tools/overpass.sh /tmp/ede-street/osm-features.json tools/data/q_ede_street_surfaces.overpassql
 curl -fsSL 'https://verkeersveiligheid.ndw.nu/cms/api/dataset-files/file/Drempels.zip?prefix=dataset' -o /tmp/ede-street/drempels.zip
 curl -fsSL 'https://verkeersveiligheid.ndw.nu/cms/api/dataset-files/file/VOPs.zip?prefix=dataset' -o /tmp/ede-street/vops.zip
-uv run --with 'shapely>=2.1' python tools/build-ede-street-surfaces.py \
+uv run --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-street-surfaces.py \
   tools/data/osm_ede.json /tmp/ede-street/osm-features.json /tmp/ede-street/drempels.zip \
-  /tmp/ede-street/vops.zip /tmp/ede-street/surfaces.json
+  /tmp/ede-street/vops.zip /tmp/ede-street/surfaces.json --published-crossings
 uv run --with 'shapely>=2.1' python tools/build-ede-street-features.py \
-  /tmp/ede-street/signs.json /tmp/ede-street/surfaces.json
+  /tmp/ede-street/signs.json /tmp/ede-street/surfaces.json --previous assets/ede-street-features.json.gz
 ```
 
-Add `--fetch` to the sign importer for the latest placed signs. Reuse the downloaded inputs to rebuild offline. The resulting `assets/ede-street-features.json.gz` is loaded locally. Each road or path reference gives a directed key, layer, mode mask, confidence, and a distance or interval in metres from the directed edge's start. The mask uses 1 for car, 2 for van, 4 for bus, 8 for bicycle, and 16 for foot. `forRoad(edge)`, `forPath(track, direction, mode)`, and `forEdge(key)` return features in travel order. A single feature can have several references. Uncertain and unmatched records retain their raw evidence and review reason. The renderer draws those features. The [traffic pilot](../tools/data/ede-traffic-pilot.md) also uses verified directed references for hump speed, stop lines, give-way approaches and zebras.
+Add `--fetch` to the sign importer for the latest placed signs. Reuse the downloaded inputs to rebuild offline. Set `--osm-date` to the date explicitly requested in both historical Overpass queries. The surface bake measures source geometry in RD New and exports the original scene frame. The `--published-crossings` option retains the audited crossing scope, and `--previous` carries forward IDs with an unambiguous same-level source match and retains confirmed directed signal links on unchanged strips. The resulting `assets/ede-street-features.json.gz` is loaded locally. Each road or path reference gives a directed key, layer, mode mask, confidence, and a distance or interval in metres from the directed edge's start. The mask uses 1 for car, 2 for van, 4 for bus, 8 for bicycle, and 16 for foot. `forRoad(edge)`, `forPath(track, direction, mode)`, and `forEdge(key)` return features in travel order. A single feature can have several references. Uncertain and unmatched records retain their raw evidence and review reason. The renderer draws those features. The [traffic pilot](../tools/data/ede-traffic-pilot.md) also uses verified directed references for hump speed, stop lines, give-way approaches and zebras.
 
 Measured footprints supply length and width where available. OSM-only hump, short bump, raised table, and cushion length defaults are 3.5, 1.2, 7, and 2.5 m, with modelled heights of 8, 6, 8, and 7 cm respectively. Tables use short linear ramps and humps use a rounded longitudinal profile. The same profile sets the stripe height on a raised zebra. [NDW Drempels](https://verkeersveiligheid.ndw.nu/dataset/drempels) · [WKD pedestrian crossings](https://verkeersveiligheid.ndw.nu/dataset/voetgangersoversteekplaatsen) · [NDW open-data terms](https://docs.ndw.nu/algemeen/data-gebruiksvoorwaarden/)
 
-The snapshot contains 6,345 sign locations, 966 humps and tables, and 201 crossings. The renderer has exact artwork for 5,958 sign faces. It paints 119 zebras at 121 carriageway strips, supported by NDW VOP at 67 locations and explicit OSM zebra tags at 52. The crossing layer also paints 37 dashed and 31 dotted crossings from the mapped OSM patterns. Two explicitly unmarked crossings and 12 with unknown markings have bare pavement. The layer confines paint to the mapped carriageway and level, clips it around surveyed BGT islands, trims edge markings at sidewalks, and follows the fitted table height. If the asset is unavailable, ordinary road markings still load. [Zebra source and site review](../tools/data/ede-zebra-review.md)
+The snapshot contains 6,345 sign locations, 962 humps and tables, and 201 crossings. The renderer has exact artwork for 5,958 sign faces. It paints 119 zebras at 121 carriageway strips, supported by NDW VOP at 68 locations and explicit OSM zebra tags at 51. The crossing layer also paints 37 dashed and 31 dotted crossings from the mapped OSM patterns. Two explicitly unmarked crossings and 12 with unknown markings have bare pavement. The layer confines paint to the mapped carriageway and level, clips it around surveyed BGT islands, trims edge markings at sidewalks, and follows the fitted table height. If the asset is unavailable, ordinary road markings still load. [Zebra source and site review](../tools/data/ede-zebra-review.md)
 
 For a documented imagery decision, pass `--marking-review` to `build-ede-street-surfaces.py` with a JSON object keyed by the source crossing ID. Each decision records `markings`, an `imagery` URL, a capture date or imagery vintage in `date`, and a short `note`. An optional `markingColour` records the paint colours. The bake retains split, paired and bicolour zebra tags and explicit edge markings, including combined patterns such as zebra bars with dotted borders. The renderer uses the recorded colours for bicolour zebras. It uses standard paint when no colours are recorded. The bake records provenance per carriageway strip and withholds disputed paint pending review. [OSM crossing marking patterns](https://wiki.openstreetmap.org/wiki/Key:crossing:markings)
 
-Review is needed for 248 sign matches and 109 partial crossing matches. The asset also retains 2,016 signs, 66 raised surfaces, and five crossings whose positions lack a reliable directed edge association. Common cases are a sign between approaches, different relative layer codes in NWB and OSM, or an unlinked sidewalk endpoint.
+Review is needed for 291 sign matches and 105 partial crossing matches. The asset also retains 1,941 signs, 82 raised surfaces, and seven crossings whose positions lack a reliable directed edge association. Common cases are a sign between approaches, different relative layer codes in NWB and OSM, or an unlinked sidewalk endpoint.
 
 The review covered the C3 sign on Notaris Fischerstraat, the raised zebra on Klinkenbergerweg, both carriageways at the signal-controlled refuge on Kastelenlaan, and the 4.2 m clearance sign at Keesomtunnel. In a headless Chromium WebGPU run, the layer added about 8–40 draw calls in the tested views. Median frame times generally stayed in the same 16.7 or 33.3 ms refresh interval. The final sign and supplementary-text atlases used 17.9 MiB of texture memory and building the layer took 209 ms.
 
@@ -193,7 +195,8 @@ Add `/tmp/ede-1gis --fetch --save-snapshot tools/data/ede-1gis.snapshot.json.gz`
 NBd provides the destinations and drawing references for the blue motorway direction signs. 1GIS supplies mounting evidence and NDW supplies standard signs and supplementary plates. [NBd exports](https://downloads.rijkswaterstaatdata.nl/bewegwijzering/) · [NDW Verkeersborden](https://docs.ndw.nu/en/data-uitwisseling/interface-beschrijvingen/verkeersborden-api/v5/)
 
 ```sh
-uv run --with 'pillow>=12.1' python tools/build-ede-nbd-signs.py /tmp/ede-nbd /tmp/ede-1gis --date 2026-11-18 --fetch
+uv run --with pyproj==3.8.0 --with 'pillow>=12.1' python tools/build-ede-nbd-signs.py \
+  /tmp/ede-nbd tools/data/ede-1gis.snapshot.json.gz --date 2026-11-19 --fetch
 ```
 
 The game loads the baked assets locally in the Oude Kerk scene frame. Props use spatially tiled instances. Long barriers and directional sign faces use batched geometry. For a performance comparison, open the game with `?perf=1` and use `bgtStage=street`, `bgtStage=infrastructure`, or `bgtStage=all`. The existing `detail=off`, `bgtDetail=off`, `motorwayDetail=off`, and `nbdSigns=off` switches remain available. [Town and shoreline verification](../tools/data/ede-bgt-town-verification.md) · [Motorway pilot verification](../tools/data/ede-1gis-verification.md)
@@ -215,18 +218,19 @@ The 2025 PDOK orthophoto is downloaded in 1 km RD New tiles and sampled at 0.5 m
 
 The browser uses the baked samples as vertex colors and keeps the procedural surface detail and road markings. It reads local assets at startup and uses procedural colors if the assets are unavailable.
 
-With Python 3 and GDAL on your PATH:
+Use the pinned Python GIS environment and the PDOK WCS download:
 
 ```sh
 python3 tools/fetch-ede-aerial.py /tmp/ede-aerial
-python3 tools/build-ede-aerial.py /tmp/ede-aerial/ede-aerial-2025.vrt
+uv run --with pyproj==3.8.0 --with numpy --with pillow \
+  python -B tools/build-ede-aerial.py /tmp/ede-aerial/ede-aerial-2025.vrt
 ```
 
 ## Refresh Ede’s façade layouts
 
 The offline bake matches reviewed Mapillary views to individual LoD 2.2 walls. It uses CBS neighbourhoods, building types and wall roles to choose layouts for unobserved walls. Each distinct BAG building contributes one vote to a profile. The game uses an individual measurement first, then a supported neighbourhood profile, an Ede-wide profile for the same building type, or procedural shading. Mapped shared walls stay blank.
 
-The game reads façade parameters near the camera alongside the existing BAG tiles. Shared tileable surfaces and material masks draw masonry, glazing, doors, frames and sills. Selected openings, including the Oude Kerk entrance and the Torenstraat storefront, use modeled recesses near the camera. The buildings retain their BAG proportions, and PDOK aerial colour supplies the roof reference. Street imagery stays in the offline review cache. [Mapillary evidence credits](../assets/ede-facades.SOURCES.md)
+The game reads façade parameters near the camera alongside the existing BAG tiles. Shared tileable surfaces and material masks draw masonry, glazing, doors, frames and sills. Selected openings, including the Oude Kerk entrance and the Torenstraat storefront, use modeled recesses near the camera. The buildings retain their BAG proportions, and PDOK aerial colour supplies the roof reference. Street imagery stays in the offline review cache. [Façade evidence credits](../assets/ede-facades.SOURCES.md)
 
 The catalogue and bake can reuse the checked-in measurements. Omit `--fetch` to reuse the pinned BAG and CBS source cache.
 
@@ -235,6 +239,12 @@ uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 --with flatgeobu
   python tools/catalogue-ede-facade-walls.py /tmp/ede-facades-catalogue /tmp/ede-facades-walls.json --fetch
 python3 tools/build-ede-facades.py /tmp/ede-facades-walls.json tools/data/ede-facade-observations.json \
   --report tools/data/ede-facade-coverage.json
+```
+
+The full bake includes the reviewed layouts for Marktplein, Kuiperplein and Museumplein. To apply those reviews to an existing façade bake, run the following command. The reviews apply to the surveyed walls and stay out of neighbourhood profile training. [Square review records](../tools/data/ede-square-facades)
+
+```sh
+python3 tools/build-ede-facades.py --report tools/data/ede-facade-coverage.json
 ```
 
 Procedural façades use the original BAG construction year. The four local neighbourhood palettes take precedence, and measured Mapillary façades keep their recorded finishes. Streamed buildings use the year in the 3D BAG tile. For fallback buildings, the baked year table matches PDOK BAG footprints to the local map by overlap.
@@ -264,12 +274,12 @@ python3 tools/fetch-ede-trees.py /tmp/ede-tree-sources --date 2026-11-18
 uv run --with pyproj==3.8.0 python -B tools/build-ede-trees.py /tmp/ede-tree-sources/pdok.geojson /tmp/ede-tree-sources/municipal.geojson --osm tools/data/osm_ede.json
 ```
 
-The builder requires GDAL on your PATH. It also merges the sourced De Vuurvogel entrance placement using the pinned RD conversion. The optional OpenStreetMap snapshot is produced by the map refresh command. The browser loads the expanded inventory by default. Use `?perf=1&treeInventory=baseline` for comparisons. The browser samples AHN at each planted location and renders shared geometry in 200 m × 200 m instanced tiles. The **Season** menu selects a foliage date independently of the sky and weather. **Graphics → Tree quality** controls the terrain-relative canopy detail and distant shadow budget. [Expanded inventory bake and sources](../tools/data/ede-tree-inventory.md) · [Season, flight and profiler verification](../tools/data/ede-tree-update.md)
+The builder uses the pinned RD conversion for point matching and the De Vuurvogel entrance placement. Pass `--audit` to retain source ID associations and input hashes. The optional OpenStreetMap snapshot is produced by the map refresh command. The browser loads the expanded inventory by default. Use `?perf=1&treeInventory=baseline` for comparisons. The browser samples AHN at each planted location and renders shared geometry in 200 m × 200 m instanced tiles. The **Season** menu selects a foliage date independently of the sky and weather. **Graphics → Tree quality** controls the terrain-relative canopy detail and distant shadow budget. [Expanded inventory bake and sources](../tools/data/ede-tree-inventory.md) · [Season, flight and profiler verification](../tools/data/ede-tree-update.md)
 
 ## Refresh the lamp-post inventory
 
 ```sh
-uv run --with 'shapely>=2.1' python tools/build-ede-lamps.py --gis /tmp/ede-1gis/6.json \
+uv run --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-lamps.py --gis tools/data/ede-1gis.snapshot.json.gz \
   --save-bgt /tmp/ede-lamps-bgt.json.gz --report tools/data/ede-lamps.review.json.gz
 ```
 
@@ -278,7 +288,7 @@ The checked-in lamp asset joins the active PDOK BGT inventory to compatible 1GIS
 ## License and data
 
 - Project code is available under the [MIT License](../LICENSE).
-- Streets, parks, water, trees, shops, and fallback building footprints are © OpenStreetMap contributors under [ODbL](https://www.openstreetmap.org/copyright).
+- Streets, parks, water, trees, shops, fuel station locations and fallback building footprints are © OpenStreetMap contributors under [ODbL](https://www.openstreetmap.org/copyright).
 - Building geometry is © 3DBAG by tudelft3d and 3DGI under [CC BY 4.0](https://docs.3dbag.nl/en/copyright/).
 - District labels are based on the [CBS Wijk- en Buurtkaart 2025](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025).
 - Ede’s coat of arms is from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_Ede.svg) (public domain).

@@ -22,12 +22,12 @@ node tools/build-ede-geodata.mjs tools/data/osm_ede.json assets/ede-map-v1.json.
 
 The [Ede station traffic decision and signing plan](https://zoek.officielebekendmakingen.nl/gmb-2024-120844.html) reserve the north-east platforms, the turn toward them, and a dedicated Akulaan approach lane for scheduled buses. The remaining public forecourt includes taxi and Kiss & Ride access. The station’s general 10 m restriction exempts scheduled buses. The public through portion of Akulaan has three ordinary lanes and a bus lane on the mapped four-lane approach. Willy Brandtlaan has a separate tagged busway and one adjacent through segment with an ordinary lane and a bus lane. OSM, WKD, and mapped GTFS routes distinguish these connections from their neighboring public lanes.
 
-The posted-speed asset comes from the 1 November 2026 WKD `Snelheden.gpkg` release. The build compares the clipped NWB road sections to directed simulator edges using the source’s H, T and B direction codes, geometry, and street names where available. It requires agreement across at least 80% of the edge and uses the WKD’s 100% confidence rows. OSM limits or the simulator’s road defaults cover unmatched edges. The asset contains 6,247 directed matches, including 94 limits with daily schedules evaluated in Europe/Amsterdam. [WKD Maximum snelheden](https://docs.ndw.nu/handleidingen/wkd/wkd_maxsnelheden/) · [November GeoPackage](https://downloads.rijkswaterstaatdata.nl/wkd/geogegevens/Geopackage/Maximum%20snelheden/01-11-2026/)
+The posted-speed asset comes from the 1 November 2026 WKD `Snelheden.gpkg` release. The build compares the clipped NWB road sections to directed simulator edges in RD New, using the source’s H, T and B direction codes, geometry, and street names where available. It requires agreement across at least 80% of the edge and uses the WKD’s 100% confidence rows. OSM limits or the simulator’s road defaults cover unmatched edges. The asset contains 6,524 directed matches, including 282 limits with daily schedules evaluated in Europe/Amsterdam. [WKD Maximum snelheden](https://docs.ndw.nu/handleidingen/wkd/wkd_maxsnelheden/) · [November GeoPackage](https://downloads.rijkswaterstaatdata.nl/wkd/geogegevens/Geopackage/Maximum%20snelheden/01-11-2026/)
 
 Rebuild the local asset from the extracted GeoPackage.
 
 ```sh
-python3 -B tools/build-ede-posted-speeds.py Snelheden.gpkg 2026-11-01 assets/ede-posted-speeds.json
+uv run --with pyproj==3.8.0 python -B tools/build-ede-posted-speeds.py Snelheden.gpkg 2026-11-01 assets/ede-posted-speeds.json
 ```
 
 The local server joins the NDW speed and intensity publication to the exact site and configuration version. It takes aggregate vehicle counts per direction and weights observed lane speeds by their sample counts. Matched detectors influence their own directed edge. For temporary speed limits and complete closures, the server requires a mandatory, implemented record with a validity window and a directional GML line covering enough of the edge. Point-only measures, lane-only closures, ambiguous level matches, and records located only through unverified ALERT-C/VILD codes, OpenLR references or external identifiers fall outside that coverage. Traffic observations expire six minutes after the measured minute. Measures expire by their stated end time or five minutes after their source publication, whichever comes first. [NDW open data](https://opendata.ndw.nu/) · [DATEX II v3.6 traffic profile](https://mogin.nl/publicaties/Verkeersinformatie/Verkeersdata/vigerend/index.html) · [DATEX II v3.6 location profile](https://mogin.nl/publicaties/Verkeersinformatie/Locatiereferentie/vigerend/index.html)
@@ -46,7 +46,7 @@ To refresh the local extract, unpack the official download, read its reference d
 
 ```sh
 cycle_source='https://downloads.rijkswaterstaatdata.nl/wkd/geogegevens/Geopackage/Fiets%28suggestie%29stroken/01-01-2026.zip'
-python3 -B tools/clip-ede-wkd-cycle-strips.py /path/to/WKD_FIETSSTRK.gpkg \
+uv run --with pyproj==3.8.0 python -B tools/clip-ede-wkd-cycle-strips.py /path/to/WKD_FIETSSTRK.gpkg \
   2026-01-31 "$cycle_source" tools/data/ede-wkd-cycle-strips.json
 ```
 

@@ -10,7 +10,7 @@ Selected measured openings have geometry for reveals, projecting trim and sills.
 
 ## Coverage and held-out observations
 
-The city catalogue contains **40,909 buildings and 370,267 wall segments**. The parameter bake exports **11 observed walls**, **32,130 inferred walls**, and **90,112 blank shared walls**. The original procedural shading covers the other **248,014 walls**. The manifest is 6,808 bytes and the 190 compressed layout tiles total 4,184,338 bytes. The largest tile is about 143 kB compressed. An independent bake from the final catalogue reproduced every tile, the manifest and the report byte for byte. [Per-neighbourhood, building type and wall-role coverage](ede-facade-coverage.json)
+The city catalogue contains **40,909 buildings and 370,267 wall segments**. Before the square reviews, the parameter bake exported **11 observed walls**, **32,130 inferred walls**, and **90,112 blank shared walls**. The original procedural shading covered the other **248,014 walls**. The 6,808-byte manifest indexed 190 compressed layout tiles totalling 4,184,338 bytes. The largest tile is about 143 kB compressed. An independent bake from the final catalogue reproduced every tile, the manifest and the report byte for byte. [Per-neighbourhood, building type and wall-role coverage](ede-facade-coverage.json)
 
 | CBS neighbourhood | Reviewed building type | Distinct BAG buildings |
 | --- | --- | ---: |
@@ -58,3 +58,15 @@ EDE_BENCH_SCENARIOS=facades EDE_BENCH_RUNS=1 EDE_BENCH_TRAFFIC=active \
 Use the same command with the pre-change checkout served on another port for comparison. Use a separate isolated WebGPU browser profile for each repeat if a browser stalls after multiple navigations.
 
 All 377 JavaScript tests passed. The offline Python suite reported 33 passes and three skips. The extractor resolved all 11 original calibrated review frames against the refreshed catalogue.
+
+## Marktplein, Kuiperplein and Museumplein
+
+| Square | Reviewed BAG buildings | Wall segments | Openings | Largest wall-plane offset in the streamed geometry |
+| --- | ---: | ---: | ---: | ---: |
+| Marktplein | 3 | 19 | 88 | 2.6 cm |
+| Kuiperplein | 5 | 8 | 158 | 1.8 cm |
+| Museumplein | 5 | 8 | 90 | 5.0 cm |
+
+The square bake updates two compressed cells and adds 6.2 KiB. All 35 segments matched triangles in the pinned 3DBAG tiles. Four Kuiperplein rows also matched Cultura’s custom mesh, which owns the Brouwerstraat wall. The reviewed openings fit in the existing mask allocation after lowering the mask resolution on crowded tiles. The second bake reproduced both cells byte for byte.
+
+The walking-height and oblique WebGPU views showed the stepped Marktplein bays, the Brouwerstraat shopfronts and the Museumplein café row. Awnings, trees and viewing angle obscure some openings. The review notes mark the corresponding layout, colour and depth estimates. Other frontages use the existing building materials. [Reference credits](../../assets/ede-facades.SOURCES.md) · [Review coverage](ede-facade-coverage.json)

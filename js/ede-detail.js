@@ -2,11 +2,11 @@ import * as THREE from 'three/webgpu';
 import { drapeEdeSurface, edeBounds, edePolygonGeometry } from './ede-geometry.js';
 import { playgroundEquipment } from './ede-playground-equipment.js';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
+import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 
 const CELL = 180;
 const ROAD_REACH = 14;
-const NAP_FALLBACK = 22.54;
 const STEEL = 0x68747b, GALVANIZED = 0xafb8b9, WOOD = 0x785335;
 const FOLIAGE = [0x4d673b, 0x4d633e, 0x51693e, 0x435c37];
 const BARRIERS = {
@@ -111,7 +111,7 @@ function groundAt(feature, x, z, surveyY, height = 0) {
   // A ground-level motorway object can be beside a raised road and keep its own surface.
   const matched = (kind || localInventory) && feature.wayId && gradeWayAt(feature.wayId, x, z, ROAD_REACH);
   if (matched && (!kind || matched.span.profile.site?.kind === kind)) return matched.y;
-  if (Number.isFinite(surveyY)) return surveyY - (getTerrain()?.napOrigin ?? NAP_FALLBACK) - height;
+  if (Number.isFinite(surveyY)) return surveyY - (getTerrain()?.napOrigin ?? SCENE_NAP_ORIGIN) - height;
   if (!localInventory) return kind ? undefined : coarse;
   const local = gradeProfileAt(x, z, 'foot', undefined, coarse);
   if (local && (local.kind === 'platform' && !(feature.level < 0) || local.kind === 'surface' && !kind)) return local.y;
@@ -250,7 +250,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         !(feature.width > 0 && feature.height > 0)) return false;
     const [x, z] = feature.position;
     const { angle, width, height } = feature;
-    const y = feature.centerY - (getTerrain()?.napOrigin ?? NAP_FALLBACK);
+    const y = feature.centerY - (getTerrain()?.napOrigin ?? SCENE_NAP_ORIGIN);
     const cos = Math.cos(angle), sin = Math.sin(angle);
     if (feature.support) {
       const base = resolveGround(feature, x, z, feature.surveyY);
@@ -417,7 +417,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
 
   function canopy(feature) {
     if (!Number.isFinite(feature.topY) || !Array.isArray(feature.supports)) return false;
-    const nap = getTerrain()?.napOrigin ?? NAP_FALLBACK;
+    const nap = getTerrain()?.napOrigin ?? SCENE_NAP_ORIGIN;
     const fixedY = feature.topY - nap;
     const slab = 0.15;
     const supports = feature.supports.filter(support => validPoint(support?.position) &&
@@ -438,7 +438,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const points = endpoints.map(([x, z]) => ({ x, z, y: resolveGround(feature, x, z, feature.surveyY) }));
     if (points.some(p => !Number.isFinite(p.y)) || Math.hypot(points[1].x - points[0].x, points[1].z - points[0].z) < 2) return false;
     const top = Math.max(...points.map(p => p.y));
-    const beam = Number.isFinite(feature.beamY) ? feature.beamY - (getTerrain()?.napOrigin ?? NAP_FALLBACK) : top + 6.1;
+    const beam = Number.isFinite(feature.beamY) ? feature.beamY - (getTerrain()?.napOrigin ?? SCENE_NAP_ORIGIN) : top + 6.1;
     if (beam < top + 3.4) return false;
     for (const p of feature.half ? points.slice(0, 1) : points) {
       const height = beam - p.y;

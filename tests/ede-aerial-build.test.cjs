@@ -53,7 +53,10 @@ for coords in [
     projected.update((point, point) for point in m['points'](coords))
 grid = m['ground_grid']((-81, -12, 95, 89))
 assert grid == {'minX': -231, 'minZ': -162, 'step': 3, 'width': 160, 'height': 135}
-image = m['Image'](pixels, width, height, 0, north, step)
+image = m['Image'](pixels, width, height, (0, step, 0, north, 0, -step))
+rotated = m['Image'](pixels, width, height, (174500, .45, .10, 450900, -.15, -.45))
+# Read pixel (3, 4) at its center in a translated, rotated affine.
+assert rotated.offset(174500 + 3.5*.45 + 4.5*.10, 450900 - 3.5*.15 - 4.5*.45) == (4 * width + 3) * 4
 sys.stdout.buffer.write(m['bake_colors'](scene, projected, image))
 `], { cwd: join(__dirname, '..') });
   assert.equal(bytes.toString('ascii', 0, 4), 'EAC1');

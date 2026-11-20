@@ -12,7 +12,8 @@ from math import dist
 from pathlib import Path
 from zipfile import ZipFile
 
-from ede_map import load_scene
+from ede_map import load_scene_metadata
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 FEED_URL = 'https://gtfs.ovapi.nl/nl/gtfs-nl.zip'
@@ -45,12 +46,11 @@ def read_table(archive, name, key=None, ids=None):
 
 
 def load_projection():
-    affine = load_scene()['meta']['lonLatAffine']
+    frame = SceneAffine(load_scene_metadata()['lonLatAffine'])
 
     def project(lon, lat):
-        dx = float(lon) - affine['lon0']
-        dy = float(lat) - affine['lat0']
-        return tuple(round(offset + a * dx + b * dy, 2) for offset, a, b in (affine['x'], affine['z']))
+        # GTFS specifies WGS84. The CSV columns name longitude and latitude explicitly.
+        return tuple(round(value, 2) for value in frame.lon_lat_to_scene(float(lon), float(lat)))
 
     return project
 

@@ -8,12 +8,14 @@ import math
 from pathlib import Path
 from statistics import median, quantiles
 
-from pyproj import Transformer
+import numpy as np
 import rasterio
 from shapely import Polygon, STRtree, transform
 from shapely.geometry import shape
 
+from ede_gis import Frame, source_crs
 from ede_map import load_scene
+from ede_raster import require_rd_raster
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,14 +29,14 @@ def ring(points):
     return list(zip(points[::2], points[1::2]))
 
 
-def surveyed_ring(footprint, neighbours, offset, dtm, dsm, project):
+def surveyed_ring(footprint, neighbours, offset, dtm, dsm):
     outline = footprint.buffer(offset).exterior
     points = [outline.interpolate(s) for s in range(math.floor(outline.length))]
     points = [point for point in points if all(p.distance(point) >= .35 for p in neighbours)]
-    coords = [project(point.x, point.y) for point in points]
+    coords = [(point.x, point.y) for point in points]
     heights = []
     for ground, top in zip(dtm.sample(coords, masked=True), dsm.sample(coords, masked=True)):
-        if ground.mask[0] or top.mask[0]:
+        if np.ma.is_masked(ground[0]) or np.ma.is_masked(top[0]):
             continue
         ground, top = float(ground[0]), float(top[0])
         if -2 < ground < 95 and -.15 <= top - ground <= .45:
@@ -47,11 +49,7 @@ def surveyed_ring(footprint, neighbours, offset, dtm, dsm, project):
 
 def build(survey_dir, bag_dir):
     scene = load_scene()
-    frame = scene['meta']['lonLatAffine']
-    lon0, lat0, x_scale, z_scale = frame['lon0'], frame['lat0'], frame['x'][1], frame['z'][2]
-    to_rd = Transformer.from_crs(4326, 28992, always_xy=True)
-    to_local = lambda lon, lat: ((lon - lon0) * x_scale, (lat - lat0) * z_scale)
-    to_raster = lambda x, z: to_rd.transform(lon0 + x / x_scale, lat0 + z / z_scale)
+    frame = Frame(scene['meta']['lonLatAffine'])
     terrain = Terrain()
     buildings = [b for b in scene['buildings'] if len(b.get('ring', [])) >= 6]
     indices = {b['id']: i for i, b in enumerate(buildings)}
@@ -64,23 +62,27 @@ def build(survey_dir, bag_dir):
         neighbours = [footprints[j] for j in index.query(footprint.buffer(2.5)) if i != j]
         if footprint.geom_type != 'Polygon' or footprint.interiors or record.get('part') or record.get('minHeight'):
             raise ValueError(f'{osm_id} needs one complete simple footprint')
-        if any(other.distance(footprint) < .7 for other in neighbours):
+        rd_footprint = transform(footprint, frame.scene_to_rd, interleaved=False)
+        rd_neighbours = [transform(other, frame.scene_to_rd, interleaved=False) for other in neighbours]
+        if any(other.distance(rd_footprint) < .7 for other in rd_neighbours):
             raise ValueError(f'{osm_id} is attached to another building or part')
         source = json.loads((bag_dir / f'{site}-bag.geojson').read_text())
         features = source['features'] if source.get('type') == 'FeatureCollection' else [source]
         matches = [f for f in features if f['properties']['identificatie'] == bag_id]
         if len(matches) != 1 or matches[0]['properties']['status'] != 'Pand in gebruik':
             raise ValueError(f'{bag_id} missing or inactive in BAG')
-        bag = transform(shape(matches[0]['geometry']), to_local, interleaved=False).buffer(0)
-        overlap = bag.intersection(footprint).area / bag.union(footprint).area
+        crs = source_crs(source)
+        to_rd = lambda x, y: Frame.to_rd(x, y, crs, axis_order='xy')
+        bag = transform(shape(matches[0]['geometry']), to_rd, interleaved=False).buffer(0)
+        overlap = bag.intersection(rd_footprint).area / bag.union(rd_footprint).area
         if overlap < .95:
             raise ValueError(f'Ambiguous OSM/BAG footprint match {osm_id} / {bag_id}: {overlap:.3f}')
 
         with ExitStack() as stack:
             dtm, dsm = (stack.enter_context(rasterio.open(survey_dir / f'{site}-{kind}.tif')) for kind in ('dtm', 'dsm'))
-            if any(r.crs.to_epsg() != 28992 or r.res != (.5, .5) for r in (dtm, dsm)) or dtm.transform != dsm.transform:
+            if any(require_rd_raster(r).res != (.5, .5) for r in (dtm, dsm)) or dtm.transform != dsm.transform:
                 raise ValueError(f'{site} needs co-registered native RD New 0.5 m DTM and DSM')
-            inner, outer = (surveyed_ring(footprint, neighbours, offset, dtm, dsm, to_raster) for offset in (.8, 1.35))
+            inner, outer = (surveyed_ring(rd_footprint, rd_neighbours, offset, dtm, dsm) for offset in (.8, 1.35))
         if max(inner[1], outer[1]) > .28 or abs(inner[0] - outer[0]) > .08:
             raise ValueError(f'Exterior ground is too variable for one building base at {osm_id}: {inner}, {outer}')
 
@@ -89,8 +91,8 @@ def build(survey_dir, bag_dir):
         base_nap = round((inner[0] + outer[0]) / 2, 2)
         wall = footprint.exterior
         coarse_wall_heights = [terrain.at(wall.interpolate(s).coords[0]) for s in range(math.floor(wall.length))]
-        if abs(base_nap - old) < .08 or base_nap > min(coarse_wall_heights) + .14 or base_nap < max(coarse_wall_heights) - .24:
-            raise ValueError(f'{osm_id} cannot improve the base while meeting the coarse terrain seam')
+        if base_nap > min(coarse_wall_heights) + .14 or base_nap < max(coarse_wall_heights) - .24:
+            raise ValueError(f'{osm_id} measured base does not meet the coarse terrain seam')
         output.append(dict(osmId=osm_id, bagId=bag_id, tile=tile, y=round(base_nap - terrain.nap, 2)))
         print(f'{site} {osm_id}/{bag_id}: {old:.2f} → {base_nap:.2f} m NAP ({base_nap-old:+.2f} m) '
               f'overlap={overlap:.3f}; samples/spread={inner[2]}/{inner[1]:.2f} and {outer[2]}/{outer[1]:.2f} m; '

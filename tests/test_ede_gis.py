@@ -36,6 +36,8 @@ class EdeGISTest(unittest.TestCase):
             self.gis.WEB_MERCATOR_TO_DEGREES).transform(lon, lat, direction=self.gis.TransformDirection.INVERSE)
         self.assertLess(dist(point, self.frame.to_rd(*mercator, arcgis)), 1e-8)
         self.assertEqual(self.gis.source_crs({'coordRefSys': 'EPSG:7415'}).to_epsg(), 28992)
+        self.assertEqual(self.gis.source_crs(
+            {'referenceSystem': 'https://www.opengis.net/def/crs/EPSG/0/7415'}).to_epsg(), 28992)
         self.assertEqual(self.gis.source_crs({'type': 'FeatureCollection'}).to_authority(), ('OGC', 'CRS84'))
         with self.assertRaises(ValueError):
             self.gis.source_crs({})

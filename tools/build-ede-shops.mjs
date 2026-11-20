@@ -3,6 +3,7 @@
 // usage: node tools/build-ede-shops.mjs [osm_ede.json]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { EDE_DATA } from '../js/ede-geodata.js';
+import { projectLonLatInto } from '../js/ede-scene-coordinates.js';
 
 const { lonLatAffine: A, bounds: [minX, minZ, maxX, maxZ] } = EDE_DATA.meta;
 const input = process.argv[2] || new URL('./data/osm_ede.json', import.meta.url);
@@ -20,10 +21,6 @@ function shopLocation(el) {
   };
 }
 
-const project = (lon, lat) => {
-  const a = lon - A.lon0, b = lat - A.lat0;
-  return [A.x[0] + A.x[1] * a + A.x[2] * b, A.z[0] + A.z[1] * a + A.z[2] * b];
-};
 const amenities = new Set(['cafe', 'restaurant', 'fast_food', 'bank', 'pharmacy']);
 const out = [];
 for (const el of data.elements) {
@@ -32,7 +29,7 @@ for (const el of data.elements) {
   if (!tags.name || (kind !== 'shop' && !amenities.has(kind))) continue;
   const { lon, lat } = shopLocation(el);
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
-  const [x, z] = project(lon, lat);
+  const { x, z } = projectLonLatInto(A, lon, lat, {});
   if (x < minX || x > maxX || z < minZ || z > maxZ) continue;
   const name = tags.name.trim();
   if (!name) continue;

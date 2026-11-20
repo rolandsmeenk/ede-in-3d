@@ -5,6 +5,8 @@ import { buildingPassageOpenings } from './ede-grade.js';
 import { EDE_DATA } from './ede-geodata.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleRoofColor } from './aerial-colors.js';
+import { applyBagFacades, loadEdeFacades } from './ede-facades.js';
+import { buildFacadeMaskAtlas, createBagFacadeMaterial, createFacadeSurfaceTexture, projectFacadeUv } from './ede-facade-material.js';
 
 const coffee = 0x726a63, grey = 0x706c69, dark = 0x333a3b, glass = 0x648994;
 const concrete = 0xaaa194, post = 0xc7bcab, orange = 0xa65c32, red = 0xa2363e;
@@ -857,8 +859,46 @@ function culturaRotunda(batch, colliders) {
   return civicSigns(signs);
 }
 
+function detailCulturaFront(mesh, baseY) {
+  const fallback = mesh.geometry;
+  mesh.onBeforeRender = (_renderer, _scene, camera) => {
+    if (fallback.boundingBox.distanceToPoint(camera.position) > 160) return;
+    mesh.onBeforeRender = () => {};
+    loadEdeFacades().then(index => index.forBounds(fallback.boundingBox)).then(byId => {
+      const walls = byId.get('0228100000002319')?.filter(wall => wall.status === 'observed');
+      if (!walls?.length) return;
+      const atlas = buildFacadeMaskAtlas(walls);
+      const geometry = fallback.clone();
+      const { position } = geometry.attributes;
+      geometry.deleteAttribute('civicGloss');
+      // The façade baker uses the generic attribute constructor for both vertices and indices.
+      geometry.setAttribute('position', new THREE.BufferAttribute(position.array, 3));
+      const heights = Float32Array.from({ length: position.count }, (_, i) => position.getY(i) - baseY);
+      geometry.setAttribute('buildingHeight', new THREE.BufferAttribute(heights, 1));
+      const features = new THREE.BufferAttribute(new Uint8Array(position.count), 1);
+      const measured = applyBagFacades(geometry, features, new Map([[0, walls]]), new Map([[0, baseY]]),
+        atlas, projectFacadeUv, hex => hex ? new THREE.Color(hex).toArray() : null);
+      if (measured?.matched.length !== walls.length) {
+        geometry.dispose();
+        atlas.texture.dispose();
+        atlas.palette.dispose();
+        return;
+      }
+      geometry.deleteAttribute('buildingHeight');
+      const detail = new THREE.Mesh(geometry, createBagFacadeMaterial(atlas, createFacadeSurfaceTexture().texture, false));
+      detail.name = mesh.name;
+      detail.castShadow = detail.receiveShadow = true;
+      detail.userData.observedWalls = measured.matched.length;
+      mesh.parent.add(detail);
+      mesh.removeFromParent();
+      fallback.dispose();
+      mesh.material.dispose();
+    }).catch(error => console.warn('[facades] Cultura storefronts:', error.message));
+  };
+}
+
 export function createCultura() {
-  const batch = new CivicBatch(), colliders = [];
+  const batch = new CivicBatch(), south = new CivicBatch(), colliders = [];
   const [points, faces] = CULTURA;
   const roofRgb = [0, 0, 0];
   const roofTint = sampleRoofColor('w271549982', roofRgb) ? new THREE.Color().setRGB(...roofRgb) : 0x696560;
@@ -872,7 +912,10 @@ export function createCultura() {
     if (frontArc(a, b) && top > 7.5 && n.y < 0.15) continue;
     const middle = along(a, b, 0.5);
     const north = middle.z < -31, west = middle.x < -300;
-    batch.polygon(rings, north || west ? 0x806d64 : 0x8e7469);
+    const brouwerstraat = n.x > 0.35 && n.z > 0.85 && middle.z > 17;
+    const reviewedFace = brouwerstraat && low < -3.2 && width > 7;
+    const tint = brouwerstraat ? 0xbdab80 : north || west ? 0x806d64 : 0x8e7469;
+    (reviewedFace ? south : batch).polygon(rings, tint);
     if (top - low > 2 && Math.abs(n.y) < 0.15 && width > 0.25) {
       colliders.push(...wallColliders(a, b, low, top, 0.24));
       if ((north || west) && width > 1.1 && top - low > 4.5) {
@@ -887,6 +930,10 @@ export function createCultura() {
   }
   const signs = culturaRotunda(batch, colliders);
   const group = makeGroup('Cultura', batch, colliders);
+  const frontage = south.mesh();
+  frontage.name = 'Cultura Brouwerstraat façades';
+  detailCulturaFront(frontage, points[0][1]);
+  group.add(frontage);
   if (signs) group.add(signs);
   return group;
 }

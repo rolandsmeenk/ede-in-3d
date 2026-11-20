@@ -3,6 +3,7 @@ import { attribute, mix, texture, uv, vertexColor } from 'three/tsl';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
 import { CivicBatch, makeGroup, polygonNormal, wallExtent, facePanel } from './ede-civic-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
+import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 
 // 3DBAG LoD 2.2, transformed to the Oude Kerk scene grid. Point heights in these
 // surveys retain NAP. AHN DSM supplies the tips that LoD 2.2 misses.
@@ -819,7 +820,6 @@ const BEATRIX = {
   ground: [[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]],
 };
 
-const DATUM_NAP = 22.54;
 const STONE = 0xa99d84, FRAME = 0x423b33, STEEL = 0x696960;
 const WOOD = 0x6d4831, LOUVER = 0x252422;
 const GLASS = [0x3f525a, 0x465860, 0x3e5559, 0x4d5f68];
@@ -832,7 +832,7 @@ function frontage([ax, az], [bx, bz]) {
 }
 
 function point(wall, u, nap, depth = 0) {
-  return [wall.x + wall.ux * u + wall.nx * depth, nap - DATUM_NAP,
+  return [wall.x + wall.ux * u + wall.nx * depth, nap - SCENE_NAP_ORIGIN,
     wall.z + wall.uz * u + wall.nz * depth];
 }
 
@@ -899,7 +899,7 @@ function door(batch, wall, u, width, lo, hi, { stone = STONE, wood = WOOD, round
 function steps(batch, wall, u, width, threshold, count) {
   const [x, , z] = point(wall, u, threshold, 0.65);
   const ground = terrainHeightAt(x, z);
-  const rise = threshold - DATUM_NAP - ground;
+  const rise = threshold - SCENE_NAP_ORIGIN - ground;
   if (rise < 0.025 || rise > 0.65) return;
   const heading = Math.atan2(-wall.uz, wall.ux);
   for (let i = 1; i <= count; i++) {
@@ -914,7 +914,7 @@ function steps(batch, wall, u, width, threshold, count) {
 function spindle(batch, x, z, sides, levels, color, phase = Math.PI / 8) {
   const row = (radius, nap) => Array.from({ length: sides }, (_, i) => {
     const angle = phase + (i * 2 * Math.PI) / sides;
-    return [x + Math.cos(angle) * radius, nap - DATUM_NAP, z + Math.sin(angle) * radius];
+    return [x + Math.cos(angle) * radius, nap - SCENE_NAP_ORIGIN, z + Math.sin(angle) * radius];
   });
   const rings = levels.map(([radius, nap]) => row(radius, nap));
   for (let k = 1; k < rings.length; k++) {
@@ -927,13 +927,13 @@ function spindle(batch, x, z, sides, levels, color, phase = Math.PI / 8) {
 }
 
 function cross(batch, x, z, nap, height, color) {
-  batch.solid(new THREE.BoxGeometry(0.062, height, 0.062).translate(x, nap - DATUM_NAP + height / 2, z), color);
+  batch.solid(new THREE.BoxGeometry(0.062, height, 0.062).translate(x, nap - SCENE_NAP_ORIGIN + height / 2, z), color);
   batch.solid(new THREE.BoxGeometry(height * 0.57, 0.060, 0.060)
-    .translate(x, nap - DATUM_NAP + height * 0.68, z), color);
+    .translate(x, nap - SCENE_NAP_ORIGIN + height * 0.68, z), color);
 }
 
 function frieze(batch, face, normal, nap, color) {
-  const y = nap - DATUM_NAP;
+  const y = nap - SCENE_NAP_ORIGIN;
   const hits = [];
   for (let i = 0; i < face.length; i++) {
     const p = face[i], q = face[(i + 1) % face.length];
@@ -950,7 +950,7 @@ function church(name, survey, style, details) {
   const batch = new CivicBatch(), masonry = [];
   const ridgePoint = ([x, nap, z]) => style.copperRidge && nap > 39 && Math.hypot(x + 573.0, z - 1045.9) < 3.4;
   const points = survey.points.map(([x, nap, z]) => {
-    const y = (ridgePoint([x, nap, z]) ? 39.18 : nap) - DATUM_NAP;
+    const y = (ridgePoint([x, nap, z]) ? 39.18 : nap) - SCENE_NAP_ORIGIN;
     return [x, Math.abs(nap - survey.base) <= 0.035 ? Math.min(y, terrainHeightAt(x, z) - 0.06) : y, z];
   });
   const trim = [];
@@ -975,7 +975,7 @@ function church(name, survey, style, details) {
   const colliders = [{
     minX: Math.min(...outer.map(p => p.x)), maxX: Math.max(...outer.map(p => p.x)),
     minZ: Math.min(...outer.map(p => p.z)), maxZ: Math.max(...outer.map(p => p.z)),
-    minY: Math.min(survey.base - DATUM_NAP, ...outer.map(p => terrainHeightAt(p.x, p.z) - 0.06)),
+    minY: Math.min(survey.base - SCENE_NAP_ORIGIN, ...outer.map(p => terrainHeightAt(p.x, p.z) - 0.06)),
     maxY: Math.max(...points.map(p => p[1])), polygon: { outer, holes },
   }];
   const group = makeGroup(name, batch, colliders);

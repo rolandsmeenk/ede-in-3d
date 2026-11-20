@@ -1,0 +1,1903 @@
+{
+  "version": 1,
+  "walls": [
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-102.97,-29.73,-109.22,-26.17,0.00",
+      "a": [
+        -102.97,
+        -29.73
+      ],
+      "b": [
+        -109.22,
+        -26.17
+      ],
+      "minY": -1.5,
+      "height": 12.07,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.87,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.2,
+            "y": 0.1,
+            "width": 4.28,
+            "height": 6.02,
+            "frame": 0.07,
+            "panes": 6,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "storefront",
+            "x": 4.78,
+            "y": 0.1,
+            "width": 2.2,
+            "height": 3.17,
+            "frame": 0.07,
+            "panes": 3,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 1.27,
+            "y": 8.1,
+            "width": 1.22,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 2.66,
+            "y": 8.09,
+            "width": 1.38,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 4.88,
+            "y": 8.13,
+            "width": 2.25,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 4.69,
+            "y": 5.12,
+            "width": 2.19,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-109.22,-26.17,-110.94,-25.18,0.00",
+      "a": [
+        -109.22,
+        -26.17
+      ],
+      "b": [
+        -110.94,
+        -25.18
+      ],
+      "minY": -1.5,
+      "height": 15.34,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.87,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.1,
+            "y": 0.1,
+            "width": 1.77,
+            "height": 3.17,
+            "frame": 0.07,
+            "panes": 2,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.06,
+            "y": 8.08,
+            "width": 1.74,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.07,
+            "y": 5.13,
+            "width": 1.77,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-110.94,-25.18,-113.14,-23.93,0.00",
+      "a": [
+        -110.94,
+        -25.18
+      ],
+      "b": [
+        -113.14,
+        -23.93
+      ],
+      "minY": -1.5,
+      "height": 14.07,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.87,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.08,
+            "y": 0.1,
+            "width": 2.36,
+            "height": 3.17,
+            "frame": 0.07,
+            "panes": 3,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 1.07,
+            "y": 8.1,
+            "width": 1.1,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 1.1,
+            "y": 5.14,
+            "width": 1.1,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.06,
+            "y": 10.78,
+            "width": 1.52,
+            "height": 3.18,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-113.14,-23.93,-115.73,-22.45,0.00",
+      "a": [
+        -113.14,
+        -23.93
+      ],
+      "b": [
+        -115.73,
+        -22.45
+      ],
+      "minY": -1.5,
+      "height": 11.2,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.87,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.19,
+            "y": 0.1,
+            "width": 2.6,
+            "height": 3.3,
+            "frame": 0.07,
+            "panes": 4,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.55,
+            "y": 8.12,
+            "width": 2.37,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.56,
+            "y": 5.14,
+            "width": 2.36,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-115.73,-22.45,-119.57,-20.25,0.00",
+      "a": [
+        -115.73,
+        -22.45
+      ],
+      "b": [
+        -119.57,
+        -20.25
+      ],
+      "minY": -1.5,
+      "height": 14.07,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.87,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.1,
+            "y": 0.1,
+            "width": 4.12,
+            "height": 3.29,
+            "frame": 0.07,
+            "panes": 6,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.06,
+            "y": 8.13,
+            "width": 0.92,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 2.58,
+            "y": 8.14,
+            "width": 1.18,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.06,
+            "y": 5.12,
+            "width": 0.92,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 2.61,
+            "y": 5.14,
+            "width": 1.18,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 1.44,
+            "y": 10.79,
+            "width": 1.7,
+            "height": 3.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-119.57,-20.25,-122.15,-18.78,0.00",
+      "a": [
+        -119.57,
+        -20.25
+      ],
+      "b": [
+        -122.15,
+        -18.78
+      ],
+      "minY": -1.5,
+      "height": 12.32,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.87,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.16,
+            "y": 0.1,
+            "width": 2.68,
+            "height": 3.28,
+            "frame": 0.07,
+            "panes": 4,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.31,
+            "y": 8.13,
+            "width": 2.59,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.32,
+            "y": 5.14,
+            "width": 2.59,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-122.15,-18.78,-125.46,-16.89,0.00",
+      "a": [
+        -122.15,
+        -18.78
+      ],
+      "b": [
+        -125.46,
+        -16.89
+      ],
+      "minY": -1.5,
+      "height": 15.35,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.87,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.12,
+            "y": 0.1,
+            "width": 3.56,
+            "height": 3.19,
+            "frame": 0.07,
+            "panes": 5,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.07,
+            "y": 8.14,
+            "width": 0.72,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 2.36,
+            "y": 8.14,
+            "width": 1.06,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.07,
+            "y": 5.13,
+            "width": 0.74,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 2.38,
+            "y": 5.13,
+            "width": 1.04,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.73,
+            "y": 10.78,
+            "width": 1.65,
+            "height": 3.2,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-126.30,-16.41,-128.76,-15.00,0.00",
+      "a": [
+        -126.3,
+        -16.41
+      ],
+      "b": [
+        -128.76,
+        -15.0
+      ],
+      "minY": -1.5,
+      "height": 11.06,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.82,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.15,
+            "y": 0.1,
+            "width": 2.52,
+            "height": 3.24,
+            "frame": 0.07,
+            "panes": 4,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.48,
+            "y": 8.11,
+            "width": 2.04,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.49,
+            "y": 5.11,
+            "width": 2.03,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-128.76,-15.00,-132.14,-13.07,0.00",
+      "a": [
+        -128.76,
+        -15.0
+      ],
+      "b": [
+        -132.14,
+        -13.07
+      ],
+      "minY": -1.5,
+      "height": 15.36,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.82,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.13,
+            "y": 0.1,
+            "width": 3.57,
+            "height": 3.24,
+            "frame": 0.07,
+            "panes": 5,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.6,
+            "y": 8.11,
+            "width": 2.39,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.6,
+            "y": 5.11,
+            "width": 2.4,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 1.03,
+            "y": 10.77,
+            "width": 1.65,
+            "height": 3.16,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-132.14,-13.07,-135.13,-11.37,0.00",
+      "a": [
+        -132.14,
+        -13.07
+      ],
+      "b": [
+        -135.13,
+        -11.37
+      ],
+      "minY": -1.5,
+      "height": 11.12,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.82,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.14,
+            "y": 0.1,
+            "width": 3.12,
+            "height": 3.21,
+            "frame": 0.07,
+            "panes": 4,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.18,
+            "y": 8.11,
+            "width": 1.02,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 1.75,
+            "y": 8.11,
+            "width": 1.49,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.18,
+            "y": 5.11,
+            "width": 1.02,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 1.75,
+            "y": 5.11,
+            "width": 1.49,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-135.13,-11.37,-139.50,-8.87,0.00",
+      "a": [
+        -135.13,
+        -11.37
+      ],
+      "b": [
+        -139.5,
+        -8.87
+      ],
+      "minY": -1.5,
+      "height": 14.06,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.82,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.13,
+            "y": 0.1,
+            "width": 4.68,
+            "height": 3.23,
+            "frame": 0.07,
+            "panes": 6,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 1.02,
+            "y": 8.1,
+            "width": 2.67,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.79,
+            "y": 8.1,
+            "width": 1.06,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 1.02,
+            "y": 5.11,
+            "width": 2.67,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.79,
+            "y": 5.11,
+            "width": 1.06,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 1.5,
+            "y": 10.77,
+            "width": 1.6,
+            "height": 3.05,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-139.50,-8.87,-141.81,-7.55,0.00",
+      "a": [
+        -139.5,
+        -8.87
+      ],
+      "b": [
+        -141.81,
+        -7.55
+      ],
+      "minY": -1.5,
+      "height": 12.24,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.82,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.13,
+            "y": 0.1,
+            "width": 2.35,
+            "height": 3.23,
+            "frame": 0.07,
+            "panes": 3,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.33,
+            "y": 8.12,
+            "width": 1.84,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.33,
+            "y": 5.11,
+            "width": 1.84,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-141.81,-7.55,-146.38,-4.94,0.00",
+      "a": [
+        -141.81,
+        -7.55
+      ],
+      "b": [
+        -146.38,
+        -4.94
+      ],
+      "minY": -1.5,
+      "height": 14.06,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.82,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.14,
+            "y": 0.1,
+            "width": 4.94,
+            "height": 3.19,
+            "frame": 0.07,
+            "panes": 6,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.37,
+            "y": 8.12,
+            "width": 2.46,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.97,
+            "y": 8.12,
+            "width": 1.0,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.37,
+            "y": 5.12,
+            "width": 2.46,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.97,
+            "y": 5.12,
+            "width": 1.0,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 1.6,
+            "y": 10.78,
+            "width": 1.59,
+            "height": 3.06,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-146.38,-4.94,-148.43,-3.77,0.00",
+      "a": [
+        -146.38,
+        -4.94
+      ],
+      "b": [
+        -148.43,
+        -3.77
+      ],
+      "minY": -1.5,
+      "height": 8.28,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.82,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.2,
+            "y": 0.1,
+            "width": 1.96,
+            "height": 3.13,
+            "frame": 0.07,
+            "panes": 3,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.62,
+            "y": 5.13,
+            "width": 1.08,
+            "height": 2.02,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/du863y/marktplein_nu_220210418_102515.jpg?enable-io=true&enable=upscale&crop=1.4594%3A1&width=800",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 mixed-use frontage on the south side. Dark variegated brick, silver window stacks and tall parapet bays from the two dated angles. Glazing is approximated at surveyed face joints. Retail colours and signs change over time."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000015551",
+      "wallId": "-86.95,-23.07,-99.42,-28.26,0.00",
+      "a": [
+        -86.95,
+        -23.07
+      ],
+      "b": [
+        -99.42,
+        -28.26
+      ],
+      "minY": -1.5,
+      "height": 12.69,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.76,
+        "wallMaterial": "brick",
+        "wallColor": "#69453d",
+        "frameColor": "#b9babc",
+        "doorColor": "#34383a",
+        "sillColor": "#9d9791",
+        "glazingColor": "#506878",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.45,
+            "y": 0.1,
+            "width": 6.3,
+            "height": 3.15,
+            "frame": 0.07,
+            "panes": 6,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "storefront",
+            "x": 7.03,
+            "y": 0.1,
+            "width": 5.98,
+            "height": 3.12,
+            "frame": 0.07,
+            "panes": 5,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 0.76,
+            "y": 5.05,
+            "width": 1.22,
+            "height": 1.98,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.19,
+            "y": 5.05,
+            "width": 2.42,
+            "height": 1.98,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 7.06,
+            "y": 5.05,
+            "width": 1.2,
+            "height": 1.98,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 9.45,
+            "y": 5.05,
+            "width": 2.23,
+            "height": 1.98,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 0.76,
+            "y": 8.1,
+            "width": 1.22,
+            "height": 1.98,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.19,
+            "y": 8.1,
+            "width": 2.42,
+            "height": 1.98,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 7.06,
+            "y": 8.1,
+            "width": 1.2,
+            "height": 1.98,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 9.45,
+            "y": 8.1,
+            "width": 2.23,
+            "height": 1.98,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20210418_102522.jpg",
+            "capturedAt": "2021-04-18",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.9
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/marktplein_nu_20180916_112209800.jpg",
+            "capturedAt": "2018-09-16",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.94
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Brouwerstraat 21 around the corner from the market. Long retail glazing and silver upper windows estimated from the oblique doorway photograph."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000029917",
+      "wallId": "-72.59,-100.09,-72.14,-92.62,0.00",
+      "a": [
+        -72.59,
+        -100.09
+      ],
+      "b": [
+        -72.14,
+        -92.62
+      ],
+      "minY": -1.47,
+      "height": 5.96,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "shop",
+      "appearance": {
+        "confidence": 0.75,
+        "wallMaterial": "brick",
+        "wallColor": "#4e5053",
+        "frameColor": "#d1ccba",
+        "doorColor": "#c8c4b5",
+        "sillColor": "#85878a",
+        "glazingColor": "#455761",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.44,
+            "y": 0.08,
+            "width": 3.43,
+            "height": 2.72,
+            "frame": 0.105,
+            "panes": 2,
+            "sill": 0,
+            "depth": 0.13,
+            "transom": 0.79
+          },
+          {
+            "kind": "storefront",
+            "x": 4.37,
+            "y": 0.08,
+            "width": 2.46,
+            "height": 2.69,
+            "frame": 0.095,
+            "panes": 2,
+            "sill": 0,
+            "depth": 0.13,
+            "transom": 0.79
+          },
+          {
+            "kind": "window",
+            "x": 1.07,
+            "y": 3.83,
+            "width": 2.9,
+            "height": 1.14,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 4.62,
+            "y": 3.83,
+            "width": 1.71,
+            "height": 1.14,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://www.edestad.nl/lokaal/mensen/1183695/het-gezicht-van-ede-centrum-cris-en-nettie-van-chillerz",
+            "referenceDate": "2025-07-15",
+            "creator": "Dick Martens, EdeStad",
+            "confidence": 0.93
+          },
+          {
+            "url": "https://www.hosper.nl/plein-en-centrum/ede-marktplein/",
+            "referenceDate": "2018",
+            "creator": "Pieter Kers, Hosper",
+            "confidence": 0.76
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Chillerz on Brouwerstraat 3. The 2025 close-up shows the painted charcoal brick, two cream-framed glazing groups and a transom above the double entrance doors. Upper glazing dimensions are approximate from the square view."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000007990",
+      "wallId": "-75.64,-65.48,-80.60,-59.00,0.00",
+      "a": [
+        -75.64,
+        -65.48
+      ],
+      "b": [
+        -80.6,
+        -59.0
+      ],
+      "minY": -1.13,
+      "height": 9.72,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.79,
+        "wallMaterial": "brick",
+        "wallColor": "#ae815e",
+        "frameColor": "#393b3a",
+        "doorColor": "#434746",
+        "sillColor": "#958b79",
+        "glazingColor": "#445f6b",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.35,
+            "y": 0.1,
+            "width": 7.48,
+            "height": 3.12,
+            "frame": 0.07,
+            "panes": 6,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 1.04,
+            "y": 4.11,
+            "width": 0.67,
+            "height": 1.75,
+            "frame": 0.065,
+            "panes": 1,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 2.27,
+            "y": 4.11,
+            "width": 0.67,
+            "height": 1.75,
+            "frame": 0.065,
+            "panes": 1,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.62,
+            "y": 4.08,
+            "width": 2.62,
+            "height": 1.73,
+            "frame": 0.065,
+            "panes": 3,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 6.92,
+            "y": 4.11,
+            "width": 0.65,
+            "height": 1.75,
+            "frame": 0.065,
+            "panes": 1,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/2d788q/markt_20210714_182614_650.jpg?enable-io=true&enable=upscale&crop=1.5145%3A1&width=800",
+            "capturedAt": "2021-07-14",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          },
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/brouwerstraat_20210714_182502_800_800.jpg",
+            "capturedAt": "2021-07-14",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.8
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Tan brick and the recessed middle residential opening over the Brouwerstraat corner shopfront. Upper dormers are roofs in the 3DBAG model. Shopfront division is approximate."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000007990",
+      "wallId": "-80.60,-59.00,-85.03,-53.22,0.00",
+      "a": [
+        -80.6,
+        -59.0
+      ],
+      "b": [
+        -85.03,
+        -53.22
+      ],
+      "minY": -1.13,
+      "height": 10.89,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.78,
+        "wallMaterial": "brick",
+        "wallColor": "#ae815e",
+        "frameColor": "#393b3a",
+        "doorColor": "#434746",
+        "sillColor": "#958b79",
+        "glazingColor": "#445f6b",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.34,
+            "y": 0.1,
+            "width": 6.56,
+            "height": 3.12,
+            "frame": 0.07,
+            "panes": 5,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "window",
+            "x": 1.04,
+            "y": 4.11,
+            "width": 0.7,
+            "height": 1.75,
+            "frame": 0.065,
+            "panes": 1,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 2.23,
+            "y": 4.11,
+            "width": 0.7,
+            "height": 1.75,
+            "frame": 0.065,
+            "panes": 1,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.43,
+            "y": 4.11,
+            "width": 0.7,
+            "height": 1.75,
+            "frame": 0.065,
+            "panes": 1,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 4.95,
+            "y": 4.05,
+            "width": 1.51,
+            "height": 1.79,
+            "frame": 0.065,
+            "panes": 2,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/2d788q/markt_20210714_182614_650.jpg?enable-io=true&enable=upscale&crop=1.5145%3A1&width=800",
+            "capturedAt": "2021-07-14",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Market-facing retail extension toward the taller dark brick bay. Narrow vertical openings under the mansard eaves and dark continuous storefront band."
+    },
+    {
+      "bagId": "NL.IMBAG.Pand.0228100000007990",
+      "wallId": "-85.03,-53.22,-87.93,-49.43,0.00",
+      "a": [
+        -85.03,
+        -53.22
+      ],
+      "b": [
+        -87.93,
+        -49.43
+      ],
+      "minY": -1.13,
+      "height": 12.35,
+      "baseOffset": 0.0,
+      "wallType": "street",
+      "buildingType": "mixed-use",
+      "appearance": {
+        "confidence": 0.8,
+        "wallMaterial": "brick",
+        "wallColor": "#704e45",
+        "frameColor": "#4a4644",
+        "doorColor": "#3a3432",
+        "sillColor": "#93867d",
+        "glazingColor": "#426472",
+        "openings": [
+          {
+            "kind": "storefront",
+            "x": 0.3,
+            "y": 0.1,
+            "width": 2.18,
+            "height": 9.27,
+            "frame": 0.07,
+            "panes": 3,
+            "sill": 0,
+            "depth": 0.16,
+            "transom": 0.81
+          },
+          {
+            "kind": "door",
+            "x": 3.28,
+            "y": 0.08,
+            "width": 1.06,
+            "height": 2.4,
+            "frame": 0.055,
+            "panes": 1,
+            "sill": 0,
+            "depth": 0.14
+          },
+          {
+            "kind": "window",
+            "x": 3.24,
+            "y": 3.51,
+            "width": 0.72,
+            "height": 2.43,
+            "frame": 0.065,
+            "panes": 1,
+            "sill": 0.085,
+            "depth": 0.115
+          },
+          {
+            "kind": "window",
+            "x": 3.25,
+            "y": 6.65,
+            "width": 0.7,
+            "height": 3.21,
+            "frame": 0.065,
+            "panes": 1,
+            "sill": 0.085,
+            "depth": 0.115
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://primary.jwwb.nl/public/x/f/b/temp-pcqwajonzplyxjqqoxju/2d788q/markt_20210714_182614_650.jpg?enable-io=true&enable=upscale&crop=1.5145%3A1&width=800",
+            "capturedAt": "2021-07-14",
+            "creator": "Allard Bijlsma, Atlas van Ede",
+            "confidence": 0.91
+          }
+        ]
+      },
+      "site": "Marktplein",
+      "notes": "Dark brick former Attract entrance bay. Tall amber-toned glazed slot and narrow side lights measured approximately from the dated market photo."
+    }
+  ]
+}

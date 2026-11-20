@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bake Ede's roof and road colors and a ground JPEG from a local PDOK RGB raster.
 
-Requires gdalinfo, gdaltransform, gdalwarp, and gdal_translate on PATH and a
+Requires gdalinfo and gdalwarp on PATH and a
 north-up or rotated RGB/RGBA source in EPSG:28992. A VRT of adjacent tiles should
 include an alpha band to mark tile gaps.
 """
@@ -29,10 +29,6 @@ def points(coordinates):
     return zip(coordinates[::2], coordinates[1::2])
 
 
-def lon_lat(x, z, frame):
-    return frame['lon0'] + x / frame['x'][1], frame['lat0'] + z / frame['z'][2]
-
-
 def ground_grid(bounds):
     west, north, east, south = bounds
     step = GROUND_STEP
@@ -45,28 +41,6 @@ def ground_grid(bounds):
     }
 
 
-def ground_bounds(grid, frame):
-    west = grid['minX'] - grid['step'] / 2
-    north = grid['minZ'] - grid['step'] / 2
-    east = west + grid['width'] * grid['step']
-    south = north + grid['height'] * grid['step']
-    return (*lon_lat(west, south, frame), *lon_lat(east, north, frame))
-
-
-def to_rd(lon_lat_pairs):
-    result = subprocess.run(
-        ['gdaltransform', '-s_srs', 'EPSG:4326', '-t_srs', 'EPSG:28992'],
-        input=''.join(f'{lon} {lat}\n' for lon, lat in lon_lat_pairs),
-        capture_output=True, text=True, check=True,
-    )
-    projected = [tuple(map(float, row.split()[:2])) for row in result.stdout.splitlines()]
-    if len(projected) != len(lon_lat_pairs) or any(
-        len(point) != 2 or not all(map(math.isfinite, point)) for point in projected
-    ):
-        raise ValueError(f'Could not project Ede coordinates to RD New: {result.stderr.strip()}')
-    return projected
-
-
 def projected_geometry(scene, frame):
     geometry = set()
     for building in scene['buildings']:
@@ -75,36 +49,42 @@ def projected_geometry(scene, frame):
     for road in scene['roads']:
         geometry.update(points(road['pts']))
     geometry = sorted(geometry)
-    return dict(zip(geometry, to_rd([lon_lat(x, z, frame) for x, z in geometry])))
+    return {point: frame.scene_to_rd(*point) for point in geometry}
 
 
 def raster_info(path):
     return json.loads(subprocess.check_output(['gdalinfo', '-json', str(path)]))
 
 
-def warp(source, destination, crs, bounds, grid_options, resampling):
+def normalize_rd(source, destination, bounds):
     subprocess.run([
-        'gdalwarp', '-q', '-t_srs', crs, '-te', *map(str, bounds), *grid_options,
-        '-et', '0', '-r', resampling, '-ot', 'Byte', '-srcnodata', '0 0 0',
+        'gdalwarp', '-q', '-t_srs', 'EPSG:28992', '-te', *map(str, bounds),
+        '-tr', str(SAMPLE_STEP), str(SAMPLE_STEP), '-tap',
+        '-et', '0', '-r', 'bilinear', '-ot', 'Byte', '-srcnodata', '0 0 0',
         '-dstalpha', '-of', 'ENVI', '-co', 'INTERLEAVE=BIP',
         str(source), str(destination),
     ], check=True)
 
 
 class Image:
-    def __init__(self, pixels, width, height, west, north, step):
+    def __init__(self, pixels, width, height, transform):
         if len(pixels) != width * height * 4:
             raise ValueError('Unexpected RGBA image size')
         self.pixels = pixels
         self.width = width
         self.height = height
-        self.west = west
-        self.north = north
-        self.step = step
+        self.x, self.a, self.b, self.y, self.d, self.e = transform
+        self.determinant = self.a * self.e - self.b * self.d
+        if not self.determinant:
+            raise ValueError('Aerial raster transform is singular')
+
+    def pixel(self, x, y):
+        dx, dy = x - self.x, y - self.y
+        return ((self.e * dx - self.b * dy) / self.determinant,
+                (self.a * dy - self.d * dx) / self.determinant)
 
     def offset(self, x, y):
-        column = math.floor((x - self.west) / self.step)
-        row = math.floor((self.north - y) / self.step)
+        column, row = map(math.floor, self.pixel(x, y))
         if 0 <= column < self.width and 0 <= row < self.height:
             return (row * self.width + column) * 4
         return None
@@ -229,10 +209,44 @@ def bake_colors(scene, projected, image):
     return struct.pack('<4sII', b'EAC1', len(roofs) // 3, len(segments) // 3) + roofs + segments
 
 
+def save_ground(image, grid, frame, destination):
+    import numpy as np
+    from PIL import Image as PILImage
+
+    # Average regularly spaced subpixel centres in each 3 m scene pixel. Project
+    # each through the pinned grid, then address the source with its inverse affine.
+    width, height, step = grid['width'], grid['height'], grid['step']
+    pixels = np.frombuffer(image.pixels, dtype=np.uint8).reshape(image.height, image.width, 4)
+    ground = np.empty((height, width, 3), dtype=np.uint8)
+    x = grid['minX'] + step * np.arange(width)
+    offsets = ((np.arange(4) + 0.5) / 4 - 0.5) * step
+    for start in range(0, height, 64):
+        end = min(height, start + 64)
+        z = grid['minZ'] + step * np.arange(start, end)
+        xx, zz = np.meshgrid(x, z)
+        rgb = np.zeros((end - start, width, 3), dtype=np.uint16)
+        hits = np.zeros((end - start, width), dtype=np.uint8)
+        for dz in offsets:
+            for dx in offsets:
+                cols, rows = image.pixel(*frame.scene_to_rd(xx + dx, zz + dz))
+                cols, rows = np.floor(cols).astype(int), np.floor(rows).astype(int)
+                rgba = pixels[np.clip(rows, 0, image.height - 1), np.clip(cols, 0, image.width - 1)]
+                valid = ((rows >= 0) & (rows < image.height) & (cols >= 0) & (cols < image.width)
+                         & (rgba[:, :, 3] == 255))
+                rgb += np.where(valid[..., None], rgba[:, :, :3], 0)
+                hits += valid
+        if np.any(hits == 0):
+            raise ValueError('Aerial raster must cover the entire padded ground grid')
+        ground[start:end] = (rgb + hits[..., None] // 2) // hits[..., None]
+    PILImage.fromarray(ground).save(destination, quality=85)
+
+
 def build(source, output):
+    from ede_gis import Frame, source_crs
+
     info = raster_info(source)
-    wkt = info.get('coordinateSystem', {}).get('wkt', '')
-    if 'Amersfoort / RD New' not in wkt:
+    wkt = info.get('coordinateSystem', {}).get('wkt')
+    if not wkt or source_crs({'crs': wkt}).to_epsg() != 28992:
         raise ValueError('Expected a PDOK aerial raster in RD New (EPSG:28992)')
     bands = info.get('bands', [])
     if len(bands) not in (3, 4) or any(band['type'] != 'Byte' for band in bands):
@@ -241,38 +255,32 @@ def build(source, output):
         raise ValueError('The fourth source band must be alpha')
 
     scene = scene_data()
-    frame = scene['meta']['lonLatAffine']
+    frame = Frame(scene['meta']['lonLatAffine'])
     grid = ground_grid(scene['meta']['bounds'])
-    west, south, east, north = ground_bounds(grid, frame)
-    rd_corners = to_rd([(west, south), (east, south), (west, north), (east, north)])
+    west = grid['minX']
+    north = grid['minZ']
+    step = grid['step']
+    east = west + (grid['width'] - 1) * step
+    south = north + (grid['height'] - 1) * step
+    rd_corners = [frame.scene_to_rd(x, z) for x in (west, east) for z in (north, south)]
     xs, ys = zip(*rd_corners)
-    rd_bounds = min(xs) - 2, min(ys) - 2, max(xs) + 2, max(ys) + 2
-    dimensions = ['-ts', str(grid['width']), str(grid['height'])]
+    margin = step + 2
+    rd_bounds = min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin
 
     output.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix='.ede-aerial-', dir=output) as staging:
         staging = Path(staging)
-        ground = staging / 'ground.dat'
-        ground_jpg = staging / 'ede-aerial-ground.jpg'
         fine = staging / 'fine.dat'
-        warp(source, ground, 'EPSG:4326', (west, south, east, north), dimensions, 'average')
-        with ground.open('rb') as stream, mmap(stream.fileno(), 0, access=ACCESS_READ) as data:
-            alpha = data[3::4]
-            if len(alpha) != grid['width'] * grid['height'] or alpha.count(255) != len(alpha):
-                raise ValueError('Aerial raster must cover the entire padded ground grid')
-        subprocess.run([
-            'gdal_translate', '-q', '-of', 'JPEG', '-b', '1', '-b', '2', '-b', '3',
-            '-co', 'QUALITY=85', str(ground), str(ground_jpg),
-        ], check=True)
-
-        step = str(SAMPLE_STEP)
-        warp(source, fine, 'EPSG:28992', rd_bounds, ['-tr', step, step, '-tap'], 'bilinear')
+        normalize_rd(source, fine, rd_bounds)
         fine_info = raster_info(fine)
+        if len(fine_info.get('bands', ())) != 4:
+            raise ValueError('Normalized aerial raster needs RGB and alpha bands')
         width, height = fine_info['size']
-        west_rd, _, _, north_rd, _, _ = fine_info['geoTransform']
         projected = projected_geometry(scene, frame)
         with fine.open('rb') as stream, mmap(stream.fileno(), 0, access=ACCESS_READ) as data:
-            colors = bake_colors(scene, projected, Image(data, width, height, west_rd, north_rd, SAMPLE_STEP))
+            image = Image(data, width, height, fine_info['geoTransform'])
+            colors = bake_colors(scene, projected, image)
+            save_ground(image, grid, frame, staging / 'ede-aerial-ground.jpg')
 
         (staging / 'ede-aerial-colors.bin').write_bytes(colors)
         (staging / 'ede-aerial.json').write_text(json.dumps(grid, indent=2) + '\n')

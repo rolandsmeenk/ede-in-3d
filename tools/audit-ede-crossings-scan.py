@@ -12,6 +12,7 @@ from shapely.affinity import affine_transform
 from shapely.geometry import LineString, MultiPoint, Point, Polygon, box, shape
 
 from ede_map import MAP_ASSET, load_scene
+from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'tools/data'
@@ -141,18 +142,9 @@ def make_site(key, name, kind, status, center, upper, lower, ways, evidence, **f
 
 
 
-def make_projection(frame):
-    x0, x_lon, x_lat = frame['x']
-    z0, z_lon, z_lat = frame['z']
-    lon0, lat0 = frame['lon0'], frame['lat0']
-
-    def project(lon, lat):
-        return (x0 + x_lon * (lon - lon0) + x_lat * (lat - lat0),
-                z0 + z_lon * (lon - lon0) + z_lat * (lat - lat0))
-
-    matrix = (x_lon, x_lat, z_lon, z_lat, x0 - x_lon * lon0 - x_lat * lat0,
-              z0 - z_lon * lon0 - z_lat * lat0)
-    return project, matrix
+def make_projection(affine):
+    frame = SceneAffine(affine)
+    return frame.lon_lat_to_scene, frame.shapely_coefficients()
 
 
 def flag(tags, key):

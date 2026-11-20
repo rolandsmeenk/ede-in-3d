@@ -9,6 +9,7 @@ from pathlib import Path
 import struct
 
 from ede_map import load_scene
+from ede_scene import SceneAffine
 from ede_rail_profiles import fit as fit_rail_profiles, point_on_line, station_at, stations_of, SURVEY
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,10 +44,6 @@ class Terrain:
         return (d + (c - d) * (1 - u) + (b - d) * (1 - v)) / 100
 
 
-def project(frame, lon, lat):
-    return (lon - frame['lon0']) * frame['x'][1], (lat - frame['lat0']) * frame['z'][2]
-
-
 def fitting_curve(knots, distance):
     i = min(len(knots) - 2, max(0, bisect.bisect_right(knots, (distance, math.inf)) - 1))
     a, b = knots[i:i + 2]
@@ -69,13 +66,13 @@ def build(osm, output, survey_dir, rail_survey=SURVEY):
     terrain = Terrain()
     level_survey = json.loads((ROOT / 'tools/data/ede-level-crossing-elevations.json').read_text())
     scene = load_scene()
-    frame = scene['meta']['lonLatAffine']
+    frame = SceneAffine(scene['meta']['lonLatAffine'])
     scene_ways = {item['id']: item for item in scene['roads'] + scene['railways']}
     raw = {element['id']: element for element in json.loads(osm.read_text())['elements']
            if element['type'] == 'way' and 'geometry' in element}
 
     def xy(location):
-        return project(frame, *location)
+        return frame.lon_lat_to_scene(*location)
 
     def path(ids):
         points = []
@@ -482,7 +479,7 @@ def build(osm, output, survey_dir, rail_survey=SURVEY):
                 distance, nap = error, ya + (yb - ya) * s / span
         if distance < 1.5:
             return nap
-        longitude = frame['lon0'] + point[0] / frame['x'][1]
+        longitude, _ = frame.scene_to_lon_lat(*point)
         return 20.89 + (longitude - 5.67144) * 111.1
 
     def rail_profile(way_id, center_lonlat, radius, source, at_height, tie=False):
