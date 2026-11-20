@@ -18,6 +18,26 @@ test('the built AHN asset covers Ede and retains metres relative to Oude Kerk', 
   assert.throws(() => decodeTerrain(bytes.slice(0, 80)), /Invalid AHN terrain asset/);
 });
 
+test('the Eder Kuil patch stitches into the unchanged 12 m AHN grid', async () => {
+  const { decodeTerrain, sampleTerrain } = await import('../js/terrain.js');
+  const { EDER_KUIL_TERRAIN: patch } = await import('../js/ede-kuil-terrain.js');
+  const raw = readFileSync(path.join(__dirname, '../assets/ede-ahn.bin'));
+  const coarse = decodeTerrain(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+  assert.equal(coarse.step, 12);
+  assert.equal(patch.step, 3);
+  for (let z = patch.minZ; z <= patch.maxZ; z += 1) {
+    for (const x of [patch.minX, patch.maxX]) {
+      assert.ok(Math.abs(sampleTerrain(coarse, x, z) - sampleTerrain(patch, x, z)) <= 0.00501);
+    }
+  }
+  for (let x = patch.minX; x <= patch.maxX; x += 1) {
+    for (const z of [patch.minZ, patch.maxZ]) {
+      assert.ok(Math.abs(sampleTerrain(coarse, x, z) - sampleTerrain(patch, x, z)) <= 0.00501);
+    }
+  }
+  assert.ok(sampleTerrain(patch, 476, 651) - sampleTerrain(patch, 476, 627) > 8);
+});
+
 test('draped faces keep their offset across terrain cells and both sides of the diagonal', async () => {
   const { sampleTerrain } = await import('../js/terrain.js');
   const terrain = {
@@ -46,7 +66,7 @@ test('draped faces keep their offset across terrain cells and both sides of the 
     imports: {
       'three/webgpu': { BufferGeometry: Geometry, BufferAttribute: Attribute, Float32BufferAttribute: Attribute },
       './city-config.js': {},
-      './terrain.js': { getTerrain: () => terrain, terrainHeightAt: heightAt },
+      './terrain.js': { getTerrain: () => terrain, getTerrainPatch: () => null, terrainHeightAt: heightAt },
       './ede-grade.js': {}
     }
   });

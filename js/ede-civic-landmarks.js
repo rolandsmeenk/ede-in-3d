@@ -753,40 +753,45 @@ function frontArc(a, b) {
   return Math.abs(Math.hypot(x, z) - culturaRadius) < 0.125 && angle >= arcStart && angle <= arcEnd + 0.025;
 }
 
-export function civicSigns(labels) {
+export function civicSigns(labels, { wide = false } = {}) {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
-  canvas.width = 1024; canvas.height = 512;
+  const columns = wide ? 4 : 8;
+  const width = wide ? 512 : 128, height = wide ? 128 : 512;
+  canvas.width = columns * width;
+  canvas.height = height * (wide && labels.length > columns ? 2 : 1);
   const ctx = canvas.getContext('2d');
   const vertex = [], uvs = [];
   for (let i = 0; i < labels.length; i++) {
-    const { text, a: b, b: a, lo, hi, color, textColor = '#e9aa67', vertical } = labels[i];
-    const offset = i * 128;
+    const { text, a: b, b: a, lo, hi, color, textColor = '#e9aa67', textScale = 4.6, vertical } = labels[i];
+    const x = (i % columns) * width, y = Math.floor(i / columns) * height;
     ctx.fillStyle = color;
-    ctx.fillRect(offset, 0, 128, 512);
+    ctx.fillRect(x, y, width, height);
     ctx.fillStyle = '#f0eee4';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.save();
     if (vertical) {
-      ctx.translate(offset + 64, 250);
+      ctx.translate(x + width / 2, y + height / 2 - 6);
       ctx.rotate(Math.PI / 2);
       ctx.font = 'bold 34px sans-serif';
       ctx.fillText(text, 0, 0, 450);
     } else {
-      ctx.translate(offset + 64, 256);
-      ctx.font = 'bold 28px sans-serif';
-      ctx.scale(1, 4.6);
+      ctx.translate(x + width / 2, y + height / 2);
+      ctx.font = `bold ${wide ? 86 : 28}px sans-serif`;
+      if (!wide) ctx.scale(1, textScale);
       ctx.fillStyle = textColor;
-      ctx.fillText(text, 0, 0, 115);
+      ctx.fillText(text, 0, 0, width * 0.9);
     }
     ctx.restore();
-    const u = (offset + 3) / 1024, v = (offset + 125) / 1024;
+    const u = (x + 3) / canvas.width, v = (x + width - 3) / canvas.width;
+    const bottom = 1 - (y + height) / canvas.height, top = 1 - y / canvas.height;
     vertex.push(a.x, lo, a.z, b.x, lo, b.z, b.x, hi, b.z, a.x, lo, a.z, b.x, hi, b.z, a.x, hi, a.z);
-    uvs.push(u, 0, v, 0, v, 1, u, 0, v, 1, u, 1);
+    uvs.push(u, bottom, v, bottom, v, top, u, bottom, v, top, u, top);
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  if (wide) texture.anisotropy = 4;
   const positions = new THREE.BufferGeometry();
   positions.setAttribute('position', new THREE.Float32BufferAttribute(vertex, 3));
   positions.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));

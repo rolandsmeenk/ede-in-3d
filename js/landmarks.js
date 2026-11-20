@@ -17,6 +17,10 @@ import { createKeetmolen, createDePeppel } from './ede-north-landmarks.js';
 import { createCheCampus } from './ede-campus-landmark.js';
 import { createNieuweKerk, createNoorderkerk, createSintAntoniuskerk, createBeatrixkerk } from './ede-church-landmarks.js';
 import { createLukkien } from './ede-lukkien.js';
+import { createHoekelum, createGasfabriek } from './ede-estate-landmarks.js';
+import { createNizoLandmark, createGelderseValleiLandmark } from './ede-research-landmarks.js';
+import { createReehorst, createBuitenzorg, createJohannus } from './ede-venue-landmarks.js';
+import { createEderKuil, createTechnova, createTesqua } from './ede-next-landmarks.js';
 import { createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
 import { createRiedelSilos, createKappaDocie } from './ede-riedel-silos.js';
 import { buildMuralWalls } from './ede-mural-surfaces.js';
@@ -48,7 +52,7 @@ export const LANDMARK_EXCLUSIONS = [
 export function buildLandmarks(scene) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
-  const colliders = [], platforms = [], helipads = [];
+  const colliders = [], platforms = [], helipads = [], nearDetails = [];
   scene.add(group);
 
   function place(model, { x, z }, heading, footprints = [], baseY, colliderHeights = [], worldSpace = false) {
@@ -105,6 +109,16 @@ export function buildLandmarks(scene) {
     noorderkerk: createNoorderkerk,
     'sint-antoniuskerk': createSintAntoniuskerk,
     beatrixkerk: createBeatrixkerk,
+    hoekelum: createHoekelum,
+    nizo: createNizoLandmark,
+    ziekenhuis: createGelderseValleiLandmark,
+    openluchttheater: createEderKuil,
+    reehorst: createReehorst,
+    buitenzorg: createBuitenzorg,
+    'johannus-orgelbouw': createJohannus,
+    technova: createTechnova,
+    gasfabriek: createGasfabriek,
+    tesqua: createTesqua,
   };
   for (const site of EDE_MODELED_LANDMARKS) {
     const footprints = modeledLandmarkFootprints(site);
@@ -113,6 +127,9 @@ export function buildLandmarks(scene) {
     platforms.push(...(model.userData.platforms ?? []));
     helipads.push(...(model.userData.helipads ?? []));
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
+    model.traverse(detail => {
+      if (detail.userData.nearDetail) nearDetails.push({ detail, bounds: new THREE.Box3().setFromObject(detail) });
+    });
   }
   for (const model of buildMuralWalls()) {
     group.add(model);
@@ -121,5 +138,13 @@ export function buildLandmarks(scene) {
   const station = createEdeStationLandmark();
   group.add(station);
   colliders.push(...station.userData.colliders);
-  return { group, colliders, platforms, helipads, exclusions: LANDMARK_EXCLUSIONS, update() {} };
+  const last = new THREE.Vector3(Infinity, Infinity, Infinity);
+  function update(position) {
+    if (last.distanceToSquared(position) < 4) return;
+    last.copy(position);
+    for (const { detail, bounds } of nearDetails) {
+      detail.visible = bounds.distanceToPoint(position) < (detail.visible ? 205 : 175);
+    }
+  }
+  return { group, colliders, platforms, helipads, exclusions: LANDMARK_EXCLUSIONS, update };
 }

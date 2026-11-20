@@ -13,6 +13,7 @@ Run `node tools/build-ede-murals.mjs` from the repository root to rebake the pla
 | Slotlaan and Vanenburg | Nean on Vanenburg, VAAF on Sterkenburg, Nina Valkhoff on Pollenstein, and Kitsune Jolene on Weerdestein. Each decal is assigned to its own end wall. [Source catalogue](ede-murals-flats.json) | Foliage, glazing and missing upper or lower portions are masked where applicable. Sterkenburg's streamed wall is slightly nonplanar. |
 | Riedel silos | Four curved paint decals on individual modeled tanks, ordered east to west as frog, hand, rainbow paint and owl. The ring heights use AHN DSM. [Source catalogue](ede-murals-structures.json) | Unseen rear arcs, hidden lower paint and exact seam angles. |
 | Kappa Docie | Erwtje’s train from the June 2025 station panorama on the café's west wall. The modeled openings and trim remain clear. [Source catalogue](ede-murals-structures.json) | The area hidden by the air conditioner stays bare. |
+| NIZO food science | Two painted sections on the surveyed walls on either side of the pilot plant's spiral stair. The decal uses the ROOTS reference photograph published 29 January 2026. [Source catalogue](ede-murals-structures.json) | Artist, capture date and paint hidden by the stair or foliage remain unverified. |
 | Astrant | Studio Giftig’s *Muzikanten* on the two modeled brick wings either side of the glazed entry. [Source catalogue](ede-murals-centre.json) | The approved reconstruction approximates fine details. |
 | Van Eekelenflat | Nina Valkhoff’s *Pegasus (Airborne)*, assisted by SMOK, fitted to the existing 11 × 33 m end-wall assignment. [Source catalogue](ede-murals-centre.json) | The approved reconstruction approximates the smaller parachutes and brushwork. |
 | Marktstraat | Klaas Lageweg’s *Guide to Moorland* on the Marktsteeg wall and Nina Paintina’s *Leeuwen* on the freestanding cabinet at De Wiek. [Source catalogue](ede-murals-centre.json) | The cabinet position and height are fitted from aerial and street references. Capture dates are unavailable. |
@@ -45,4 +46,4 @@ A second comparison used 1200 × 675 and three alternating pairs of 52 frames on
 | Keesom | 16.8 → 16.7 ms | 1,072 → 1,071 | 6.9 MiB, including nearby Riedel |
 | A30 Hall of Fame | 16.7 → 16.8 ms | 765 → 767 | 6.0 MiB |
 
-The 16 sites use 13 shared WebPs totaling 1.78 MB. The local placement index adds about 58 kB. The Keesom west view still shows the existing grey abutment and overhanging railing near scene position `(-1760, -10, 1482)`.
+The 17 sites use 14 shared WebPs totaling 1.82 MB. The local placement index adds about 58 kB. The Keesom west view still shows the existing grey abutment and overhanging railing near scene position `(-1760, -10, 1482)`.

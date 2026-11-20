@@ -8,7 +8,8 @@ const repeats = Number(process.env.EDE_BENCH_RUNS || 3);
 const frameCount = Number(process.env.EDE_BENCH_FRAMES || 75);
 const startupOnly = process.env.EDE_BENCH_STARTUP_ONLY === '1';
 const freezeTraffic = process.env.EDE_BENCH_TRAFFIC !== 'active';
-const viewport = { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false };
+const [width, height] = (process.env.EDE_BENCH_VIEWPORT || '1600x900').split('x').map(Number);
+const viewport = { width, height, deviceScaleFactor: 1, mobile: false };
 const freezeClock = Date.parse('2026-11-19T13:00:00+01:00');
 const suite = process.env.EDE_BENCH_SCENARIOS || 'standard';
 const screenshots = process.env.EDE_BENCH_SCREENSHOTS;
@@ -24,7 +25,20 @@ function facadeWalk(name, a, b, distance, lookHeight) {
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = suite === 'facades' ? [
+const shots = suite === 'landmarks' ? [
+  { name: 'Hoekelum bridge', from: [330, 1.7, 3443], to: [338, 1.7, 3427], look: [352, 5, 3393] },
+  { name: 'NIZO entrance', from: [-639, 1.7, -636], to: [-623, 1.7, -643], look: [-631, 5, -671] },
+  { name: 'NIZO from above', from: [-520, 79, -640], to: [-541, 72, -654], look: [-650, 6, -733] },
+  { name: 'Hospital entrance', from: [-1663, 1.7, 2653], to: [-1680, 1.7, 2631], look: [-1746, 5, 2613] },
+  { name: 'Hospital from above', from: [-1558, 97, 2730], to: [-1590, 87, 2700], look: [-1777, 11, 2625] },
+  { name: 'De Eder Kuil', from: [468, 1.7, 681], to: [485, 1.7, 668], look: [520, 3.5, 628] },
+  { name: 'De ReeHorst', from: [7, 1.7, 2400], to: [5, 1.7, 2424], look: [-40, 5, 2407] },
+  { name: 'Buitenzorg', from: [-261, 1.7, -309], to: [-268, 1.7, -326], look: [-294, 5, -293] },
+  { name: 'Johannus', from: [-3140, 1.7, 2059], to: [-3122, 1.7, 2058], look: [-3053, 6, 2077] },
+  { name: 'Technova', from: [-662, 1.7, 2748], to: [-685, 1.7, 2743], look: [-640, 5, 2701] },
+  { name: 'Gasfabriek', from: [-448, 1.7, 705], to: [-427, 1.7, 699], look: [-431, 5, 668] },
+  { name: 'Tesqua courts', from: [-2056, 55, 1346], to: [-2025, 47, 1360], look: [-1903, 5, 1344] },
+] : suite === 'facades' ? [
   facadeWalk('Kolkakkerweg terraced houses', [-495.26, 678.68], [-492.83, 684.06], 7, 2.6),
   facadeWalk('Kolkakkerweg apartments', [-468.49, 777.45], [-488.63, 787.81], 13, 3.6),
   facadeWalk('Torenstraat storefront', [-44.66, -5.50], [-55.49, -10.00], 7, 2.4),

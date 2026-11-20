@@ -1,6 +1,8 @@
+import { EDER_KUIL_TERRAIN } from './ede-kuil-terrain.js';
+
 // PDOK AHN DTM samples on the existing Oude Kerk scene grid.
 // The binary stores centimetres NAP. World Y is relative to the origin's NAP height.
-let terrain = null;
+let terrain = null, patch = null;
 
 export function decodeTerrain(buffer) {
   const data = new DataView(buffer);
@@ -29,6 +31,7 @@ export async function loadTerrain() {
   const response = await fetch(new URL('../assets/ede-ahn.bin', import.meta.url));
   if (!response.ok) throw new Error(`AHN terrain request failed: ${response.status}`);
   terrain = decodeTerrain(await response.arrayBuffer());
+  patch = terrain.step === 12 ? EDER_KUIL_TERRAIN : null;
   return terrain;
 }
 
@@ -48,6 +51,9 @@ export function sampleTerrain(field, x, z) {
   return d + (c - d) * (1 - u) + (b - d) * (1 - v);
 }
 
+export const getTerrainPatch = () => patch;
+
 export function terrainHeightAt(x, z) {
-  return sampleTerrain(terrain, x, z);
+  const p = patch;
+  return sampleTerrain(p && x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ ? p : terrain, x, z);
 }

@@ -971,10 +971,10 @@ function createTreeField(_scene, sites, colliders = []) {
       const diameter = Number.isFinite(t.trunkDiameter) && t.trunkDiameter > 0 ? t.trunkDiameter : 0;
       const expectedDiameter = 2 * SPECIES[sp].trunk.r * t.height * meshIndex[sp].l0[variant].inverseHeight;
       const breadth = diameter ? Math.max(0.72, Math.min(1.25, (diameter / expectedDiameter) ** 0.25)) : 1;
-      const width = t.height * SPECIES[sp].crownRatio * breadth;
+      const width = t.crownWidth || t.height * SPECIES[sp].crownRatio * breadth;
       dummy.scale.set(width * (t.sx || 1), t.height, width * (t.sz || 1));
       dummy.updateMatrix();
-      // The crown is estimated. Check the mapped stem against the footprint, including elevated obstacles.
+      // Check the mapped stem against the footprint, including elevated obstacles.
       const radius = Math.min(2, Math.max(0.05, (diameter || expectedDiameter) * 0.5));
       worldBounds.min.set(t.x - radius, groundY, t.z - radius);
       worldBounds.max.set(t.x + radius, groundY + t.height, t.z + radius);

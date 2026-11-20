@@ -1,0 +1,17 @@
+[
+  {
+    "id": "de-vuurvogel-entrance",
+    "rd": [173755.75, 450107.75],
+    "height": 15.2,
+    "crownWidth": 12.5,
+    "trunkDiameterCm": 68,
+    "species": 0,
+    "confidence": "Medium for trunk and dimensions. Broadleaf form inferred, species and trunk diameter estimated.",
+    "sources": [
+      "https://www.atlasvanede.nl/toen-en-nu/dienstverlening-1/onderwijs/basisscholen-po/willem-van-oranje",
+      "https://www.edestad.nl/lokaal/overig/848788/de-leerlingen-van-de-vuurvogel-zijn-terug-in-hun-eigen-gebouw-",
+      "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0",
+      "https://www.ahn.nl/dataroom"
+    ]
+  }
+]

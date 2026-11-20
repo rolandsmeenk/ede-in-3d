@@ -56,6 +56,7 @@ for (const site of EDE_MODELED_LANDMARKS) {
     ring: outer.flatMap(p => [p.x, p.z]),
   };
 }
+LANDMARK_SITES['Openluchttheater Ede'] = LANDMARK_SITES['De Eder Kuil'];
 function getBlockBounds(col,row){return BLOCKS[Number.isInteger(col)?col:0]||{minX:0,maxX:0,minZ:0,maxZ:0,cx:0,cz:0,width:0,depth:0};}
 const avenueNameAt=(a)=>a?.short||a?.name||'';
 const avenueX=()=>0;
@@ -285,7 +286,6 @@ const NYC_LANDMARKS=[
  ['chico-y-chica','Chico y Chica','Chico y Chica',5.673605,52.045626,'Raadhuisplein','Raadhuisplein'],
  ['marktplein','Marktplein','Marktplein',5.669702,52.0465652,'Centrum','Marktstraat'],
  ['proosdijpark','Proosdijpark','Proosdijpark',5.6496497,52.0398935,'Veldhuizen','Veenderweg'],
- ['openluchttheater','Openluchttheater Ede','Openluchttheater',5.67844,52.04059,'Ede','van Pabstlaan'],
  ['sherman-tank','Sherman Tank','Sherman Tank',5.69175563,52.0414851,'Langenberg','Arnhemseweg'],
 ].map(([id,name,short,lon,lat,district,road])=>{
  const site=LANDMARK_SITES[name];
@@ -313,7 +313,7 @@ const LANDMARK_APPROACHES={
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){
  const approach=LANDMARK_APPROACHES[lm.id];
- const point=approach&&projectLonLat(...approach);
+ const point=lm.approach ?? (approach&&projectLonLat(...approach));
  const streetPoint=point&&nearestRoadPoint(point.x,point.z,ROADS.filter(r=>r.name===lm.road));
  const t=streetPoint?{x:streetPoint.x,z:streetPoint.z,name:streetPoint.road.name}:arrival(lm.lon,lm.lat,lm.road);
  t.heading=Math.atan2(lm.x-t.x,lm.z-t.z);

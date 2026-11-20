@@ -20,7 +20,7 @@ import subprocess
 from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
-PDOK, MUNICIPAL, OSM = 1, 2, 4
+PDOK, MUNICIPAL, OSM, SURVEYED = 1, 2, 4, 8
 UNKNOWN = 255
 CELL = MUNICIPAL_REACH = 2.5
 OSM_REACH = 2
@@ -46,6 +46,7 @@ class Tree:
     diameter: float = 0
     species: int = UNKNOWN
     sources: int = 0
+    crown_width: float = 0
 
 
 def read_json(path):
@@ -196,14 +197,30 @@ def join(sites, extra, radius):
     sites.extend(tree for tree in extra if tree.rd not in matched)
 
 
+def merge_surveyed(sites, records, frame):
+    for record in records:
+        rd = coordinate(record['rd'])
+        surveyed = Tree(rd, frame.rd_to_scene(*rd), float(record['height']),
+                        float(record['trunkDiameterCm']), int(record['species']), SURVEYED,
+                        float(record['crownWidth']))
+        nearest = min(sites, key=lambda t: math.dist(t.world, surveyed.world), default=None)
+        if nearest and math.dist(nearest.world, surveyed.world) <= MUNICIPAL_REACH:
+            merge(nearest, surveyed)
+            nearest.crown_width = surveyed.crown_width
+        else:
+            sites.append(surveyed)
+
+
 def pack(trees):
+    has_crowns = any(t.sources & SURVEYED for t in trees)
     rows = [(round(t.world[0] / STEP), round(t.world[1] / STEP),
              min(65535, round(t.height * 10)), min(255, round(t.diameter)),
-             t.species, t.sources) for t in trees]
+             t.species, t.sources, min(255, round(t.crown_width * 10))) for t in trees]
     tile_step = round(TILE / STEP)
     rows.sort(key=lambda row: (row[0] // tile_step, row[1] // tile_step, row))
     record = struct.Struct('<hhHBBB')
-    return struct.pack('<4sI', b'EDT1', len(rows)) + b''.join(record.pack(*r) for r in rows)
+    return struct.pack('<4sI', b'EDT2' if has_crowns else b'EDT1', len(rows)) + b''.join(
+        record.pack(*r[:-1]) + (bytes((r[-1],)) if r[-2] & SURVEYED else b'') for r in rows)
 
 
 def build(pdok_path, municipal_path, osm_path, output):
@@ -248,6 +265,8 @@ def build(pdok_path, municipal_path, osm_path, output):
         join(sites, extras, radius)
         added = len(sites) - before
         print(f'{name} {len(rows)} in bounds, {len(extras) - added} matched, {added} added')
+    from ede_gis import Frame
+    merge_surveyed(sites, read_json(ROOT / 'tools/data/ede-surveyed-trees.json'), Frame(affine))
     data = pack(sites)
     output.write_bytes(data)
     flags = ', '.join(f'{sources}: {count}' for sources, count in sorted(Counter(t.sources for t in sites).items()))

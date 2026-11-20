@@ -181,5 +181,83 @@
       {"anchor":"NL.IMBAG.Pand.0228100000069623 wall 42.40,1927.37,43.86,1953.17,0.00","texture":"structures/kappa-docie.webp","corners":[[43.3644,-2.015,1944.5533],[43.4768,-2.015,1946.5399],[43.4768,-1.895,1946.5399],[43.3644,-1.895,1944.5533]],"uv":[0.743182,0.0,0.843182,0.037512]},
       {"anchor":"NL.IMBAG.Pand.0228100000069623 wall 42.40,1927.37,43.86,1953.17,0.00","texture":"structures/kappa-docie.webp","corners":[[43.4768,-2.015,1946.5399],[43.6531,-2.015,1949.6552],[43.6531,1.184,1949.6552],[43.4768,1.184,1946.5399]],"uv":[0.843182,0.0,1.0,1.0]}
     ]
+  },
+  {
+    "id": "nizo-food",
+    "name": "NIZO food science mural",
+    "artist": "Artist unconfirmed. Photograph published by ROOTS Innovation Hub",
+    "referenceDate": "Photograph published 2026-01-29. Capture date unknown",
+    "sources": [
+      "https://rootshub.nl/en/our-location/nizo/",
+      "https://rootshub.nl/wp-json/wp/v2/media/1311"
+    ],
+    "notes": "Two paint-only extracts from the ROOTS photograph, fitted to the courtyard-facing BAG walls of pilot building F. The spiral stair is separate geometry. Branches, unpainted brick and areas hidden by the stair or cropped by the photo are excluded. The outline and elevations are surveyed. The crop margins and artwork extent inside the wall are fitted from one oblique reference.",
+    "reach": 150,
+    "surfaces": [
+      {
+        "anchor": "NL.IMBAG.Pand.0228100000033892 LoD 2.2 wall 9, courtyard side",
+        "texture": "structures/nizo-food.webp",
+        "corners": [
+          [
+            -664.778,
+            -1.96,
+            -788.017
+          ],
+          [
+            -657.809,
+            -1.96,
+            -793.117
+          ],
+          [
+            -657.809,
+            8.61,
+            -793.117
+          ],
+          [
+            -664.778,
+            8.61,
+            -788.017
+          ]
+        ],
+        "uv": [
+          0.005859375,
+          0.005208333333333333,
+          0.494140625,
+          0.9947916666666666
+        ]
+      },
+      {
+        "anchor": "NL.IMBAG.Pand.0228100000033892 LoD 2.2 wall 10, courtyard side",
+        "texture": "structures/nizo-food.webp",
+        "corners": [
+          [
+            -656.045,
+            -1.96,
+            -794.412
+          ],
+          [
+            -649.275,
+            -1.96,
+            -799.351
+          ],
+          [
+            -649.275,
+            8.69,
+            -799.351
+          ],
+          [
+            -656.045,
+            8.69,
+            -794.412
+          ]
+        ],
+        "uv": [
+          0.505859375,
+          0.005208333333333333,
+          0.994140625,
+          0.9947916666666666
+        ]
+      }
+    ]
   }
 ]

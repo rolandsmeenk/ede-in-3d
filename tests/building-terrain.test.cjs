@@ -189,6 +189,41 @@ test('BAG replaces only the named landmark features in a shared tile', () => {
   assert.equal(bakeTile(gltf, {}, null, null, null, [new Map([[6, true], [7, true]])]).length, 0);
 });
 
+test('the ten new landmarks exclude only their surveyed buildings across both building sources', async () => {
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const landmarks = await import('../js/ede-landmark-sites.js');
+  const { ESTATE_SURVEY } = await import('../js/ede-estate-survey.js');
+  const { NIZO_SURVEY, GELDERSE_VALLEI_SURVEY } = await import('../js/ede-research-survey.js');
+  const { KUIL_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS } = await import('../js/ede-next-survey.js');
+  const { REEHORST, BUITENZORG, JOHANNUS } = await import('../js/ede-venue-survey.js');
+  const sites = new Map(landmarks.EDE_MODELED_LANDMARKS.map(site => [site.id, site]));
+  const osm = new Set(EDE_DATA.buildings.map(building => building.id));
+  const newSites = [
+    ['hoekelum', ['castle', 'coach'].map(key => ESTATE_SURVEY[key])],
+    ['nizo', NIZO_SURVEY], ['ziekenhuis', GELDERSE_VALLEI_SURVEY],
+    ['openluchttheater', KUIL_SHELLS],
+    ['reehorst', [REEHORST]], ['buitenzorg', [BUITENZORG]], ['johannus-orgelbouw', [JOHANNUS]],
+    ['technova', TECHNOVA_SHELLS],
+    ['gasfabriek', ['works', 'purifier', 'wkeeper'].map(key => ESTATE_SURVEY[key])],
+    ['tesqua', TESQUA_SHELLS]
+  ];
+  for (const [key, models] of newSites) {
+    const site = sites.get(key);
+    assert.equal(site.bagIds.length, models.length);
+    for (const id of [site.osmId, ...(site.annexOsmIds ?? [])]) assert.ok(osm.has(id), id);
+    for (const [i, model] of models.entries()) {
+      const id = model.id ?? model.bag ?? site.bagIds[i];
+      assert.ok(site.bagIds.includes(id));
+      const vertices = model.points ?? model.vertices;
+      const xs = vertices.map(p => p[0]), zs = vertices.map(p => p[2]);
+      const box = { min: { x: Math.min(...xs), z: Math.min(...zs) }, max: { x: Math.max(...xs), z: Math.max(...zs) } };
+      const excluded = landmarks.landmarkBagExclusions(box);
+      assert.ok(excluded.has(id), id);
+      assert.equal(excluded.has('0228100000999999'), false);
+    }
+  }
+});
+
 test('BAG removes the old ENKA shaft and keeps geometry outside its mapped footprint', async () => {
   const three = await import('../vendor/three/build/three.webgpu.js');
   const landmarks = await import('../js/ede-landmark-sites.js');

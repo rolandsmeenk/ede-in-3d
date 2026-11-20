@@ -22,6 +22,11 @@ test('the combined tree asset retains the mapped extent, multiple type groups an
   assert.ok(combined > 1000 && osm > 1000);
   assert.deepEqual([...types].sort((a, b) => a - b), [0, 1, 2, 3, 255]);
   assert.throws(() => decodeEdeTrees(buffer.slice(0, -1)), /Invalid Ede tree asset/);
+  const treeAtEntrance = trees.filter(tree => Math.hypot(tree.x + 752.4, tree.z - 782) <= 2.5);
+  assert.equal(treeAtEntrance.length, 1);
+  assert.ok(treeAtEntrance[0].sources & 8);
+  assert.equal(treeAtEntrance[0].height, 15.2);
+  assert.equal(edeTreeSite(treeAtEntrance[0], 0).crownWidth, 12.5);
   const known = trees.find(tree => tree.species === 3 && tree.height && tree.trunkDiameter);
   const site = edeTreeSite(known, 5);
   assert.equal(site.species, 3);

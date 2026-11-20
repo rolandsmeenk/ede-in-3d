@@ -965,6 +965,7 @@ async function initApp() {
     if (warmedUp) {
       bagBuildings?.userData.update?.(cameraSystem.camera);
       murals.update(cameraSystem.camera.position, now);
+      landmarks.update(cameraSystem.camera.position);
     }
     cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     profiler?.stage('Buildings, façades and murals');

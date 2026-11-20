@@ -42,3 +42,24 @@ sys.stdout.buffer.write(m['pack'](sites))
     [1050, 0, 0, 0, 255, 1]
   ]);
 });
+
+test('a surveyed crown enriches an inventory refresh without planting a second trunk', () => {
+  const bytes = execFileSync('python3', ['-B', '-c', `
+import runpy, sys
+from types import SimpleNamespace
+sys.path.insert(0, 'tools')
+m = runpy.run_path('tools/build-ede-trees.py')
+Tree = m['Tree']
+sites = [Tree((0, 0), (0, 0), 17, 82, 1, 1), Tree((4, 0), (4, 0), 0, 0, 255, 1)]
+survey = dict(rd=(1.25, 0), height=15.2, trunkDiameterCm=68, species=0, crownWidth=12.5)
+m['merge_surveyed'](sites, [survey], SimpleNamespace(rd_to_scene=lambda e, n: (e,n)))
+sys.stdout.buffer.write(m['pack'](sites))
+`], { cwd: join(__dirname, '..') });
+  assert.equal(bytes.toString('ascii', 0, 4), 'EDT2');
+  assert.equal(bytes.readUInt32LE(4), 2);
+  assert.equal(bytes.length, 27);
+  assert.equal(bytes.readInt16LE(8), 0);
+  assert.equal(bytes.readUInt16LE(12), 170);
+  assert.equal(bytes[16], 9);
+  assert.equal(bytes[17], 125);
+});
