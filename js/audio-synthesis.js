@@ -5,7 +5,6 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 // Movement and tone controls only need one value per audio block. Set every parameter on these nodes:
 // even an unused a-rate parameter can make the browser recalculate spatial/filter math for every sample.
-// Oscillator modulation and gain envelopes keep their default audio rate.
 export function setControlRate(...parameters) {
   for (const parameter of parameters) {
     if (parameter?.automationRate !== undefined) parameter.automationRate = 'k-rate';
@@ -202,18 +201,23 @@ function chainBuffer(context) {
   return normalizeLoop(buffer, 0.16, 0.8);
 }
 
-function sirenSweepWave(context) {
-  const real = new Float32Array(25), imaginary = new Float32Array(25);
-  // Dutch two-tone (tatü-tata) siren: the control voltage alternates between two pitches with softened edges.
-  for (let harmonic = 1; harmonic < real.length; harmonic++) {
-    for (let i = 0; i < 512; i++) {
-      const phase = i / 512;
-      const value = Math.tanh(Math.sin(2 * Math.PI * phase) * 6);
-      real[harmonic] += value * Math.cos(2 * Math.PI * harmonic * phase) / 256;
-      imaginary[harmonic] += value * Math.sin(2 * Math.PI * harmonic * phase) / 256;
+function policeHornBuffer(context) {
+  // Dutch two-tone horn at rest. The playback rate handles Doppler for the whole call.
+  const rate = context.sampleRate;
+  const half = Math.round(rate * 0.50);
+  const buffer = context.createBuffer(1, half * 2, rate);
+  const samples = buffer.getChannelData(0);
+  for (const [tone, frequency] of [375, 500].entries()) {
+    for (let i = 0; i < half; i++) {
+      const envelope = Math.min(1, i / (rate * 0.018), (half - i - 1) / (rate * 0.014));
+      const gain = envelope * envelope * (3 - 2 * envelope);
+      const phase = 2 * Math.PI * frequency * i / rate;
+      const pressure = Math.sin(phase) + 0.38 * Math.sin(2 * phase) + 0.34 * Math.sin(3 * phase)
+        + 0.16 * Math.sin(4 * phase) + 0.09 * Math.sin(5 * phase);
+      samples[tone * half + i] = pressure * gain;
     }
   }
-  return context.createPeriodicWave(real, imaginary);
+  return normalizeLoop(buffer, 0.56);
 }
 
 export function createSynthResources(context) {
@@ -259,7 +263,6 @@ export function createSynthResources(context) {
     }
   }
 
-  const wave = (harmonics) => context.createPeriodicWave(new Float32Array(harmonics.length), new Float32Array(harmonics));
   const helicopter = rotorBuffers(context);
   return {
     noise,
@@ -274,8 +277,7 @@ export function createSynthResources(context) {
     turbine: turbineBuffer(context),
     ratchet: ratchetBuffer(context),
     chain: chainBuffer(context),
-    sirenWave: wave([0, 1, 0.13, 0.29, 0.055, 0.11, 0.025, 0.045, 0.012, 0.018]),
-    sirenSweep: sirenSweepWave(context),
+    policeHorn: policeHornBuffer(context),
     voiceSerial: 0
   };
 }
@@ -317,14 +319,6 @@ export function createMotorVoice(context, resources, kind, output) {
     node.type = type;
     node.frequency.value = Math.min(frequency, context.sampleRate * 0.45);
     node.Q.value = q;
-    return node;
-  };
-  const oscillator = (type, frequency) => {
-    const node = own(context.createOscillator());
-    if (typeof type === 'string') node.type = type;
-    else node.setPeriodicWave(type);
-    node.frequency.value = frequency;
-    sources.push(node);
     return node;
   };
   const loop = (buffer = resources.noise) => {
@@ -528,35 +522,18 @@ export function createMotorVoice(context, resources, kind, output) {
       noiseRate((0.9 + Math.min(1, movement) * 0.2) * doppler, now);
     };
   } else {
-    const siren = oscillator(resources.sirenWave, 507);
-    const highpass = filter('highpass', 300, 0.7);
-    const hornBody = filter('peaking', 1300, 1.1);
+    const horn = loop(resources.policeHorn);
+    const highpass = filter('highpass', 245, 0.7);
+    const hornBody = filter('peaking', 1260, 1.15);
     hornBody.gain.value = 3.5;
-    const hornFilter = filter('lowpass', 4200, 0.65);
-    const sirenGain = gain();
-    siren.connect(highpass).connect(hornBody).connect(hornFilter).connect(sirenGain).connect(mix);
-    const sweep = oscillator(resources.sirenSweep, 0.2);
-    const sweepDepth = gain();
-    sweep.connect(sweepDepth).connect(siren.frequency);
-    const envelopeDepth = gain();
-    sweep.connect(envelopeDepth).connect(sirenGain.gain);
-    const sirenFrequency = smoothParameter(siren.frequency, 0.09, 0.1);
-    const sweepFrequency = smoothParameter(sweep.frequency, 0.035, 0.002, true);
-    const sweepRange = smoothParameter(sweepDepth.gain, 0.09, 0.1);
-    const sirenLevel = smoothParameter(sirenGain.gain, 0.10);
-    const envelopeLevel = smoothParameter(envelopeDepth.gain, 0.10);
-    const sirenCutoff = smoothParameter(hornFilter.frequency, 0.12, 1);
-    const hornFrequency = smoothParameter(hornBody.frequency, 0.12, 1);
-    render = (speed, load, doppler, now) => {
-      const pitch = (0.98 + variation * 0.04) * doppler;
-      // Alternate between ~435 Hz and ~580 Hz; Doppler shifts both the pitch and the switching cadence.
-      sirenFrequency(507 * pitch, now);
-      sweepRange(72 * pitch, now);
-      sweepFrequency(0.95 * (0.97 + variation * 0.06) * doppler, now);
-      sirenLevel(0.09, now);
-      envelopeLevel(0, now);
-      sirenCutoff(4200 * doppler, now);
-      hornFrequency(1300 * doppler, now);
+    const hornFilter = filter('lowpass', 3600, 0.65);
+    const hornGain = gain(0.106);
+    horn.connect(highpass).connect(hornBody).connect(hornFilter).connect(hornGain).connect(mix);
+    const hornRate = smoothParameter(horn.playbackRate, 0.09, 0.001, true);
+    const hornCutoff = smoothParameter(hornFilter.frequency, 0.12, 1);
+    render = (_speed, _load, doppler, now) => {
+      hornRate(doppler, now);
+      hornCutoff(3600 * doppler, now);
     };
   }
 
@@ -581,8 +558,7 @@ export function createMotorVoice(context, resources, kind, output) {
   const startTime = context.currentTime;
   mix.gain.setTargetAtTime(1, startTime, 0.04);
   for (const source of sources) {
-    if (source.buffer) source.start(startTime, ((serial * 0.61803398875) % 1) * source.buffer.duration);
-    else source.start(startTime);
+    source.start(startTime, ((serial * 0.61803398875) % 1) * source.buffer.duration);
   }
 
   function dispose() {

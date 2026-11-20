@@ -14,6 +14,7 @@ from ede_map import load_scene
 
 PDOK = 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/vegetatieobject_punt/items'
 EDE_WFS = 'https://geo.ede.nl/geoserver/Ede/wfs'
+GELDERLAND = 'https://geoportaal.gelderland.nl/gisserver/rest/services/Overig/Mobiliteit/MapServer/673/query'
 RD_NEW = 'http://www.opengis.net/def/crs/EPSG/0/28992'
 
 
@@ -47,11 +48,45 @@ def fetch_pdok_tile(box, snapshot_date):
         page = fetch_json(next_page)
 
 
+def fetch_expansion(directory, snapshot_date):
+    from ede_gis import Frame
+    meta = load_scene()['meta']
+    frame = Frame(meta['lonLatAffine'])
+    min_x, min_z, max_x, max_z = meta['bounds']
+    corners = [frame.scene_to_rd(x, z) for x in (min_x, max_x) for z in (min_z, max_z)]
+    es, ns = zip(*corners)
+    envelope = [min(es) - 20, min(ns) - 20, max(es) + 20, max(ns) + 20]
+    # The WFS coordinates are RD New even when GeoServer labels them EPSG:4326.
+    # Read the small municipal extract whole rather than filtering in the wrong CRS.
+    municipal = fetch_json(EDE_WFS, service='WFS', request='GetFeature', version='2.0.0',
+                           typeNames='Ede:mor_bomen', outputFormat='application/json', count=100000)
+    if not municipal.get('features') or len(municipal['features']) != municipal['numberMatched']:
+        raise ValueError('Incomplete MOR tree snapshot')
+    roadside = fetch_json(
+        GELDERLAND, f='json', where='1=1', geometry=','.join(f'{value:.3f}' for value in envelope),
+        geometryType='esriGeometryEnvelope', inSR=28992, outSR=28992, returnGeometry='true',
+        spatialRel='esriSpatialRelIntersects',
+        outFields='boo_id,soortnaam_boom,boomhoogteklasse_actueel,stamdiameterklasse,status,weg,'
+                  'bgt_status,relatieve_hoogteligging,jaar_van_aanleg,lastupdate')
+    if not roadside.get('features') or roadside.get('exceededTransferLimit'):
+        raise ValueError('Incomplete provincial tree snapshot')
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, data in (('mor', municipal), ('gelderland', roadside)):
+        target = directory / f'{name}-{snapshot_date}.geojson'
+        target.write_text(json.dumps(data, separators=(',', ':')) + '\n')
+        print(f'{target}: {len(data["features"]):,} features')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
     parser.add_argument('--date', type=date.fromisoformat, required=True)
+    parser.add_argument('--expansion-only', action='store_true',
+                        help='Fetch the MOR and Gelderland snapshots for the expanded inventory')
     args = parser.parse_args()
+    if args.expansion_only:
+        fetch_expansion(args.directory, args.date)
+        return
     south, west, north, east = bounds()
     tiles = 6
     xs = [west + (east - west) * i / tiles for i in range(tiles + 1)]

@@ -7,6 +7,7 @@ const [output = '/tmp/ede-benchmark.json', origin = 'http://127.0.0.1:8990', por
 const repeats = Number(process.env.EDE_BENCH_RUNS || 3);
 const frameCount = Number(process.env.EDE_BENCH_FRAMES || 75);
 const startupOnly = process.env.EDE_BENCH_STARTUP_ONLY === '1';
+const caches = process.env.EDE_BENCH_WARM_ONLY === '1' ? ['warm'] : ['cold', 'warm'];
 const freezeTraffic = process.env.EDE_BENCH_TRAFFIC !== 'active';
 const [width, height] = (process.env.EDE_BENCH_VIEWPORT || '1600x900').split('x').map(Number);
 const viewport = { width, height, deviceScaleFactor: 1, mobile: false };
@@ -25,7 +26,15 @@ function facadeWalk(name, a, b, distance, lookHeight) {
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = suite === 'landmarks' ? [
+const shots = suite === 'trees' ? [
+  { name: 'Low helicopter pass', from: [335, 22, 777], to: [446, 24, 708], look: [641, 16, 608] },
+  { name: 'Climb through old cutoff', from: [668, 17, 768], to: [686, 80, 738], look: [909, 16, 558] },
+  { name: 'Fast sideways pan', from: [852, 55, 632], to: [895, 56, 630], look: [525, 15, 649], lookTo: [1110, 12, 576], pan: true },
+  { name: 'Woodland landing', from: [1094, 96, 1503], to: [1010, 2.0, 1469], look: [944, 3.5, 1394] },
+  { name: 'De Vuurvogel walk', from: [-769, 1.66, 767], to: [-766, 1.66, 771], look: [-754, 4, 783] },
+  { name: 'N224 provincial trees', from: [321, 5, -539], to: [425, 5, -484], look: [585, 9, -389] },
+  { name: 'Season change', from: [-769, 1.66, 767], to: [-769, 1.66, 767], look: [-754, 4, 783], changeSeason: true },
+] : suite === 'landmarks' ? [
   { name: 'Hoekelum bridge', from: [330, 1.7, 3443], to: [338, 1.7, 3427], look: [352, 5, 3393] },
   { name: 'NIZO entrance', from: [-639, 1.7, -636], to: [-623, 1.7, -643], look: [-631, 5, -671] },
   { name: 'NIZO from above', from: [-520, 79, -640], to: [-541, 72, -654], look: [-650, 6, -733] },
@@ -136,6 +145,7 @@ async function playable() {
       return {
         ms: app.firstFrameAt, stages: app.init, backend: app.backend, quality: app.graphics?.quality,
         bagMeshes: app.scene.getObjectByName('bag3d-buildings')?.children.length ?? 0,
+        trees: app.treeInventory && {...app.treeInventory, planted: app.treeStats?.trees},
         detail: detail && { bgt: detail.bgt, motorway: detail['1gis'] ?? detail.dtb, signs: detail.nbd, unresolved: detail.unresolved.length },
       };
     })()`);
@@ -146,7 +156,7 @@ async function playable() {
 }
 
 function sampleShot(shot, frames) {
-  return evaluate(`(${async (shot, frames, freezeTraffic) => {
+  return evaluate(`(${async (shot, frames, freezeTraffic, treeAudit) => {
     const app = window.__slopwaw;
     const { terrainHeightAt } = await import('./js/terrain.js');
     const { gradeWayAt } = await import('./js/ede-grade.js');
@@ -155,7 +165,9 @@ function sampleShot(shot, frames) {
     const wait = async count => { for (let i = 0; i < count; i++) await frame(); };
     const controller = app.controllerManager;
     const from = shot.from && ground(shot.from), to = shot.to && ground(shot.to), look = shot.look && ground(shot.look);
+    const lookTo = shot.lookTo && ground(shot.lookTo);
     app.time(shot.time || 'midday');
+    if (shot.changeSeason) app.perf?.setTreeSeason?.('summer');
     if (shot.travel) {
       const [mode, x, z, heading, height] = shot.travel;
       const deck = shot.way && gradeWayAt(shot.way, x, z, 4);
@@ -191,6 +203,11 @@ function sampleShot(shot, frames) {
     }
     app.perf?.reset();
     const times = [], draws = [], triangles = [];
+    const visibleTrees = [], shadowBatches = [], qualityLevels = new Set();
+    const treeStats = treeAudit ? app.treeStats : undefined;
+    let uploads = treeStats?.uploadBytes ?? 0, uploadCells = treeStats?.uploadedCells ?? 0;
+    let previousUpload = uploads, maxUpload = 0, maxTransitions = 0, biggestCountChange = 0;
+    let seasonChangeFrame;
     let last = await frame();
     const start = shot.travel && controller.getActiveEntity().position.clone();
     const sampleCount = shot.travel ? frames * 2 : frames;
@@ -201,12 +218,30 @@ function sampleShot(shot, frames) {
         const xyz = from.map((p, k) => p + (to[k] - p) * t);
         if (shot.jump && i === 1) app.setCamera(...to, ...look);
         else app.cameraSystem.fixedPos.set(...xyz);
+        if (lookTo) {
+          const turn = shot.pan ? Math.max(0, Math.min(1, (t - 0.3) * 5)) : t;
+          app.cameraSystem.fixedLook.set(...look.map((p, k) => p + (lookTo[k] - p) * turn));
+        }
       }
+      const saveChange = shot.changeSeason && i === Math.ceil(sampleCount / 2);
+      if (saveChange) app.perf?.setTreeSeason?.('winter');
       const now = await frame();
+      if (saveChange) seasonChangeFrame = now - last;
       times.push(now - last);
       last = now;
       draws.push(app.renderer.info.render.drawCalls);
       triangles.push(app.renderer.info.render.triangles);
+      if (treeStats) {
+        const visible = treeStats.visibleTrees ?? 0;
+        if (visibleTrees.length) biggestCountChange = Math.max(biggestCountChange, Math.abs(visible - visibleTrees.at(-1)));
+        visibleTrees.push(visible);
+        shadowBatches.push(treeStats.shadowBatches ?? 0);
+        qualityLevels.add(treeStats.qualityLevel);
+        const bytes = treeStats.uploadBytes ?? 0;
+        maxUpload = Math.max(maxUpload, bytes - previousUpload);
+        previousUpload = bytes;
+        maxTransitions = Math.max(maxTransitions, treeStats.transitions ?? 0);
+      }
       if (shot.facade && i % 10 === 0) facadeTextureBytes = Math.max(facadeTextureBytes, textureBytes());
     }
     if (shot.travel) controller.resetInput();
@@ -220,6 +255,13 @@ function sampleShot(shot, frames) {
       app.trafficSystem.update = trafficUpdate;
       if (app.trainSystem) app.trainSystem.update = trainUpdate;
     }
+    const coverage = treeStats ? {
+      uploadBytes: (treeStats.uploadBytes ?? 0) - uploads,
+      uploadJobs: (treeStats.uploadedCells ?? 0) - uploadCells,
+      maxUpload, maxTransitions, biggestCountChange,
+      visibleTrees: stats(visibleTrees), shadowBatches: stats(shadowBatches),
+      qualityLevels: [...qualityLevels], lastVisibleByLod: treeStats.visibleByLod, seasonChangeFrame
+    } : undefined;
     const bag = bagGroup?.userData.stats;
     const facadeRequests = shot.facade && performance.getEntriesByType('resource').flatMap(entry => {
       const path = new URL(entry.name).pathname;
@@ -227,13 +269,13 @@ function sampleShot(shot, frames) {
     });
     const travelledMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
     const drivenMetres = shot.travel?.[0] === 'car' ? travelledMetres : undefined;
-    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, travelledMetres, drivenMetres,
+    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, travelledMetres, drivenMetres, coverage,
       ...(shot.facade && { bagCoversLook: bagCoversLook(), facadeTextureBytes,
         facadeRequests: [...new Set(facadeRequests)], textureCount: app.renderer.info.memory?.textures }) };
-  }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic})`);
+  }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic}, ${suite === 'trees'})`);
 }
 
-async function run(search, cache) {
+async function run(search, cache, trial) {
   if (cache === 'cold') await send('Network.clearBrowserCache');
   const absolute = /^https?:\/\//.test(search);
   const url = new URL(absolute ? search : origin);
@@ -262,10 +304,13 @@ async function run(search, cache) {
     if (!startupOnly && cache === 'warm') {
       for (const shot of shots) {
         samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
-        if (screenshots && suite === 'facades') {
+        if (screenshots && ['facades', 'trees'].includes(suite)) {
           const label = shot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const { data } = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
-          await writeFile(join(screenshots, `${url.port}-${label}.jpg`), Buffer.from(data, 'base64'));
+          const variant = suite === 'trees'
+            ? [url.port, url.searchParams.get('treeInventory'), url.searchParams.get('treeQuality'), url.searchParams.get('treeSeason'), trial].filter(v => v != null).join('-')
+            : url.port;
+          await writeFile(join(screenshots, `${variant}-${label}.jpg`), Buffer.from(data, 'base64'));
         }
       }
     }
@@ -296,8 +341,8 @@ try {
   for (let trial = 0; trial < repeats; trial++) {
     const choices = variants.length ? variants : ['perf=1&quality=standard', 'perf=1'];
     for (const search of trial % 2 ? [...choices].reverse() : choices) {
-      for (const cache of ['cold', 'warm']) {
-        const result = await run(search, cache);
+      for (const cache of caches) {
+        const result = await run(search, cache, trial);
         results.push({ trial, ...result });
         await writeFile(output, JSON.stringify({ suite, viewport, freezeClock, freezeTraffic, results }, null, 2));
         console.log(`${search || 'default'} ${cache} ${Math.round(result.startup.ms)} ms`, result.samples.map(s => [s.name, s.frameMs.median, s.frameMs.p95]));

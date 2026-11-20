@@ -409,7 +409,8 @@ body.hud-minimized .toolbar > :not(#btn-toggle-hud) {
   background: var(--divider);
 }
 
-#btn-crossing-debug[hidden] { display: none; }
+#btn-crossing-debug[hidden],
+#btn-tree-seasons[hidden] { display: none; }
 
 #time-live-clock {
   font-size: 13px;
@@ -1261,7 +1262,8 @@ body[data-mode='helicopter'] .gauge-alt {
   .tool-btn kbd { display: none; }
   .mode-btn { padding: 0 12px; }
   .tool-btn:not(.icon-only):not(.fullmap-close) { gap: 4px; padding: 0 9px; }
-  #btn-time-presets .tool-label { display: inline; }
+  #btn-time-presets .tool-label,
+  #btn-tree-seasons .tool-label { display: inline; }
 }
 
 @media (max-width: 820px) {
@@ -1281,7 +1283,8 @@ body[data-mode='helicopter'] .gauge-alt {
 }
 
 @media (max-width: 620px) {
-  #btn-time-presets .tool-label { display: none; }
+  #btn-time-presets .tool-label,
+  #btn-tree-seasons .tool-label { display: none; }
   .radar { display: none; }
   .hud-bottom-right { bottom: calc(var(--edge) + 64px); }
   .gauge { display: none; }
@@ -1395,7 +1398,8 @@ body.touch-enabled .hud-top-right { top: max(var(--edge), env(safe-area-inset-to
 body.touch-enabled .toolbar { gap: 2px; padding: 4px; }
 body.touch-enabled .tool-btn { min-width: 44px; min-height: 44px; }
 body.touch-enabled .tool-label,
-body.touch-enabled #btn-time-presets .tool-label { display: none; }
+body.touch-enabled #btn-time-presets .tool-label,
+body.touch-enabled #btn-tree-seasons .tool-label { display: none; }
 body.touch-enabled .hud-bottom-center { bottom: max(var(--edge), env(safe-area-inset-bottom)); }
 body.touch-enabled .mode-label { display: block; font-size: 10px; }
 body.touch-enabled .mode-btn { width: 62px; height: 48px; padding: 0; flex-direction: column; justify-content: center; gap: 3px; }

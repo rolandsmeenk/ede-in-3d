@@ -3,7 +3,7 @@ const STRIDE = 5;
 const POINT_EPSILON = 0.08;
 
 export async function loadEdeFittedLanes() {
-  const response = await fetch(new URL('../assets/ede-fitted-lanes.json.gz', import.meta.url));
+  const response = await fetch(new URL('../assets/ede-fitted-lanes.json.gz?v=motorway-transitions', import.meta.url));
   if (!response.ok) throw new Error(`Ede lane geometry HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   const body = new Response(bytes);

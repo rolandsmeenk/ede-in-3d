@@ -21,6 +21,7 @@ from ede_map import load_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 PDOK, MUNICIPAL, OSM, SURVEYED = 1, 2, 4, 8
+MOR, ROADSIDE, AHN, PHENOLOGY = 16, 32, 64, 128
 UNKNOWN = 255
 CELL = MUNICIPAL_REACH = 2.5
 OSM_REACH = 2
@@ -47,6 +48,7 @@ class Tree:
     species: int = UNKNOWN
     sources: int = 0
     crown_width: float = 0
+    season_group: int = 0
 
 
 def read_json(path):
@@ -212,16 +214,43 @@ def merge_surveyed(sites, records, frame):
 
 
 def pack(trees):
+    expanded = any(t.sources & (MOR | ROADSIDE | AHN | PHENOLOGY) for t in trees)
     has_crowns = any(t.sources & SURVEYED for t in trees)
     rows = [(round(t.world[0] / STEP), round(t.world[1] / STEP),
              min(65535, round(t.height * 10)), min(255, round(t.diameter)),
-             t.species, t.sources, min(255, round(t.crown_width * 10))) for t in trees]
+             t.species, t.sources, min(255, round(t.crown_width * 10)), t.season_group) for t in trees]
     tile_step = round(TILE / STEP)
     rows.sort(key=lambda row: (row[0] // tile_step, row[1] // tile_step, row))
     record = struct.Struct('<hhHBBB')
-    return struct.pack('<4sI', b'EDT2' if has_crowns else b'EDT1', len(rows)) + b''.join(
-        record.pack(*r[:-1]) + (bytes((r[-1],)) if r[-2] & SURVEYED else b'') for r in rows)
+    data = bytearray(struct.pack('<4sI', b'EDT3' if expanded else b'EDT2' if has_crowns else b'EDT1', len(rows)))
+    for *fields, crown, season_group in rows:
+        data.extend(record.pack(*fields))
+        sources = fields[-1]
+        if sources & (SURVEYED | AHN):
+            data.append(crown)
+        if sources & PHENOLOGY:
+            data.append(season_group)
+    return bytes(data)
 
+
+def unpack_baseline(path, frame):
+    data = path.read_bytes()
+    magic, count = struct.unpack_from('<4sI', data)
+    if magic not in {b'EDT1', b'EDT2'}:
+        raise ValueError('The expansion requires the original Ede inventory')
+    offset, sites = 8, []
+    for _ in range(count):
+        x, z, height, diameter, species, sources = struct.unpack_from('<hhHBBB', data, offset)
+        offset += 9
+        crown = 0
+        if magic == b'EDT2' and sources & SURVEYED:
+            crown = data[offset] / 10
+            offset += 1
+        world = x / 5, z / 5
+        sites.append(Tree(frame.scene_to_rd(*world), world, height / 10, diameter, species, sources, crown))
+    if offset != len(data):
+        raise ValueError('Invalid baseline tree inventory size')
+    return sites
 
 def build(pdok_path, municipal_path, osm_path, output):
     scene = load_scene()
@@ -278,9 +307,22 @@ def build(pdok_path, municipal_path, osm_path, output):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('pdok', type=Path, help='Active PDOK BGT tree Points in EPSG:28992')
-    parser.add_argument('municipal', type=Path, help='Ede monumentale-bomen GeoJSON in WGS84')
+    parser.add_argument('pdok', type=Path, nargs='?', help='Active PDOK BGT tree Points in EPSG:28992')
+    parser.add_argument('municipal', type=Path, nargs='?', help='Ede monumentale-bomen GeoJSON in WGS84')
     parser.add_argument('--osm', type=Path, help='Raw Overpass JSON, defaulting to the existing Ede scene')
-    parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-trees.bin')
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('--mor', type=Path, help='Public MOR WFS snapshot for an expanded bake')
+    parser.add_argument('--roadside', type=Path, help='Gelderland road tree ArcGIS JSON snapshot')
+    parser.add_argument('--baseline', type=Path, default=ROOT / 'assets/ede-trees.bin')
+    parser.add_argument('--audit', type=Path, help='Write per-record match and placement decisions as JSON')
+    parser.add_argument('--canopy', type=Path, help='Directory of native canopy, DSM and DTM audit tiles')
     args = parser.parse_args()
-    build(args.pdok, args.municipal, args.osm, args.output)
+    if args.mor:
+        if not args.roadside:
+            parser.error('the MOR bake requires a Gelderland snapshot via --roadside')
+        from ede_tree_expansion import expand
+        expand(args, Tree, unpack_baseline, pack, classify)
+    else:
+        if not args.pdok or not args.municipal:
+            parser.error('both baseline snapshots or --mor and --roadside are required')
+        build(args.pdok, args.municipal, args.osm, args.output or ROOT / 'assets/ede-trees.bin')

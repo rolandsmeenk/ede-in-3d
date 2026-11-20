@@ -10,7 +10,7 @@ async function loadWorld() {
   const filename = join(__dirname, '../js/ede-street-features-world.js');
   const source = readFileSync(filename, 'utf8')
     .replaceAll('import.meta.url', JSON.stringify(pathToFileURL(filename).href))
-    .replace('export async function', 'async function') + '\nexport { buildEdeStreetFeaturesWorld };';
+    .replace('export async function', 'async function') + '\nexport { buildEdeStreetFeaturesWorld, matrixGantryMount };';
   const world = loadModule(source, { filename, imports: {
     'three/webgpu': THREE,
     'three/tsl': {},
@@ -124,4 +124,20 @@ test('every explicitly painted crossing in the shipped asset reaches the mapped 
   assert.equal(group.userData.crossings, 187);
   assert.equal(group.userData.zebras, 119);
   assert.ok(group.children.every(mesh => mesh.material.name === 'Ede crossing paint'));
+});
+
+
+test('a matrix face shares the surveyed beam and clears a destination sign on its approach', async () => {
+  const { matrixGantryMount } = await loadWorld();
+  const sign = { x: 10, z: 1, layer: 1 };
+  const gantry = { level: 1, x: 0, z: 0, ux: 1, uz: 0, length: 20, beam: 8,
+    panels: [{ x: 10, y: 8.5, z: 1, angle: 0, width: 5, height: 3 }] };
+  const wrongLevel = { ...gantry, z: 0.8, level: 0 };
+  const mount = matrixGantryMount(sign, [0, 1], [wrongLevel, gantry]);
+  assert.equal(mount.gantry, gantry);
+  assert.equal(mount.x, 10);
+  assert.equal(mount.z, 0);
+  assert.ok(Math.abs(mount.y - 6.61) < 1e-6);
+  assert.ok(Math.abs(matrixGantryMount(sign, [0, -1], [gantry]).y - 7.44) < 1e-6);
+  assert.equal(matrixGantryMount({ ...sign, x: 21 }, [0, 1], [gantry]), null);
 });

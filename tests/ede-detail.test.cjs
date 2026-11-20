@@ -69,6 +69,12 @@ test('instanced furniture and half gantry follow the culling and elevation contr
   ], { mappedLamps: [coincidentLamp, freeEndLamp] });
   assert.ok(result.stopIds.has('stop-id'));
   assert.equal(result.stats.counts.gantry, 1);
+  const [gantry] = result.gantries;
+  assert.equal(gantry.id, 'half');
+  assert.equal(gantry.length, 12);
+  assert.equal(gantry.ux, 1);
+  assert.equal(gantry.level, 0);
+  assert.ok(Math.abs(gantry.beam - 9) < 1e-6);
   assert.equal(result.colliders.length, 0);
   const tiles = result.group.children.filter(mesh => mesh.isInstancedMesh);
   const post = tiles.find(mesh => mesh.name === '1GIS detail box');

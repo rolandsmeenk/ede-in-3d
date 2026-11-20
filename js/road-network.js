@@ -886,6 +886,12 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       b0 = Math.min(b0, 8);
       b1 = Math.min(b1, 8);
     }
+    // Motorway lane shifts need room to taper through a shape node.
+    if (e.motorway) {
+      const setback = Math.min(22, e.span * 0.4);
+      if (e.from.arms.some(arm => arm.in && isMotorwayContinuation(arm.in, e))) b0 = Math.max(b0, setback);
+      if (e.to.arms.some(arm => isMotorwayContinuation(e, arm.out))) b1 = Math.max(b1, setback);
+    }
     const keep = Math.min(10, e.span * 0.5);
     e.squeezed = false;
     if (e.general && e.span - b0 - b1 < keep) {
@@ -1479,4 +1485,8 @@ function curvePoint(c, s, out) {
   return out;
 }
 
-export { buildRoadNetwork, CROSSWALK, roadEdgeKey };
+function isMotorwayContinuation(from, to) {
+  return from.motorway && to?.motorway && from.to.shape && from.dx * to.dx + from.dz * to.dz >= 0.97;
+}
+
+export { buildRoadNetwork, CROSSWALK, isMotorwayContinuation, roadEdgeKey };

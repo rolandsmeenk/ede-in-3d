@@ -1,4 +1,6 @@
 import * as THREE from 'three/webgpu';
+import { uniform } from 'three/tsl';
+import { packTreeStyle } from './tree-seasons.js';
 import { createTreeMaterial } from './tsl-materials.js';
 import { polygonBoxOverlaps } from './building-collision.js';
 
@@ -843,6 +845,54 @@ const LOD_HYSTERESIS = 6;
 const MAX_DIST = [3000, 1600, 950];
 const LOW_CUTOFF = 1150;
 
+const ADAPTIVE_LEVELS = [
+  { near: 76, mid: 23, reach: 1, density: 1, shadows: 390 },
+  { near: 89, mid: 31, reach: 0.91, density: 0.78, shadows: 280 },
+  { near: 104, mid: 40, reach: 0.81, density: 0.55, shadows: 180 }
+];
+const ADAPTIVE_NAMES = ['high', 'medium', 'low'];
+const MAX_CELL_UPLOADS = 8;
+const MAX_FADING_CELLS = 5;
+const MAX_FADING_TREES = 750;
+const FADE_SECONDS = 0.22;
+const INSTANCE_BYTES = 84;
+
+// Slop Singapore samples consecutive one-second windows and restores quality more slowly than it drops it.
+function createAutoCanopy() {
+  let level = 0, seconds = 0, frames = 0, late = 0;
+  let slow = 0, fast = 0, clock = 0, quietUntil = 3;
+  const retry = [0, 0, 0], failures = [0, 0, 0];
+  return {
+    get level() { return level; },
+    update(deltaMs, triangleLoad) {
+      if (!(deltaMs > 0 && deltaMs < 500)) return false;
+      const dt = deltaMs * 0.001;
+      clock += dt;
+      seconds += dt;
+      frames++;
+      if (deltaMs > 35) late++;
+      if (seconds < 1) return false;
+      const fps = frames / seconds, lateShare = late / frames;
+      seconds = frames = late = 0;
+      if (clock < quietUntil) return false;
+      const belowBudget = fps < 29 || lateShare > 0.18;
+      slow = belowBudget && triangleLoad > 100000 ? slow + 1 : 0;
+      fast = fps >= 34 && lateShare < 0.06 ? fast + 1 : 0;
+      if (slow >= 3 && level < ADAPTIVE_LEVELS.length - 1) {
+        retry[level] = clock + Math.min(90, 15 * 2 ** failures[level]++);
+        level++;
+      } else if (fast >= 12 && level > 0 && clock >= retry[level - 1]) {
+        level--;
+      } else {
+        return false;
+      }
+      slow = fast = 0;
+      quietUntil = clock + 3;
+      return true;
+    }
+  };
+}
+
 function hashPos(x, y, z) {
   const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
   return s - Math.floor(s);
@@ -891,13 +941,23 @@ function createTreeClearance(colliders) {
 /**
  * Builds the instanced tree field for sites with x, y, z, species, and either height (metres) or scale.
  * Sites may also have trunkDiameter (metres, when known), yaw, sx, sz, and tier.
- * Call update(cameraPosition) from the frame loop to keep each tree's level of detail up to date.
+ * Call update(camera, { deltaMs, viewportHeight, groundHeight, renderer }) from the frame loop.
+ * The benchmark can also use the original update(cameraPosition) interface in legacy mode.
  */
-function createTreeField(_scene, sites, colliders = []) {
+function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', season = false } = {}) {
   const group = new THREE.Group();
   group.name = 'Trees';
   const atlas = createLeafAtlas();
-  const material = createTreeMaterial(atlas.texture);
+  const material = createTreeMaterial(atlas.texture, { seasons: season });
+  let mode = 'legacy';
+  let fadeClock, adaptiveMaterial;
+  let previousLod, fadeStart;
+  let qualityControl = createAutoCanopy();
+  const stats = {
+    trees: 0, qualityLevel: 'legacy', visibleTrees: 0, visibleByLod: [0, 0, 0],
+    visibleTriangles: 0, shadowBatches: 0, transitions: 0,
+    uploadBytes: 0, uploadedCells: 0, frameUploadBytes: 0, frameUploadedCells: 0
+  };
 
   // Geometries: [species][variant][lod]
   const includeMeasuredMiddle = sites.some(hasMeasuredHeight);
@@ -926,6 +986,9 @@ function createTreeField(_scene, sites, colliders = []) {
   const meshOf = new Int32Array(capacity * 3); // mesh index per level
   const tier = new Uint8Array(capacity);
   const lod = new Uint8Array(capacity).fill(255);
+  const crownWidth = new Float32Array(capacity);
+  const keep = new Float32Array(capacity);
+  const priority = new Uint8Array(capacity);
 
   // Shared geometry types per species, variant and level.
   const types = [];
@@ -937,7 +1000,8 @@ function createTreeField(_scene, sites, colliders = []) {
     const type = {
       geo, name, windPadding, meshes: [],
       inverseHeight: 1 / (max.y - min.y),
-      inverseWidth: 1 / Math.max(max.x - min.x, max.z - min.z)
+      inverseWidth: 1 / Math.max(max.x - min.x, max.z - min.z),
+      lod: geo.userData.lod, triangles: geo.userData.triangles
     };
     types.push(type);
     return type;
@@ -989,7 +1053,9 @@ function createTreeField(_scene, sites, colliders = []) {
     plantedSites.add(t);
     dummy.matrix.toArray(mats, i * 16);
     tint.setHex(SPECIES[sp].tints[Math.floor(r3 * 2.999)]).multiplyScalar(0.82 + r1 * 0.36);
-    data.set([tint.r, tint.g, tint.b, sp + r2 * 0.999], i * 4);
+    data.set([tint.r, tint.g, tint.b, season ? packTreeStyle(sp, r2, t.seasonGroup) : sp + r2 * 0.999], i * 4);
+    keep[i] = hashPos(t.x, 11.1, t.z);
+    priority[i] = Number(Boolean(t.priority));
     px[i] = t.x;
     py[i] = groundY + (sized ? t.height * 0.5 : 6 * s);
     pz[i] = t.z;
@@ -1009,7 +1075,12 @@ function createTreeField(_scene, sites, colliders = []) {
       cells.set(cellKey, cell);
     }
     cell.trees.push(i);
+    cell.priority ||= priority[i] === 1;
     const mi = meshIndex[sp];
+    const near = mi.l0[variant];
+    const xScale = Math.hypot(dummy.matrix.elements[0], dummy.matrix.elements[2]);
+    const zScale = Math.hypot(dummy.matrix.elements[8], dummy.matrix.elements[10]);
+    crownWidth[i] = Math.max(xScale, zScale) / (sized ? 1 : near.inverseWidth);
     // Measured trees retain their dimensions with either variant, so distant stands can share a batch per species.
     const treeTypes = sized
       ? [mi.l0[variant], mi.measuredMiddle[variant], mi.l2[0]]
@@ -1068,10 +1139,20 @@ function createTreeField(_scene, sites, colliders = []) {
     cell.minCutoffAloft = minCutoffAloft;
     cell.minCutoffLow = Math.min(minCutoffAloft, LOW_CUTOFF);
     cell.uniformLod = 255;
+    cell.lo = new Uint32Array(3);
+    cell.triangles = 0;
+    cell.shadowBatches = 0;
+    cell.instanceCount = 0;
+    cell.revision = -1;
+    cell.fadeUntil = 0;
+    cell.fadingTrees = 0;
+    cell.hasCoverage = false;
+    cell.drawable = false;
+    cell.shadows = true;
     return cell;
   });
 
-  const instanced = meshes.map((m) => {
+  const instanced = meshes.map((m, index) => {
     const geo = new THREE.BufferGeometry();
     for (const name of Object.keys(m.type.geo.attributes)) geo.setAttribute(name, m.type.geo.attributes[name]);
     geo.setIndex(m.type.geo.index);
@@ -1085,6 +1166,7 @@ function createTreeField(_scene, sites, colliders = []) {
     geo.setAttribute('aTreeData', treeData);
     const mesh = new THREE.InstancedMesh(geo, material, cap);
     mesh.name = m.name;
+    mesh.userData.treeBatchIndex = index;
     mesh.count = 0;
     mesh.visible = false;
     mesh.castShadow = true;
@@ -1095,76 +1177,111 @@ function createTreeField(_scene, sites, colliders = []) {
     return mesh;
   });
 
-  // Repack only cells whose trees changed level; the meshes and their buffer capacities stay fixed.
+  // Repack only changed cells; each fixed-capacity mesh is shared by all its occupants at this level.
   const dirtyCells = new Set();
+  const uploaded = new WeakSet();
+  let uploadContext;
+  function syncAttribute(attr, count, inAdvance) {
+    const length = count * attr.itemSize;
+    const bytes = (uploaded.has(attr) ? length : attr.array.length) * attr.array.BYTES_PER_ELEMENT;
+    uploaded.add(attr);
+    stats.uploadBytes += bytes;
+    stats.frameUploadBytes += bytes;
+    attr.clearUpdateRanges();
+    attr.addUpdateRange(0, length);
+    attr.needsUpdate = true;
+    if (inAdvance) {
+      // The bundled Three.js attribute cache marks these uploads current before a predicted cell is drawn.
+      const type = attr.isStorageInstancedBufferAttribute ? 3 : 1;
+      uploadContext.update(attr, type);
+    }
+  }
+
+  function writeTree(i, level, fade, adaptive) {
+    const mi = meshOf[i * 3 + level], mesh = instanced[mi], type = meshes[mi].type;
+    const count = counts[mi]++;
+    const dst = mesh.instanceMatrix.array, srcOff = i * 16, dstOff = count * 16;
+    for (let j = 0; j < 16; j++) dst[dstOff + j] = mats[srcOff + j];
+    if (hasHeight[i] || adaptive) {
+      const near = meshes[meshOf[i * 3]].type;
+      const width = type.inverseWidth / (hasHeight[i] ? 1 : near.inverseWidth);
+      const height = type.inverseHeight / (hasHeight[i] ? 1 : near.inverseHeight);
+      dst[dstOff] *= width;
+      dst[dstOff + 2] *= width;
+      dst[dstOff + 5] *= height;
+      dst[dstOff + 8] *= width;
+      dst[dstOff + 10] *= width;
+      dst[dstOff + 13] -= type.geo.boundingBox.min.y * dst[dstOff + 5];
+    }
+    const dstData = mesh.geometry.attributes.aTreeData.array, srcData = i * 4, offset = count * 4;
+    for (let j = 0; j < 4; j++) dstData[offset + j] = data[srcData + j];
+    if (adaptive) mesh.geometry.attributes.aTreeFade.array[count] = fade;
+  }
+
   function rebuild() {
+    const adaptive = mode !== 'legacy';
     for (const cell of dirtyCells) {
-      const mIndices = cell.meshIndices;
-      if (cell.uniformLod === 255) {
-        for (let m = 0; m < mIndices.length; m++) {
-          const mi = mIndices[m];
-          counts[mi] = 0;
-          const mesh = instanced[mi];
-          mesh.count = 0;
-          mesh.visible = false;
+      const indices = cell.meshIndices;
+      cell.lo.fill(0);
+      cell.triangles = cell.instanceCount = cell.shadowBatches = 0;
+      for (const mi of indices) counts[mi] = 0;
+      if (adaptive || cell.uniformLod !== 255) {
+        for (const i of cell.trees) {
+          const l = lod[i], start = adaptive ? fadeStart[i] : 0;
+          if (l !== 255) {
+            writeTree(i, l, start, adaptive);
+            cell.lo[l]++;
+          }
+          if (start && previousLod[i] !== 255) writeTree(i, previousLod[i], -start, true);
         }
-        cell.group.visible = false;
-        continue;
       }
-      for (let m = 0; m < mIndices.length; m++) counts[mIndices[m]] = 0;
-      const trees = cell.trees;
-      for (let k = 0; k < trees.length; k++) {
-        const i = trees[k];
-        const l = lod[i];
-        if (l === 255) continue;
-        const mi = meshOf[i * 3 + l];
-        const mesh = instanced[mi];
-        const c = counts[mi]++;
-        const dstM = mesh.instanceMatrix.array;
-        const srcM = i * 16;
-        const dstMOff = c * 16;
-        for (let j = 0; j < 16; j++) dstM[dstMOff + j] = mats[srcM + j];
-        if (hasHeight[i]) {
-          // Each mesh has a different local envelope. Keep the same ground, height and spread when levels change.
-          const type = meshes[mi].type;
-          dstM[dstMOff] *= type.inverseWidth;
-          dstM[dstMOff + 2] *= type.inverseWidth;
-          dstM[dstMOff + 5] *= type.inverseHeight;
-          dstM[dstMOff + 8] *= type.inverseWidth;
-          dstM[dstMOff + 10] *= type.inverseWidth;
-          dstM[dstMOff + 13] -= type.geo.boundingBox.min.y * dstM[dstMOff + 5];
-        }
-        const dstD = mesh.geometry.attributes.aTreeData.array;
-        const srcD = i * 4;
-        const dstDOff = c * 4;
-        dstD[dstDOff] = data[srcD];
-        dstD[dstDOff + 1] = data[srcD + 1];
-        dstD[dstDOff + 2] = data[srcD + 2];
-        dstD[dstDOff + 3] = data[srcD + 3];
-      }
-      let visible = false;
-      for (let m = 0; m < mIndices.length; m++) {
-        const mi = mIndices[m];
-        const mesh = instanced[mi];
-        const n = counts[mi];
+      const inAdvance = Boolean(uploadContext && adaptive && !cell.drawable);
+      const beforeBytes = stats.frameUploadBytes;
+      for (const mi of indices) {
+        const mesh = instanced[mi], n = counts[mi];
         mesh.count = n;
         mesh.visible = n > 0;
-        if (n > 0) {
-          visible = true;
-          // main.js swaps instanceMatrix for a storage attribute: look it up here on every changed cell.
-          for (const attr of [mesh.instanceMatrix, mesh.geometry.attributes.aTreeData]) {
-            attr.clearUpdateRanges();
-            attr.addUpdateRange(0, n * attr.itemSize);
-            attr.needsUpdate = true;
-          }
+        if (!n) continue;
+        cell.instanceCount += n;
+        cell.triangles += n * meshes[mi].type.triangles;
+        if (mesh.castShadow) cell.shadowBatches++;
+        const attrs = mesh.geometry.attributes;
+        syncAttribute(mesh.instanceMatrix, n, inAdvance);
+        syncAttribute(attrs.aTreeData, n, inAdvance);
+        if (adaptive) syncAttribute(attrs.aTreeFade, n, inAdvance);
+        if (adaptive) {
+          // Conservative cell bounds remain valid when the active instances change or foliage sways.
+          mesh.boundingSphere ||= new THREE.Sphere();
+          mesh.boundingSphere.center.set(cell.cx, cell.cy, cell.cz);
+          mesh.boundingSphere.radius = cell.radius + 3 + meshes[mi].type.windPadding + cell.crownRadius;
+        } else {
           mesh.computeBoundingSphere();
           mesh.boundingSphere.radius += meshes[mi].type.windPadding;
         }
       }
-      // Hidden cells avoid traversing all their dormant species/variant/LOD meshes in every render pass.
-      cell.group.visible = visible;
+      cell.group.visible = (adaptive ? cell.drawable : true) && beforeBytes < stats.frameUploadBytes;
+      if (beforeBytes < stats.frameUploadBytes) {
+        stats.uploadedCells++;
+        stats.frameUploadedCells++;
+      }
     }
     dirtyCells.clear();
+  }
+
+  function measureVisible() {
+    const { visibleByLod } = stats;
+    visibleByLod.fill(0);
+    let triangles = 0, shadowBatches = 0;
+    for (const cell of cellList) {
+      if (!cell.group.visible) continue;
+      for (let l = 0; l < 3; l++) visibleByLod[l] += cell.lo[l];
+      triangles += cell.triangles;
+      shadowBatches += cell.shadowBatches;
+    }
+    stats.visibleTrees = visibleByLod[0] + visibleByLod[1] + visibleByLod[2];
+    stats.visibleTriangles = triangles;
+    stats.shadowBatches = shadowBatches;
+    stats.transitions = fadingTrees;
   }
 
   // Squared LOD and hysteresis thresholds eliminate per-tree Math.sqrt and temporary array allocations.
@@ -1201,7 +1318,7 @@ function createTreeField(_scene, sites, colliders = []) {
   // Cell-hierarchical LOD update (3D distance to mid-crown) with exact hysteresis at every boundary.
   const last = new V3(Infinity, Infinity, Infinity);
   const cam = new V3();
-  function update(position) {
+  function updateLegacy(position) {
     cam.copy(position);
     if (cam.distanceToSquared(last) < 16) return false;
     last.copy(cam);
@@ -1282,7 +1399,267 @@ function createTreeField(_scene, sites, colliders = []) {
     return changed;
   }
 
-  // Levels for the start-up view (Midtown, 5th Ave), so the precompile pass sees the tree meshes
+  const fading = new Set();
+  let fadingTrees = 0;
+  const candidates = [];
+  const travel = new V3(), previousPosition = new V3(Infinity, Infinity, Infinity);
+  const direction = new V3(), plannedDirection = new V3();
+  const plannedPosition = new V3(Infinity, Infinity, Infinity);
+  let plan = 0, planAt = 0, plannedPixelScale = 0, plannedAgl = 0;
+  let clock = 1;
+  let lastCameraLevel = '';
+  const largestCell = cellList.reduce((max, cell) => Math.max(max, cell.trees.length), 0);
+  const uploadBudget = Math.max(256 * 1024, largestCell * INSTANCE_BYTES * 3);
+  stats.uploadBudget = uploadBudget;
+  stats.maxFadingCells = MAX_FADING_CELLS;
+  stats.maxFadingTrees = MAX_FADING_TREES;
+  for (const cell of cellList) {
+    cell.crownRadius = 0;
+    for (const i of cell.trees) cell.crownRadius = Math.max(cell.crownRadius, crownWidth[i] * 0.5);
+  }
+
+  function maxRange(t, above, profile) {
+    const groundLimit = Math.min(LOW_CUTOFF, MAX_DIST[t]);
+    return lerp(groundLimit, MAX_DIST[t], above) * profile.reach;
+  }
+
+  function viewDistance(cell, x, y, z, cosHalfAngle, looking) {
+    const dx = cell.cx - x, dy = cell.cy - y, dz = cell.cz - z;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const radius = cell.radius + cell.crownRadius + 18;
+    const near = distance - radius;
+    // The diagonal view cone is conservative; Three.js performs exact per-pass frustum culling.
+    if (!looking || near < 100 ||
+        dx * direction.x + dy * direction.y + dz * direction.z >= distance * cosHalfAngle - 1.5 * radius) return near;
+    return Infinity;
+  }
+
+  function targetLod(i, x, y, z, focal, above, profile) {
+    const dx = px[i] - x, dy = py[i] - y, dz = pz[i] - z;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const pixels = focal * crownWidth[i] / Math.max(1, distance);
+    const prior = lod[i];
+    const range = maxRange(tier[i], above, profile);
+    // Spread the distant cutoff over a deterministic band rather than dropping an entire ring at once.
+    const edge = range + (keep[i] - 0.5) * 150 + (priority[i] ? 220 : 0);
+    const margin = prior === 255 ? -24 : 24;
+    const detail = priority[i] ? ADAPTIVE_LEVELS[0] : profile;
+    const density = lerp(1, profile.density, smooth(440, 1120, distance));
+    if (distance > edge + margin || (!priority[i] && keep[i] > density)) return 255;
+    if (pixels > detail.near * (prior === 0 ? 0.87 : 1.08)) return 0;
+    if (pixels > detail.mid * (prior <= 1 ? 0.88 : 1.08)) return 1;
+    return 2;
+  }
+
+  function retarget(cell, x, y, z, focal, above, profile, fade) {
+    let changed = 0;
+    const limit = fade ? Math.min(220, MAX_FADING_TREES - fadingTrees) : Infinity;
+    for (const i of cell.trees) {
+      const next = targetLod(i, x, y, z, focal, above, profile);
+      if (next === lod[i]) continue;
+      previousLod[i] = lod[i];
+      fadeStart[i] = fade ? clock : 0;
+      lod[i] = next;
+      changed++;
+      if (changed >= limit) {
+        cell.revision = -1;
+        break;
+      }
+    }
+    if (!changed) return;
+    cell.uniformLod = -1;
+    dirtyCells.add(cell);
+    if (fade) {
+      cell.fadeUntil = clock + FADE_SECONDS;
+      cell.fadingTrees = changed;
+      fadingTrees += changed;
+      fading.add(cell);
+    }
+  }
+
+  function updateAdaptive(view, options) {
+    const position = view.position ?? view;
+    const deltaMs = options.deltaMs ?? 16.67;
+    const dt = Math.min(0.1, Math.max(0.001, deltaMs * 0.001));
+    clock += dt;
+    fadeClock.value = clock;
+    if (mode === 'auto') qualityControl.update(deltaMs, stats.visibleTriangles);
+    const level = mode === 'high' ? 0 : qualityControl.level;
+    const profile = ADAPTIVE_LEVELS[level];
+    stats.qualityLevel = ADAPTIVE_NAMES[level];
+
+    const { x, y, z } = position;
+    const move2 = position.distanceToSquared(previousPosition);
+    const jump = move2 > 180 ** 2;
+    if (jump) {
+      travel.set(0, 0, 0);
+    } else {
+      const a = 1 - Math.exp(-dt * 7);
+      travel.x = lerp(travel.x, (x - previousPosition.x) / dt, a);
+      travel.y = lerp(travel.y, (y - previousPosition.y) / dt, a);
+      travel.z = lerp(travel.z, (z - previousPosition.z) / dt, a);
+      const v = travel.length();
+      if (v > 140) travel.multiplyScalar(140 / v);
+    }
+    previousPosition.copy(position);
+    const predX = x + travel.x, predY = y + travel.y, predZ = z + travel.z;
+    const looking = typeof view.getWorldDirection === 'function';
+    if (looking) view.getWorldDirection(direction);
+    const tangent = Math.tan((view.fov ?? 55) * Math.PI / 360) / (view.zoom ?? 1);
+    const focal = (options.viewportHeight ?? 720) / (2 * tangent);
+    const diagonal = Math.atan(tangent * Math.hypot(1, view.aspect ?? 1.6)) + 0.08;
+    const cosHalfAngle = Math.cos(diagonal);
+    const agl = y - (options.groundHeight ?? 0);
+    const above = smooth(23, 94, agl);
+    const aheadAbove = smooth(23, 94, agl + Math.max(0, travel.y));
+    const climbing = aheadAbove - above > 0.04;
+    if (jump || clock - planAt > 0.24 && (position.distanceToSquared(plannedPosition) > 16 ||
+        direction.dot(plannedDirection) < 0.98 && looking || Math.abs(focal - plannedPixelScale) > 5 ||
+        Math.abs(agl - plannedAgl) > 3) || lastCameraLevel !== stats.qualityLevel) {
+      plan++;
+      planAt = clock;
+      plannedPosition.copy(position);
+      plannedDirection.copy(direction);
+      plannedPixelScale = focal;
+      plannedAgl = agl;
+      lastCameraLevel = stats.qualityLevel;
+    }
+
+    uploadContext = options.renderer?.backend?.isWebGPUBackend && options.renderer._attributes?.update
+      ? options.renderer._attributes : null;
+    candidates.length = 0;
+    let unprepared = 0;
+    const canPredict = travel.lengthSq() > 25;
+    for (const cell of cellList) {
+      const near = viewDistance(cell, x, y, z, cosHalfAngle, looking);
+      const far = lerp(cell.maxCutoffLow, cell.maxCutoffAloft, above) * profile.reach + (cell.priority ? 335 : 115);
+      const drawable = near < far;
+      if (drawable && !cell.drawable) cell.revision = -1;
+      cell.drawable = drawable;
+      cell.group.visible = drawable && cell.instanceCount > 0;
+      const shadows = drawable && near < profile.shadows + (cell.priority ? 45 : 0) + (cell.shadows ? 14 : -14);
+      if (cell.shadows !== shadows || cell.shadowLevel !== level) {
+        cell.shadows = shadows;
+        cell.shadowLevel = level;
+        cell.shadowBatches = 0;
+        for (const mi of cell.meshIndices) {
+          const mesh = instanced[mi];
+          mesh.castShadow = shadows && (level < 2 || meshes[mi].type.lod < 2);
+          if (mesh.castShadow && mesh.count > 0) cell.shadowBatches++;
+        }
+      }
+      let score = near;
+      let ahead = false;
+      if (canPredict) {
+        const predicted = viewDistance(cell, predX, predY, predZ, cosHalfAngle, looking);
+        const aheadRange = climbing
+          ? lerp(cell.maxCutoffLow, cell.maxCutoffAloft, aheadAbove) * profile.reach + 115
+          : far;
+        if (predicted < Math.min(aheadRange, climbing ? 1450 : 550)) {
+          ahead = !drawable;
+          score = Math.min(score, predicted);
+        }
+      }
+      const done = cell.fadeUntil > 0 && clock >= cell.fadeUntil;
+      if (done || ((drawable || ahead) && (!cell.hasCoverage || cell.revision !== plan) && cell.fadeUntil === 0)) {
+        if (drawable && !cell.hasCoverage) unprepared++;
+        cell.ahead = ahead;
+        cell.score = score + (ahead ? 350 : 0) - (cell.priority ? 200 : 0) -
+          (done ? 1000 : drawable && !cell.hasCoverage ? 600 : 0);
+        candidates.push(cell);
+      }
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    let evaluated = 0;
+    for (const cell of candidates) {
+      if (stats.frameUploadedCells >= MAX_CELL_UPLOADS || evaluated >= 28) break;
+      const done = cell.fadeUntil > 0;
+      const estimated = cell.trees.length * INSTANCE_BYTES * 3;
+      if (stats.frameUploadBytes + estimated > uploadBudget) continue;
+      if (unprepared && !done && cell.hasCoverage && cell.score > 120) continue;
+      evaluated++;
+      if (done) {
+        for (const i of cell.trees) fadeStart[i] = 0;
+        cell.fadeUntil = 0;
+        fading.delete(cell);
+        fadingTrees -= cell.fadingTrees;
+        cell.fadingTrees = 0;
+        dirtyCells.add(cell);
+      } else if (!cell.hasCoverage) {
+        // The affordable silhouette comes first, even when a jump lands in full-detail range.
+        cell.hasCoverage = true;
+        for (const i of cell.trees) {
+          if (targetLod(i, x, y, z, focal, above, profile) !== 255 || cell.ahead) lod[i] = 2;
+        }
+        cell.uniformLod = 2;
+        dirtyCells.add(cell);
+      } else {
+        const fadingRoom = cell.drawable && !jump && fading.size < MAX_FADING_CELLS && fadingTrees < MAX_FADING_TREES;
+        if (cell.drawable && !jump && !fadingRoom) continue;
+        cell.revision = plan;
+        retarget(cell,
+          cell.ahead ? predX : x, cell.ahead ? predY : y, cell.ahead ? predZ : z,
+          focal, above, profile, fadingRoom);
+      }
+      if (dirtyCells.size) rebuild();
+    }
+    measureVisible();
+    return stats.frameUploadedCells > 0;
+  }
+
+  function setQuality(next) {
+    if (!['auto', 'high', 'legacy'].includes(next) || next === mode) return;
+    const adaptive = next !== 'legacy';
+    if (adaptive && !adaptiveMaterial) {
+      previousLod = new Uint8Array(capacity).fill(255);
+      fadeStart = new Float32Array(capacity);
+      fadeClock = uniform(clock);
+      adaptiveMaterial = createTreeMaterial(atlas.texture, { seasons: season, fadeClock });
+      for (const mesh of instanced) {
+        mesh.geometry.setAttribute('aTreeFade', new THREE.InstancedBufferAttribute(new Float32Array(mesh.instanceMatrix.count), 1));
+      }
+    }
+    if (adaptive !== (mode !== 'legacy')) {
+      lod.fill(255);
+      fading.clear();
+      fadingTrees = 0;
+      fadeStart?.fill(0);
+      for (const cell of cellList) {
+        cell.hasCoverage = cell.drawable = false;
+        cell.revision = -1;
+        cell.fadeUntil = 0;
+        cell.fadingTrees = 0;
+        cell.uniformLod = 255;
+        cell.instanceCount = 0;
+        cell.group.visible = false;
+        cell.shadows = false;
+        for (const mi of cell.meshIndices) {
+          const mesh = instanced[mi];
+          mesh.material = adaptive ? adaptiveMaterial : material;
+          mesh.castShadow = !adaptive;
+          mesh.count = 0;
+          mesh.visible = false;
+        }
+      }
+      last.set(Infinity, Infinity, Infinity);
+      previousPosition.set(Infinity, Infinity, Infinity);
+    }
+    mode = next;
+    qualityControl = createAutoCanopy();
+    lastCameraLevel = '';
+    stats.qualityLevel = adaptive ? 'high' : 'legacy';
+  }
+
+  function update(view, options = {}) {
+    stats.frameUploadBytes = stats.frameUploadedCells = 0;
+    if (mode !== 'legacy') return updateAdaptive(view, options);
+    const changed = updateLegacy(view.position ?? view);
+    if (changed) measureVisible();
+    return changed;
+  }
+
+  // Put nearby batches in scope for the existing startup compilation and warm-up.
+  setQuality(quality);
   update(new V3(0, 10, 140));
 
   // Precompile one visible representative per geometry; the other cells use exactly the same pipeline.
@@ -1298,12 +1675,37 @@ function createTreeField(_scene, sites, colliders = []) {
     object.matrixWorldAutoUpdate = false;
   });
 
-  const stats = {
-    trees: N,
-    triangles: geos.map((v) => v.map((l) => l.map((g) => g && g.userData.triangles))),
-    cards: geos.map((v) => v.map((l) => l.map((g) => g && g.userData.cards)))
+  stats.trees = N;
+  stats.triangles = geos.map((v) => v.map((l) => l.map((g) => g && g.userData.triangles)));
+  stats.cards = geos.map((v) => v.map((l) => l.map((g) => g && g.userData.cards)));
+  const prepareWarmup = () => {
+    if (mode === 'legacy') return () => {};
+    const restore = [];
+    for (const type of types) {
+      if (type.meshes.some((mesh) => mesh.visible && meshes[mesh.userData.treeBatchIndex].cell.group.visible)) continue;
+      const mesh = type.meshes[0];
+      if (!mesh) continue;
+      const { cell } = meshes[mesh.userData.treeBatchIndex];
+      const old = cell.group.visible, visible = mesh.visible, shadow = mesh.castShadow, count = mesh.count;
+      cell.group.visible = mesh.visible = true;
+      mesh.castShadow = true;
+      if (!count) {
+        mesh.count = 1;
+        mesh.instanceMatrix.array.fill(0, 0, 16);
+        mesh.instanceMatrix.array[0] = mesh.instanceMatrix.array[5] =
+          mesh.instanceMatrix.array[10] = mesh.instanceMatrix.array[15] = 1;
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+      restore.push(() => {
+        cell.group.visible = old;
+        mesh.visible = visible;
+        mesh.castShadow = shadow;
+        mesh.count = count;
+      });
+    }
+    return () => { for (let i = restore.length - 1; i >= 0; i--) restore[i](); };
   };
-  return { group, material, atlas, update, meshes: instanced, stats, sites: plantedSites };
+  return { group, material, atlas, update, setQuality, prepareWarmup, meshes: instanced, stats, sites: plantedSites };
 }
 
 export { createTreeField, createLeafAtlas, buildTreeGeometries, SPECIES as TREE_SPECIES };

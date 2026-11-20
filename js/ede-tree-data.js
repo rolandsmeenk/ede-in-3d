@@ -1,23 +1,29 @@
-// EDT1 and EDT2 store compact tree records in the existing Oude Kerk scene frame.
+// EDT1 through EDT3 store compact tree records in the existing Oude Kerk scene frame.
 // Records hold x/z in 20 cm steps, height in decimetres and trunk diameter in centimetres.
 export function decodeEdeTrees(buffer) {
   const view = new DataView(buffer);
   const invalid = () => new Error('Invalid Ede tree asset');
   if (view.byteLength < 8) throw invalid();
   const magic = view.getUint32(0, true);
-  const hasCrowns = magic === 0x32544445;
+  const expanded = magic === 0x33544445;
+  const hasCrowns = expanded || magic === 0x32544445;
   if (!hasCrowns && magic !== 0x31544445) throw invalid();
   const count = view.getUint32(4, true);
-  if (!count || view.byteLength < 8 + count * 9 || view.byteLength > 8 + count * (hasCrowns ? 10 : 9)) throw invalid();
+  const maxRecordSize = expanded ? 11 : hasCrowns ? 10 : 9;
+  if (!count || view.byteLength < 8 + count * 9 || view.byteLength > 8 + count * maxRecordSize) throw invalid();
 
   const trees = new Array(count);
   let offset = 8;
   for (let i = 0; i < count; i++) {
     if (offset + 9 > view.byteLength) throw invalid();
     const species = view.getUint8(offset + 7), sources = view.getUint8(offset + 8);
-    if ((species > 3 && species !== 255) || sources < 1 || sources > (hasCrowns ? 15 : 7)) throw invalid();
-    const surveyed = Boolean(sources & 8);
-    if (surveyed && offset + 10 > view.byteLength) throw invalid();
+    if ((species > 3 && species !== 255) || sources < 1 || sources > (expanded ? 255 : hasCrowns ? 15 : 7)) throw invalid();
+    const crown = Boolean(sources & (expanded ? 72 : 8));
+    const group = Boolean(sources & 128);
+    const next = offset + 9 + Number(crown) + Number(group);
+    if (next > view.byteLength) throw invalid();
+    const seasonGroup = group ? view.getUint8(next - 1) : undefined;
+    if (seasonGroup > 7) throw invalid();
     trees[i] = {
       x: view.getInt16(offset, true) / 5,
       z: view.getInt16(offset + 2, true) / 5,
@@ -25,18 +31,51 @@ export function decodeEdeTrees(buffer) {
       trunkDiameter: view.getUint8(offset + 6) / 100,
       species,
       sources,
-      ...(surveyed ? { crownWidth: view.getUint8(offset + 9) / 10 } : {})
+      ...(crown ? { crownWidth: view.getUint8(offset + 9) / 10 } : {}),
+      ...(group ? { seasonGroup } : {})
     };
-    offset += surveyed ? 10 : 9;
+    offset = next;
   }
   if (offset !== view.byteLength) throw invalid();
   return trees;
 }
 
-export async function loadEdeTrees() {
-  const response = await fetch(new URL('../assets/ede-trees.bin', import.meta.url));
-  if (!response.ok) throw new Error(`Ede tree data request failed: ${response.status}`);
-  return decodeEdeTrees(await response.arrayBuffer());
+export async function loadEdeTrees(inventory = 'expanded') {
+  async function read(asset) {
+    const response = await fetch(new URL(asset, import.meta.url));
+    if (!response.ok) throw new Error(`Ede tree data request failed: ${response.status}`);
+    return decodeEdeTrees(await response.arrayBuffer());
+  }
+  if (inventory === 'expanded') {
+    try {
+      const [records, canopyDensity] = await Promise.all([
+        read('../assets/ede-trees-expanded.bin'), loadWoodlandCanopyDensity(),
+      ]);
+      return { inventory: 'expanded', records, canopyDensity };
+    } catch (error) {
+      console.warn('[trees] using baseline inventory:', error);
+    }
+  }
+  return { inventory: 'baseline', records: await read('../assets/ede-trees.bin') };
+}
+
+async function loadWoodlandCanopyDensity() {
+  try {
+    const response = await fetch(new URL('../assets/ede-tree-canopy-v1.json', import.meta.url));
+    if (!response.ok) return undefined;
+    const data = await response.json();
+    if (data.version !== 1 || data.tileMeters !== 200 || !Array.isArray(data.cells)) return undefined;
+    const density = new Map();
+    for (const [x, z, fraction] of data.cells) {
+      if (Number.isInteger(x) && Number.isInteger(z) && Number.isFinite(fraction) && fraction >= 0 && fraction <= 1) {
+        density.set(`${x}/${z}`, Math.max(0.28, Math.min(1, fraction / 0.9)));
+      }
+    }
+    return density;
+  } catch (error) {
+    console.warn('[trees] using procedural woodland density:', error);
+    return undefined;
+  }
 }
 
 function randomAt(x, z, salt) {
@@ -53,6 +92,9 @@ export function edeTreeSite(tree, groundY) {
   const height = tree.height || 3.5 + 19 * randomAt(x, z, 47) ** 1.65;
   return {
     x, y: groundY + 0.09, z, height, trunkDiameter, crownWidth, species,
+    priority: Boolean(tree.sources & 8),
+    // Unknown inventory trees keep generic phenology, independent of their procedural shape.
+    seasonGroup: tree.seasonGroup ?? [4, 2, 6, 1][tree.species] ?? 0,
     yaw: randomAt(x, z, 83) * Math.PI * 2,
     tier: tree.height >= 17 ? 0 : height >= 11 ? 1 : 2
   };

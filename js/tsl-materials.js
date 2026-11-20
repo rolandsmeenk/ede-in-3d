@@ -26,6 +26,8 @@ import {
   cameraProjectionMatrix,
   cameraViewMatrix,
   screenSize,
+  screenCoordinate,
+  interleavedGradientNoise,
   uv,
   time,
   sin,
@@ -63,6 +65,7 @@ import {
   EDE_DATA,
   waterAt
 } from './city-config.js';
+import { treeSeasonNodes } from './tree-seasons.js';
 
 // Procedural city materials: facades and interiors, vegetation, roads, water and lighting effects.
 
@@ -1306,7 +1309,8 @@ const TREE_WIND = vec2(0.86, 0.51);
  *   shades as one leafy volume and both sides of a card light alike (the back faces keep them unflipped)
  * - aTree (vec4): x = 1 on leaf cards / 0 on bark, y = crown occlusion (0 deep inside .. 1 on the outer shell),
  *   z = sway weight (0 on the trunk .. 1 at the twig tips & cards), w = per-card random (leaf flutter phase)
- * - aTreeData (instanced vec4): rgb = per-tree linear foliage tint, w = species index + per-tree random fraction
+ * - aTreeData (instanced vec4): rgb = per-tree linear foliage tint, w packs species, seasonal group and random fraction
+ * - aTreeFade (optional instanced float): signed start time of an incoming or outgoing adaptive LOD
  *   (species 0 London plane: flaking camouflage bark, 1 honey locust & 2 elm: dark furrowed bark)
  * Leaf atlas texels: r = leaf brightness, g = per-leaf hue jitter, b = twig / stalk mask, a = coverage (its mipmaps
  * keep the coverage, so distant crowns stay full).
@@ -1315,7 +1319,7 @@ const TREE_WIND = vec2(0.86, 0.51);
  * pass (alpha-tested in the shadow maps: dappled shadows). Wind: gusts rolling across the city sway the crowns
  * (shadows follow), branches bob and leaves flutter.
  */
-function createTreeMaterial(leafAtlas) {
+function createTreeMaterial(leafAtlas, { seasons = false, fadeClock } = {}) {
   const mat = new TreeNodeMaterial({
     side: THREE.DoubleSide,
     alphaToCoverage: true,
@@ -1328,8 +1332,10 @@ function createTreeMaterial(leafAtlas) {
   const isLeaf = aTree.x;
   const crownAO = aTree.y;
   const rnd = fract(aData.w);
-  const species = floor(aData.w);
+  const species = seasons ? mod(floor(aData.w), 4) : floor(aData.w);
+  const season = seasons ? treeSeasonNodes(aData.w) : null;
   const leaf = texture(leafAtlas, uv());
+  const tint = season ? aData.xyz.mul(season.rgb) : aData.xyz;
 
   // Wind. positionLocal is already instanced (world space); positionGeometry is the tree's own frame (metres)
   mat.positionNode = Fn(() => {
@@ -1352,14 +1358,29 @@ function createTreeMaterial(leafAtlas) {
     return p.add(sway).add(vec3(0.0, bob, 0.0)).add(normalLocal.mul(flutter));
   })();
 
-  // Coverage: leaf cards from the atlas; bark is opaque from outside (its back faces are dropped)
-  const alpha = mix(float(frontFacing), leaf.a, isLeaf);
+  // Texture hue gives each leaf a stable threshold. Keep woody twigs and the geometry underneath.
+  let coverage = leaf.a;
+  if (season) {
+    const threshold = fract(leaf.g.add(aTree.w.mul(0.37)).add(rnd.mul(0.29))).mul(0.99998).add(0.00001);
+    const wood = step(0.73, leaf.b);
+    coverage = coverage.mul(max(wood, step(threshold, season.a)));
+  }
+  // WebGPU shadow rendering uses the same colour alpha and alpha test as the scene material.
+  let alpha = mix(float(frontFacing), coverage, isLeaf);
+  if (fadeClock) {
+    const signedStart = attribute('aTreeFade', 'float');
+    const progress = clamp(fadeClock.sub(abs(signedStart)).div(0.22), 0, 1);
+    const pattern = interleavedGradientNoise(screenCoordinate.xy);
+    const arrived = float(pattern.lessThan(progress));
+    const active = step(0.000001, abs(signedStart));
+    const transition = mix(arrived.oneMinus(), arrived, step(0, signedStart));
+    alpha = alpha.mul(mix(1, transition, active));
+  }
   mat.alphaTest = 0.5;
 
   mat.colorNode = Fn(() => {
     // Leaves: per-tree tint x atlas brightness, a share of sun-yellowed and of cooler leaves, brown twigs & stalks,
     // darker deep in the crown
-    const tint = aData.xyz;
     const base = tint.mul(leaf.r.mul(1.4));
     const warm = smoothstep(0.62, 1.0, leaf.g).mul(0.55);
     const cool = smoothstep(0.38, 0.0, leaf.g).mul(0.45);
@@ -1387,7 +1408,7 @@ function createTreeMaterial(leafAtlas) {
   mat.aoNode = canyonSkyAONode().mul(crownAO.mul(0.75).add(0.25));
 
   // Light through the leaves: yellow-green, strongest out on the thin shell
-  mat.translucencyNode = aData.xyz.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.5)).mul(crownAO.mul(0.8).add(0.2)).mul(isLeaf);
+  mat.translucencyNode = tint.mul(vec3(1.0, 1.2, 0.45)).mul(leaf.r.mul(1.5)).mul(crownAO.mul(0.8).add(0.2)).mul(isLeaf);
 
   return mat;
 }

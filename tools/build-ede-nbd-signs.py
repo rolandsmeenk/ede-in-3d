@@ -128,6 +128,19 @@ def crop_board(path):
                      round(min(w, right + pad + 1) * rgb.width / w), round(min(h, bottom + pad + 1) * rgb.height / h)))
 
 
+def use_traffic_blue(sheet):
+    # Match pure-blue drawing exports to the blue used on the Maanderbroek faces.
+    palette = sheet.getpalette()
+    for i in range(0, len(palette), 3):
+        red, green, blue = palette[i:i + 3]
+        excess = blue - max(red, green)
+        if excess > 0 and abs(red - green) <= excess * 0.35:
+            weight = excess / 255
+            palette[i:i + 3] = (red + round(14 * weight), green + round(81 * weight), blue - round(113 * weight))
+    sheet.putpalette(palette)
+    return sheet
+
+
 def project_height(segment, position):
     along, _ = segment.project(*position)
     t = min(1, max(0, along / segment.length))
@@ -255,7 +268,7 @@ def bake(directory, survey, mounts, review, date, atlas, output):
                                            (x + graphic.width - .5) / sheet.width, 1 - (y + .5) / sheet.height)]
         features.append(row)
     encoded = BytesIO()
-    sheet.quantize(colors=192).save(encoded, format='PNG', optimize=True)
+    use_traffic_blue(sheet.quantize(colors=192)).save(encoded, format='PNG', optimize=True)
     atlas.write_bytes(encoded.getvalue())
     summary = {'locations': len(signs), 'withDestinations': sum(bool(row['destinations']) for row in signs.values()),
                'reviewed': len(review), 'rendered': len(features), 'mounts': dict(Counter('standalone' if r.get('support') else 'portal' for r in features)),

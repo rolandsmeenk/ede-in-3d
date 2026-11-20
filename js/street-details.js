@@ -100,7 +100,7 @@ function createWalkSignalMaterial(clock) {
   return mat;
 }
 
-function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLampMounts) {
+function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLampMounts, treeOptions) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeStreetDetails' : 'ManhattanStreetDetails';
 
@@ -829,7 +829,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       }
     }
   }
-  const treeField = createTreeField(scene, treePositions, colliders);
+  const treeField = createTreeField(scene, treePositions, colliders, treeOptions);
   group.add(treeField.group);
   sidewalkTreePositions = sidewalkTreePositions.filter((t) => treeField.sites.has(t));
   console.info(`[streetDetails] ${treeField.stats.trees} trees (${sidewalkTreePositions.length} street trees)`);

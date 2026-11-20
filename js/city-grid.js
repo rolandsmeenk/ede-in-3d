@@ -47,7 +47,7 @@ function setAerialSurfaceColors(geometry, segment, asphalt) {
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4, true));
 }
 
-function buildCityGrid(scene, treeInventory, landCover) {
+function buildCityGrid(scene, treeInventory, landCover, canopyDensity) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
@@ -469,6 +469,8 @@ function buildCityGrid(scene, treeInventory, landCover) {
       for (let gz = Math.ceil(Math.max(bounds.minZ, ISLAND_BOUNDS.minZ) / 14); gz <= Math.floor(Math.min(bounds.maxZ, ISLAND_BOUNDS.maxZ) / 14); gz++) {
         const x = gx * 14 + (hash(gx, gz, 1) - 0.5) * 10, z = gz * 14 + (hash(gx, gz, 2) - 0.5) * 10;
         if (!pointInPoly(ring, x, z) || holes.some(h => pointInPoly(h, x, z)) || nearbyTree(x, z) || waterAt(x, z)) continue;
+        const fill = canopyDensity?.get(`${Math.floor(x / 200)}/${Math.floor(z / 200)}`);
+        if (fill !== undefined && hash(gx, gz, 4) > fill) continue;
         if (LANDMARK_EXCLUSIONS.some(b => x > b.minX - 4 && x < b.maxX + 4 && z > b.minZ - 4 && z < b.maxZ + 4)) continue;
         if (nearestRoads(x, z, 20).some(q => q.dist < q.road.w / 2 + 3)) continue;
         const block = blockAt(x, z); if (block && !block.park && !block.sidewalk) continue;

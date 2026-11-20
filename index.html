@@ -32,6 +32,7 @@
   <link rel="modulepreload" href="./js/city-config.js" />
   <link rel="modulepreload" href="./js/tsl-materials.js" />
   <link rel="modulepreload" href="./js/trees.js" />
+  <link rel="modulepreload" href="./js/tree-seasons.js" />
   <link rel="modulepreload" href="./js/ede-tree-data.js" />
   <link rel="modulepreload" href="./js/ede-lamp-data.js" />
   <link rel="modulepreload" href="./js/building-collision.js" />
@@ -154,6 +155,7 @@
       <symbol id="i-bike" viewBox="0 0 24 24"><circle cx="5.5" cy="16.5" r="3.6"/><circle cx="18.5" cy="16.5" r="3.6"/><path d="M5.5 16.5 9.3 9.6h6.3M11.6 16.5 9.3 9.6M11.6 16.5l4-6.9M5.5 16.5h6.1M15.6 9.6l2.9 6.9M15.6 9.6 14.8 7h2.4M8 8.4h2.8"/></symbol>
       <symbol id="i-heli" viewBox="0 0 24 24"><path d="M3.5 4h15M11 4v3.2"/><path d="M6 12.2a5 5 0 0 1 5-5h1.6a4.4 4.4 0 0 1 4.4 4.4V15H8.8A2.8 2.8 0 0 1 6 12.2z"/><path d="M17 11h4.2M21.2 8.8v4.4M7 19h10.5M9.5 15v4M15 15v4"/></symbol>
       <symbol id="i-golden" viewBox="0 0 24 24"><path d="M3 17.5h18M7 17.5a5 5 0 0 1 10 0M12 5v3M5.6 9.6l2 1.6M18.4 9.6l-2 1.6M7.5 21h9"/></symbol>
+      <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M4 20 16 8M7 17C1 10 8 3 21 3c0 11-5 17-14 14Z"/></symbol>
       <symbol id="i-weather" viewBox="0 0 24 24"><path d="M6 17.5a4 4 0 1 1 1-7.9 5.3 5.3 0 0 1 10.1 1.6 3.2 3.2 0 1 1 .9 6.3Z"/></symbol>
       <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M5.5 18.5 7 17M17 7l1.5-1.5"/></symbol>
@@ -204,7 +206,7 @@
     <a href="./assets/ede-facades.SOURCES.md" target="_blank" rel="noopener noreferrer">Façade evidence credits</a>
     <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html" target="_blank" rel="noopener noreferrer">BGT lamp posts via PDOK</a>
     <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/vegetatieobject_punt?f=html" target="_blank" rel="noopener noreferrer">BGT trees via PDOK</a>
-    <a href="https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f" target="_blank" rel="noopener noreferrer">Tree inventory by Gemeente Ede</a>
+    <a id="ede-tree-inventory-credit" href="https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f" target="_blank" rel="noopener noreferrer">Tree inventory by Gemeente Ede</a>
   </div>
 
   <!-- Top-Left: Brand & Renderer Telemetry -->
@@ -228,6 +230,9 @@
         <svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span class="tool-label">Time of day</span>
         <time id="time-live-clock" title="Ede local time" hidden></time>
         <svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+      </button>
+      <button id="btn-tree-seasons" class="tool-btn" type="button" popovertarget="tree-seasons-popover" aria-label="Season" title="Season">
+        <svg class="icon" aria-hidden="true"><use href="#i-leaf"/></svg><span class="tool-label">Season</span>
       </button>
       <button id="btn-live-weather" class="tool-btn" type="button" aria-label="Live Weather" aria-pressed="false" aria-describedby="live-weather-status" title="Live Weather">
         <svg class="icon" aria-hidden="true"><use href="#i-weather"/></svg><span class="tool-label">Live Weather</span>
@@ -268,6 +273,15 @@
   </div>
 
   <!-- Teleport Destinations (native popover: light-dismiss & Esc) -->
+  <div id="tree-seasons-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Season">
+    <div class="pop-title">Season</div>
+    <button class="pop-item active" data-tree-season="today" aria-pressed="true" type="button">Today</button>
+    <button class="pop-item" data-tree-season="spring" aria-pressed="false" type="button">Spring</button>
+    <button class="pop-item" data-tree-season="summer" aria-pressed="false" type="button">Summer</button>
+    <button class="pop-item" data-tree-season="autumn" aria-pressed="false" type="button">Autumn</button>
+    <button class="pop-item" data-tree-season="winter" aria-pressed="false" type="button">Winter</button>
+  </div>
+
   <div id="teleport-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" aria-label="Teleport the active player">
     <div class="pop-title">Teleport to</div>
     <button id="tp-oudekerk" class="pop-item tp-btn" data-teleport="oudekerk" type="button"><span class="pop-name">Oude Kerk</span><span class="pop-sub">Torenstraat · Centrum</span></button>
@@ -323,6 +337,9 @@
     <div class="pop-title">Graphics quality</div>
     <button class="pop-item active" data-graphics-quality="fast" aria-pressed="true" type="button">Fast</button>
     <button class="pop-item" data-graphics-quality="standard" aria-pressed="false" type="button">Standard</button>
+    <div class="pop-title">Tree quality</div>
+    <button class="pop-item active" data-tree-quality="auto" aria-pressed="true" type="button">Auto</button>
+    <button class="pop-item" data-tree-quality="high" aria-pressed="false" type="button">High</button>
   </div>
 
   <!-- Bottom-Left: Street-Name Signs & Live GPS Radar Minimap -->

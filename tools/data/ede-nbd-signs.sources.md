@@ -23,4 +23,4 @@ Build the 1GIS detail first and retain its raw ArcGIS JSON cache, especially `13
 uv run --with 'pillow>=12.1' python tools/build-ede-nbd-signs.py /tmp/ede-nbd /tmp/ede-1gis --date 2026-11-18 --fetch
 ```
 
-Omit `--fetch` to reuse saved CSVs and drawings. The 244,073-byte PNG contains cropped sign faces. The 5,518-byte metadata asset contains the panel geometries, UVs, source IDs and review counts. Both files are served locally. The official drawing sheets stay in the offline input cache.
+Omit `--fetch` to reuse saved CSVs and drawings. The 244,073-byte PNG contains cropped sign faces. Pure-blue drawing backgrounds use the same traffic blue as the Maanderbroek faces. The 5,518-byte metadata asset contains the panel geometries, UVs, source IDs and review counts. Both files are served locally. The official drawing sheets stay in the offline input cache.

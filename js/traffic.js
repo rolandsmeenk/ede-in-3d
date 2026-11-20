@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { buildRoadNetwork, roadEdgeKey } from './road-network.js';
+import { buildRoadNetwork, isMotorwayContinuation, roadEdgeKey } from './road-network.js';
 import { bindEdeFittedLanes, fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
 import { indexLocalRoads, localSegmentLength, pickByArea } from './traffic-area.js';
 import { busEntryAt, busRouteDistance, busTrackingSpeed, createEdeBusTracker, prepareEdeBusPaths } from './ede-bus-traffic.js';
@@ -180,7 +180,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   };
 
   // =========================================================================
-  // 1. 3D LOFTED NYC YELLOW TAXIS, SEDANS, SUVS & NYPD CRUISERS (200 VEHICLES)
+  // 1. INSTANCED AMBIENT VEHICLE FLEET
   // =========================================================================
   function createVehicle(bus, half, halfWidth, axle, driver, v0) {
     return {
@@ -276,20 +276,19 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       { col: new THREE.Color(0x9b1c1f), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 0 }) }  // Flame Red
     ]
   };
-  // Of every 20 cars: 4 yellow cabs, 5 sedans, 6 SUVs, 2 delivery vans, 2 minivans & a pickup. NYPD cruisers are sedans
-  // or Interceptor SUVs, green Boro cabs sedans or SUVs.
+  // Patrol cars use the fleet's compact crossover body. Green Boro cabs use sedans or SUVs.
   const FLEET_MIX = ['taxi', 'sedan', 'van', 'sedan', 'suv', 'taxi', 'suv', 'minivan', 'suv', 'pickup',
     'taxi', 'sedan', 'suv', 'van', 'suv', 'taxi', 'minivan', 'sedan', 'suv', 'sedan'];
 
   const cars = [];
   const counts = Object.fromEntries(Object.keys(CAR_KINDS).map((kind) => [kind, 0]));
-  const policeCounts = { sedan: 0, suv: 0 };
+  let policeCount = 0;
 
   for (let i = 0; i < NUM_CARS; i++) {
     const isPolice = (i % 50) === 6 || (i % 100) === 56;
     const isBoroTaxi = !isPolice && (i % 25) === 3;
     let bodyType = FLEET_MIX[i % FLEET_MIX.length];
-    if (isPolice) bodyType = (i % 100) === 56 ? 'suv' : 'sedan';
+    if (isPolice) bodyType = 'suv';
     else if (isBoroTaxi) bodyType = i % 2 === 0 ? 'suv' : 'sedan';
 
     let col;
@@ -299,8 +298,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       style = carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: i % 2 });
     } else if (isPolice) {
       col = policeWhite;
-      style = carStyleCode({ livery: 1, metallic: 0, trim: 2, wheel: 3 });
-      policeCounts[bodyType]++;
+      style = carStyleCode({ livery: 1, metallic: 0, trim: 2, wheel: 0 });
+      policeCount++;
     } else if (isBoroTaxi) {
       col = boroGreen;
       style = carStyleCode({ livery: 2, metallic: 0, trim: 0, wheel: 0 });
@@ -325,7 +324,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // CAR_PROXY_DISTANCE, the ~250-triangle stand-in, plus the contact shadow's footprint (width, length, centre z).
   // Instance slots are handed out every frame to the cars the camera can see (or whose shadow it may see), see
   // renderCar(). Per-instance paint & lamp / livery state the car material reads: brake lights, left (+x) & right (-x)
-  // turn signals, livery (1 = NYPD).
+  // turn signals, livery (1 = Dutch police).
   const bodies = {};
   for (const kind of Object.keys(CAR_KINDS)) {
     const spec = BODY_SPECS[kind];
@@ -388,18 +387,17 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     }
   }
 
-  // NYPD roof light bars per police-capable body kind (sedan & Interceptor SUV have different roof heights)
-  const lightbarMat = createLightbarMaterial();
-  const policeLightbars = {
-    sedan: new THREE.InstancedMesh(buildLightbarGeometry(BODY_SPECS.sedan), lightbarMat, Math.max(1, policeCounts.sedan)),
-    suv: new THREE.InstancedMesh(buildLightbarGeometry(BODY_SPECS.suv), lightbarMat, Math.max(1, policeCounts.suv))
-  };
-  const policeLightbarMeshes = [policeLightbars.sedan, policeLightbars.suv];
+  const lightbarGeometry = buildLightbarGeometry(BODY_SPECS.suv);
+  const beacon = lightbarGeometry.userData.beacon;
+  const beaconFlash = new THREE.InstancedBufferAttribute(new Float32Array(policeCount), 1).setUsage(THREE.DynamicDrawUsage);
+  lightbarGeometry.setAttribute('beaconFlash', beaconFlash);
+  const policeLightbar = new THREE.InstancedMesh(lightbarGeometry, createLightbarMaterial(), policeCount);
+  policeLightbar.name = 'Dutch police blue lightbars';
   const carShadowInst = new THREE.InstancedMesh(unitPlane, contactShadowMat, NUM_CARS);
   carShadowInst.renderOrder = 998;
 
   for (const m of bodyMeshes) m.castShadow = m.receiveShadow = true;
-  for (const m of policeLightbarMeshes) m.castShadow = true;
+  policeLightbar.castShadow = true;
   carWheelLeftInst.castShadow = carWheelLeftInst.receiveShadow = true;
   carWheelRightInst.castShadow = carWheelRightInst.receiveShadow = true;
 
@@ -408,7 +406,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     carWheelLeftInst,
     carWheelRightInst,
     sparkInst,
-    ...policeLightbarMeshes
+    policeLightbar
   );
 
   // =========================================================================
@@ -588,14 +586,14 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
 
   const policeLightPool = [];
   for (let i = 0; i < POLICE_LIGHT_POOL_SIZE; i++) {
-    const pt = new THREE.PointLight(0xff1828, 0, 12.0, 1.25);
+    const pt = new THREE.PointLight(0x2870ff, 0, 12.0, 1.25);
     pt.position.set(0, -1000, 0);
     trafficLightsGroup.add(pt);
     policeLightPool.push(pt);
   }
 
   // Nothing shows until it has been placed
-  const carInstances = [...bodyMeshes, carWheelLeftInst, carWheelRightInst, ...policeLightbarMeshes, carShadowInst];
+  const carInstances = [...bodyMeshes, carWheelLeftInst, carWheelRightInst, policeLightbar, carShadowInst];
   const busInstances = [busBodyInst, busHeaderInst, busWheelLeftInst, busWheelRightInst, busShadowInst];
   for (const inst of [...carInstances, ...busInstances, sparkInst]) {
     inst.frustumCulled = false;
@@ -1449,7 +1447,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         const o = c && !v.bike && !v.claimed && mergingAhead(v, f, j);
         if (o) worst = Math.min(worst, Math.max(-v.driver.b, brake(v, o.s - o.v.half - vs - v.half, o.v.speed)));
         let vt = c ? Math.min(bendSpeed(v, c), roadTraffic.limit(f)) : Infinity;
-        const cautious = e.to.signal ? v.isPolice && phaseOf(e) !== 'green' : e.axisIndex !== 0;
+        const cautious = e.to.signal ? v.isPolice && phaseOf(e) !== 'green'
+          : e.axisIndex !== 0 && !isMotorwayContinuation(e, f);
         if (cautious) vt = Math.min(vt, 5);
         cap = Math.sqrt(vt * vt + 5 * Math.max(0, d));
       } else if (!v.move && !v.busRun && !e.motorwayExit && !limit?.standingStop) {
@@ -2477,7 +2476,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   let litVehicleCount = 0;
   let wheelCars = 0;
   let visibleCars = 0;
-  const policeDrawn = { sedan: 0, suv: 0 };
+  let policeDrawn = 0;
   let visibleBuses = 0;
   let updates = 0;
 
@@ -2560,8 +2559,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     dummy.updateMatrix();
     bodyInst.setMatrixAt(slot, dummy.matrix);
     if (c.isPolice) {
-      const lb = policeLightbars[c.bodyType];
-      if (lb) lb.setMatrixAt(policeDrawn[c.bodyType]++, dummy.matrix);
+      // Two short blue flashes on each side. The lens and the roadside light share this value.
+      const cycle = (clock + c.blinkPhase) % 1;
+      const half = cycle % 0.5;
+      const pulse = Math.max(0, 1 - Math.abs(half - 0.08) / 0.06, 1 - Math.abs(half - 0.25) / 0.06);
+      c.beaconFlash = cycle < 0.5 ? -pulse : pulse;
+      beaconFlash.array[policeDrawn] = c.beaconFlash;
+      policeLightbar.setMatrixAt(policeDrawn++, dummy.matrix);
     }
 
     const attrs = bodyInst.geometry.attributes;
@@ -2740,20 +2744,17 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       spot.position.set(0, -1000, 0);
     }
 
-    // 1. NYPD emergency roof lightbar flashes (smoothly pulsing red/blue 360° PointLights on nearby patrol cruisers)
+    // Blue light reflected on the street and nearby vehicles.
     let policeLightsUsed = 0;
     for (let i = 0; i < litVehicleCount && policeLightsUsed < POLICE_LIGHT_POOL_SIZE; i++) {
       const v = litVehicles[i];
-      if (!v.isPolice || v._effDist >= 88) continue;
+      if (!v.isPolice || v._effDist >= 88 || !v.beaconFlash) continue;
       const fade = smoothDistFade(v._effDist, 52, 88);
       if (fade <= 0.001) continue;
-      const wave = Math.sin((clock + v.blinkPhase) * Math.PI * 6.0);
-      const redPhase = wave >= 0;
-      const pulse = 0.35 + 0.65 * Math.abs(wave);
-      const side = redPhase ? -0.36 : 0.36;
+      const pulse = Math.abs(v.beaconFlash);
+      const side = Math.sign(v.beaconFlash) * beacon.x;
       const pt = policeLightPool[policeLightsUsed++];
-      pt.color.setHex(redPhase ? 0xff1828 : 0x1868ff);
-      pt.position.set(v.x + side * v._cosY - 0.25 * v._sinY, v.y + (v.bodyType === 'suv' ? 2.05 : 1.85), v.z - side * v._sinY - 0.25 * v._cosY);
+      pt.position.set(v.x + side * v._cosY + beacon.z * v._sinY, v.y + beacon.y, v.z - side * v._sinY + beacon.z * v._cosY);
       pt.distance = 12.0;
       pt.intensity = 42.0 * tailScale * fade * pulse;
     }
@@ -2886,8 +2887,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     litVehicleCount = 0;
     wheelCars = 0;
     visibleCars = 0;
-    policeDrawn.sedan = 0;
-    policeDrawn.suv = 0;
+    policeDrawn = 0;
     visibleBuses = 0;
     bikeShown.fill(0);
     for (let i = 0; i < vehicles.length; i++) {
@@ -2967,8 +2967,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     syncInst(carWheelLeftInst, wheelCars * 2);
     syncInst(carWheelRightInst, wheelCars * 2);
     if (dirtyWheelStyles && wheelCars > 0) flagRange(carWheelStyles, wheelCars * 2);
-    syncInst(policeLightbars.sedan, policeDrawn.sedan);
-    syncInst(policeLightbars.suv, policeDrawn.suv);
+    syncInst(policeLightbar, policeDrawn);
+    if (policeDrawn) flagRange(beaconFlash, policeDrawn);
     syncInst(carShadowInst, visibleCars);
     syncInst(busBodyInst, visibleBuses);
     syncInst(busHeaderInst, visibleBuses);

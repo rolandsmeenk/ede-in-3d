@@ -363,6 +363,8 @@ countedMath.sqrt = (x) => {
 const { createTreeField } = loadModule(treesSource, {
   imports: {
     'three/webgpu': threeStub,
+    'three/tsl': { uniform: (value) => ({ value }) },
+    './tree-seasons.js': { packTreeStyle: (species, random) => species + random },
     './tsl-materials.js': { createTreeMaterial: () => ({ name: 'TreeMat' }) },
     './building-collision.js': buildingCollision
   },
@@ -640,4 +642,119 @@ test('conifer geometry stays tapered and uses separately culled 200 m cells', ()
   field.update(new Vector3(1800, 10, 140));
   assert.ok(!near.visible && !next.visible && distant.visible);
   assert.equal(distant.children.find((m) => m.visible).count, 1);
+});
+
+test('adaptive trees show coarse crowns first, dither LOD replacements and preserve planted dimensions', () => {
+  const site = { x: 2800, y: 12, z: 2900, height: 21, crownWidth: 12, species: 2, yaw: 0, priority: true };
+  const field = createTreeField({}, [site], [], { quality: 'high' });
+  const position = new Vector3(site.x + 4, 15, site.z);
+  const render = () => field.update(position, { deltaMs: 16.67, groundHeight: 12, viewportHeight: 720 });
+  const active = () => field.group.children.filter(c => c.visible).flatMap(c => c.children.filter(m => m.visible));
+  render();
+  assert.match(active()[0].name, /_lod2_/);
+  assert.equal(field.stats.transitions, 0);
+  render();
+  const pair = active();
+  assert.equal(pair.length, 2, 'the outgoing coarse crown stays available during the paired fade');
+  const [a, b] = pair.map(mesh => mesh.geometry.attributes.aTreeFade.array[0]);
+  assert.notEqual(a, 0);
+  assert.equal(a, -b, 'the shader receives opposite signs for the same transition start');
+  for (const mesh of pair) {
+    const matrix = new Matrix4();
+    matrix.elements.set(mesh.instanceMatrix.array.subarray(0, 16));
+    const bounds = new Box3().copy(mesh.geometry.boundingBox).applyMatrix4(matrix);
+    const size = bounds.getSize(new Vector3());
+    assert.ok(Math.abs(bounds.min.y - site.y) < 1e-5);
+    assert.ok(Math.abs(size.y - site.height) < 1e-5);
+    assert.ok(Math.abs(Math.max(size.x, size.z) - site.crownWidth) < 1e-5);
+  }
+  const upload = field.stats.uploadBytes;
+  for (let i = 0; i < 18; i++) render();
+  assert.match(active()[0].name, /_lod0_/);
+  assert.equal(active().length, 1);
+  assert.equal(field.stats.transitions, 0);
+  assert.ok(field.stats.uploadBytes > upload, 'upload counts are cumulative');
+});
+
+test('adaptive flight uses ground-relative altitude, smooth reach and a bounded coarse-first jump', () => {
+  const sites = Array.from({ length: 16 }, (_, i) => ({
+    x: 3500 + (i % 4) * 205, y: 36, z: 2400 + Math.floor(i / 4) * 205,
+    species: i % 4, height: 13, tier: 0
+  }));
+  const treeline = { x: 5070, y: 36, z: 2400, species: 0, height: 22, tier: 0 };
+  const field = createTreeField({}, [...sites, treeline], [], { quality: 'high' });
+  const pos = new Vector3(3500, 38, 2400);
+  const render = () => {
+    field.update(pos, { deltaMs: 16.67, groundHeight: 36, viewportHeight: 680 });
+    assert.ok(field.stats.frameUploadedCells <= 8);
+    assert.ok(field.stats.frameUploadBytes <= field.stats.uploadBudget);
+    assert.ok(field.stats.transitions <= field.stats.maxFadingTrees);
+  };
+  render();
+  assert.equal(field.stats.visibleTrees, 8);
+  assert.equal(field.stats.visibleByLod[0], 0);
+  for (let i = 0; i < 40; i++) render();
+  const groundCount = field.stats.visibleTrees;
+  assert.equal(groundCount, sites.length);
+  pos.y = 44;
+  for (let i = 0; i < 26; i++) render();
+  assert.equal(field.stats.visibleTrees, groundCount, 'crossing absolute Y=40 leaves nearby woodland stable');
+  pos.y = 140;
+  for (let i = 0; i < 40; i++) render();
+  assert.equal(field.stats.visibleTrees, groundCount + 1);
+});
+
+test('one-second camera prediction prepares a side cell without drawing it early', () => {
+  const field = createTreeField({}, [{ x: 330, y: 0, z: 380, species: 2, height: 15 }]);
+  field.setQuality('high');
+  const view = {
+    position: new Vector3(0, 10, 140),
+    fov: 50, aspect: 1.4,
+    getWorldDirection(v) { return v.set(0, 0, 1); }
+  };
+  const updates = [];
+  const renderer = { backend: { isWebGPUBackend: true }, _attributes: { update(attr, type) { updates.push([attr, type]); } } };
+  const render = () => field.update(view, { deltaMs: 60, groundHeight: 0, viewportHeight: 680, renderer });
+  render();
+  const [cell] = field.group.children;
+  assert.equal(cell.visible, false);
+  assert.equal(updates.length, 0);
+  view.position.x = 22;
+  render();
+  assert.equal(cell.visible, false, 'the physical camera cannot see the predicted cell yet');
+  assert.equal(updates.length, 3, 'matrix, tint and dither data were prepared ahead');
+  assert.ok(field.stats.uploadedCells >= 1);
+  view.position.x = 180;
+  render();
+  assert.equal(cell.visible, true);
+});
+
+test('Auto lowers distant work after sustained misses and recovers more slowly', () => {
+  const near = Array.from({ length: 256 }, (_, i) => ({
+    x: 1.4 * (i % 16), y: 0, z: 140 + Math.floor(i / 16) * 1.4, height: 13, species: i % 4
+  }));
+  const far = Array.from({ length: 200 }, (_, i) => ({
+    x: 730 + (i % 20) * 5, y: 0, z: 170 + Math.floor(i / 20) * 5,
+    height: 18, species: i % 4, tier: 0, priority: i === 0
+  }));
+  const field = createTreeField({}, [...near, ...far], [], { quality: 'auto' });
+  const position = new Vector3(0, 10, 140);
+  const render = (dt, n) => {
+    for (let i = 0; i < n; i++) field.update(position, { deltaMs: dt, groundHeight: 0, viewportHeight: 680 });
+  };
+  render(16.67, 300);
+  assert.equal(field.stats.qualityLevel, 'high');
+  assert.ok(field.stats.visibleTriangles > 100000);
+  const before = field.stats.visibleTrees;
+  render(50, 28);
+  assert.equal(field.stats.qualityLevel, 'high', 'brief contention does not downgrade');
+  render(50, 122);
+  assert.notEqual(field.stats.qualityLevel, 'high');
+  render(16.67, 200);
+  assert.notEqual(field.stats.qualityLevel, 'high', 'recovery waits for sustained good frame times');
+  assert.ok(field.stats.visibleTrees < before, 'density reduction is confined to distant trees');
+  assert.ok(field.stats.visibleByLod[0] >= near.length, 'nearby crowns stay full-quality');
+  render(16.67, 2400);
+  assert.equal(field.stats.qualityLevel, 'high');
+  assert.equal(field.stats.visibleTrees, before, 'deterministic thinning restores the same inventory');
 });

@@ -245,7 +245,7 @@ python3 tools/fetch-ede-trees.py /tmp/ede-tree-sources --date 2026-11-18
 uv run --with pyproj==3.8.0 python -B tools/build-ede-trees.py /tmp/ede-tree-sources/pdok.geojson /tmp/ede-tree-sources/municipal.geojson --osm tools/data/osm_ede.json
 ```
 
-The builder requires GDAL on your PATH. It also merges the sourced De Vuurvogel entrance placement using the pinned RD conversion. The optional OpenStreetMap snapshot is produced by the map refresh command. The browser samples AHN at each planted location and renders the trees with shared, instanced geometry in 200 m × 200 m tiles. Detail and visibility update with camera distance.
+The builder requires GDAL on your PATH. It also merges the sourced De Vuurvogel entrance placement using the pinned RD conversion. The optional OpenStreetMap snapshot is produced by the map refresh command. The browser loads the expanded inventory by default. Use `?perf=1&treeInventory=baseline` for comparisons. The browser samples AHN at each planted location and renders shared geometry in 200 m × 200 m instanced tiles. The **Season** menu selects a foliage date independently of the sky and weather. **Graphics → Tree quality** controls the terrain-relative canopy detail and distant shadow budget. [Expanded inventory bake and sources](../tools/data/ede-tree-inventory.md) · [Season, flight and profiler verification](../tools/data/ede-tree-update.md)
 
 ## Refresh the lamp-post inventory
 

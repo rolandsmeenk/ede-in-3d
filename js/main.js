@@ -27,6 +27,7 @@ import { CityAudioSystem } from './audio-system.js';
 import { loadTerrain, terrainHeightAt } from './terrain.js';
 import { loadAerialColors } from './aerial-colors.js';
 import { loadEdeTrees } from './ede-tree-data.js';
+import { TREE_SEASONS, setTreeSeason, getTreeSeason, refreshTreeSeason } from './tree-seasons.js';
 import { loadEdeLamps } from './ede-lamp-data.js';
 import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdeHelipads, setEdePlatforms, setEdeStructureRoofs } from './ede-grade.js';
 import { buildEdeGradeWorld } from './ede-grade-world.js';
@@ -66,6 +67,14 @@ async function initApp() {
     buildingDetail: enabled('buildingDetail'),
     scale: scale >= 0.5 && scale <= 1 ? scale : 1,
   };
+  const treeInventory = profiling && query.get('treeInventory') === 'baseline' ? 'baseline' : undefined;
+  const requestedTreeQuality = profiling ? query.get('treeQuality') : null;
+  const treeQuality = ['legacy', 'high', 'auto'].includes(requestedTreeQuality) ? requestedTreeQuality : 'auto';
+  const requestedTreeSeason = profiling ? query.get('treeSeason') : null;
+  const treeSeasonsEnabled = requestedTreeSeason !== 'off';
+  const initialTreeSeason = Object.hasOwn(TREE_SEASONS, requestedTreeSeason) ? requestedTreeSeason : 'today';
+  const dateNow = () => new Date(Date.now());
+  if (treeSeasonsEnabled) setTreeSeason(initialTreeSeason, dateNow());
   let trafficUpdates = enabled('trafficUpdates');
   const container = document.getElementById('canvas-container');
   const loadingOverlay = document.getElementById('loading-overlay');
@@ -136,7 +145,7 @@ async function initApp() {
   await showLoadingStage('Loading Ede’s map and timetables…');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
     motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult] = await Promise.allSettled([
-    loadTerrain(), loadAerialColors(), loadEdeTrees(), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
+    loadTerrain(), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, motorway: enabled('motorwayDetail'),
       directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null,
@@ -166,7 +175,13 @@ async function initApp() {
 
   // 3. Build the city, buildings, street details and traffic
   await showLoadingStage('Building streets, parks and water…');
-  const cityGrid = buildCityGrid(scene, treeResult.status === 'fulfilled' ? treeResult.value : undefined, detailData?.landCover);
+  const loadedTrees = treeResult.status === 'fulfilled' ? treeResult.value : null;
+  if (loadedTrees?.inventory === 'expanded') {
+    const credit = document.getElementById('ede-tree-inventory-credit');
+    credit.href = 'https://geo.ede.nl/geoserver/Ede/wfs?service=WFS&request=GetCapabilities';
+    credit.textContent = 'MOR trees by Gemeente Ede';
+  }
+  const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
   const gradeWorld = buildEdeGradeWorld(scene);
@@ -243,8 +258,10 @@ async function initApp() {
   } catch (error) {
     console.warn('[detail] street and motorway detail unavailable:', error);
   }
-  const streetDetails = buildStreetDetails(scene, allColliders, mappedLamps, importedDetail?.gantryLampMounts);
-  streetDetails.treeField.group.visible = graphics.vegetation;
+  const streetDetails = buildStreetDetails(scene, allColliders, mappedLamps, importedDetail?.gantryLampMounts,
+    { quality: treeQuality, season: treeSeasonsEnabled });
+  const { treeField } = streetDetails;
+  treeField.group.visible = graphics.vegetation;
   if (busSchedule) buildEdeBusStops(scene, busSchedule.variants);
   if (importedDetail) allColliders.push(...importedDetail.colliders);
   markInit('streetDetails');
@@ -285,7 +302,7 @@ async function initApp() {
   await showLoadingStage('Adding road markings...');
   if (streetFeatures) {
     try {
-      await buildEdeStreetFeaturesWorld(scene, streetFeatures, roadSurfaceResult.value?.surfaces);
+      await buildEdeStreetFeaturesWorld(scene, streetFeatures, roadSurfaceResult.value?.surfaces, importedDetail?.gantries);
     } catch (error) {
       console.warn('[street features] unable to build the feature layer:', error);
     }
@@ -433,6 +450,8 @@ async function initApp() {
   const modes = Array.from(modeButtons, (button) => button.dataset.mode);
   const cameraButtons = document.querySelectorAll('[data-camera]');
   const timeButtons = document.querySelectorAll('[data-time]');
+  const treeSeasonButtons = document.querySelectorAll('[data-tree-season]');
+  const treeQualityButtons = document.querySelectorAll('[data-tree-quality]');
   const liveClock = document.getElementById('time-live-clock');
   let liveTimeTimer;
   const weatherButton = document.getElementById('btn-live-weather');
@@ -638,6 +657,34 @@ async function initApp() {
       window.location.assign(url);
     });
   }
+
+  function setPressed(buttons, key, value) {
+    for (const button of buttons) {
+      const active = button.dataset[key] === value;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    }
+  }
+  function selectTreeQuality(quality) {
+    treeField.setQuality(quality);
+    setPressed(treeQualityButtons, 'treeQuality', quality);
+  }
+  function selectTreeSeason(season) {
+    if (!treeSeasonsEnabled) return;
+    setTreeSeason(season, dateNow());
+    setPressed(treeSeasonButtons, 'treeSeason', getTreeSeason());
+  }
+  document.getElementById('btn-tree-seasons').hidden = !treeSeasonsEnabled;
+  setPressed(treeQualityButtons, 'treeQuality', treeQuality);
+  if (treeSeasonsEnabled) selectTreeSeason(initialTreeSeason);
+  for (const button of treeSeasonButtons) button.addEventListener('click', () => {
+    selectTreeSeason(button.dataset.treeSeason);
+    closePopovers();
+  });
+  for (const button of treeQualityButtons) button.addEventListener('click', () => {
+    selectTreeQuality(button.dataset.treeQuality);
+    closePopovers();
+  });
 
   modeButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -923,7 +970,12 @@ async function initApp() {
     for (const o of culled) o.frustumCulled = true;
   }
 
-  await precompileShaders();
+  const restoreTreeWarmup = treeField.prepareWarmup();
+  try {
+    await precompileShaders();
+  } finally {
+    restoreTreeWarmup();
+  }
   markInit('compile');
   await showLoadingStage('Preparing shadows and the first frame...');
 
@@ -934,6 +986,7 @@ async function initApp() {
   let frameCount = 0;
   let fpsTimer = 0;
   let nextPlayerSave = 0;
+  let nextSeasonRefresh = 0;
   let warmedUp = false; // see the first frame below
 
   if (elFps) elFps.textContent = '60';
@@ -969,7 +1022,17 @@ async function initApp() {
     }
     cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     profiler?.stage('Buildings, façades and murals');
-    if (graphics.vegetation) streetDetails.treeField.update(cameraSystem.camera.position);
+    if (graphics.vegetation) {
+      const camera = cameraSystem.camera;
+      if (treeSeasonsEnabled && now >= nextSeasonRefresh && !document.hidden) {
+        refreshTreeSeason(dateNow());
+        nextSeasonRefresh = now + 60000;
+      }
+      treeField.update(camera, {
+        renderer, deltaMs: rawDt * 1000, viewportHeight: renderer.domElement.height,
+        groundHeight: terrainHeightAt(camera.position.x, camera.position.z),
+      });
+    }
     profiler?.stage('Vegetation');
     if (!document.hidden && now >= nextPlayerSave) {
       savePlayerState();
@@ -994,6 +1057,7 @@ async function initApp() {
       // First frame = pipeline warm-up behind the loading screen, for what precompileShaders() can't reach (the shadow
       // map passes): with frustum culling off, every visible material's pipelines compile now instead of stalling the
       // first time the camera turns towards it (one chunk / shadow stand-in per shared pipeline is enough)
+      const restoreTreeShadows = treeField.prepareWarmup();
       const culled = [];
       const pipelines = new Set();
       scene.traverseVisible((o) => {
@@ -1005,8 +1069,12 @@ async function initApp() {
           o.frustumCulled = false;
         }
       });
-      renderPipeline.render();
-      for (const o of culled) o.frustumCulled = true;
+      try {
+        renderPipeline.render();
+      } finally {
+        restoreTreeShadows();
+        for (const o of culled) o.frustumCulled = true;
+      }
       markInit('warmup');
     }
     renderPipeline.render();
@@ -1034,7 +1102,16 @@ async function initApp() {
             setTrafficDraw,
             setBuildingDetail: bagBuildings?.userData.setEnabled,
             setMurals: murals.setEnabled,
+            setTreeQuality: selectTreeQuality,
+            setTreeSeason: selectTreeSeason,
           },
+          treeStats: treeField.stats,
+          treeInventory: {
+            source: loadedTrees?.inventory ?? 'osm', records: cityGrid.group.userData.treeInventory,
+            mapped: cityGrid.group.userData.mappedTrees, procedural: cityGrid.group.userData.proceduralWoodlandTrees,
+            canopyCells: loadedTrees?.canopyDensity?.size ?? 0,
+          },
+          get treeSeason() { return treeSeasonsEnabled ? getTreeSeason() : 'off'; },
           get weather() { return liveWeather.state; }, streetFeatures, importedDetail, murals: murals.statistics,
           teleport(key) { const l = TELEPORT_LOCATIONS[key]; return teleportTo(l.x, l.z, l.heading); },
           teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },

@@ -490,7 +490,34 @@ function signMaterials(map) {
   return { front, back };
 }
 
-function collectSigns(signs, atlas, quad, batch) {
+function matrixGantryMount(sign, [nx, nz], gantries) {
+  let nearest = null, reach = 2.35;
+  for (const gantry of gantries) {
+    const { x, z, ux, uz, length, level } = gantry;
+    if (layerOf(sign) !== level || Math.abs(nx * ux + nz * uz) > 0.35) continue;
+    const along = (sign.x - x) * ux + (sign.z - z) * uz;
+    if (along < 0 || along > length) continue;
+    const tx = x + ux * along, tz = z + uz * along;
+    const distance = Math.hypot(sign.x - tx, sign.z - tz);
+    if (distance >= reach) continue;
+    reach = distance;
+    nearest = { gantry, x: tx, z: tz };
+  }
+  if (!nearest) return null;
+  const { gantry } = nearest;
+  let y = gantry.beam - 0.56;
+  for (const panel of gantry.panels) {
+    if (Math.sin(panel.angle) * nx + Math.cos(panel.angle) * nz < 0.7) continue;
+    const lateral = (panel.x - sign.x) * gantry.ux + (panel.z - sign.z) * gantry.uz;
+    const bottom = panel.y - panel.height / 2;
+    if (Math.abs(lateral) <= panel.width / 2 + 0.44 && y + 0.33 > bottom && y - 0.33 < panel.y + panel.height / 2) {
+      y = bottom - 0.39;
+    }
+  }
+  return { ...nearest, y };
+}
+
+function collectSigns(signs, atlas, quad, batch, gantries) {
   const labels = new Map(), poles = new Map();
   const addLabel = (label, blue = false) => {
     if (typeof label !== 'string' || !label.trim() || /onleesbaar/i.test(label)) return;
@@ -512,7 +539,7 @@ function collectSigns(signs, atlas, quad, batch) {
     if (!poles.has(key)) poles.set(key, []);
     poles.get(key).push({ sign, official, label, plates });
   }
-  if (!poles.size) return 0;
+  if (!poles.size) return { count: 0, mounted: 0, withheld: 0 };
   const labelsAtlas = labelAtlas(labels);
   const officialMaterials = atlas && signMaterials(atlas.map);
   const labelMaterials = labelsAtlas && signMaterials(labelsAtlas.map);
@@ -546,11 +573,29 @@ function collectSigns(signs, atlas, quad, batch) {
     quad(materials.back, sign, points(depth - 0.014).reverse(), [[u0, v1], [u1, v1], [u1, v0], [u0, v0]]);
   }
 
-  let count = 0;
+  let count = 0, mounted = 0, withheld = 0;
   for (const boards of poles.values()) {
     const { sign: post } = boards[0];
     const ground = surfaceHeight(post, post.x, post.z, 3.5);
     const overhead = post.placement === 'ABOVE';
+    if (overhead && post.rvvCode === 'A3' && boards.length === 1 && !boards[0].plates.length) {
+      const forward = signBearing(post);
+      const shared = matrixGantryMount(post, forward, gantries);
+      if (shared) {
+        if (shared.y - 0.33 < ground + 4.50) {
+          withheld++;
+          continue;
+        }
+        const { official, label } = boards[0];
+        if (official) board(post, forward, shared.y, official, atlas, officialMaterials, 0.88, 0.66, 0.055);
+        else board(post, forward, shared.y, labelsAtlas.frames.get(label), labelsAtlas, labelMaterials, 1.35, 0.66, 0.055);
+        tubeBetween(batch(steel, post), [post.x, shared.y + 0.24, post.z],
+          [shared.x, shared.gantry.beam, shared.z], 2);
+        count++;
+        mounted++;
+        continue;
+      }
+    }
     const grade = overhead ? gradeWayAt(wayOf(post), post.x, post.z, 3.5) : null;
     const profile = grade?.span?.profile;
     const at = grade?.span?.at + grade?.along;
@@ -603,10 +648,10 @@ function collectSigns(signs, atlas, quad, batch) {
     tubeBetween(pile, [x, surfaceHeight(post, x, z, 3.5), z], [x, ground + top, z], overhead ? 3 : 1);
   }
   tube.dispose();
-  return count;
+  return { count, mounted, withheld };
 }
 
-export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces = []) {
+export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces = [], gantries = []) {
   const signs = features.signs ?? [];
   let atlas;
   if (signs.some(sign => sign.faceKey)) {
@@ -633,7 +678,7 @@ export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces 
     }
   }
   const { marked, raisedSurfaces, zebras } = collectRoadSurfaces(features, quad, roadSurfaces);
-  const signsDrawn = collectSigns(signs, atlas, quad, batch);
+  const signsDrawn = collectSigns(signs, atlas, quad, batch, gantries);
 
   for (const { material, positions, normals, uv } of batches.values()) {
     const geometry = new THREE.BufferGeometry();
@@ -651,7 +696,8 @@ export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces 
     else firstMesh.set(material, mesh);
     group.add(mesh);
   }
-  group.userData = { signs: signsDrawn, bumps: raisedSurfaces.length, crossings: marked.size, zebras: zebras.size, batches: batches.size };
+  group.userData = { signs: signsDrawn.count, matrixBoardsMounted: signsDrawn.mounted, matrixBoardsWithheld: signsDrawn.withheld,
+    bumps: raisedSurfaces.length, crossings: marked.size, zebras: zebras.size, batches: batches.size };
   scene.add(group);
   return { group };
 }

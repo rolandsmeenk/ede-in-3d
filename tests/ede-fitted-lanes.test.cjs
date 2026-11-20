@@ -36,6 +36,34 @@ test('shipped lane paths and junction connectors bind to the unchanged street an
   assert.ok(p.width > 2 && p.stationScale > 0);
 });
 
+test('through lanes at A12 exit 24, Maanderbroek and Ede-Noord taper before merging', async () => {
+  const { bindEdeFittedLanes } = await import('../js/ede-lane-geometry.js');
+  const { buildRoadNetwork } = await import('../js/road-network.js');
+  const { streetRoadKey } = await import('../js/ede-street-features.js');
+  const { setEdeMotorwayLanes } = await import('../js/ede-motorway-lanes.js');
+  setEdeMotorwayLanes(load('motorway-lanes'));
+  const network = buildRoadNetwork([], [], [], load('grade'));
+  bindEdeFittedLanes(network, load('fitted-lanes', true), streetRoadKey);
+
+  for (const [approach, continuation, minKmh] of [
+    ['w1085149039', 'w1034188526', 65],
+    ['w723962247', 'w723962248', 40],
+    ['w750476158', 'w380485855', 65],
+    ['w321166475', 'w1223228154', 40],
+  ]) {
+    const edge = network.edges.find(e => e.wayId === approach && e.ambientMoves.some(m => m.to.wayId === continuation));
+    assert.ok(edge && !edge.to.signal, approach);
+    const move = edge.ambientMoves.find(m => m.to.wayId === continuation);
+    const driven = edge.ambientLanes.filter(lane => move.out[lane] >= 0);
+    assert.ok(driven.length > 0, approach);
+    for (const lane of driven) {
+      const curve = network.connector(edge, lane, move.to, move.out[lane]);
+      const cap = 3.6 * Math.sqrt(3.5 / Math.max(curve.curv, 0.001));
+      assert.ok(cap >= minKmh, [approach, lane, cap.toFixed(1)].join(' '));
+    }
+  }
+});
+
 test('a stale junction path leaves the original geometry active throughout', async () => {
   const { bindEdeFittedLanes } = await import('../js/ede-lane-geometry.js');
   const first = { id: 0, wayId: 'a', sx: 0, sz: 0, len: 10, dx: 1, dz: 0, rx: 0, rz: 1, lanes: [0] };

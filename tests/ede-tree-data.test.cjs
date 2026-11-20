@@ -39,3 +39,46 @@ test('the combined tree asset retains the mapped extent, multiple type groups an
   assert.ok(estimated.tier > 0);
   assert.ok(estimated.height > 0 && estimated.species >= 0 && estimated.species <= 3);
 });
+
+test('EDT3 retains optional crown and phenology data independently', async () => {
+  const { decodeEdeTrees, edeTreeSite } = await import('../js/ede-tree-data.js');
+  const header = Buffer.alloc(8);
+  header.write('EDT3');
+  header.writeUInt32LE(3, 4);
+  function record(x, sources, extras) {
+    const row = Buffer.alloc(9);
+    row.writeInt16LE(x * 5);
+    row.writeUInt16LE(180, 4);
+    row[7] = 255;
+    row[8] = sources;
+    return Buffer.concat([row, Buffer.from(extras)]);
+  }
+  const rows = [record(7, 1, []), record(11, 80, [111]), record(15, 168, [128, 6])];
+  const bytes = Buffer.concat([header, ...rows]);
+  const [ordinary, derived, surveyed] = decodeEdeTrees(Uint8Array.from(bytes).buffer);
+  assert.equal(edeTreeSite(ordinary, 0).seasonGroup, 0);
+  assert.equal(derived.crownWidth, 11.1);
+  assert.equal(derived.seasonGroup, undefined);
+  assert.equal(surveyed.crownWidth, 12.8);
+  assert.equal(edeTreeSite(surveyed, 2).seasonGroup, 6);
+  assert.ok(edeTreeSite(surveyed, 2).priority);
+  bytes[bytes.length - 1] = 8;
+  assert.throws(() => decodeEdeTrees(Uint8Array.from(bytes).buffer), /Invalid Ede tree asset/);
+  assert.throws(() => decodeEdeTrees(Uint8Array.from(bytes.subarray(0, -1)).buffer), /Invalid Ede tree asset/);
+});
+
+test('the expanded inventory preserves existing trunks, including one surveyed school tree', async () => {
+  const { decodeEdeTrees } = await import('../js/ede-tree-data.js');
+  const asset = name => decodeEdeTrees(Uint8Array.from(readFileSync(join(__dirname, '../assets', name))).buffer);
+  const baseline = asset('ede-trees.bin');
+  const expanded = asset('ede-trees-expanded.bin');
+  const key = ({ x, z }) => `${x},${z}`;
+  const trunkKeys = new Set(expanded.map(key));
+  assert.ok(expanded.length > baseline.length);
+  assert.ok(baseline.every(tree => trunkKeys.has(key(tree))));
+  const atSchool = expanded.filter(tree => Math.hypot(tree.x + 752.4, tree.z - 782) < 6);
+  assert.equal(atSchool.length, 1);
+  assert.equal(atSchool[0].sources & 24, 24);
+  assert.equal(atSchool[0].crownWidth, 12.5);
+  assert.equal(atSchool[0].height, 15.2);
+});

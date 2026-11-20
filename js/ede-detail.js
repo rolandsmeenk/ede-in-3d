@@ -69,7 +69,7 @@ export async function loadEdeDetail({ bgt = true, motorway = true, directional =
       const asset = await (await readPacked(assetUrl(source, 'json.gz'))).json();
       if (asset.version !== 1 || !Array.isArray(asset.features)) throw new Error('invalid asset format');
       if (source === 'nbd' && asset.features.length) {
-        nbdTexture = await new THREE.TextureLoader().loadAsync(assetUrl(source, 'png').href);
+        nbdTexture = await new THREE.TextureLoader().loadAsync(assetUrl(source, 'png?v=20261120-traffic-blue').href);
         nbdTexture.colorSpace = THREE.SRGBColorSpace;
         nbdTexture.anisotropy = 4;
       }
@@ -174,11 +174,12 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   const group = new THREE.Group();
   group.name = 'EdeImportedDetail';
   const batches = new Map(), stopIds = new Set(), gantryLampMounts = new Map(), colliders = [];
+  const gantries = [], portalPanels = new Map();
   const stats = { bgt: 0, '1gis': 0, nbd: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
   group.userData.stats = stats;
   group.userData.stopIds = [];
   scene.add(group);
-  if (!features.length) return { group, colliders, stopIds, gantryLampMounts, stats };
+  if (!features.length) return { group, colliders, stopIds, gantryLampMounts, gantries, stats };
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.83 });
   const surface = new THREE.MeshStandardNodeMaterial({ roughness: 0.88, vertexColors: true, side: THREE.DoubleSide });
   const glass = new THREE.MeshStandardNodeMaterial({ color: 0x78a9a2, roughness: 0.32, transparent: true, opacity: 0.42, depthWrite: false });
@@ -249,6 +250,10 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       corner(width / 2, height / 2), corner(-width / 2, height / 2)]);
     const [u0, v0, u1, v1] = feature.uv;
     tile.uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
+    if (feature.mountId) {
+      if (!portalPanels.has(feature.mountId)) portalPanels.set(feature.mountId, []);
+      portalPanels.get(feature.mountId).push({ x, y, z, angle, width, height });
+    }
     if (validPoint(feature.bracket)) {
       const [bx, bz] = feature.bracket;
       const joint = { x: bx, y: Number.isFinite(feature.bracketY) ? y + feature.bracketY - feature.centerY : y, z: bz };
@@ -430,6 +435,10 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       }
       if (attached) gantryLampMounts.set(attached, { x: p.x, z: p.z, top: beam + 0.18 });
     }
+    const [start, end] = points;
+    const length = Math.hypot(end.x - start.x, end.z - start.z);
+    gantries.push({ id: feature.id, x: start.x, z: start.z, beam, level: feature.level ?? 0, length,
+      ux: (end.x - start.x) / length, uz: (end.z - start.z) / length });
     const [a, b] = strokeEdges(points.map(p => ({ ...p, y: beam })), 0.20);
     stripe(feature.source, a, b, -0.18, 0.18, GALVANIZED, { caps: true });
     return true;
@@ -580,5 +589,6 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   stats.colliders = colliders.length;
   stats.sharedLampSupports = gantryLampMounts.size;
   group.userData.stopIds = [...stopIds];
-  return { group, colliders, stopIds, gantryLampMounts, stats };
+  for (const gantry of gantries) gantry.panels = portalPanels.get(gantry.id) ?? [];
+  return { group, colliders, stopIds, gantryLampMounts, gantries, stats };
 }
