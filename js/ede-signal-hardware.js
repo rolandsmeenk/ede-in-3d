@@ -67,7 +67,7 @@ export function fitEdeRoadsideSignalY(roadY, halfHeight, observedY) {
 }
 
 export async function loadEdeSignalHardware() {
-  const response = await fetch(new URL('../assets/ede-signal-hardware.json?v=20261121-signal-optics', import.meta.url));
+  const response = await fetch(new URL('../assets/ede-signal-hardware.json?v=20261121-hospital-signals', import.meta.url));
   if (!response.ok) throw new Error(`Ede signal hardware returned HTTP ${response.status}`);
   return indexEdeSignalHardware(await response.json());
 }

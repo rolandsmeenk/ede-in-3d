@@ -992,13 +992,13 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
 
   // Shared geometry types per species, variant and level.
   const types = [];
-  const makeType = (geo, name, farFamily) => {
+  const makeType = (geo, name) => {
     const { min, max } = geo.boundingBox;
     const height = Math.max(Math.abs(min.y), Math.abs(max.y));
     // The material adds wind after the instance transform: height-squared lean/rock, plus bob and flutter.
     const windPadding = Math.hypot(0.2, 0.06) * Math.hypot(0.86, 0.51) * (height / 11) ** 2 + 2;
     const type = {
-      geo, name, farFamily, windPadding, meshes: [],
+      geo, name, windPadding, meshes: [],
       inverseHeight: 1 / (max.y - min.y),
       inverseWidth: 1 / Math.max(max.x - min.x, max.z - min.z),
       lod: geo.userData.lod, triangles: geo.userData.triangles
@@ -1012,7 +1012,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     measuredMiddle: includeMeasuredMiddle
       ? [0, 1].map((v) => makeType(geos[s][v].measuredMiddle, `Trees_${sp.name}_v${v}_measured_lod1`))
       : [],
-    l2: [0, 1].map((v) => makeType(geos[s][v][2], `Trees_${sp.name}_v${v}_lod2`, Number(sp.name === 'conifer')))
+    l2: [0, 1].map((v) => makeType(geos[s][v][2], `Trees_${sp.name}_v${v}_lod2`))
   }));
   const cells = new Map();
   const meshes = [];
@@ -1181,7 +1181,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     return mesh;
   });
 
-  // Pool settled far crowns from each 2 × 2 block of visibility cells.
+  // Pool identical far crowns in 800 m blocks to keep their silhouettes stable and limit draw calls.
   const pooledBatches = [], dirtyFarBatches = new Set();
   let farGroup;
   function initFarBatches() {
@@ -1189,24 +1189,22 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     farGroup.name = 'FarTreeBatches';
     farGroup.matrixAutoUpdate = farGroup.matrixWorldAutoUpdate = false;
     const pending = new Map();
-    const proxies = [0, 1].map(family => types.find(type => type.farFamily === family && type.meshes.length));
     for (const cell of cellList) {
       if (cell.priority) continue;
-      const x = Math.floor(cell.cellX / 2), z = Math.floor(cell.cellZ / 2);
+      const x = Math.floor(cell.cellX / 4), z = Math.floor(cell.cellZ / 4);
       for (const mi of cell.meshIndices) {
         const { type, capacity } = meshes[mi];
         if (type.lod !== 2) continue;
-        const key = `${type.farFamily}_${x},${z}`;
-        if (!pending.has(key)) pending.set(key, { sources: [], capacity: 0, type: proxies[type.farFamily] });
-        const batch = pending.get(key);
+        const { species, variant } = type.geo.userData;
+        const name = `Trees_pooled_lod2_${species}_v${variant}_${x},${z}`;
+        if (!pending.has(name)) pending.set(name, { name, sources: [], capacity: 0, type });
+        const batch = pending.get(name);
         batch.sources.push(mi);
         batch.capacity += capacity;
       }
     }
-    for (const [key, batch] of pending) {
-      if (batch.sources.length < 2) continue;
-      batch.name = `Trees_pooled_lod2_${key}`;
-      batch.triangleDelta = 0;
+    for (const batch of pending.values()) {
+      if (batch.sources.length < 2 || batch.capacity * INSTANCE_BYTES > uploadBudget) continue;
       pooledBatches.push(batch);
       for (const mi of batch.sources) {
         const cell = meshes[mi].cell;
@@ -1279,26 +1277,11 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       if (stats.frameUploadBytes + bytes > uploadBudget) continue;
       const mesh = batch.mesh ??= farBatchMesh(batch);
       const { aTreeData, aTreeFade } = mesh.geometry.attributes;
-      let offset = 0, previousTriangles = 0;
+      let offset = 0;
       for (const mi of sources) {
-        const { type: fromType } = meshes[mi];
         const source = instanced[mi], n = source.count;
-        const dst = mesh.instanceMatrix.array;
-        dst.set(source.instanceMatrix.array.subarray(0, n * 16), offset * 16);
+        mesh.instanceMatrix.array.set(source.instanceMatrix.array.subarray(0, n * 16), offset * 16);
         aTreeData.array.set(source.geometry.attributes.aTreeData.array.subarray(0, n * 4), offset * 4);
-        // Match the source width and height with the shared geometry and keep its base on the ground.
-        const width = type.inverseWidth / fromType.inverseWidth;
-        const height = type.inverseHeight / fromType.inverseHeight;
-        const baseCorrection = fromType.geo.boundingBox.min.y - type.geo.boundingBox.min.y * height;
-        for (let i = offset * 16; i < (offset + n) * 16; i += 16) {
-          dst[i] *= width;
-          dst[i + 2] *= width;
-          dst[i + 8] *= width;
-          dst[i + 10] *= width;
-          dst[i + 13] += baseCorrection * dst[i + 5];
-          dst[i + 5] *= height;
-        }
-        previousTriangles += n * fromType.triangles;
         offset += n;
         source.visible = false;
       }
@@ -1306,7 +1289,6 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       mesh.computeBoundingSphere();
       mesh.boundingSphere.radius += type.windPadding;
       mesh.visible = true;
-      batch.triangleDelta = count * type.triangles - previousTriangles;
       syncAttribute(mesh.instanceMatrix, count, false);
       syncAttribute(aTreeData, count, false);
       if (fadePending) syncAttribute(aTreeFade, count, false);
@@ -1395,7 +1377,6 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     if (mode !== 'legacy') {
       for (const batch of pooledBatches) {
         if (!batch.mesh?.visible) continue;
-        triangles += batch.triangleDelta;
         stats.farBatches++;
       }
     }

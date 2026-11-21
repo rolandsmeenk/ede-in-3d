@@ -200,6 +200,18 @@ test('Ede lane boundaries use resolved offsets and treat advisory and bus bounda
   assert.equal(bikeBorder[9], 0.5);
 });
 
+test('circulating lanes do not generate stop bars at roundabout entries', () => {
+  const strips = [];
+  const edge = { from: { id: 0 }, to: { id: 1 }, sx: 0, sz: 0, dx: 1, dz: 0, rx: 0, rz: 1,
+    len: 4, span: 4, half: 2, lanes: [0], wayId: 'ring',
+    laneDefinition: { lanes: [{ offset: 0, width: 3.6 }], centers: [], bikes: [] } };
+  const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };
+  buildRoadPaint(new Scene(), { paintEdges: [{ ...edge, roundabout: true }] }, builder);
+  assert.equal(strips.length, 0);
+  buildRoadPaint(new Scene(), { paintEdges: [edge] }, builder);
+  assert.equal(strips.length, 1);
+});
+
 test('generated lane dividers follow an accepted curved lane band', async () => {
   const { bindEdeFittedLanes, fittedLanePoint } = await import('../js/ede-lane-geometry.js');
   sampleLane = fittedLanePoint;

@@ -27,7 +27,7 @@ function distanceAtOffset(stops, times, offset) {
 }
 
 export async function loadEdeBusSchedule() {
-  const response = await fetch(new URL('../assets/ede-bus-routes.json', import.meta.url));
+  const response = await fetch(new URL('../assets/ede-bus-routes.json?v=20261121-hospital-approaches', import.meta.url));
   if (!response.ok) throw new Error(`ede-bus-routes.json returned HTTP ${response.status}`);
   return createEdeBusSchedule(await response.json());
 }

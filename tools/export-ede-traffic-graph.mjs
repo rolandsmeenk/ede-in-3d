@@ -23,7 +23,7 @@ const records = edges.filter(edge => laneFitting ? edge.wayId : streetFeatures ?
     key: streetRoadKey(edge), a: [edge.from.x, edge.from.z], b: [edge.to.x, edge.to.z],
     layer: edge.layer, bridge: edge.bridge, tunnel: edge.underpass, lanes: edge.lanes,
     way: edge.wayId, kind: road?.kind, name: road?.name, oneway: !!road?.oneway,
-    ...((streetFeatures || laneFitting) && { modes: edge.modes, width: road?.bgtWidth ?? road?.bgt?.width ?? road?.width ?? edge.half * 2,
+    ...((streetFeatures || laneFitting) && { modes: edge.modes, width: edge.laneDefinition?.width ?? road?.width ?? edge.half * 2,
       laneDefinition: edge.laneDefinition, sourceRoadKey: edge.sourceRoadKey, sourceRoadSpan: edge.sourceRoadSpan,
       sourceRoadStart: edge.sourceRoadStart, sourceRoadEnd: edge.sourceRoadEnd }),
     ...(laneFitting && { inset: [edge.sx, edge.sz, edge.len], axis: [edge.dx, edge.dz],

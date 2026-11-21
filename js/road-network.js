@@ -31,6 +31,31 @@ const LANE_CLEAR = 1.2; // half width each lane keeps free of obstacles
 const CROSSWALK = 2.5; // depth between an intersection box and its stop lines
 const SHORE_MARGIN = 6;
 const roadEdgeKey = ({ from, to }) => [from.x, from.z, to.x, to.z].map((v) => v.toFixed(2)).join(',');
+// These audited OSM rings contain links shorter than the junction merge distance.
+const PRESERVED_ROUNDABOUTS = new Set([
+  'w6955254', 'w668522865', 'w668522866', 'w668522867', 'w1544860412', // Proosdijerveldweg / Veenderweg
+  'w64184649', 'w1544860408', // Kernhemseweg / Lunterseweg
+  'w6953577', 'w1393033991', 'w1393034005', 'w866645249', // Schaapsweg / Veenderweg
+  'w6953844', 'w1054198067', 'w1054198068', 'w1054198066', // Jan Th. Tooroplaan / Bovenbuurtweg
+  'w30285416', 'w32243729', 'w32243732', 'w32243730', // Schutterweg / Franklinstraat
+  'w411028351', 'w411028378', 'w411028381', 'w411028380', 'w411028383', 'w411028374', // Molenstraat / Raadhuisstraat
+  'w6953219', 'w1183026038', 'w1183026039', 'w1287247955', 'w1287247954', 'w1016556608', // Klinkenbergerweg / Ericalaan
+  'w420880277', 'w420880278', 'w420880281', 'w420880279', // Laan der Verenigde Naties / Willy Brandtlaan
+  'w576317771', 'w1254176553', // Akulaan / Polar Bearsplein
+  'w346967048', 'w1544860411', // Veenderweg / Klaphekweg
+]);
+// Ede VRI 2 approach tapers from BGT motor pavement and PDOK lane markings.
+// Bands give the start coordinate, lane count, width and lateral shift towards the driver's right.
+const HOSPITAL_APPROACHES = {
+  w1055535553: { axis: 'z', sign: -1, bands: [[null, 2, 6.6, 0.2], [2582, 3, 9.3, -0.8],
+    [2572, 4, 10.8, -0.7], [2555, 5, 15.3, -1.05]], stop: [-1608.1, 2493.3] },
+  w1055535551: { axis: 'z', sign: 1, bands: [[null, 4, 12, -1.1], [2362, 5, 15.8, -1]],
+    stop: [-1646.7, 2415.5], turns: 'left|left|through|through|right' },
+  w1055715727: { axis: 'x', sign: -1, bands: [[null, 3, 9.8, [-5.8, -2.6, 1.8]], [-1530, 4, 13, [-8, -5, 1, 4.2]],
+    [-1567, 5, 16.2, -2.4]], stop: [-1588.3, 2436.3] },
+  w1055535552: { axis: 'x', sign: 1, bands: [[null, 2, 7.0, 0.2], [-1743, 3, 9.5, 1.0],
+    [-1720, 4, 12.6, 1.8]], stop: [-1669.1, 2476.0] },
+};
 
 function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade) {
   // 1. Spatial hash of ground footprints: curbs bound the roads, everything else also blocks pedestrians
@@ -357,8 +382,13 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     const portalNodes = (rows) => rows.filter(l => l.road?.bridge || l.road?.tunnel).flatMap(l => [l.a, l.b]);
     const legacyPortals = new Set(portalNodes(links.filter(l => !l.extension)));
     const portals = new Set(portalNodes(links));
+    const ringNodes = new Set();
     const restrictedJunctions = new Set();
     for (const l of links) {
+      if (PRESERVED_ROUNDABOUTS.has(l.road?.id)) {
+        ringNodes.add(l.a);
+        ringNodes.add(l.b);
+      }
       l.osmStart = EDE_TURN_RESTRICTIONS.nodeAt(l.road?.id, pos[l.a].x, pos[l.a].z);
       l.osmEnd = EDE_TURN_RESTRICTIONS.nodeAt(l.road?.id, pos[l.b].x, pos[l.b].z);
       if (l.osmStart) restrictedJunctions.add(l.a);
@@ -367,6 +397,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     for (const l of links) {
       const relevantPortals = l.extension ? portals : legacyPortals;
       if (relevantPortals.has(l.a) || relevantPortals.has(l.b)) l.keepShape = true;
+      if (ringNodes.has(l.a) || ringNodes.has(l.b)) l.keepShape = true;
       // New approach links may join a junction, but cannot move an existing fitted junction.
       if (l.extension && (l.a < legacyNodes || l.b < legacyNodes)) l.keepShape = true;
       if (!l.keepShape && l.len < 14) {
@@ -467,6 +498,18 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       const A = junction(find(l.a));
       const B = junction(find(l.b));
       if (A === B) continue;
+      const hospital = HOSPITAL_APPROACHES[l.road?.id];
+      if (hospital) {
+        const cuts = hospital.bands.slice(1).map(([position]) => position);
+        const points = l.pts;
+        l.pts = points.slice(0, -1).flatMap((p, i) => {
+          const q = points[i + 1], a = p[hospital.axis], b = q[hospital.axis];
+          const start = cuts.includes(a) ? { ...p, laneBreak: true } : p;
+          const along = cuts.map(at => (at - a) / (b - a)).filter(t => t > 0 && t < 1);
+          return [start, ...along.map(t => ({ x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t, laneBreak: true }))];
+        });
+        l.pts.push(points.at(-1));
+      }
       const pts = [{ x: A.x, z: A.z }, ...l.pts.slice(1, -1), { x: B.x, z: B.z }];
       // stations along it: the ends and every bend over 12° at least 15 m from the last station and from the far end
       const stations = [A];
@@ -478,6 +521,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         const p2 = pts[k + 1];
         const d0 = Math.hypot(p1.x - last.x, p1.z - last.z);
         rest -= Math.hypot(p1.x - pts[k - 1].x, p1.z - pts[k - 1].z);
+        if (p1.laneBreak) continue;
         let turn = Math.abs(Math.atan2(p2.z - p1.z, p2.x - p1.x) - Math.atan2(p1.z - last.z, p1.x - last.x));
         if (turn > Math.PI) turn = 2 * Math.PI - turn;
         const minSpan = l.keepShape ? 5 : 15;
@@ -498,18 +542,24 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         return distance && [dx / distance, dz / distance];
       };
       const original = lanesOf(l);
-      // The long N224 bend east of Ginkelse Heide also needs a lateral error limit.
-      const preserveCurve = /^(motorway|trunk)(?:_link)?$/.test(l.road?.kind) || l.road?.id === 'w6850904';
+      const roundabout = PRESERVED_ROUNDABOUTS.has(l.road?.id);
+      const narrowBend = l.road?.name === 'Proosdijerveldweg' || l.road?.id === 'w6953286';
+      // Small lateral errors send traffic over the curb on the reviewed town streets.
+      const preserveCurve = roundabout || narrowBend || hospital || /^(motorway|trunk)(?:_link)?$/.test(l.road?.kind) || l.road?.id === 'w6850904';
       function addRun(start, end, from, to, source) {
         if (preserveCurve) {
           const span = Math.hypot(to.x - from.x, to.z - from.z);
           const dx = (to.x - from.x) / span, dz = (to.z - from.z) / span;
-          let pivot = -1, deviation = 1;
+          const minAlong = roundabout ? 2 : 5;
+          let pivot = -1, deviation = roundabout ? 0.25 : narrowBend ? 0.5 : 1;
           for (let i = start + 1; i < end; i++) {
+            if (l.pts[i].laneBreak) { pivot = i; break; }
             const x = l.pts[i].x - from.x, z = l.pts[i].z - from.z;
             const along = x * dx + z * dz;
             const distance = Math.abs(z * dx - x * dz);
-            if (along < 5 || along > span - 5 || distance <= deviation) continue;
+            // The third southbound lane begins on the approach to Molenstraat.
+            if (l.road?.id === 'w6954705' && l.pts[i].z === -68.8) { pivot = i; break; }
+            if (along < minAlong || along > span - minAlong || distance <= deviation) continue;
             pivot = i;
             deviation = distance;
           }
@@ -522,8 +572,32 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
             return;
           }
         }
-        const definitions = l.road && resolveEdeRoadLanes(l.road, l.modes,
-          [0, 1].map(direction => motorwayLanesAt(l.road, direction, from, to)));
+        let laneRoad = l.road;
+        // Width-only estimation would add a passing lane on these unmarked single-lane rings.
+        if (roundabout && !laneRoad.laneTags?.lanes) {
+          laneRoad = { ...laneRoad, laneTags: { ...laneRoad.laneTags, lanes: '1' } };
+        }
+        // BGT splits the northbound carriageway into several polygons. The sampled width covers one lane.
+        if (laneRoad?.id === 'w6954696') laneRoad = { ...laneRoad, bgtWidth: laneRoad.width };
+        if (laneRoad?.id === 'w6954705' && from.z < -68.8) {
+          laneRoad = { ...laneRoad, bgtWidth: 6.6, laneTags: { ...laneRoad.laneTags, lanes: '2' } };
+        }
+        let hospitalBand;
+        if (hospital) {
+          const mid = (from[hospital.axis] + to[hospital.axis]) / 2;
+          hospitalBand = hospital.bands.findLast(([at]) => at == null || (mid - at) * hospital.sign >= 0);
+          const [, count, width] = hospitalBand;
+          const full = hospitalBand === hospital.bands.at(-1);
+          const laneTags = full ? { ...laneRoad.laneTags, 'turn:lanes': hospital.turns ?? laneRoad.laneTags['turn:lanes'] } : {};
+          laneRoad = { ...laneRoad, bgtWidth: width, laneModes: full ? laneRoad.laneModes : undefined,
+            laneTags: { ...laneTags, lanes: String(count) } };
+        }
+        const definitions = laneRoad && resolveEdeRoadLanes(laneRoad, l.modes,
+          [0, 1].map(direction => motorwayLanesAt(laneRoad, direction, from, to)));
+        if (hospitalBand) {
+          const bandCenter = hospitalBand[3];
+          definitions[0].lanes.forEach((lane, i) => { lane.offset = Array.isArray(bandCenter) ? bandCenter[i] : lane.offset + bandCenter; });
+        }
         const lanes = definitions ? {
           half: definitions[0].width / 2,
           axis: definitions[0].width >= 14.5 || definitions[0].totalCount >= 3 || MAJOR.test(l.name) ? 'ave' : 'st',
@@ -894,6 +968,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     };
     let b0 = back(e.from, e.outArm);
     let b1 = back(e.to, e.inArm);
+    if (e.turnTagsAtEnd && HOSPITAL_APPROACHES[e.wayId]) {
+      const [x, z] = HOSPITAL_APPROACHES[e.wayId].stop;
+      b1 = Math.max(b1, (e.to.x - x) * e.dx + (e.to.z - z) * e.dz);
+    }
     // GTFS Stadspoort boards on Willy Brandtlaan before the closely parallel bus spur joins it.
     if (e.wayId === 'w25558851') {
       b0 = Math.min(b0, 8);
@@ -932,6 +1010,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan, paintPath }) => ({
     from: paintNodes.get(from), to: paintNodes.get(to), axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes,
     wayId, layer, bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd,
+    roundabout: PRESERVED_ROUNDABOUTS.has(wayId),
     sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan, paintPath
   }));
 

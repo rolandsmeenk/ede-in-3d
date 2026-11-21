@@ -43,9 +43,15 @@ The existing traffic pool previously dropped directed motorway through routes fr
 | Nachtegaallaan | Paired tracks on the unmarked residential carriageway. All 50 fitted-run poses fit inside the mapped pavement alongside the separately mapped parking area. |
 | Frans Halslaan | Paired tracks in the fitted direction on the upper bridge deck, w840619077. All 50 fitted-run poses cleared the same-level pavement and matched the fitted deck profile. |
 | Albertstunnel | Paired tracks on the retained lower road. All 50 fitted-run poses lack enough level −1 BGT motor pavement for a lateral clearance verdict. |
-| Kolkakkerweg | The earlier baseline capture confirmed the westbound sedan overlapping the north sidewalk near X −890 to −903, Z 860–862. The mapped footpath overlap persisted along 50 sampled baseline poses and reached 2.73 m² beyond the buffered motor surface. That direction retains its original geometry. The follow-up probe yielded no additional usable passes on that stretch. |
+| Kolkakkerweg | The original westbound path overlapped the north sidewalk near X −890 to −903, Z 860–862. Preserving the shallow mapped bend allowed a 95.5 m westbound fit. The rounded fit cleared the full swept-envelope check. All 66 in-game sedan footprints sampled in the reported stretch stayed inside the same-level BGT motor pavement. The short approach to the next west junction uses fallback geometry. |
 
 Across the fitted build's 400 captured sedan poses, 350 cleared same-level motor pavement and reviewed exclusion areas. The remaining 50 are the concealed Albertstunnel samples. The figures combine the PDOK aerial raster, same-level BGT pavement, 1GIS markings, reviewed traces, nominal lanes and actual sedan paths. [Aerial and overlay source notes](ede-lane-aerial.sources.md)
+
+### Restored roundabouts
+
+The map preserves the short one-way links at Kernhemseweg / Doesburgerdijk, Schaapsweg / Veenderweg, Jan Th. Tooroplaan / Bovenbuurtweg, Schutterweg / Franklinstraat, Molenstraat / Raadhuisstraat, Klinkenbergerweg / Ericalaan, Laan der Verenigde Naties / Van Steenbergenweg, Akulaan / Polar Bearsplein, and Veenderweg / Klaphekweg. Chrome loaded all nine rings offline. The sampled car connectors stayed clear of their centre islands, and every entry that allows ordinary cars yields to the circulating lane. A sedan entered the Schaapsweg ring and drove through six consecutive arcs. Rebinding the same timetable and stops gave 316 connected slices, down from 321 as five former breaks joined.
+
+The repair rechecked the affected street-feature records against the new approaches. It retained the mapped signs and 32 crossing records. Five signs remain in review for a motor-traffic match. NDW uses the current graph when the feed server starts. [Posted speeds and feed matching](ede-traffic-sources.md)
 
 ## Reproduce
 

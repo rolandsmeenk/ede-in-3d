@@ -730,27 +730,32 @@ test('one-second camera prediction prepares a side cell without drawing it early
 });
 
 
-test('settled distant trees share 400 m draws with their own dimensions and seasonal styles', () => {
+test('distant tree handoffs preserve the crown mesh, transform, and seasonal style', () => {
   const sites = [
     { x: 810, y: 4, z: 12, species: 0, height: 22, crownWidth: 12, yaw: 0 },
-    { x: 1008, y: 9, z: 13, species: 2, height: 18, crownWidth: 9, yaw: 0 },
+    { x: 1205, y: 8, z: 18, species: 0, height: 16, crownWidth: 10, yaw: 0 },
+    { x: 826, y: 3, z: 43, species: 0, scale: 1.2 },
+    { x: 1215, y: 5, z: 35, species: 0, scale: 0.8 },
+    { x: 832, y: 6, z: 18, species: 2, height: 19, crownWidth: 11, yaw: 0 },
+    { x: 1208, y: 9, z: 13, species: 2, height: 18, crownWidth: 9, yaw: 0 },
     { x: 823, y: 2, z: 201, species: 3, height: 23, crownWidth: 7, yaw: 0 },
-    { x: 1012, y: 3, z: 209, species: 3, height: 16, crownWidth: 6, yaw: 0 }
+    { x: 1212, y: 3, z: 209, species: 3, height: 16, crownWidth: 6, yaw: 0 }
   ];
   const field = createTreeField({}, sites, [], { quality: 'high', season: true });
   const position = new Vector3(0, 200, 110);
   const render = () => {
-    field.update(position, { deltaMs: 16.7, groundHeight: 0, viewportHeight: 720 });
+    field.update(position, { deltaMs: 16.7, groundHeight: 0, viewportHeight: 360 });
     assert.ok(field.stats.frameUploadBytes <= field.stats.uploadBudget);
   };
   for (let i = 0; i < 32; i++) render();
 
   const root = field.group.children.find(group => group.name === 'FarTreeBatches');
   const active = () => root.children.filter(mesh => mesh.visible);
-  assert.equal(active().length, 2, 'one broadleaf and one conifer draw cover four visibility cells');
+  assert.equal(active().length, 4, 'each crown type is pooled across its two cells');
   assert.equal(field.stats.visibleByLod[2], sites.length);
   assert.ok(field.meshes.every(mesh => !mesh.visible), 'the fine meshes do not duplicate pooled crowns');
   const byX = new Map(sites.map(site => [site.x, site]));
+  const localCrowns = new Map(field.meshes.filter(mesh => mesh.count).map(mesh => [mesh.instanceMatrix.array[12], mesh]));
   for (const mesh of active()) {
     assert.equal(mesh.castShadow ?? false, false);
     assert.equal(mesh.count, 2);
@@ -759,16 +764,33 @@ test('settled distant trees share 400 m draws with their own dimensions and seas
       matrix.elements.set(mesh.instanceMatrix.array.subarray(i * 16, (i + 1) * 16));
       const site = byX.get(matrix.elements[12]);
       assert.ok(site);
+      const local = localCrowns.get(site.x);
+      assert.equal(mesh.geometry.attributes.position, local.geometry.attributes.position);
+      assert.equal(mesh.geometry.index, local.geometry.index);
+      assert.deepEqual(Array.from(matrix.elements), Array.from(local.instanceMatrix.array));
+      assert.deepEqual(mesh.geometry.attributes.aTreeData.array.subarray(i * 4, (i + 1) * 4),
+        local.geometry.attributes.aTreeData.array);
       const bounds = new Box3().copy(mesh.geometry.boundingBox).applyMatrix4(matrix);
       const size = bounds.getSize(new Vector3());
       assert.ok(Math.abs(bounds.min.y - site.y) < 1e-5);
-      assert.ok(Math.abs(size.y - site.height) < 1e-5);
-      assert.ok(Math.abs(Math.max(size.x, size.z) - site.crownWidth) < 1e-5);
+      if (site.height) {
+        assert.ok(Math.abs(size.y - site.height) < 1e-5);
+        assert.ok(Math.abs(Math.max(size.x, size.z) - site.crownWidth) < 1e-5);
+      }
       assert.equal(Math.floor(mesh.geometry.attributes.aTreeData.array[i * 4 + 3]), site.species);
     }
   }
   render();
   assert.equal(field.stats.frameUploadBytes, 0);
+  position.set(610, 200, 110);
+  render();
+  assert.equal(active().length, 0, 'cells entering shadow range invalidate their pools');
+  assert.equal(field.stats.visibleByLod[2], sites.length);
+  assert.ok([...localCrowns.values()].every(mesh => mesh.visible && mesh.count === 1));
+
+  position.set(0, 200, 110);
+  for (let i = 0; i < 32; i++) render();
+  assert.equal(active().length, 4, 'the same crown types are pooled again after moving away');
   position.set(5500, 200, 5500);
   render();
   assert.equal(active().length, 0, 'a camera jump hides the old distant batches immediately');

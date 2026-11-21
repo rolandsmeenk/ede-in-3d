@@ -60,6 +60,14 @@ import { INDUSTRIAL_HERITAGE_FACTORIES } from './ede-industrial-heritage-landmar
 import { STREET_HERITAGE_FACTORIES } from './ede-street-heritage-landmarks.js';
 import { MODERN_NEIGHBORHOOD_FACTORIES } from './ede-modern-neighborhood-landmarks.js';
 import { VELDHUIZEN_LANDMARK_FACTORIES } from './ede-veldhuizen-landmarks.js';
+import { HORAPARK_OFFICE_FACTORIES } from './ede-horapark-offices.js';
+import { HORA_SANATORIUM_FACTORIES } from './ede-hora-sanatorium.js';
+import { HORAPARK_NAK_FACTORIES } from './ede-horapark-nak.js';
+import { HORAPARK_VILLA_FACTORIES } from './ede-horapark-villa.js';
+import { buildEdeLangeWeideLandmark } from './ede-lange-weide-landmark.js';
+import { buildEdeKernhemNeighborhoodLandmark } from './ede-kernhem-neighborhood-landmarks.js';
+import { buildEdePBosLandmark } from './ede-p-bos-landmark.js';
+import { buildRembrandtlaanLandmark } from './ede-rembrandtlaan-landmark.js';
 import { createKopParkweg } from './ede-kop-parkweg.js';
 import { createHartogshof } from './ede-hartogshof.js';
 import { createAkulaanApartments, createParkveste } from './ede-rail-apartments.js';
@@ -92,7 +100,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
   const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [];
-  const landmarkLods = [];
+  const landmarkLods = [], treeClearance = [];
   const replacements = { bag: new Set(), osm: new Set(), parcelSources: new Set() };
   scene.add(group);
 
@@ -178,6 +186,15 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     ...STREET_HERITAGE_FACTORIES,
     ...MODERN_NEIGHBORHOOD_FACTORIES,
     ...VELDHUIZEN_LANDMARK_FACTORIES,
+    ...HORAPARK_OFFICE_FACTORIES,
+    ...HORA_SANATORIUM_FACTORIES,
+    ...HORAPARK_NAK_FACTORIES,
+    ...HORAPARK_VILLA_FACTORIES,
+    'de-lange-weide': (_, site) => buildEdeLangeWeideLandmark(site),
+    'waterzoom-kernhem': (_, site) => buildEdeKernhemNeighborhoodLandmark(site),
+    'winkelcentrum-parkweide': (_, site) => buildEdeKernhemNeighborhoodLandmark(site),
+    'p-bos-veevoeders': (_, site) => buildEdePBosLandmark(site),
+    'rembrandtlaan-hat': (_, site) => buildRembrandtlaanLandmark(site),
     'kop-van-de-parkweg': createKopParkweg,
     hartogshof: createHartogshof,
     'akulaan-h2-h4': createAkulaanApartments,
@@ -216,6 +233,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
       : models[site.id](footprints, site);
     model.name = site.name;
     platforms.push(...(model.userData.platforms ?? []));
+    treeClearance.push(...(model.userData.treeClearance ?? []));
     for (const source of site.replaceParcelSources ?? []) replacements.parcelSources.add(source);
     helipads.push(...(model.userData.helipads ?? []));
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
@@ -278,5 +296,5 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   function updateWind(dt, reading) {
     for (const update of windUpdates) update(dt, reading);
   }
-  return { group, colliders, platforms, helipads, weatherCovers, replacements, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
+  return { group, colliders, platforms, helipads, weatherCovers, treeClearance, replacements, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
 }

@@ -383,7 +383,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
     // Stop bars across the lanes arriving at each stop line, from the centre line (or median) to the curb (none where a
     // street merely bends: a shape node of the centreline streets)
     for (const f of back ? [e, back] : [e]) {
-      if (f.to.shape || definition?.fast || f.boundary || f.underpass || f.busOnly) continue;
+      if (f.to.shape || f.roundabout || definition?.fast || f.boundary || f.underpass || f.busOnly) continue;
       const physical = f.laneDefinition?.lanes;
       const left = physical ? physical[0].offset - physical[0].width / 2 : back ? Math.max(0, f.lanes[0] - 1.8) : -f.half;
       const right = physical ? physical.at(-1).offset + physical.at(-1).width / 2 : f.half;

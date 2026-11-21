@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { buildRoadNetwork, isMotorwayContinuation, roadEdgeKey } from './road-network.js?v=20261120-acv-truck';
+import { buildRoadNetwork, isMotorwayContinuation, roadEdgeKey } from './road-network.js?v=20261121-hospital-approaches';
 import { ACV_TRUCK, buildAcvTruck } from './ede-refuse-truck.js';
 import { bindEdeFittedLanes, fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
 import { indexLocalRoads, localSegmentLength, pickByArea } from './traffic-area.js';
@@ -3151,6 +3151,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     trips,
     controls,
     fitted,
+    roadGround,
     ...(pilot.profile && { spawnLaneProbe(edge, lane, station) {
       if (edges[edge.id] !== edge || !edge.ambientLanes?.includes(lane) || roadTraffic.isClosed(edge)) return null;
       const car = cars.find(v => !v.edge && v.bodyType === 'sedan' && !v.isPolice && v.parkingStyle != null);

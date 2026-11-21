@@ -358,6 +358,69 @@ test('a landmark switches visible models without hiding its static sun-shadow si
   assert.equal(proxy.layers.test(shadowCamera.layers), true);
 });
 
+test('aerial town tiles keep their shells across the map boundary and restore street detail when descending', async () => {
+  const THREE = await import('../vendor/three/build/three.webgpu.js');
+  const { createExpansionCulling } = loadModule(read('scene-culling.js'), {
+    imports: { 'three/webgpu': THREE },
+  });
+  const scene = new THREE.Scene();
+  const roots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeLandmarks', 'EdeGradeWorld'].map(name => {
+    const group = new THREE.Group();
+    group.name = name;
+    scene.add(group);
+    return group;
+  });
+  const [ground, buildings, landmarks, grade] = roots;
+  const mesh = (group, name, x) => {
+    const object = new THREE.Mesh(new THREE.BoxGeometry(10, 10, 10));
+    object.name = name;
+    object.position.set(x, 40, 1000);
+    group.add(object);
+    return object;
+  };
+  const terrain = mesh(ground, 'Ede legacy terrain', 750);
+  const rail = mesh(ground, 'Ede rails', 750);
+  const water = mesh(ground, 'Water', 750);
+  water.userData.keepInAerial = true;
+  const paving = mesh(ground, 'Paving', 750);
+  const chimney = mesh(landmarks, 'ENKA chimney', 750);
+  const deck = mesh(grade, 'Rail deck', 750);
+  const walls = mesh(buildings, 'Detailed walls', 750);
+  const roofs = mesh(buildings, 'Detailed roofs', 750);
+  const shell = mesh(buildings, 'Aerial shell', 750);
+  walls.userData.buildingTile = roofs.userData.buildingTile = shell.userData.buildingTile =
+    { minX: 610, maxX: 890, minZ: 960, maxZ: 1040 };
+  shell.userData.aerialBuildingProxy = true;
+  shell.visible = false;
+  roofs.visible = false; // A resident BAG tile owns these roofs.
+  scene.updateMatrixWorld(true);
+
+  const culling = createExpansionCulling(roots, [0, 0, 3000, 2000], () => 40);
+  const camera = new THREE.PerspectiveCamera();
+  const at = (x, altitude) => {
+    camera.position.set(x, 40 + altitude, 1000);
+    culling.update(camera);
+  };
+  const rendered = object => object.visible && object.layers.isEnabled(0);
+  for (const x of [2999, 3001, 2999]) {
+    at(x, 100);
+    assert.ok(rendered(shell));
+    assert.equal(culling.stats.aerialShells, 1);
+    assert.ok([walls, roofs, paving].every(object => !object.layers.isEnabled(0)));
+    assert.ok([terrain, rail, water, chimney, deck].every(rendered));
+  }
+
+  at(750, 100);
+  assert.ok(rendered(walls));
+  assert.ok(!rendered(shell));
+  at(2999, 100);
+  assert.ok(rendered(shell));
+  at(2999, 54);
+  assert.ok(!rendered(shell));
+  assert.ok(rendered(walls) && rendered(paving));
+  assert.ok(roofs.layers.isEnabled(0) && !roofs.visible);
+});
+
 test('surveyed landmarks exclude only their surveyed buildings across both building sources', async () => {
   const { EDE_DATA } = await import('../js/ede-geodata.js');
   const landmarks = await import('../js/ede-landmark-sites.js');

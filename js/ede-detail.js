@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { drapeEdeSurface, edeBounds, edePolygonGeometry, overlapsEdeTravelPavement } from './ede-geometry.js';
 import { playgroundEquipment } from './ede-playground-equipment.js';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
-import { fitEdeSignalSpan } from './ede-signal-hardware.js?v=20261121-signal-optics';
+import { fitEdeSignalSpan } from './ede-signal-hardware.js?v=20261121-hospital-signals';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 

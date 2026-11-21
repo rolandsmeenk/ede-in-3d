@@ -1,4 +1,4 @@
-import { roadEdgeKey } from './road-network.js?v=20261120-acv-truck';
+import { roadEdgeKey } from './road-network.js?v=20261121-hospital-approaches';
 
 export function streetRoadKey(edge) {
   return `${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer ?? 0}`;
@@ -53,7 +53,7 @@ export function indexStreetFeatures(asset) {
 }
 
 export async function loadEdeStreetFeatures() {
-  const response = await fetch(new URL('../assets/ede-street-features.json.gz', import.meta.url));
+  const response = await fetch(new URL('../assets/ede-street-features.json.gz?v=20261121-roundabouts', import.meta.url));
   if (!response.ok) throw new Error(`Ede street features returned HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   // Some servers apply Content-Encoding and the browser has already inflated the file.

@@ -18,7 +18,7 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 | --- | ---: |
 | Map extent | 16.4 × 7.6 km |
 | Teleport menu areas | 13 |
-| Custom landmark models | 153 |
+| Custom landmark models | 164 |
 | Building footprints in the base map | 44,844 |
 | Street litter bins | 555 |
 | Waste collection sites | 395 |
@@ -29,12 +29,12 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 | Mapped traffic-light locations | 251 |
 | Lamp posts | 15,241 |
 | Mapped tree records in the default inventory | 70,124 |
-| Trees placed in the default map | 146,747 |
+| Trees placed in the default map | 146,746 |
 | Mapped roads and paths | 1,879 km |
 | Mapped railway tracks | 40 km |
 | Modeled parking spaces | 18,193 |
 
-Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 149 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. The placed tree total includes procedural woodland and counts trees after clearance checks. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
+Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 160 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. The placed tree total includes procedural woodland and counts trees after clearance checks. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
 
 ## Screenshots
 

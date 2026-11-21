@@ -23,7 +23,7 @@ import { edeRoadSegments, nearestEdeRoad, overlapsEdeTravelPavement } from './ed
 import { gradeWayAt, nearbyRailHeightAt } from './ede-grade.js';
 import { isEdeTrafficPavement } from './ede-road-surfaces.js';
 import { terrainHeightAt } from './terrain.js';
-import { fitEdeRoadsideSignalY, fitEdeSignalPole, fitEdeSignalSpan } from './ede-signal-hardware.js?v=20261121-signal-optics';
+import { fitEdeRoadsideSignalY, fitEdeSignalPole, fitEdeSignalSpan } from './ede-signal-hardware.js?v=20261121-hospital-signals';
 import { createEdeSignalHeadGeometries, createEdeArrowLenses, createEdeAuxiliarySignalHousing, EDE_SIGNAL_BACKPLATES } from './ede-signal-models.js?v=20261121-signal-optics';
 import { selectStreetNameSigns, selectStreetNamePoles, addStreetNameSignBoards } from './ede-street-name-signs.js';
 
@@ -879,8 +879,15 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     pedestrianFigures.name = 'EdePedestrianSignalFigures';
   }
   const housings = addMatrixArrayInstanced(lampHousingGeo, poleMetalMat, lampHeadMatrices);
-  if (housings && EDE_DATA) housings.name = 'EdeLampHousings';
-  addMatrixArrayInstanced(lampLensGeo, lampBulbGlow, lampHeadMatrices, false);
+  const lampLenses = addMatrixArrayInstanced(lampLensGeo, lampBulbGlow, lampHeadMatrices, false);
+  if (EDE_DATA) {
+    if (housings) housings.name = 'EdeLampHousings';
+    if (lampLenses) lampLenses.name = 'EdeLampLenses';
+    // Half the nominal cull distance of a typical 8.2 m mast, shared by all fixture parts.
+    for (const mesh of [poles, arms, housings, lampLenses]) {
+      if (mesh) mesh.userData.cullDistance = 740;
+    }
+  }
   const pedPosts = addMatrixArrayInstanced(pedLampPostGeo, poleMetalMat, pedPostMatrices);
   // ~28k posts: they cast as 4-sided base + shaft (16 triangles instead of 120; scene-culling.js shadow stand-ins)
   if (pedPosts) {
@@ -1128,7 +1135,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       }
     }
   }
-  const treeField = createTreeField(scene, treePositions, colliders, treeOptions);
+  const treeField = createTreeField(scene, treePositions, [...colliders, ...(treeOptions?.clearance ?? [])], treeOptions);
   group.add(treeField.group);
   sidewalkTreePositions = sidewalkTreePositions.filter((t) => treeField.sites.has(t));
   console.info(`[streetDetails] ${treeField.stats.trees} trees (${sidewalkTreePositions.length} street trees)`);

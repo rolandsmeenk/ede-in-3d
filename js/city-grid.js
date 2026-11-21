@@ -193,8 +193,10 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     }
   }
 
+  // Mapped cycleway surfaces keep the riding routes visible between the detailed corridors.
   const roadSegments = baseRoads && detailCells.size ? edeRoadSegments().filter(({ road, a, b }) =>
     baseRoads.has(road.id) || /^(motorway|trunk|primary|secondary)/.test(road.kind)
+    || (road.kind === 'cycleway' && osmRoadMaterial(road))
     || nearExpansionDetail(a.x, a.z) || nearExpansionDetail(b.x, b.z)) : edeRoadSegments();
   const carriagewayKinds = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link',
     'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'residential', 'unclassified', 'service', 'living_street']);
@@ -600,6 +602,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       if (terrain && material === terrainMat) mesh.name = 'Ede legacy terrain';
       if (material === railMat) mesh.name = 'Ede rails';
       if (material === ballastMat) mesh.name = 'Ede rail ballast';
+      if (material === waterMat) mesh.userData.keepInAerial = true;
       if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
       else firstMesh = mesh;
       group.add(mesh);

@@ -35,6 +35,19 @@ CENTERED_HEADS_BY_SUPPORT = {
         'url': 'https://112pressroom.nl/wp-content/uploads/2022/10/20221008143848.jpg',
     },
 }
+REVIEWED_OVERHEAD = ROOT / 'tools/data/ede-reviewed-overhead-signals.json'
+# Ede VRI 2 at the hospital. Feet and head spacing traced from paired 2025/2026 PDOK orthophotos.
+# Each row is a directed OSM control, its approach way, the two feet and the head positions along the span.
+HOSPITAL_GANTRIES = (
+    ('northbound', (-1607.6, 2496.1), 'w1055535553', ((-1622.5, 2484.2), (-1597.5, 2480.5)),
+     (.26, .41, .54, .66, .80)),
+    ('southbound', (-1648.1, 2415.6), 'w1055535551', ((-1657.3, 2429.8), (-1632.3, 2426.2)),
+     (.25, .35, .48, .61, .73)),
+    ('westbound', (-1588.2, 2433.2), 'w1055715727', ((-1601.3, 2425.4), (-1597.6, 2450.3)),
+     (.16, .29, .42, .57, .70)),
+    ('eastbound', (-1669.1, 2475.1), 'w1055535552', ((-1655.8, 2463.8), (-1653, 2485.0)),
+     (.22, .39, .55, .69)),
+)
 
 
 def fetch(directory, bounds, frame):
@@ -254,6 +267,42 @@ def desired_head(point, match, source, nap, pole=None):
     return figure
 
 
+def reviewed_approach(roads, anchor, way):
+    matches = [row for row in roads.approaches if row[0] == tuple(anchor) and row[2].data['id'] == way]
+    if not matches:
+        raise ValueError(f'Missing reviewed signal approach {way} at {anchor}')
+    return min(matches, key=lambda row: row[-1])
+
+
+def add_aerial_signals(layouts, heads, supports, roads):
+    for layout in layouts:
+        source = layout['source']
+        feet = layout['points']
+        level = layout.get('level', 0)
+        span = LineString(feet)
+        targets = [row for row in layout['approaches'] if not any(
+            h['mount'] == 'overhead' and tuple(h['anchor']) == tuple(row['anchor'])
+            and span.distance(Point(h['point'])) < 2.5 for h in heads)]
+        if not targets:
+            continue
+        support = len(supports)
+        supports.append({'points': feet, 'height': layout.get('height', 6.0), 'kind': layout['kind'],
+                         'heightSource': 'estimated-clearance', 'level': level, 'source': source})
+        a, b = feet
+        index = 0
+        for row in targets:
+            way = row['wayId']
+            anchor, _, segment, (dx, dz), _ = reviewed_approach(roads, row['anchor'], way)
+            if segment.data.get('layer', 0) != level:
+                raise ValueError(f'Different levels for {source} and {way}')
+            for offset in row['offsets']:
+                index += 1
+                point = [start + (end - start) * offset for start, end in zip(a, b)]
+                heads.append({'anchor': anchor, 'point': snap(point), 'heading': round(math.atan2(-dx, -dz), 5),
+                              'height': layout.get('headHeight', 5.75), 'wayId': way, 'level': level,
+                              'source': f'{source}:{index}', 'mount': 'overhead', 'support': support})
+
+
 def bake(documents, scene, bounds, frame, day):
     def in_bounds(point):
         x, z = point
@@ -262,6 +311,10 @@ def bake(documents, scene, bounds, frame, day):
     poles = active_poles(documents['poles'], day, frame, in_bounds)
     portals = active_poles(documents['portals'], day, frame, in_bounds)
     searches = SignalRoads(scene)
+    reviewed = read_json(REVIEWED_OVERHEAD)
+    reviewed_supports = {row['id']: row for row in reviewed['surveyed']}
+    reviewed_heads = {head: (row['id'], approach) for row in reviewed['surveyed']
+                      for approach in row['approaches'] for head in approach['heads']}
     inventory = read_json(ROOT / 'assets/ede-1gis-detail.json.gz')['features']
     existing = {item['objectId']: item for item in inventory if item['type'] == 'gantry'}
 
@@ -285,6 +338,7 @@ def bake(documents, scene, bounds, frame, day):
             line = LineString([a, b])
             z = [p[2] for p in path if len(p) > 2 and observed_z(p[2])]
             arms.append((props, line, axis, z, []))
+    surveyed_arms = {row[0]['objectid']: row for row in arms}
 
     heads, rejected, seen = [], Counter(), []
     for row in sorted(documents['heads']['features'], key=lambda a: a['attributes']['objectid']):
@@ -303,6 +357,18 @@ def bake(documents, scene, bounds, frame, day):
             continue
         seen.append((point, nap))
         level = road_level(obj)
+        source = '1gis:13:' + str(obj['objectid'])
+        directory_match = reviewed_heads.get(obj['objectid'])
+        if directory_match:
+            identity, approach = directory_match
+            anchor, _, segment, travel, score = reviewed_approach(searches, approach['anchor'], approach['wayId'])
+            base = searches.nap(segment, point)
+            if base is None or not 4.6 <= nap - base <= 8.5:
+                raise ValueError(f'Unusable reviewed height for {source}')
+            match = (score, anchor, travel, segment.data, base, nap - base)
+            head = desired_head(point, match, source, nap)
+            surveyed_arms[identity][4].append(({**head, 'mount': 'overhead'}, base, nap))
+            continue
         mount_candidates = []
         for i, (props, line, axis, _, _) in enumerate(arms):
             dist = line.distance(Point(point))
@@ -311,7 +377,6 @@ def bake(documents, scene, bounds, frame, day):
             fit = searches.match(point, nap=nap, arm=axis, level=level)
             if fit:
                 mount_candidates.append((dist + fit[0] * .08, i, fit))
-        source = '1gis:13:' + str(obj['objectid'])
         if mount_candidates:
             _, index, fit = min(mount_candidates, key=lambda r: r[:2])
             head = desired_head(point, fit, source, nap)
@@ -364,11 +429,17 @@ def bake(documents, scene, bounds, frame, day):
         corroborated_span = observed is not None and max(elevations) - min(elevations) < 1 and abs(observed - head_nap) < .85
         beam = observed if corroborated_span else head_nap + .56
         height_source = 'surveyed-span' if corroborated_span else 'estimated-from-surveyed-heads'
+        confirmed = reviewed_supports.get(identity, {})
         if old:
             a, b = map(tuple, old['points'])
             kind = 'cantilever' if old.get('half') else 'gantry'
             beam = old['beamY']
             height_source = old['beamSource']
+        elif 'points' in confirmed:
+            a, b = confirmed['points']
+            kind = confirmed['kind']
+            if 'beamNap' in confirmed:
+                beam, height_source = confirmed['beamNap'], 'reviewed-surveyed-span'
         else:
             a_ok, b_ok = (searches.clear_for_upright(p, level) for p in (a, b))
             if props['type'] == 'Portaal (half)' or props.get('type_2') != 'A-1' and a_ok != b_ok:
@@ -424,21 +495,30 @@ def bake(documents, scene, bounds, frame, day):
         heads.append({**head, 'mount': 'roadside'})
         reserved.add(anchor)
         used.append(pole)
+    hospital = [{'source': f'pdok:aerial:ede-vri-2:{direction}', 'kind': 'gantry', 'points': feet,
+                 'approaches': [{'anchor': anchor, 'wayId': way, 'offsets': offsets}]}
+                for direction, anchor, way, feet, offsets in HOSPITAL_GANTRIES]
+    add_aerial_signals([*hospital, *reviewed['aerial']], heads, supports, searches)
     counts = {'bgtPoles': len(poles), 'bgtPortals': len(portals), 'heads1gis': len(documents['heads']['features']),
               'roadside': sum(h['mount'] == 'roadside' for h in heads),
-              'overhead': sum(h['mount'] == 'overhead' for h in heads), 'anchors': len(reserved),
+              'overhead': sum(h['mount'] == 'overhead' for h in heads),
+              'anchors': len({tuple(h['anchor']) for h in heads}),
               'gantries': sum(s['kind'] == 'gantry' for s in supports),
               'cantilevers': sum(s['kind'] == 'cantilever' for s in supports),
               'existingSupports': sum('existingId' in s for s in supports),
               'bgtInferredHeads': sum(h['source'].startswith('bgt:') for h in heads),
+              'aerialHeads': sum(h['source'].startswith('pdok:aerial:') for h in heads),
               'rejected': dict(rejected)}
-    admitted_1gis = len(heads) - counts['bgtInferredHeads']
+    admitted_1gis = sum(h['source'].startswith('1gis:') for h in heads)
     if admitted_1gis + sum(rejected.values()) != counts['heads1gis']:
         raise AssertionError('Every 1GIS head must be placed or accounted for')
     sources = {
         'bgt': {'url': BGT, 'licence': 'CC0-1.0'},
         '1gis': {'url': RWS, 'licence': 'CC0-1.0'},
         'osm': {'url': 'https://www.openstreetmap.org/copyright', 'licence': 'ODbL-1.0'},
+        'aerial': {'url': 'https://www.pdok.nl/ogc-webservices/-/article/pdok-luchtfoto-rgb-open-',
+                   'years': [2025, 2026], 'licence': 'CC BY',
+                   'attribution': 'Beeldmateriaal.nl via PDOK'},
     }
     return {'version': 1, 'date': day, 'sources': sources, 'heads': heads, 'supports': supports, 'counts': counts}
 

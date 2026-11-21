@@ -14,6 +14,7 @@ const CUSTOM_STOREFRONTS = new Set([
   'De Koffiekamer', 'Pannenkoekenhuis De Langenberg', 'Villa Brutus',
   'Toes herenmode', 'Kapsalon Re-Style',
 ]);
+const CUSTOM_STOREFRONT_BUILDINGS = new Set(['w374720957', 'w374720967']);
 
 // Chain palettes are the fallback when a branch has no photographed sign.
 const BRANDS = {
@@ -48,7 +49,7 @@ function nearestWall(rings, x, z) {
       if (len < MIN_WALL_LENGTH) continue;
       const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (len * len)));
       const d = Math.hypot(x - (ax + dx * t), z - (az + dz * t));
-      if (d < MAX_WALL_DISTANCE && (!best || d < best.d)) best = { d, ax, az, dx, dz, len, t, dir: r.dir, ground: r.ground };
+      if (d < MAX_WALL_DISTANCE && (!best || d < best.d)) best = { d, ax, az, dx, dz, len, t, dir: r.dir, ground: r.ground, custom: r.custom };
     }
   }
   return best;
@@ -94,7 +95,7 @@ export function createShopSigns(buildings, buildingGrounds) {
       minX = Math.min(minX, r[i]); maxX = Math.max(maxX, r[i]);
       minZ = Math.min(minZ, r[i + 1]); maxZ = Math.max(maxZ, r[i + 1]);
     }
-    rings.push({ pts: r, minX, maxX, minZ, maxZ, dir: Math.sign(area) || 1, ground: buildingGrounds?.get(b) });
+    rings.push({ pts: r, minX, maxX, minZ, maxZ, dir: Math.sign(area) || 1, ground: buildingGrounds?.get(b), custom: CUSTOM_STOREFRONT_BUILDINGS.has(b.id) });
   }
 
   // Reuse one atlas cell for identical text and colours, including repeated branches.
@@ -119,7 +120,7 @@ export function createShopSigns(buildings, buildingGrounds) {
     const cell = cellOf.get(key);
     if (cell === undefined) continue;
     const wall = nearestWall(rings, sx, sz);
-    if (!wall) continue;
+    if (!wall || wall.custom) continue;
     // Outward wall normal, same convention as the building walls in buildings.js.
     const nx = wall.dz / wall.len * wall.dir, nz = -wall.dx / wall.len * wall.dir;
     const w = Math.max(0.8, Math.min(5.5, wall.len - 0.8, 1.6 + name.length * 0.32));

@@ -18,6 +18,14 @@ import { EDE_INDUSTRIAL_HERITAGE_LANDMARKS } from './ede-industrial-heritage-sur
 import { EDE_STREET_HERITAGE_LANDMARKS } from './ede-street-heritage-survey.js';
 import { EDE_MODERN_NEIGHBORHOOD_LANDMARKS } from './ede-modern-neighborhood-survey.js';
 import { EDE_VELDHUIZEN_LANDMARKS } from './ede-veldhuizen-survey.js';
+import { EDE_HORAPARK_OFFICE_SITES } from './ede-horapark-office-survey.js';
+import { EDE_HORA_SANATORIUM_SITES } from './ede-hora-sanatorium-survey.js';
+import { EDE_HORAPARK_NAK_SITES } from './ede-horapark-nak-survey.js';
+import { EDE_HORAPARK_VILLA_SITES } from './ede-horapark-villa-survey.js';
+import { EDE_LANGE_WEIDE_LANDMARKS } from './ede-lange-weide-survey.js';
+import { EDE_KERNHEM_NEIGHBORHOOD_LANDMARKS } from './ede-kernhem-neighborhood-survey.js';
+import { EDE_P_BOS_LANDMARKS } from './ede-p-bos-survey.js';
+import { REMBRANDTLAAN_SITE } from './ede-rembrandtlaan-survey.js';
 import { EDE_EXPANSION_LANDMARKS } from './ede-expansion-landmark-surveys.js';
 import { EDE_AMADEUS_LANDMARKS } from './ede-amadeus-survey.js';
 import { EDE_REEMST_LANDMARKS } from './ede-reemst-landmark-survey.js';
@@ -196,6 +204,14 @@ export const EDE_MODELED_LANDMARKS = [
   ...EDE_STREET_HERITAGE_LANDMARKS,
   ...EDE_MODERN_NEIGHBORHOOD_LANDMARKS,
   ...EDE_VELDHUIZEN_LANDMARKS,
+  ...EDE_HORAPARK_OFFICE_SITES,
+  ...EDE_HORA_SANATORIUM_SITES,
+  ...EDE_HORAPARK_NAK_SITES,
+  ...EDE_HORAPARK_VILLA_SITES,
+  ...EDE_LANGE_WEIDE_LANDMARKS,
+  ...EDE_KERNHEM_NEIGHBORHOOD_LANDMARKS,
+  ...EDE_P_BOS_LANDMARKS,
+  REMBRANDTLAAN_SITE,
   ...EDE_EXPANSION_LANDMARKS,
   ...EDE_AMADEUS_LANDMARKS,
   ...EDE_REEMST_LANDMARKS,

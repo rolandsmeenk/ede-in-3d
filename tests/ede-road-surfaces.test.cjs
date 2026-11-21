@@ -94,6 +94,22 @@ test('N224 lane markings and traffic follow the paved bend east of Ginkelse Heid
   }
 });
 
+test('the Hilgers and Valenberg cycleways use surveyed BGT asphalt footprints', async t => {
+  t.mock.method(globalThis, 'fetch', mockedSurfaces);
+  const { isEdeTrafficPavement, loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
+  await loadEdeRoadSurfaces();
+  for (const id of ['G0228.cd612b91460c465ea242dc97a8ffc412', 'G0228.fe246f498667d6d6e0400a0a35020533']) {
+    const surface = extension.surfaces.find(item => item.id === id);
+    assert.equal(surface?.function, 'fietspad');
+    assert.equal(surface.material, 'asphalt');
+    assert.equal(surface.layer, 0);
+  }
+  assert.ok(extension.covered.w109378838?.length);
+  assert.deepEqual(extension.covered.w1013523963, [0, 1, 2, 3]);
+  assert.ok(isEdeTrafficPavement(404, -2506.75));
+  assert.ok(isEdeTrafficPavement(4523.2, -2741.1));
+});
+
 test('roadside pole clearance respects ground BGT road, cycle and driveway polygons', async t => {
   const { isEdeTrafficPavement, loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
   const square = x => [x, 0, x + 5, 0, x + 5, 5, x, 5];

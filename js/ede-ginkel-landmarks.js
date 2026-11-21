@@ -247,8 +247,8 @@ function rampCorner(nodes, i, side, half) {
 }
 
 function addValenbergApproach(deck, start) {
-  // The last ground-level segment of mapped path w187417323, sampled against collision terrain.
-  const way = [[4526.69, -2743.88], [4536.66, -2751.52], [4541.58, -2754.78], [start.x, start.z]];
+  // Follow w1172706146 from the cycleway and w187417323 to the ramp.
+  const way = [[4523.2, -2741.1], [4526.69, -2743.88], [4536.66, -2751.52], [4541.58, -2754.78], [start.x, start.z]];
   let previous;
   for (let i = 1; i < way.length; i++) {
     const [ax, az] = way[i - 1], [bx, bz] = way[i];

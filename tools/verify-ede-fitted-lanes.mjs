@@ -108,7 +108,7 @@ try {
         exit24: ['w723962249','w723962252','w469675212'],
       };
       const knownEdges = {
-        kolkakkerweg: '-859.20,857.60,-978.80,873.80|w6953286|0',
+        kolkakkerweg: '-859.20,857.60,-959.50,874.30|w6953286|0',
       };
       const selected = (priority[site] ?? ways).map(way=>choices.find(c=>
         c.edge.wayId===way && (!knownEdges[site] || c.row.key===knownEdges[site]))).filter(Boolean).slice(0,3);

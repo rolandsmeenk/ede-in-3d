@@ -175,11 +175,12 @@ function setupSceneCulling(scene, roots, shadow = null) {
         pushCulled(o, bounds.clone().applyMatrix4(o.matrixWorld), o.userData.cullDistance);
         return;
       }
-      if (!o.isInstancedMesh) return;
-      if (o.count < 64 || o.count !== o.instanceMatrix.count) return;
-      if (o.count * triangleCount(o.geometry) < 40000) return;
-      if (!o.boundingSphere) o.computeBoundingSphere();
-      if (o.boundingSphere.radius < 1500) return;
+      if (!o.isInstancedMesh || o.count !== o.instanceMatrix.count) return;
+      if (!(o.userData.cullDistance > 0)) {
+        if (o.count < 64 || o.count * triangleCount(o.geometry) < 40000) return;
+        if (!o.boundingSphere) o.computeBoundingSphere();
+        if (o.boundingSphere.radius < 1500) return;
+      }
       chunkable.push(o);
     });
   }
@@ -361,8 +362,7 @@ function updateSceneCulling(cameraPosition) {
 
 export { setupSceneCulling, updateSceneCulling, SHADOW_PROXY_LAYER };
 
-// Detailed town meshes often survive frustum culling when viewed across the heath.
-// At those distances the aerial ground and forest canopy provide the landscape.
+// Use the aerial ground and building shells for distant town detail, including views inside the town bounds.
 export function createExpansionCulling(roots, bounds, getGroundHeight) {
   if (!bounds) return null;
   const reachByName = new Map([
@@ -382,6 +382,7 @@ export function createExpansionCulling(roots, bounds, getGroundHeight) {
   function collectBatches() {
     if (initialized) return;
     initialized = true;
+    const buildingTiles = new Map();
     for (const root of roots) {
       const reach = reachByName.get(root.name);
       if (!reach) continue;
@@ -389,9 +390,16 @@ export function createExpansionCulling(roots, bounds, getGroundHeight) {
         if (!mesh.isMesh || !mesh.layers.isEnabled(0) || mesh.name === 'Ede legacy terrain') return;
         const tile = mesh.userData.buildingTile;
         if (tile) {
-          const x = (tile.minX + tile.maxX) / 2, z = (tile.minZ + tile.maxZ) / 2;
-          const radius = Math.hypot(tile.maxX - x, tile.maxZ - z);
-          batches.push({ mesh, x, z, reach: reach + radius, hidden: false });
+          let batch = buildingTiles.get(tile);
+          if (!batch) {
+            const x = (tile.minX + tile.maxX) / 2, z = (tile.minZ + tile.maxZ) / 2;
+            const radius = Math.hypot(tile.maxX - x, tile.maxZ - z);
+            batch = { meshes: [], x, z, reach: reach + radius, hidden: false };
+            buildingTiles.set(tile, batch);
+            batches.push(batch);
+          }
+          if (mesh.userData.aerialBuildingProxy) batch.proxy = mesh;
+          else batch.meshes.push(mesh);
           return;
         }
         if (mesh.isInstancedMesh && !mesh.boundingSphere) mesh.computeBoundingSphere();
@@ -399,38 +407,58 @@ export function createExpansionCulling(roots, bounds, getGroundHeight) {
         const sphere = mesh.boundingSphere ?? mesh.geometry.boundingSphere;
         if (!sphere || !Number.isFinite(sphere.radius)) return;
         const { center, radius } = sphere.clone().applyMatrix4(mesh.matrixWorld);
-        batches.push({ mesh, x: center.x, z: center.z, reach: reach + radius, hidden: false });
+        const keepInAerial = mesh.userData.keepInAerial || root.name === 'EdeLandmarks' ||
+          root.name === 'EdeGradeWorld' || mesh.name === 'Ede rails' || mesh.name === 'Ede rail ballast' ||
+          /^Ede BGT (deck|platform|platformEdge|abutment|pier|foundation|civilWall|retainingWall)$/.test(mesh.name);
+        batches.push({ meshes: [mesh], x: center.x, z: center.z, reach: reach + radius, keepInAerial, hidden: false });
       });
     }
   }
 
-  let lastX = Infinity, lastZ = Infinity, lastY = Infinity, inExpansion = false;
+  let lastX = Infinity, lastZ = Infinity, lastY = Infinity, wasOutside = false, wasAerial = false;
   const [west, north, east, south] = bounds;
-  const stats = { hiddenBatches: 0 };
+  const stats = { hiddenBatches: 0, aerialShells: 0 };
   return {
     stats,
     update(camera) {
       const { x, y, z } = camera.position;
-      const outside = x < west || x > east || z < north || z > south;
-      if (!outside && !inExpansion) return;
+      const townDepth = Math.min(x - west, east - x, z - north, south - z);
+      const outside = townDepth < 0;
+      const altitude = y - getGroundHeight(x, z);
+      const aerialBlend = THREE.MathUtils.smoothstep(altitude, 55, 100);
+      const aerial = aerialBlend > 0;
+      const active = outside || aerial;
+      if (!active && !wasOutside && !wasAerial) return;
       collectBatches();
-      if (outside === inExpansion && Math.hypot(x - lastX, y - lastY, z - lastZ) < 18) return;
+      if (outside === wasOutside && aerial === wasAerial && Math.hypot(x - lastX, y - lastY, z - lastZ) < 18) return;
       lastX = x;
       lastY = y;
       lastZ = z;
-      inExpansion = outside;
-      const air = outside ? THREE.MathUtils.clamp((y - getGroundHeight(x, z) - 38) * 2, 0, 500) : 0;
+      wasOutside = outside;
+      wasAerial = aerial;
+      const air = THREE.MathUtils.clamp((altitude - 38) * 2, 0, 500);
+      // Bring the detail cutoff inward as the camera climbs. Blend across the map boundary during the climb.
+      const townReach = aerial ? 6500 * (1 - aerialBlend) * THREE.MathUtils.smoothstep(townDepth, -360, 360) : 0;
       let hiddenBatches = 0;
+      let aerialShells = 0;
       for (const batch of batches) {
-        const reach = batch.reach + air + (batch.hidden ? 0 : 70);
-        const hidden = outside && (x - batch.x) ** 2 + (z - batch.z) ** 2 > reach ** 2;
-        if (hidden) hiddenBatches++;
+        const reach = batch.reach + air + townReach + (batch.hidden ? 0 : 70);
+        const hidden = active && !(aerial && batch.keepInAerial) &&
+          (x - batch.x) ** 2 + (z - batch.z) ** 2 > reach ** 2;
+        if (hidden) hiddenBatches += batch.meshes.length;
+        if (batch.proxy) {
+          batch.proxy.visible = aerial && hidden;
+          if (batch.proxy.visible) aerialShells++;
+        }
         if (hidden === batch.hidden) continue;
         batch.hidden = hidden;
-        if (hidden) batch.mesh.layers.disable(0);
-        else batch.mesh.layers.enable(0);
+        for (const mesh of batch.meshes) {
+          if (hidden) mesh.layers.disable(0);
+          else mesh.layers.enable(0);
+        }
       }
       stats.hiddenBatches = hiddenBatches;
+      stats.aerialShells = aerialShells;
     },
   };
 }

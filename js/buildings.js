@@ -280,8 +280,50 @@ function colorEdeRoof(roof, id, fallback, aerial, tiles) {
   roof.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
 
+function addAerialBuildingTiles(group, batches, linkFallback) {
+  const material = new THREE.MeshLambertNodeMaterial({ vertexColors: true, flatShading: true });
+  let firstMesh;
+  for (const [tile, { positions, colors, indices, sources }] of batches) {
+    if (!indices.length) continue;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Uint8BufferAttribute(colors, 4, true));
+    geometry.setIndex(indices);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = 'Ede aerial building shells';
+    mesh.visible = false;
+    mesh.userData.buildingTile = tile;
+    mesh.userData.aerialBuildingProxy = true;
+    if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
+    else firstMesh = mesh;
+    group.add(mesh);
+
+    if (!sources.length) continue;
+    const { index } = geometry;
+    index.setUsage(THREE.DynamicDrawUsage);
+    let visibleCount = indices.length;
+    for (const { id, start, end } of sources) {
+      let original;
+      linkFallback(id, covered => {
+        if (covered) {
+          original = index.array.slice(start, end);
+          index.array.fill(original[0], start, end);
+        } else {
+          index.array.set(original, start);
+          original = undefined;
+        }
+        visibleCount += covered ? start - end : end - start;
+        geometry.setDrawRange(0, visibleCount > 0 ? index.count : 0);
+        index.addUpdateRange(start, end - start);
+        index.needsUpdate = true;
+      });
+    }
+  }
+  batches.clear();
+}
+
 // `bag`: 3D BAG meshes already supply the facades and roofs, so only colliders and street-level details are built here.
-function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacades, replacementOsmIds } = {}) {
+function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacades, replacementOsmIds, aerialLod = false } = {}) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeCityBlocks' : 'ManhattanCityBlocks';
   const colliders = [];
@@ -2032,6 +2074,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
     // pools. Thin, oriented facade boxes preserve courtyard openings and the
     // angled street walls of Ede without Manhattan's synthetic block layouts.
     const roofs = [];
+    const aerialBuildings = aerialLod ? new Map() : null;
     const roofPalette = [0x655c51, 0x857369, 0x676b68].map(c => new THREE.Color(c).toArray());
     const aerial = [0, 0, 0];
     const roofMaterial = new THREE.MeshStandardNodeMaterial({ roughness: 0.9 });
@@ -2114,6 +2157,12 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
         tile.maxZ = Math.max(tile.maxZ, bounds.maxZ);
       }
       if (replacements && !shed) replacements.set(source.id, { tiles: 0, toggle: [] });
+      let aerialBuilding;
+      if (aerialBuildings && renderExterior) {
+        if (!aerialBuildings.has(tile)) aerialBuildings.set(tile, { positions: [], colors: [], indices: [], sources: [] });
+        aerialBuilding = aerialBuildings.get(tile);
+      }
+      const aerialStart = aerialBuilding?.indices.length;
       for (const [ringIndex, ring] of [poly, ...holes].entries()) {
         const direction = Math.sign(signedArea(ring)) || 1;
         for (let i = 0; i < ring.length; i++) {
@@ -2180,6 +2229,18 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
                   w: (to - from) * length + 0.06, h: renderTop - bottom, d: thickness,
                   ry, tone, facadeColour: wallColour, facadeLevels: source.facadeLevels, windowKey, facadeLayout, shed,
                   faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, renderFace, renderFace] });
+                if (aerialBuilding) {
+                  // One outer face replaces each detailed facade box at aerial distance.
+                  const { positions, colors, indices } = aerialBuilding;
+                  const start = positions.length / 3;
+                  const ax = a.x + dx * from, az = a.z + dz * from;
+                  const bx = a.x + dx * to, bz = a.z + dz * to;
+                  positions.push(ax, bottom, az, ax, renderTop, az, bx, renderTop, bz, bx, bottom, bz);
+                  const r = Math.round(wallColour.r * 255), g = Math.round(wallColour.g * 255), b = Math.round(wallColour.b * 255);
+                  colors.push(r, g, b, 255, r, g, b, 255, r, g, b, 255, r, g, b, 255);
+                  if (normalSign > 0) indices.push(start, start + 1, start + 2, start, start + 2, start + 3);
+                  else indices.push(start, start + 2, start + 1, start, start + 3, start + 2);
+                }
               }
               for (const [t0, t1] of cuts.length ? [[from, to]] : solid) {
                 const lo = Math.max(t0, from), hi = Math.min(t1, to), hx = (hi - lo) * length / 2;
@@ -2220,11 +2281,29 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
         if (replacements) roof.userData.fallbackId = source.id;
         roofs.push(roof);
       }
+      if (roof && aerialBuilding) {
+        const { positions, colors, indices } = aerialBuilding;
+        const { position, color } = roof.attributes;
+        const start = positions.length / 3;
+        for (let i = 0; i < position.count; i++) {
+          positions.push(position.getX(i), position.getY(i), position.getZ(i));
+          colors.push(Math.round(color.getX(i) * 255), Math.round(color.getY(i) * 255), Math.round(color.getZ(i) * 255), 255);
+        }
+        if (roof.index) {
+          for (let i = 0; i < roof.index.count; i++) indices.push(start + roof.index.getX(i));
+        } else {
+          for (let i = 0; i < position.count; i++) indices.push(start + i);
+        }
+      }
+      if (aerialBuilding && replacements && !shed && aerialBuilding.indices.length > aerialStart) {
+        aerialBuilding.sources.push({ id: source.id, start: aerialStart, end: aerialBuilding.indices.length });
+      }
       if (!bag && !shed && !pitched && !holes.length && !source.part && height > 12 && rand() < 0.34) {
         detail.hvacUnits.push({ x: cx, z: cz, y: ground + height, w: 2.2, h: 0.85, d: 3.0, ry: 0 });
       }
       quadtree.insert(detail); allBlocks.push(detail); built++;
     }
+    if (aerialBuildings) addAerialBuildingTiles(group, aerialBuildings, linkFallback);
     let firstMesh;
     for (const cell of edeSpatialGroups(roofs, roof => roof.userData.buildingTile)) for (let i = 0; i < cell.length; i += 250) {
       const sources = cell.slice(i, i + 250);

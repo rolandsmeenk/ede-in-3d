@@ -119,6 +119,22 @@
   <link rel="modulepreload" href="./js/ede-villa-heritage-survey.js" />
   <link rel="modulepreload" href="./js/ede-veldhuizen-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-veldhuizen-survey.js" />
+  <link rel="modulepreload" href="./js/ede-horapark-offices.js" />
+  <link rel="modulepreload" href="./js/ede-horapark-office-survey.js" />
+  <link rel="modulepreload" href="./js/ede-hora-sanatorium.js" />
+  <link rel="modulepreload" href="./js/ede-hora-sanatorium-survey.js" />
+  <link rel="modulepreload" href="./js/ede-horapark-nak.js" />
+  <link rel="modulepreload" href="./js/ede-horapark-nak-survey.js" />
+  <link rel="modulepreload" href="./js/ede-horapark-villa.js" />
+  <link rel="modulepreload" href="./js/ede-horapark-villa-survey.js" />
+  <link rel="modulepreload" href="./js/ede-lange-weide-landmark.js" />
+  <link rel="modulepreload" href="./js/ede-lange-weide-survey.js" />
+  <link rel="modulepreload" href="./js/ede-kernhem-neighborhood-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-kernhem-neighborhood-survey.js" />
+  <link rel="modulepreload" href="./js/ede-p-bos-landmark.js" />
+  <link rel="modulepreload" href="./js/ede-p-bos-survey.js" />
+  <link rel="modulepreload" href="./js/ede-rembrandtlaan-landmark.js" />
+  <link rel="modulepreload" href="./js/ede-rembrandtlaan-survey.js" />
   <link rel="modulepreload" href="./js/ede-kop-parkweg.js" />
   <link rel="modulepreload" href="./js/ede-hartogshof.js" />
   <link rel="modulepreload" href="./js/ede-hartogshof-survey.js" />
@@ -184,17 +200,17 @@
   <link rel="modulepreload" href="./js/ede-work-garden.js" />
   <link rel="modulepreload" href="./js/ede-enka-chimneys.js" />
   <link rel="modulepreload" href="./js/street-details.js?v=20261121-signal-optics" />
-  <link rel="modulepreload" href="./js/ede-signal-hardware.js?v=20261121-signal-optics" />
+  <link rel="modulepreload" href="./js/ede-signal-hardware.js?v=20261121-hospital-signals" />
   <link rel="modulepreload" href="./js/ede-signal-models.js?v=20261121-signal-optics" />
   <link rel="modulepreload" href="./js/ede-street-name-signs.js" />
   <link rel="modulepreload" href="./js/street-props.js" />
-  <link rel="modulepreload" href="./js/road-network.js?v=20261120-acv-truck" />
+  <link rel="modulepreload" href="./js/road-network.js?v=20261121-hospital-approaches" />
   <link rel="modulepreload" href="./js/road-access.js" />
   <link rel="modulepreload" href="./js/ede-active-travel.js" />
-  <link rel="modulepreload" href="./js/road-paint.js" />
+  <link rel="modulepreload" href="./js/road-paint.js?v=20261121-roundabouts" />
   <link rel="modulepreload" href="./js/ede-street-features.js" />
   <link rel="modulepreload" href="./js/ede-street-features-world.js?v=20261121-shared-sign-posts" />
-  <link rel="modulepreload" href="./js/traffic.js?v=20261120-acv-truck" />
+  <link rel="modulepreload" href="./js/traffic.js?v=20261121-hospital-approaches" />
   <link rel="modulepreload" href="./js/ede-trips.js" />
   <link rel="modulepreload" href="./js/ede-driving-controls.js" />
   <link rel="modulepreload" href="./js/ede-driving-control-evidence.js" />
@@ -229,8 +245,8 @@
   <link rel="modulepreload" href="./js/ede-facades.js" />
   <link rel="modulepreload" href="./js/ede-neighbourhood-facades.js" />
   <link rel="modulepreload" href="./js/ede-facade-material.js" />
-  <link rel="modulepreload" href="./js/main.js?v=20261121-signal-optics" />
-  <script type="module" src="./js/main.js?v=20261121-signal-optics"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261121-hospital-signals" />
+  <script type="module" src="./js/main.js?v=20261121-hospital-signals"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -336,7 +352,7 @@
       <button id="btn-teleport" class="tool-btn" type="button" popovertarget="teleport-popover" title="Teleport the active player">
         <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><span class="tool-label">Teleport</span><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
       </button>
-      <button id="btn-crossing-debug" class="tool-btn" type="button" popovertarget="crossing-debug-popover" title="Crossing test teleports" hidden>Debug</button>
+      <button id="btn-crossing-debug" class="tool-btn" type="button" popovertarget="crossing-debug-popover" title="Simulation debug tools" hidden>Debug</button>
       <button id="btn-open-map" class="tool-btn" type="button" title="Ede street map [M]">
         <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label">Map</span><kbd>M</kbd>
       </button>
@@ -397,7 +413,10 @@
   </div>
 
   <div id="crossing-debug-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-labelledby="crossing-debug-title">
-    <h2 id="crossing-debug-title" class="pop-title">Crossing test teleports</h2>
+    <h2 id="crossing-debug-title" class="pop-title">Simulation debug tools</h2>
+    <button id="btn-traffic-lanes" class="pop-item" type="button" aria-pressed="false" aria-describedby="traffic-lane-legend">Traffic lanes</button>
+    <p id="traffic-lane-legend" class="pop-sub" style="padding: 2px 10px 8px">Cyan fitted · amber fallback · purple bus only</p>
+    <div id="crossing-debug-teleports" hidden></div>
   </div>
 
   <div id="graphics-quality-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Graphics quality">

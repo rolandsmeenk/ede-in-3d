@@ -30,6 +30,8 @@ The game can stay on GitHub Pages if the feed server is deployed separately over
 
 The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and keeps bloom and color grading. Standard enables screen-space reflections and multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
 
+Append `?debug=1` and choose **Debug → Traffic lanes** to see the motor traffic graph near the camera. `?laneDebug=on` opens the game with the overlay enabled. Arrows show the travel direction, thin lines show junction connections, cyan marks fitted paths, amber marks fallback paths, and purple marks paths used only by scheduled buses.
+
 Append `?perf=1` to collect a rolling frame history. Open the browser console and run `await __slopwaw.perf.report()` for median and p95 frame time, subsystem CPU time, and render pass statistics. Pass `{frames: true}` for individual samples. GPU times are available on WebGPU devices with timestamp queries. `__slopwaw.perf.reset()` starts a fresh sample.
 
 In profiling mode, append any of `shadows`, `ssr`, `bloom`, `msaa`, `buildingDetail`, `vegetation`, `murals`, `trafficDraw` and `trafficUpdates` with `=on` or `=off` to override one setting. `scale=0.75` tests a lower internal resolution, and `bag=eager` restores the original all-tiles startup path for comparison. You can freeze existing traffic with `__slopwaw.perf.setTrafficUpdates(false)` and independently hide it with `__slopwaw.perf.setTrafficDraw(false)`.

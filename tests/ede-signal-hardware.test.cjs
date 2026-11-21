@@ -35,6 +35,23 @@ test('invalid signal support references are rejected before replacing the roadsi
   assert.throws(() => indexEdeSignalHardware({ ...asset, supports: [], heads: [head] }), /Invalid Ede signal head/);
 });
 
+test('the four hospital gantries face their existing directed motor approaches', () => {
+  for (const [direction, way, count, faceX, faceZ] of [
+    ['northbound', 'w1055535553', 5, 0, 1],
+    ['southbound', 'w1055535551', 5, 0, -1],
+    ['westbound', 'w1055715727', 5, 1, 0],
+    ['eastbound', 'w1055535552', 4, -1, 0],
+  ]) {
+    const source = `pdok:aerial:ede-vri-2:${direction}`;
+    const support = asset.supports.findIndex(row => row.source === source);
+    assert.equal(asset.supports[support]?.kind, 'gantry');
+    const heads = asset.heads.filter(head => head.support === support);
+    assert.equal(heads.length, count, direction);
+    assert.ok(heads.every(head => head.wayId === way && head.mount === 'overhead' &&
+      faceX * Math.sin(head.heading) + faceZ * Math.cos(head.heading) > 0.95), direction);
+  }
+});
+
 test('signal feet stay on the approach side, and a reused cantilever can reverse on its surveyed span', async () => {
   const { fitEdeSignalPole, fitEdeSignalSpan } = await import('../js/ede-signal-hardware.js');
   const verge = x => x >= 0.5;

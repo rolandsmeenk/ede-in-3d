@@ -23,7 +23,7 @@ async function fixture(grade = {}, fetch = globalThis.fetch, roadPavement = () =
     THREE,
     ...loadModule(detail, {
       imports: { ...imports, './ede-geometry.js': geometry, './ede-grade.js': grade,
-        './ede-signal-hardware.js?v=20261121-signal-optics': await import('../js/ede-signal-hardware.js'),
+        './ede-signal-hardware.js?v=20261121-hospital-signals': await import('../js/ede-signal-hardware.js'),
         './ede-playground-equipment.js': loadModule(source('ede-playground-equipment.js')),
         './ede-scene-coordinates.js': loadModule(source('ede-scene-coordinates.js')),
         './terrain.js': { getTerrain: () => ({ napOrigin: 22.54 }), terrainHeightAt: () => 2 } },

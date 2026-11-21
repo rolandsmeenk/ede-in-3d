@@ -10,10 +10,10 @@ import { createEdeMurals } from './ede-murals.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildStreetDetails } from './street-details.js?v=20261121-signal-optics';
-import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-signal-optics';
-import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261120-acv-truck';
+import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-hospital-signals';
+import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261121-hospital-approaches';
 import { loadEdeParking } from './ede-parking.js';
-import { buildRoadPaint } from './road-paint.js';
+import { buildRoadPaint } from './road-paint.js?v=20261121-roundabouts';
 import { overlapsEdeTravelPavement } from './ede-geometry.js';
 import { ThirdPersonControllerManager } from './controllers.js?v=20261120-dutch-bikes';
 import { EDE_BIKE_STYLES } from './ede-bikes.js';
@@ -293,7 +293,7 @@ async function initApp() {
   }
   await showLoadingStage('Generating building facades...');
   if (corridorFacadesResult.status === 'rejected') console.warn('[facades] using basic corridor fallback walls:', corridorFacadesResult.reason);
-  const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag,
+  const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag, aerialLod: Boolean(terrainTiles),
     corridorFacades: corridorFacadesResult.value, replacementOsmIds: replacements?.osm });
   const murals = createEdeMurals(scene, { enabled: enabled('murals'), isFallbackVisible: cityBlocks.isFallbackVisible });
   if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks, replacementBagIds: replacements?.bag });
@@ -306,7 +306,8 @@ async function initApp() {
   if (forestCanopy) forestCanopy.group.visible = graphics.vegetation;
   if (signalHardwareResult.status === 'rejected') console.warn('[signals] using generated roadside placements:', signalHardwareResult.reason);
   const streetDetails = buildStreetDetails(scene, allColliders, mappedLamps, importedDetail?.gantryLampMounts,
-    { quality: treeQuality, season: treeSeasonsEnabled, canopyCovers: forestCanopy?.covers },
+    { quality: treeQuality, season: treeSeasonsEnabled, canopyCovers: forestCanopy?.covers,
+      clearance: landmarks.treeClearance },
     signalHardwareResult.value, importedDetail?.gantries);
   const { treeField } = streetDetails;
   treeField.group.visible = graphics.vegetation;
@@ -884,14 +885,31 @@ async function initApp() {
   const openMapBtn = document.getElementById('btn-open-map');
   if (openMapBtn) openMapBtn.addEventListener('click', () => mapSystem.toggleFullMap(true));
 
-  if (supportsPopover && new URLSearchParams(window.location.search).get('debug') === '1') {
+  const debugMode = query.get('debug') === '1';
+  const showLanesOnStart = query.get('laneDebug') === 'on';
+  let laneDebug;
+  if (showLanesOnStart || (supportsPopover && debugMode)) {
+    const { createTrafficLaneDebug } = await import('./ede-traffic-lane-debug.js');
+    laneDebug = createTrafficLaneDebug(scene, trafficSystem);
+    const button = document.getElementById('btn-traffic-lanes');
+    const selectLanes = (value) => {
+      laneDebug.setEnabled(value);
+      button.classList.toggle('active', value);
+      button.setAttribute('aria-pressed', String(value));
+    };
+    selectLanes(showLanesOnStart);
+    button.addEventListener('click', () => selectLanes(button.getAttribute('aria-pressed') !== 'true'));
+    if (supportsPopover) document.getElementById('btn-crossing-debug').hidden = false;
+  }
+  if (supportsPopover && debugMode) {
     const { mountCrossingTeleports } = await import('./ede-crossing-debug.js');
-    mountCrossingTeleports(document.getElementById('crossing-debug-popover'), (mode, x, z, heading, altitude) => {
+    const teleports = document.getElementById('crossing-debug-teleports');
+    teleports.hidden = false;
+    mountCrossingTeleports(teleports, (mode, x, z, heading, altitude) => {
       selectMode(mode);
       teleportTo(x, z, heading, altitude);
       closePopovers();
     });
-    document.getElementById('btn-crossing-debug').hidden = false;
   }
 
   if (hudToggleBtn) {
@@ -1048,9 +1066,12 @@ async function initApp() {
   }
 
   const restoreTreeWarmup = treeField.prepareWarmup();
+  const aerialShell = cityBlocks.group.children.find(object => object.userData.aerialBuildingProxy);
+  if (aerialShell) aerialShell.visible = true;
   try {
     await precompileShaders();
   } finally {
+    if (aerialShell) aerialShell.visible = false;
     restoreTreeWarmup();
   }
   markInit('compile');
@@ -1079,6 +1100,7 @@ async function initApp() {
     gamepadControls.update(dt);
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
     cameraSystem.update(dt, elapsed);
+    laneDebug?.update(cameraSystem.camera.position);
     terrainTiles?.update(cameraSystem.camera, renderer.domElement.height);
     bgtWorld?.updateMastLod(cameraSystem.camera, renderer.domElement.height);
     profiler?.stage('Player, camera and terrain');

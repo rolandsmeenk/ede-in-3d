@@ -3,6 +3,7 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const { gunzipSync } = require('node:zlib');
+const { loadModule } = require('./helpers/module.cjs');
 
 test('the checked-in BGT lamp posts cover the Ede scene and reject an incomplete asset', async () => {
   const { decodeEdeLamps } = await import('../js/ede-lamp-data.js');
@@ -40,4 +41,28 @@ test('the lamp decoder still accepts coordinate-only EDL1 data', async () => {
   const bytes = Buffer.from([69, 68, 76, 49, 1, 0, 0, 0, 10, 0, 15, 0]);
   assert.deepEqual(decodeEdeLamps(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)),
     [{ x: 2, z: 3 }]);
+});
+
+test('an explicit lamp cutoff chunks and culls even a small glowing lens batch', async () => {
+  const THREE = await import('../vendor/three/build/three.webgpu.js');
+  const { setupSceneCulling, updateSceneCulling } = loadModule(
+    readFileSync(join(__dirname, '../js/scene-culling.js'), 'utf8'),
+    { imports: { 'three/webgpu': THREE } },
+  );
+  const scene = new THREE.Scene(), group = new THREE.Group();
+  const lenses = new THREE.InstancedMesh(new THREE.CircleGeometry(0.6), new THREE.MeshBasicNodeMaterial(), 2);
+  lenses.userData.cullDistance = 740;
+  lenses.setMatrixAt(0, new THREE.Matrix4());
+  lenses.setMatrixAt(1, new THREE.Matrix4().makeTranslation(1200, 0, 0));
+  group.add(lenses);
+  scene.add(group);
+
+  setupSceneCulling(scene, [group]);
+  assert.equal(group.children.length, 2);
+  updateSceneCulling({ x: 0, y: 0, z: 739 });
+  assert.deepEqual(group.children.map(mesh => mesh.visible), [true, false]);
+  updateSceneCulling({ x: 0, y: 0, z: 742 });
+  assert.deepEqual(group.children.map(mesh => mesh.visible), [false, false]);
+  updateSceneCulling({ x: 1200, y: 0, z: 0 });
+  assert.deepEqual(group.children.map(mesh => mesh.visible), [false, true]);
 });
