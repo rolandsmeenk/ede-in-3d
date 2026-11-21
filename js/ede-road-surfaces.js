@@ -9,6 +9,7 @@ const osmMaterials = {
 let mapped = { surfaces: [], covered: {} };
 let gradeSurfaces = new Map();
 let groundSurfaces = new Map();
+let groundTrafficPolygons;
 
 export function osmRoadMaterial(road) {
   return Object.hasOwn(osmMaterials, road.surface) ? osmMaterials[road.surface] : undefined;
@@ -36,6 +37,35 @@ function contains(ring, x, z) {
     if ((az > z) !== (bz > z) && x < (ring[j] - ring[i]) * (z - az) / (bz - az) + ring[i]) inside = !inside;
   }
   return inside;
+}
+
+const TRAFFIC_CELL = 32;
+
+export function isEdeTrafficPavement(x, z) {
+  if (!groundTrafficPolygons) {
+    groundTrafficPolygons = new Map();
+    for (const surface of mapped.surfaces) {
+      if (surface.layer || !/^(rijbaan |fietspad$|ov-baan$|inrit$|parkeervlak$|verbindingsweg$|verkeersdrempel$|woonerf$|overweg$)/.test(surface.function)) continue;
+      for (const polygon of surface.polygons) {
+        const outer = polygon[0];
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (let i = 0; i < outer.length; i += 2) {
+          minX = Math.min(minX, outer[i]); maxX = Math.max(maxX, outer[i]);
+          minZ = Math.min(minZ, outer[i + 1]); maxZ = Math.max(maxZ, outer[i + 1]);
+        }
+        for (let ix = Math.floor(minX / TRAFFIC_CELL); ix <= Math.floor(maxX / TRAFFIC_CELL); ix++) {
+          for (let iz = Math.floor(minZ / TRAFFIC_CELL); iz <= Math.floor(maxZ / TRAFFIC_CELL); iz++) {
+            const key = `${ix}/${iz}`;
+            if (!groundTrafficPolygons.has(key)) groundTrafficPolygons.set(key, []);
+            groundTrafficPolygons.get(key).push(polygon);
+          }
+        }
+      }
+    }
+  }
+  const polygons = groundTrafficPolygons.get(`${Math.floor(x / TRAFFIC_CELL)}/${Math.floor(z / TRAFFIC_CELL)}`);
+  return polygons?.some(([outer, ...holes]) =>
+    contains(outer, x, z) && !holes.some(hole => contains(hole, x, z))) ?? false;
 }
 
 export function gradePavement(section, layer, kind) {
@@ -80,5 +110,6 @@ export async function loadEdeRoadSurfaces() {
   gradeSurfaces = grade;
   groundSurfaces = ground;
   mapped = asset;
+  groundTrafficPolygons = undefined;
   return asset;
 }

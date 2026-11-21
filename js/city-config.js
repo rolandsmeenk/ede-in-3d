@@ -327,6 +327,21 @@ const SCENIC_ARRIVALS = {
  'de-proosdij':      [-1321.9, 631.9, -1347, 641, 3.4, 'Floreslaan'],
  'point-growth':     [-48.2, -16.9, -37.33, -12.96, 2.40, 'Torenstraat'],
  'on-the-rocks':    [-112, 260.7, -104.95, 260.6, 0.65, 'Bevrijdingsplein'],
+ 'ulu-camii':       [-1076.62, 1822.90, -1071, 1793, 7.5, 'Verlengde Blokkenweg'],
+ emmaus:           [-2326.7, 2907.1, -2341.3, 2916.2, 3.7, 'Emmaüs'],
+ 'al-mouahidin':   [-1897, 1075, -1868, 1059, 8.4, 'Peppelensteeg'],
+ 'sic-ede':        [-2041, 135, -2048, 117, 4.3, 'Hogerhorst'],
+ 'ede-mgt-moskee': [-1047.5, 3, -1054, 8.5, 1.45, 'Molenstraat'],
+ bergansiuskazerne: [311, 1392, 308.8, 1373, 4.8, 'Verbindelaarsweg'],
+ 'enka-ehbo':       [431, 2364, 414, 2355, 2.3, 'Sterkerij'],
+ oranjestaete:      [15.5, 2249, 34, 2228, 6.3, 'Oude Bennekomseweg'],
+ 'villa-sterrenberg': [254.9, -46.3, 270, -72, 4.7, 'Bergstraat'],
+ bellestein:        [-1877.8, 507, -1867.7, 479.8, 4.5, 'Bellestein'],
+ laathof:           [-2487, 466.2, -2518, 449.4, 5.5, 'Laathof'],
+ 'kop-van-de-parkweg': [-129.8, 2031, -92, 2049, 6.5, 'Parkweg'],
+ hartogshof:       [213, 2230, 250, 2256, 6.5, 'Akulaan'],
+ 'akulaan-h2-h4':   [401, 2255, 406, 2226, 8, 'Akulaan'],
+ parkveste:        [-187, 2027.5, -185, 2008, 7, 'Parkweg'],
 };
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){

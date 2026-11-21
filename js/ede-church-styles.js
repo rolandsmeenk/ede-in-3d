@@ -16,8 +16,7 @@ export const CHURCH_STYLES = {
     doorWidth: 2.45, trim: 0x777f85, eave: 0x65717c, finial: 1.7,
   },
   emmaus: {
-    wall: 0xa6a39a, roof: 0x586977, front: 'window', portal: 'glass',
-    doorWidth: 3.6, canopy: true, trim: 0xaa885a,
+    wall: 0xd0cabc, roof: 0x617d86, roofTints: { 56: 0x727b7a, 58: 0xa7aaa2 },
   },
   proosdijkerk: {
     wall: 0x855444, roof: 0xa2694c, front: 'glass', side: 'window', portal: 'glass',

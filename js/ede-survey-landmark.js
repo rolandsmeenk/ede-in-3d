@@ -24,15 +24,20 @@ function wallContains(wall, u, y) {
   return crosses(wall.rings[0]) && !wall.rings.slice(1).some(crosses);
 }
 
-export function surveyWindow(wall, u, v, lo, hi, {
-  color = 0x435963, frame = 0xafa99b, columns = 1, rows = 1,
-} = {}) {
+export function surveyOpeningFits(wall, u, v, lo, hi) {
   if (!(v - u > 0.16 && hi - lo > 0.16)) return false;
   for (const x of [u, (u + v) / 2, v]) {
     for (const y of [lo, (lo + hi) / 2, hi]) {
       if (!wallContains(wall, x, y)) return false;
     }
   }
+  return true;
+}
+
+export function surveyWindow(wall, u, v, lo, hi, {
+  color = 0x435963, frame = 0xafa99b, columns = 1, rows = 1,
+} = {}) {
+  if (!surveyOpeningFits(wall, u, v, lo, hi)) return false;
   const rim = Math.min(0.055, (v - u) / 8, (hi - lo) / 8);
   surveyPanel(wall, u, v, lo, hi, frame, 0.035);
   surveyPanel(wall, u + rim, v - rim, lo + rim, hi - rim, color, 0.044, 0.75);
@@ -71,7 +76,7 @@ export function createSurveyLandmark(site, buildings, decorate, finish) {
       const rings = indices.map(ring => ring.map(index => points[index]));
       const ring = rings[0];
       if (roof) {
-        shell.polygon(rings, roofColor);
+        shell.polygon(rings, building.roofColors?.[faceIndex] ?? roofColor);
         continue;
       }
       const normal = polygonNormal(ring);
@@ -85,7 +90,7 @@ export function createSurveyLandmark(site, buildings, decorate, finish) {
           y, a.z + (b.z - a.z) * (u / width) + normal.z * offset,
         ];
         color = decorate?.({
-          building, buildingIndex, faceIndex, rings, normal, a, b, width, low, high, base, point, trim, labels,
+          building, buildingIndex, faceIndex, rings, normal, a, b, width, low, high, base, point, shell, trim, labels,
         }) ?? wallColor;
         if (nearGround && !outline?.length) {
           colliders.push(...wallColliders(a, b, Math.min(foundation(a.x, a.z), foundation(b.x, b.z)), high));

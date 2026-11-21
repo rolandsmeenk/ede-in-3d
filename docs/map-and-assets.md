@@ -21,9 +21,13 @@ See [License and data](#license-and-data) for attribution and the sections below
 
 ## Landmarks
 
-The **Teleport** menu offers ten framed arrivals, including the Johan Willem Friso-kazerne and station Ede-Wageningen. Use map search to find other landmarks such as Astrant, the Van Eekelenflat, Plantion and Work Garden.
+The **Teleport** menu offers framed arrivals, including the Johan Willem Friso-kazerne and station Ede-Wageningen. Use map search to find other landmarks such as Astrant, the Van Eekelenflat, Plantion and Work Garden.
+
+Visit Ulu Camii, Al Mouahidin, Islamitisch Centrum Ede and Ede MGT Moskee through the **Teleport** menu. The local exterior models follow the individual buildings, including Al Mouahidin’s square minaret and the contemporary street frontage at Hogerhorst. [Mosque survey references](../tools/data/ede-mosque-landmarks.md)
 
 The historic exterior models include ENKA Westhal and Poortgebouw, Mauritskazerne, Oude Kerk, the old Ede Centrum station, Huis Kernhem and its coach house, De Vuurvogel, Raadhuis Ede and Cultura. See the [exterior references and fitted details](../tools/data/ede-landmark-exteriors.md).
+
+Oranjestaete, Winkelcentrum Bellestein, the P.L. Bergansiuskazerne, ENKA EHBO-gebouw, Terrasflat Laathof and Villa Sterrenberg have individual exterior models and framed arrivals. [Architecture survey and verification](../tools/data/ede-architecture-landmarks.md)
 
 The 17 fuel station sites share a parametric model with canopy outlines, brand-coloured trim, a shared wordmark texture, pump islands and optional shops. The local inventory covers 15 OpenStreetMap entries and two additional sites confirmed by the operator and PDOK imagery. It includes the separate Shell and Greenpoint forecourts on Bonnetstraat and the uncovered CNG dispenser on Radonstraat. The A30 service areas lie north of the playable bounds. Pump counts and vertical clearances use estimates where a survey is unavailable. Canopies shelter the forecourt and the model leaves clearance between pumps. [Station inventory and source links](../js/ede-fuel-sites.js)
 
@@ -42,6 +46,8 @@ Map search includes De Keetmolen, De Peppel, CHE and Van der Knaaphal, and Lukki
 Search the map for the surveyed churches, including Bethelkerk, Evangelisch-Lutherse Kerk, Goede Herderkerk, Petrakerk, and the former Ericakerk. Their exteriors use surveyed footprints and photo-informed trim. [Church exterior references](../tools/data/ede-other-churches.md) · [Shell rebuild](../tools/data/ede-other-churches.sources.md)
 
 The next ten locations include Kasteel Hoekelum, NIZO, Ziekenhuis Gelderse Vallei, De Eder Kuil, De ReeHorst, Buitenzorg, Johannus, Technova, De Gasfabriek and Tesqua. Hoekelum has a walkable moat bridge and the Eder Kuil has revised amphitheatre grading. [Sources, offline refresh and verification](../tools/data/ede-next-landmarks.md)
+
+Eight searchable Stationsweg sites add thirteen surveyed exteriors, including the By Honck villa group, the old police station, the miller’s house and the former Edesche Courant and MULO. [Stationsweg survey and exterior references](../tools/data/ede-stationsweg-landmarks.md)
 
 The public-building, school and sports landmarks keep their surveyed roof and wall geometry. Verified entrances and glazing use local geometry and shared materials. Search the map for De Doelen, the Breelaan stations, Het Kernhuis, the Kenniscampus and ENKA schools, and the sports clubhouses. [Civic exterior sources](../tools/data/ede-public-landmarks.md) · [School exterior sources](../tools/data/ede-school-landmarks.md) · [Sports venue sources](../tools/data/ede-sport-landmarks.md)
 
@@ -255,13 +261,15 @@ python3 tools/build-ede-facades.py /tmp/ede-facades-walls.json tools/data/ede-fa
   --report tools/data/ede-facade-coverage.json
 ```
 
-The full bake includes the reviewed layouts for Marktplein, Kuiperplein, Museumplein and Oude Kerkplein. To apply those reviews to an existing façade bake, run the following command. The reviews apply to the surveyed walls and stay out of neighbourhood profile training. [Square review records](../tools/data/ede-square-facades)
+The full bake includes reviewed layouts for Marktplein, Kuiperplein, Museumplein, Oude Kerkplein and the Horapark offices. The following command applies the reviews to an existing façade bake. The reviews apply to the surveyed walls and stay out of neighbourhood profile training. [Site review records](../tools/data/ede-square-facades)
 
 ```sh
 python3 tools/build-ede-facades.py --report tools/data/ede-facade-coverage.json
 ```
 
 The motorway façade bake covers both carriageways and junction links on the A12 and A30. It uses exterior references for prominent frontages and fits other visible walls using BAG geometry and recorded building use. [A12 survey and refresh](../tools/data/ede-a12-facades.md) · [A30 survey and refresh](../tools/data/ede-a30-facades.md)
+
+The railway façade bake covers visible walls within 100 m of the east–west main line through Ede-Wageningen. It uses the fitted rail elevations and preserves the existing tiles for the rest of Ede. [Rail survey, custom exteriors and refresh](../tools/data/ede-rail-facades.md)
 
 Procedural façades use the original BAG construction year. The four local neighbourhood palettes take precedence, and measured Mapillary façades keep their recorded finishes. Streamed buildings use the year in the 3D BAG tile. For fallback buildings, the baked year table matches PDOK BAG footprints to the local map by overlap.
 

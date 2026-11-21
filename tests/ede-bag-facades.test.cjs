@@ -123,6 +123,8 @@ test('BAG bounds fetch and share only intersecting local parameter tiles', async
   const scoped = { ...inferred, a12: true, wallMaterial: 'corten' };
   const a30Measured = { ...inferred, motorway: 'A30', status: 'observed', wallMaterial: 'metal' };
   const a30Only = { ...inferred, motorway: 'A30', wallId: 'other-side', a: [10, 23], b: [16, 23] };
+  const railOverlap = { ...inferred, wallId: a30Only.wallId, a: a30Only.a, b: a30Only.b, rail: true, wallMaterial: 'brick' };
+  const railOnly = { ...railOverlap, wallId: 'track-side', a: [16, 23], b: [16, 20] };
   t.mock.method(globalThis, 'fetch', async ({ pathname }) => {
     requested.push(pathname.split('/').at(-1));
     if (pathname.endsWith('/ede-facades.json')) return Response.json({
@@ -133,18 +135,39 @@ test('BAG bounds fetch and share only intersecting local parameter tiles', async
       },
       a12Tiles: { '0,0': 'ede-facades/a12_0_0.json.gz', '8,0': 'ede-facades/a12_8_0.json.gz' },
       a30Tiles: { '0,0': 'ede-facades/a30_0_0.json.gz', '8,0': 'ede-facades/a30_8_0.json.gz' },
+      railTiles: { '0,0': 'ede-facades/rail_0_0.json.gz', '8,0': 'ede-facades/rail_8_0.json.gz' },
     });
     const corridor = pathname.endsWith('/a12_0_0.json.gz');
     const a30 = pathname.endsWith('/a30_0_0.json.gz');
-    assert.ok(corridor || a30 || pathname.endsWith('/0_0.json.gz'));
-    const walls = a30 ? [{ ...wall, motorway: 'A30' }, a30Measured, a30Only]
+    const rail = pathname.endsWith('/rail_0_0.json.gz');
+    assert.ok(corridor || a30 || rail || pathname.endsWith('/0_0.json.gz'));
+    const walls = rail ? [railOverlap, railOnly] : a30 ? [{ ...wall, motorway: 'A30' }, a30Measured, a30Only]
       : corridor ? [{ ...wall, status: 'inferred', a12: true }, scoped] : [wall, inferred];
     return new Response(gzipSync(JSON.stringify({ version: 2, walls })));
   });
   const index = await loadEdeFacades();
   const bounds = { min: { x: 9, z: 18 }, max: { x: 19, z: 22 } };
   const [first, second] = await Promise.all([index.forBounds(bounds), index.forBounds(bounds)]);
-  assert.deepEqual(first.get(wall.bagId), [wall, a30Measured, a30Only]);
+  assert.deepEqual(first.get(wall.bagId), [wall, a30Measured, a30Only, railOnly]);
   assert.deepEqual(second, first);
-  assert.deepEqual(requested, ['ede-facades.json', '0_0.json.gz', 'a12_0_0.json.gz', 'a30_0_0.json.gz']);
+  assert.deepEqual(requested, ['ede-facades.json', '0_0.json.gz', 'a12_0_0.json.gz', 'a30_0_0.json.gz', 'rail_0_0.json.gz']);
+});
+
+test('rail fallback walls fill uncovered edges and retain existing motorway matches', async (t) => {
+  const { loadEdeCorridorFallbacks } = await import('../js/ede-facades.js');
+  const west = [0, 0, 8, 0, 'hall', 0x809090];
+  const south = [8, 0, 8, 7, 'brick', 0x815a4e];
+  const east = [8, 7, 0, 7, 'modern', 0x93836c];
+  const railOverlap = [0, 0, 8, 0, 'blank', 0x908070];
+  const railNew = [20, 0, 12, 0, 'brick', 0x8b6356];
+  const fixture = {
+    a12: { w1: { 0: west } },
+    a30: { w1: { 0: railOverlap, 1: south } },
+    rail: { w1: { 0: railOverlap, 2: east }, w2: { 0: railNew } },
+  };
+  t.mock.method(globalThis, 'fetch', async ({ pathname }) => {
+    const [, corridor] = pathname.match(/ede-(a12|a30|rail)-fallbacks\.json\.gz$/);
+    return Response.json({ version: 1, buildings: fixture[corridor] });
+  });
+  assert.deepEqual(await loadEdeCorridorFallbacks(), { w1: { 0: west, 1: south, 2: east }, w2: { 0: railNew } });
 });

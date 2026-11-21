@@ -191,7 +191,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   const group = new THREE.Group();
   group.name = 'EdeImportedDetail';
   const batches = new Map(), stopIds = new Set(), gantryLampMounts = new Map(), colliders = [];
-  const gantries = [], portalPanels = new Map();
+  const gantries = [], portalPanels = new Map(), directionalPanels = [];
   const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
   group.userData.stats = stats;
   group.userData.stopIds = [];
@@ -248,11 +248,19 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     if (!directionalSigns || !validPoint(feature.position) || !Number.isFinite(feature.centerY) ||
         !Number.isFinite(feature.angle) || !feature.uv || feature.uv.length !== 4 || !feature.uv.every(Number.isFinite) ||
         !(feature.width > 0 && feature.height > 0)) return false;
-    const [x, z] = feature.position;
+    let [x, z] = feature.position;
     const { angle, width, height } = feature;
     const y = feature.centerY - (getTerrain()?.napOrigin ?? SCENE_NAP_ORIGIN);
     const cos = Math.cos(angle), sin = Math.sin(angle);
     const backing = 0.095;
+    const mount = feature.mountId && gantries.find(gantry => gantry.id === feature.mountId);
+    const side = mount?.halfDepth ? Math.sign(sin * mount.uz - cos * mount.ux) || 1 : 0;
+    if (side) {
+      const offset = (x - mount.x) * mount.uz - (z - mount.z) * mount.ux;
+      const shift = Math.max(0, mount.halfDepth + 0.23 - offset * side) * side;
+      x += mount.uz * shift;
+      z -= mount.ux * shift;
+    }
     if (feature.support) {
       const base = resolveGround(feature, x, z, feature.surveyY);
       const poleHeight = y - base - height * 0.25;
@@ -286,12 +294,18 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       portalPanels.get(feature.mountId).push({ x, y, z, angle, width, height });
     }
     if (validPoint(feature.bracket)) {
-      const [bx, bz] = feature.bracket;
+      let [bx, bz] = feature.bracket;
+      if (side) {
+        const offset = (bx - mount.x) * mount.uz - (bz - mount.z) * mount.ux;
+        const shift = side * mount.halfDepth - offset;
+        bx += mount.uz * shift;
+        bz -= mount.ux * shift;
+      }
       const joint = { x: bx, y: Number.isFinite(feature.bracketY) ? y + feature.bracketY - feature.centerY : y, z: bz };
       const back = { x: x - sin * backing / 2, y, z: z - cos * backing / 2 };
       if (Math.hypot(back.x - bx, back.z - bz) > 0.1) {
         const [a, b] = strokeEdges([back, joint], 0.07);
-        stripe(feature.source, a, b, -0.06, 0.06, GALVANIZED, true);
+        stripe(feature.source, a, b, -0.06, 0.06, GALVANIZED, { caps: true });
       }
     }
     return true;
@@ -444,6 +458,49 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     return true;
   }
 
+  function gantryTruss(feature, points, { beam, ux, uz, length, halfDepth }) {
+    const [start] = points;
+    const rise = Math.sqrt(3) * halfDepth;
+    const position = (along, height, offset) => ({
+      x: start.x + ux * along + uz * offset,
+      y: height,
+      z: start.z + uz * along - ux * offset
+    });
+    const lower = (along, side) => position(along, beam, side * halfDepth);
+    const upper = along => position(along, beam + rise, 0);
+    function member(a, b, diameter, shape = 'pole') {
+      axis.set(b.x - a.x, b.y - a.y, b.z - a.z);
+      const size = axis.length();
+      const rotation = new THREE.Quaternion().setFromUnitVectors(up, axis.divideScalar(size));
+      instance(feature.source, shape, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2,
+        diameter, size, diameter, rotation, GALVANIZED);
+    }
+
+    member(upper(0), upper(length), 0.17, 'round');
+    const bays = Math.max(1, Math.round(length / (2 + 2 * halfDepth)));
+    const span = length / bays;
+    for (const side of [-1, 1]) {
+      member(lower(0, side), lower(length, side), 0.17, 'round');
+      for (let i = 0; i < bays; i++) {
+        const peak = upper((i + 0.5) * span);
+        member(lower(i * span, side), peak, 0.08);
+        member(peak, lower((i + 1) * span, side), 0.08);
+      }
+      for (const [along, ground] of [[0, points[0].y], [length, points[1].y]]) {
+        const foot = position(along, ground, side * (halfDepth + 0.75));
+        const base = resolveGround(feature, foot.x, foot.z, feature.surveyY);
+        if (Number.isFinite(base)) foot.y = Math.min(base - 0.08, beam - 0.4);
+        const tip = position(along, beam, side * 0.14);
+        member(foot, tip, 0.32, 'box');
+        member(lower(along, side), upper(along), 0.10);
+      }
+    }
+    for (let i = 0; i < bays; i++) {
+      member(lower(i * span, 1), lower((i + 1) * span, -1), 0.08);
+    }
+    for (const along of [0, length]) member(lower(along, -1), lower(along, 1), 0.30, 'box');
+  }
+
   function gantry(feature) {
     if (!validLine(feature.points)) return false;
     const endpoints = [feature.points[0], feature.points.at(-1)];
@@ -452,9 +509,20 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const top = Math.max(...points.map(p => p.y));
     const beam = Number.isFinite(feature.beamY) ? feature.beamY - (getTerrain()?.napOrigin ?? SCENE_NAP_ORIGIN) : top + 6.1;
     if (beam < top + 3.4) return false;
+    const [start, end] = points;
+    const length = Math.hypot(end.x - start.x, end.z - start.z);
+    const halfDepth = feature.half ? 0 : /[BCD]-1$/.test(feature.sourceSubtype) ? 0.8 : 0.5;
+    const mount = { id: feature.id, x: start.x, z: start.z, beam, level: feature.level ?? 0, route: feature.route, length,
+      ux: (end.x - start.x) / length, uz: (end.z - start.z) / length, halfDepth };
+    if (feature.half) {
+      const height = beam - start.y;
+      instance(feature.source, 'box', start.x, start.y + height / 2, start.z, 0.32, height, 0.32, 0, GALVANIZED);
+      const [a, b] = strokeEdges(points.map(p => ({ ...p, y: beam })), 0.20);
+      stripe(feature.source, a, b, -0.18, 0.18, GALVANIZED, { caps: true });
+    } else {
+      gantryTruss(feature, points, mount);
+    }
     for (const p of feature.half ? points.slice(0, 1) : points) {
-      const height = beam - p.y;
-      instance(feature.source, 'box', p.x, p.y + height / 2, p.z, 0.32, height, 0.32, 0, GALVANIZED);
       let attached = null, nearest = 0.30 ** 2;
       for (const lamp of mappedLamps) {
         const dx = lamp.x - p.x;
@@ -464,14 +532,9 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         attached = lamp;
         nearest = distance;
       }
-      if (attached) gantryLampMounts.set(attached, { x: p.x, z: p.z, top: beam + 0.18 });
+      if (attached) gantryLampMounts.set(attached, { x: p.x, z: p.z, top: beam + (halfDepth ? Math.sqrt(3) * halfDepth : 0.18) });
     }
-    const [start, end] = points;
-    const length = Math.hypot(end.x - start.x, end.z - start.z);
-    gantries.push({ id: feature.id, x: start.x, z: start.z, beam, level: feature.level ?? 0, length,
-      ux: (end.x - start.x) / length, uz: (end.z - start.z) / length });
-    const [a, b] = strokeEdges(points.map(p => ({ ...p, y: beam })), 0.20);
-    stripe(feature.source, a, b, -0.18, 0.18, GALVANIZED, { caps: true });
+    gantries.push(mount);
     return true;
   }
 
@@ -656,7 +719,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     return true;
   }
 
-  for (const feature of features) {
+  function placeFeature(feature) {
     const success = feature.type === 'playSurface' ? playSurface(feature)
       : Object.hasOwn(BARRIERS, feature.type) ? barrier(feature)
       : feature.type === 'gantry' ? gantry(feature)
@@ -665,11 +728,17 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
             : feature.type === 'canopy' ? canopy(feature) : buildProp(feature);
     if (!success) {
       stats.unresolved.push({ id: feature.id, type: feature.type });
-      continue;
+      return;
     }
     stats[feature.source]++;
     stats.counts[feature.type] = (stats.counts[feature.type] ?? 0) + 1;
   }
+
+  for (const feature of features) {
+    if (feature.type === 'directionalSign') directionalPanels.push(feature);
+    else placeFeature(feature);
+  }
+  for (const feature of directionalPanels) placeFeature(feature);
 
   for (const target of batches.values()) {
     const { kind, source, range } = target;

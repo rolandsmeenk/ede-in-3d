@@ -15,6 +15,27 @@ const THATCH = 0x434039;
 const TIMBER = 0x3c3830;
 const PAINT = 0xdddcd0;
 const GREEN = 0x324636;
+const TOWER_BANDS = [
+  [5.0, 5.05, 0, 0.48, 0x7a6257],
+  [4.88, 5.0, 0.48, 4.7, BRICK],
+  [4.35, 4.88, 4.7, GALLERY_HEIGHT, BRICK],
+  [3.57, 4.38, GALLERY_HEIGHT, 17.9, THATCH],
+  [3.25, 3.57, 17.9, 21.0, THATCH],
+  [2.84, 3.25, 21.0, 23.15, THATCH],
+  [3.28, 3.35, 23.07, 23.30, TIMBER],
+  [GALLERY_RADIUS + 0.07, GALLERY_RADIUS, 12.51, GALLERY_HEIGHT, TIMBER],
+];
+
+function bandGeometry(top, bottom, low, high) {
+  return new THREE.CylinderGeometry(top, bottom, high - low, 8)
+    .rotateY(OCTAGON / 2).translate(0, (low + high) / 2, 0);
+}
+
+export function addConcordiaTowerSilhouette(batch, matrix) {
+  for (const [top, bottom, low, high, color] of TOWER_BANDS) {
+    batch.solid(bandGeometry(top, bottom, low, high).applyMatrix4(matrix), color);
+  }
+}
 
 // The gallery and sail sizes are published. Tower tapers, cap and trim are fitted to reference views.
 export function createConcordiamolen() {
@@ -30,6 +51,7 @@ export function createConcordiamolen() {
     parent.add(mesh);
     for (const part of parts) part.dispose();
     parts.length = 0;
+    return mesh;
   }
   const up = new THREE.Vector3(0, 1, 0);
   const start = new THREE.Vector3(), end = new THREE.Vector3();
@@ -42,11 +64,6 @@ export function createConcordiamolen() {
     for (let i = 0; i < n; i++) color.toArray(colors, i * 3);
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     parts.push(geometry);
-  }
-
-  function ring(top, bottom, low, high, color) {
-    add(new THREE.CylinderGeometry(top, bottom, high - low, 8)
-      .rotateY(OCTAGON / 2).translate(0, (low + high) / 2, 0), color);
   }
 
   function beam(a, b, width, depth, color) {
@@ -62,13 +79,9 @@ export function createConcordiamolen() {
     add(new THREE.BoxGeometry(width, height, depth).translate(0, y, radius).rotateY(angle), color);
   }
 
-  ring(5.0, 5.05, 0, 0.48, 0x7a6257);
-  ring(4.88, 5.0, 0.48, 4.7, BRICK);
-  ring(4.35, 4.88, 4.7, GALLERY_HEIGHT, BRICK);
-  ring(3.57, 4.38, GALLERY_HEIGHT, 17.9, THATCH);
-  ring(3.25, 3.57, 17.9, 21.0, THATCH);
-  ring(2.84, 3.25, 21.0, 23.15, THATCH);
-  ring(3.28, 3.35, 23.07, 23.30, TIMBER);
+  for (const [top, bottom, low, high, color] of TOWER_BANDS) {
+    add(bandGeometry(top, bottom, low, high), color);
+  }
 
   function window(angle, y, radius, width, height) {
     const face = Math.cos(OCTAGON / 2) * radius;
@@ -88,7 +101,6 @@ export function createConcordiamolen() {
   trimBox(0.98, 2.10, 0.10, Math.PI, 3.97, 13.87, GREEN);
 
   // The modeled gallery ends behind the sail sweep at railing height.
-  ring(GALLERY_RADIUS + 0.07, GALLERY_RADIUS, 12.51, GALLERY_HEIGHT, TIMBER);
   const rim = (i, y) => [GALLERY_RADIUS * Math.sin((i + 0.5) * OCTAGON), y, GALLERY_RADIUS * Math.cos((i + 0.5) * OCTAGON)];
   for (let i = 0; i < 8; i++) {
     const a = rim(i, GALLERY_HEIGHT), b = rim(i + 1, GALLERY_HEIGHT);
@@ -102,7 +114,7 @@ export function createConcordiamolen() {
     }
   }
 
-  finish(group);
+  const shaft = finish(group);
 
   const roof = [[3.3, 23.28], [3.26, 23.8], [3.01, 24.68], [2.47, 25.3], [1.73, 26.04],
     [0.85, 26.56], [0, 26.72]].map(([r, y]) => new THREE.Vector2(r, y));
@@ -142,5 +154,5 @@ export function createConcordiamolen() {
 
   finish(sails);
   addWindmillSailcloth(sails, { angle: SAIL_ANGLE, radii: SAIL_RADII, root: 1.65, innerWidth: 0.92, outerWidth: 1.55 });
-  return group;
+  return { tower: group, shaft };
 }

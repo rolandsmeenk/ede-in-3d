@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fit local façade parameters to a dated motorway visibility survey."""
+"""Fit local façade parameters to a dated motorway or railway visibility survey."""
 
 import argparse
 from collections import Counter, defaultdict
@@ -86,6 +86,30 @@ A30_PHOTO_AXES = {
     '0228100000068595': ((-3741.43, 125.52), (-3769.11, 124.52)),
 }
 
+ENKA_SOURCE = 'https://www.mix-architectuur.nl/werk/ede-enka/'
+CASIMIR_SOURCE = 'https://www.atlasvanede.nl/thema-s/stadsontwikkeling/verleden-1900-nu/1960-1980/flats-ede-zuid'
+RAIL_REVIEWED = {
+    '0228100000086249': ('MIX architectuur · Akulaan H4', 'enka-gallery', -1, 'brick',
+                        '#978571', '#819395', ENKA_SOURCE, '2023'),
+    '0228100000086250': ('MIX architectuur · Akulaan H2', 'enka-gallery', -1, 'brick',
+                        '#98836e', '#819395', ENKA_SOURCE, '2023'),
+    '0228100000082617': ('Rockpanel · Parkveste', 'parkveste', -1, 'brick',
+                        '#a08868', '#465763',
+                        'https://www.rockpanel.com/nl/inspiratie/appartementencomplex-parkveste-ede/', '2020'),
+    '0228100000080937': ('Coare Architectuur · De Blokken', 'de-blokken', -1, 'brick',
+                        '#965842', '#4c626d',
+                        'https://www.coarearchitectuur.nl/projecten/woningen-park-blokken/', '2019'),
+    **{bag: ('Allard Bijlsma · Ernst Casimirlaan', 'casimir-flats', 1, 'brick',
+             '#9f9277', '#55626b', CASIMIR_SOURCE, '2023-02-07')
+       for bag in ('0228100000041591', '0228100000053183', '0228100000061112', '0228100000039479')},
+}
+RAIL_PHOTO_AXES = {
+    '0228100000086249': ((435.54, 2231.82), (367.06, 2208.63)),
+    '0228100000086250': ((332.46, 2202.20), (271.47, 2181.55)),
+    '0228100000082617': ((-165.00, 1998.96), (-214.47, 2003.92)),
+    '0228100000080937': ((-1110.74, 1733.21), (-1163.13, 1717.89)),
+}
+
 PALETTES = {
     'brick': ('#865b47', '#98715a', '#91766c', '#a0856f'),
     'modern': ('#a29986', '#886f63', '#aaa091', '#978475'),
@@ -97,7 +121,9 @@ PALETTES = {
 MATERIALS = {'brick': 'brick', 'modern': 'brick', 'hall': 'metal', 'office': 'panel', 'showroom': 'panel', 'blank': 'concrete'}
 
 # These precise exclusions are already authored 3DBAG replacements.
-LANDMARKS = set(re.findall(r"'(\d{16})'", (ROOT / 'js/ede-landmark-sites.js').read_text()))
+LANDMARK_REGISTRY = (ROOT / 'js/ede-landmark-sites.js').read_text()
+LANDMARKS = set(re.findall(r"'(\d{16})'", LANDMARK_REGISTRY))
+LANDMARK_OSM = set(re.findall(r"'(w\d+)'", LANDMARK_REGISTRY))
 
 
 def frame(wall):
@@ -190,7 +216,7 @@ def review_front(walls, side, axis, motorway):
         width = math.dist(a, b)
         tx, tz = (b[0] - a[0]) / width, (b[1] - a[1]) / width
         return tx, tz, a[0] * tx + a[1] * tz, width, -a[0] * tz + a[1] * tx
-    # The A12 runs mostly east–west and the A30 runs mostly north–south.
+    # The A12 and rail corridor run east–west. The A30 runs mostly north–south.
     candidates = [wall for wall in walls if frame(wall)[2 if motorway == 'A30' else 1] * side > 0.70
                   and wall['height'] >= 3.2]
     if not candidates:
@@ -214,7 +240,7 @@ def reviewed(wall, definition, front, ordinary, profile, motorway_flag):
         fit = None
     if recipe == 'kpn' and tx > 0.18 and h > 5 and w >= 1.5:
         fit = (0, 1)
-    if 'motorway' in motorway_flag and fit and (fit[1] <= 0 or fit[0] >= 1):
+    if ('motorway' in motorway_flag or 'rail' in motorway_flag) and fit and (fit[1] <= 0 or fit[0] >= 1):
         fit = None
     citylink_office = recipe == 'citylink' and h > 6 and w < 45 and (
         tx < -0.87 and 1345 <= wall['a'][1] <= 1350 or
@@ -256,6 +282,44 @@ def reviewed(wall, definition, front, ordinary, profile, motorway_flag):
                 fields.append(opening('panel', a, h * 0.03, b - a, h * 0.95, points=points))
         band('panel', 0.10, 0.81, 0.46, 0.515)
         fallback = 'rust'
+    elif recipe == 'enka-gallery':
+        frame_color = '#b1a79a'
+        for y in range(1, math.ceil(h / 2.95)):
+            floor = (y * 2.95 - wall.get('baseOffset', 0)) / h
+            if 0.07 < floor < 0.88:
+                # The north-facing galleries use diffuse glass with a light slab edge.
+                for a, b in ((0.025, 0.49), (0.51, 0.975)):
+                    band('storefront', a, b, floor, min(0.96, floor + 1.03 / h), panes=11, frame=0.07, depth=0)
+                band('panel', 0.025, 0.975, floor - 0.30 / h, floor)
+        fallback = 'modern'
+    elif recipe == 'parkveste':
+        frame_color = '#545858'
+        for y in range(math.ceil(h / 3.05)):
+            floor = (y * 3.05 + 0.57 - wall.get('baseOffset', 0)) / h
+            if 0.02 < floor < 0.90:
+                count = max(1, round(front[3] / 3.15))
+                for bay in range(count):
+                    wide = bay % 3 != 0
+                    left = (bay + 0.11) / count
+                    right = (bay + (0.84 if wide else 0.40)) / count
+                    band('window', left, right, floor, min(0.97, floor + 2.28 / h),
+                         panes=2 if wide else 1, frame=0.10, depth=0.48 if wide and y < 2 else 0)
+        fallback = 'modern'
+    elif recipe in ('de-blokken', 'casimir-flats'):
+        blocks = recipe == 'de-blokken'
+        frame_color = '#c5c4b6' if blocks else '#ddd9ce'
+        floor = 2.91 if blocks else 2.78
+        spacing = 3.15 if blocks else 3.55
+        front_width = front[3]
+        count = max(1, round(front_width / spacing))
+        for level in range(2 if blocks else 3):
+            y = (level * floor + (0.66 if blocks else 1.05)) / h
+            for bay in range(count):
+                left = (bay + 0.18) / count
+                right = (bay + (0.81 if blocks else 0.86)) / count
+                band('window', left, right, y, min(0.96, y + (1.52 if blocks else 1.46) / h),
+                     panes=2, frame=0.08, depth=0)
+        fallback = 'brick'
     elif recipe == 'berg-office':
         if w >= 3.5:
             for floor in (0.28, 0.47, 0.65, 0.82):
@@ -363,9 +427,12 @@ def reviewed(wall, definition, front, ordinary, profile, motorway_flag):
         for y in (0.32, 0.53, 0.74):
             fields.extend(repeat(w, w * 0.04, w * 0.96, y * h, min(h * 0.18, 2.8), 3.30, 0.88, panes=2))
         fallback = 'office'
+    if 'rail' in motorway_flag and not fields:
+        return ordinary, profile
+    confidence = (0.67 if recipe == 'casimir-flats' else 0.78) if 'rail' in motorway_flag else 0.86
     return dict(status='observed', **motorway_flag, wallMaterial=finish, wallColor=tint,
-                glazingColor=glazing, frameColor=frame_color, confidence=0.86,
-                openings=fields, sources=[dict(url=source, referenceDate=date, creator=name, confidence=0.86)]), fallback
+                glazingColor=glazing, frameColor=frame_color, confidence=confidence,
+                openings=fields, sources=[dict(url=source, referenceDate=date, creator=name, confidence=confidence)]), fallback
 
 
 def find_osm_edge(wall, source):
@@ -423,20 +490,28 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('visibility', type=Path)
     parser.add_argument('pand_metadata', type=Path)
-    parser.add_argument('--motorway', choices=('A12', 'A30'), default='A12')
+    corridor = parser.add_mutually_exclusive_group()
+    corridor.add_argument('--motorway', choices=('A12', 'A30'), default='A12')
+    corridor.add_argument('--rail', action='store_true', help='Bake the east–west mainline railway')
     parser.add_argument('--manifest', type=Path, default=ROOT / 'assets/ede-facades.json')
     parser.add_argument('--fallback', type=Path)
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
-    prefix = args.motorway.lower()
+    route = 'rail' if args.rail else args.motorway
+    prefix = route.lower()
     fallback_path = args.fallback or ROOT / f'assets/ede-{prefix}-fallbacks.json.gz'
-    review_data, axes = (REVIEWED, PHOTO_AXES) if args.motorway == 'A12' else (A30_REVIEWED, A30_PHOTO_AXES)
-    motorway_flag = {'a12': True} if args.motorway == 'A12' else {'motorway': args.motorway}
+    review_data, axes, corridor_flag = {
+        'A12': (REVIEWED, PHOTO_AXES, {'a12': True}),
+        'A30': (A30_REVIEWED, A30_PHOTO_AXES, {'motorway': 'A30'}),
+        'rail': (RAIL_REVIEWED, RAIL_PHOTO_AXES, {'rail': True}),
+    }[route]
 
     def read(path):
         raw = path.read_bytes()
         return json.loads(gzip.decompress(raw) if raw.startswith(b'\x1f\x8b') else raw)
     visibility = read(args.visibility)
+    if args.rail and not visibility.get('railSamples'):
+        parser.error('--rail requires a railway visibility survey')
     metadata = read(args.pand_metadata)
     metadata = metadata.get('buildings', metadata)
     with gzip.open(ROOT / 'assets/ede-map-v1.json.gz', 'rt') as source:
@@ -445,7 +520,7 @@ def main():
     for wall in visibility['walls']:
         if wall.get('bagId'):
             surveyed[wall['bagId'][-16:]].append(wall)
-    fronts = {bag: review_front(surveyed[bag], row[2], axes.get(bag), args.motorway)
+    fronts = {bag: review_front(surveyed[bag], row[2], axes.get(bag), route)
               for bag, row in review_data.items()}
     walls, fallbacks, partial, totals = [], defaultdict(dict), defaultdict(set), Counter()
     served = set()
@@ -453,7 +528,7 @@ def main():
         bag = wall['bagId'][-16:] if wall.get('bagId') else ''
         way = wall.get('osmId')
         plantion = bag in ('0228100000000182', '0228100000000142') or way in ('w271151642', 'w271151018')
-        if bag in LANDMARKS or args.motorway == 'A30' and plantion:
+        if bag in LANDMARKS or route != 'A12' and plantion or args.rail and way in LANDMARK_OSM:
             partial['authoredLandmarks'].add(bag or way)
             totals['authoredWalls'] += 1
             continue
@@ -463,10 +538,14 @@ def main():
             totals['smallSurfaceFragments'] += 1
             continue
         source = osm.get(way, {})
+        if args.rail and source.get('kind') in ('church', 'chapel', 'mosque', 'synagogue', 'temple', 'religious'):
+            partial['retainedReligiousBuildings'].add(bag or way)
+            totals['retainedReligiousWalls'] += 1
+            continue
         profile, year = building_profile(wall, metadata.get(bag, {}), source)
-        style, fallback = inferred(wall, profile, year, args.motorway, motorway_flag)
+        style, fallback = inferred(wall, profile, year, route, corridor_flag)
         if bag in review_data:
-            style, fallback = reviewed(wall, review_data[bag], fronts[bag], style, fallback, motorway_flag)
+            style, fallback = reviewed(wall, review_data[bag], fronts[bag], style, fallback, corridor_flag)
         if way and source:
             edge = find_osm_edge(wall, source)
             if edge:

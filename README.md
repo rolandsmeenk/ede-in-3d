@@ -2,7 +2,7 @@
 
 Explore Ede, the Netherlands, in a 3D browser game built around its real streets, landscapes and landmarks. Wander from Oude Kerk to Marktplein, cycle out to Huis Kernhem, or fly a helicopter over the ENKA factory.
 
-**[Play Ede in 3D](https://rolandsmeenk.github.io/slop-ede/)**
+**[Play Ede in 3D](https://rolandsmeenk.github.io/ede-in-3d/)**
 
 ![Oude Kerk rising above the rooftops of Ede town centre](assets/screenshots/oude-kerk.webp)
 
@@ -17,8 +17,8 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 | Feature | Count or coverage |
 | --- | ---: |
 | Map extent | 7.4 × 5.4 km |
-| Scenic teleport presets | 10 |
-| Custom landmark models | 93 |
+| Teleport menu destinations | 30 |
+| Custom landmark models | 121 |
 | Building footprints in the base map | 44,844 |
 | Street litter bins | 555 |
 | Waste collection sites | 395 |
@@ -33,7 +33,7 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 | Mapped railway tracks | 37 km |
 | Modeled parking spaces | 18,193 |
 
-Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 89 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
+Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 117 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
 
 ## Screenshots
 

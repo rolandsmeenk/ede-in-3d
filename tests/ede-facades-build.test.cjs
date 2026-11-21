@@ -79,9 +79,14 @@ assert manifest['version'] == 2 and manifest['tileSize'] == 384
 counts = Counter()
 size = 0
 builder = runpy.run_path('tools/build-ede-facades.py')
-reviews, squares = builder['load_square_walls'](builder['SQUARE_REVIEWS'])
-assert set(squares) == {'Marktplein', 'Kuiperplein', 'Museumplein', 'Oude Kerkplein'}
-assert squares == report['reviewedSquares']
+reviews, sites = builder['load_reviewed_walls'](builder['REVIEWED_FACADES'])
+assert set(sites) == {'Marktplein', 'Kuiperplein', 'Museumplein', 'Oude Kerkplein',
+                      'Bennekomseweg 41', 'Bennekomseweg 43', 'Horapark 4'}
+assert sites == report['reviewedSites']
+horapark = [wall for wall in reviews['0,7'] if wall.get('detail')]
+assert {wall['bagId'][-16:] for wall in horapark} == {
+    '0228100000027102', '0228100000018106', '0228100000025798'}
+assert all(wall['openings'][wall['detail']['opening']]['kind'] == 'door' for wall in horapark)
 for key, name in manifest['tiles'].items():
     path = base / name
     size += path.stat().st_size

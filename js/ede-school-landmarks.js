@@ -156,7 +156,11 @@ function enkaFacade(wall) {
         surveyWindow(wall, a + 0.13, b - 0.13, 0.38, 2.56, windows);
       }
       surveyWindow(wall, a + 0.13, b - 0.13, 3.82, 6.07, windows);
-      surveyPanel(wall, a + 0.18, b - 0.18, 2.67, 3.68, 0xccc8bc, 0.027);
+      // The three columns continue through two blind rows between the glazed floors.
+      bays(wall, (b - a - 0.26) / 3, (left, right) => {
+        surveyPanel(wall, left + 0.027, right - 0.027, 2.67, 3.15, 0xc8c4b9, 0.038);
+        surveyPanel(wall, left + 0.027, right - 0.027, 3.20, 3.68, 0xc8c4b9, 0.038);
+      }, a + 0.13, b - 0.13);
       surveyPanel(wall, a + 0.03, a + 0.11, 0.18, 6.24, concrete, 0.07);
     });
     surveyPanel(wall, 0.09, width - 0.09, 6.18, 6.48, 0xbeb8ab, 0.09);
@@ -171,6 +175,16 @@ function enkaFacade(wall) {
     }
     return 0x8e8679;
   }
+  if ([13, 33, 44, 56, 58].includes(faceIndex)) {
+    for (let y = 7.10; y + 0.24 < Math.min(high - 0.28, 11.45); y += 0.28) {
+      for (let u = 0.08; u + 0.24 < width - 0.04; u += 0.28) {
+        surveyWindow(wall, u, u + 0.24, y, y + 0.24, {
+          color: 0x819394, frame: 0xa5a89e,
+        });
+      }
+    }
+    return 0xa8a398;
+  }
   if ([1, 16, 30, 35, 37, 57].includes(faceIndex)) {
     glazedBand(wall, 1.32, Math.max(wall.low + 0.22, 7.02), high - 0.43, steel);
     return 0xa8a398;
@@ -182,7 +196,18 @@ function enkaFacade(wall) {
     }
     return 0x898881;
   }
-  return [11, 15, 29, 52, 53, 54].includes(faceIndex) ? 0x56616a : undefined;
+  if ([11, 15, 29, 52, 54].includes(faceIndex)) {
+    const brickColors = [0x52616c, 0x596a76, 0x5c6d78];
+    const brickTop = Math.min(high, 6.49);
+    for (let row = 0, y = wall.low + 0.10; y + 0.085 < brickTop; row++, y += 0.095) {
+      for (let column = 0, u = row % 2 ? -0.118 : 0.012; u < width - 0.012; column++, u += 0.26) {
+        surveyPanel(wall, Math.max(0.012, u), Math.min(width - 0.012, u + 0.25), y, y + 0.085,
+          brickColors[(row + 2 * column) % brickColors.length], 0.021, 0.18);
+      }
+    }
+    return 0x62676a;
+  }
+  return faceIndex === 53 ? 0x56616a : undefined;
 }
 
 function enkaBridges({ trim, colliders }) {

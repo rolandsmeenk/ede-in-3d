@@ -19,8 +19,11 @@ import { cityUniforms, createTreeGrateMaterial, createGodRayMaterial } from './t
 import { createTreeField } from './trees.js';
 import { pavedPlazaRects, centralParkClearings, parkTreeSites, sidewalkBlocks, parkLampSites, edeStreetSites } from './city-grid.js';
 import { bryantParkLawn } from './landmarks.js';
-import { nearestEdeRoad } from './ede-geometry.js';
+import { edeRoadSegments, nearestEdeRoad } from './ede-geometry.js';
+import { nearbyRailHeightAt } from './ede-grade.js';
+import { isEdeTrafficPavement } from './ede-road-surfaces.js';
 import { terrainHeightAt } from './terrain.js';
+import { selectStreetNameSigns, selectStreetNamePoles, addStreetNameSignBoards } from './ede-street-name-signs.js';
 
 // Instanced street furniture, traffic signals, trees and nearby light pools.
 
@@ -525,10 +528,9 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     }
   }
 
-  const edeSignMatrices = new Map();
+  const edeNameBoards = [], edeNamePoleMatrices = [];
   if (EDE_DATA) {
-    const centreStreetSigns = new Set(['Grotestraat', 'Molenstraat', 'Marktstraat', 'Telefoonweg', 'Amsterdamseweg',
-      'Stationsweg', 'Bergstraat', 'Raadhuisstraat', 'Klinkenbergerweg', 'Driehoek']);
+    const signCandidates = [];
     const setMatrix = (list, x, y, z, sx, sy, sz, yaw = 0) => {
       dummy.position.set(x, y, z); dummy.rotation.set(0, yaw, 0); dummy.scale.set(sx, sy, sz);
       dummy.updateMatrix(); list.push(dummy.matrix.clone());
@@ -539,30 +541,34 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       const s = lampSites[i];
       const { x, z } = s;
       let { nx, nz, ux, uz, name } = s;
-      if (mappedLamps) {
-        const road = s.baseY === undefined || i % 4 === 0 ? nearestEdeRoad(x, z, 25, undefined, s.layer) : null;
-        name = road?.road.name;
-        if (s.baseY === undefined) {
-          ux = road?.ux ?? 0;
-          uz = road?.uz ?? 1;
-          const side = road && ((road.x - x) * -uz + (road.z - z) * ux) < 0 ? -1 : 1;
-          nx = -uz * side;
-          nz = ux * side;
-        } else if (road) {
-          ux = road.ux;
-          uz = road.uz;
-        }
-      } else {
-        if (waterAt(x, z) && !s.road.bridge) continue;
-        const block = blockAt(x, z);
-        if (block && !block.sidewalk && !block.id?.toString().startsWith('sidewalk') && block.source && !block.park) continue;
-      }
       const ground = s.baseY ?? terrainHeightAt(x, z);
       const headY = ground + (s.height ?? 8.2);
       const mount = gantryLampMounts?.get(s);
       const lampX = mount?.x ?? x, lampZ = mount?.z ?? z;
       const poleBase = mount?.top ?? ground;
       const poleHeight = headY - poleBase;
+      let distance = 0;
+      if (mappedLamps) {
+        const road = s.baseY === undefined || (!mount && poleHeight >= 2.9)
+          ? nearestEdeRoad(x, z, 25, undefined, s.layer) : null;
+        name = road?.road.name;
+        if (road) {
+          ux = road.ux;
+          uz = road.uz;
+          distance = road.distance;
+        }
+        if (s.baseY === undefined) {
+          ux ??= 0;
+          uz ??= 1;
+          const side = road && ((road.x - x) * -uz + (road.z - z) * ux) < 0 ? -1 : 1;
+          nx = -uz * side;
+          nz = ux * side;
+        }
+      } else {
+        if (waterAt(x, z) && !s.road.bridge) continue;
+        const block = blockAt(x, z);
+        if (block && !block.sidewalk && !block.id?.toString().startsWith('sidewalk') && block.source && !block.park) continue;
+      }
       if (poleHeight > 0) setMatrix(poleMatrices, lampX, poleBase + poleHeight / 2, lampZ, poleRadius, poleHeight, poleRadius);
       const armCount = s.doubleArm ? 2 : 1;
       for (let arm = 0; arm < armCount; arm++) {
@@ -574,16 +580,32 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
           tx: lampX + ax * 3.5, ty: s.targetY, tz: lampZ + az * 3.5, layer: s.layer, color: s.led ? 0xfff3e0 : 0xffe8c2 });
       }
       addPole(lampX, lampZ, poleRadius, s.layer);
-      if (name && !mount && poleHeight >= 2.9 && i % 4 === 0 &&
-          (edeSignMatrices.has(name) || edeSignMatrices.size < 70 || centreStreetSigns.has(name))) {
-        if (!edeSignMatrices.has(name)) edeSignMatrices.set(name, []);
-        const width = Math.min(1.45, Math.max(0.72, 0.24 + name.length * 0.051));
-        const end = poleRadius + 0.04;
-        const offset = end + width / 2;
-        const y = poleBase + 2.55, yaw = -Math.atan2(uz, ux);
-        setMatrix(armMatrices, lampX + ux * end / 2, y, lampZ + uz * end / 2, end + 0.036, 0.056, 0.038, yaw);
-        setMatrix(edeSignMatrices.get(name), lampX + ux * offset, y, lampZ + uz * offset, width, 0.23, 0.028, yaw);
+      if (name && !mount && poleHeight >= 2.9) {
+        signCandidates.push({ name, distance, sampled: i % 4 === 0, x: lampX, y: poleBase + 2.55, z: lampZ, ux, uz });
       }
+    }
+    const boardWidth = name => Math.min(1.45, Math.max(0.72, 0.24 + name.length * 0.051));
+    const mountedSigns = selectStreetNameSigns(signCandidates);
+    for (const { name, x, y, z, ux, uz } of mountedSigns) {
+      const width = boardWidth(name);
+      const end = poleRadius + 0.04;
+      const offset = end + width / 2;
+      setMatrix(armMatrices, x + ux * end / 2, y, z + uz * end / 2, end + 0.036, 0.056, 0.038, -Math.atan2(uz, ux));
+      edeNameBoards.push({ name, x: x + ux * offset, y, z: z + uz * offset, ux, uz, width });
+    }
+    const roadsidePoles = selectStreetNamePoles(edeRoadSegments(), mountedSigns, (x, z) => {
+      if (!isClearOfPoles(x, z, 1) || waterAt(x, z) || nearbyRailHeightAt(x, z, 3) !== undefined) return false;
+      const block = blockAt(x, z, false);
+      if (block && !block.park && !block.sidewalk) return false;
+      const road = nearestEdeRoad(x, z, 20, undefined, 0);
+      if (road && road.distance < road.width / 2 + 0.15) return false;
+      return !isEdeTrafficPavement(x, z);
+    });
+    for (const { name, x, z, ux, uz } of roadsidePoles) {
+      const ground = terrainHeightAt(x, z), height = 2.45, radius = 0.04;
+      setMatrix(edeNamePoleMatrices, x, ground + height / 2, z, radius, height, radius);
+      addPole(x, z, 2 * radius, 0);
+      edeNameBoards.push({ name, x, y: ground + height + 0.10, z, ux, uz, width: boardWidth(name) });
     }
     const signalKeys = new Set();
     for (const signal of EDE_DATA.signals || []) {
@@ -667,15 +689,11 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     ]);
   }
   addMatrixArrayInstanced(pedGlobeGeo, pedGlobeGlow, pedPostMatrices, false);
-  if (edeSignMatrices.size) {
-    const blade = unitBox.clone();
-    const uv = blade.getAttribute('uv');
-    for (let i = 0; i < 16; i++) uv.setXY(i, 1 / 256, 1 / 64);
-    for (const [name, matrices] of edeSignMatrices) {
-      const mat = new THREE.MeshStandardNodeMaterial({ map: createStreetSignBladeTexture(name), roughness: 0.6 });
-      addMatrixArrayInstanced(blade, mat, matrices).name = `EdeStreetName:${name}`;
-    }
+  if (edeNamePoleMatrices.length) {
+    const galvanized = new THREE.MeshStandardNodeMaterial({ color: 0x8b9398, roughness: 0.58, metalness: 0.65 });
+    addMatrixArrayInstanced(unitCyl, galvanized, edeNamePoleMatrices).name = 'EdeStreetNamePoles';
   }
+  addStreetNameSignBoards(group, edeNameBoards);
 
   // =========================================================================
   // 2B. VOLUMETRIC GOLDEN-HOUR CANYON SUN SHAFTS (GOD RAYS)

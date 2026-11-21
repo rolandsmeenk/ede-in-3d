@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, mix, texture, uv, vertexColor } from 'three/tsl';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
-import { CivicBatch, makeGroup, polygonNormal, wallExtent, facePanel } from './ede-civic-landmarks.js';
+import { CivicBatch, civicSigns, makeGroup, polygonNormal, wallExtent, facePanel } from './ede-civic-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { createWindVane } from './ede-wind-props.js';
@@ -955,12 +955,12 @@ function church(name, survey, style, details) {
     return [x, Math.abs(nap - survey.base) <= 0.035 ? Math.min(y, terrainHeightAt(x, z) - 0.06) : y, z];
   });
   const trim = [];
-  for (const [roof, ...rings] of survey.faces) {
+  for (const [i, [roof, ...rings]] of survey.faces.entries()) {
     const faces = rings.map(ring => ring.map(i => points[i]));
     const face = faces[0];
     const ridge = rings[0].some(i => ridgePoint(survey.points[i]));
     const start = batch.vertices.length / 3;
-    batch.polygon(faces, ridge ? 0x416861 : roof ? style.roof : style.wall);
+    batch.polygon(faces, ridge ? 0x416861 : roof ? (style.roofTints?.[i] ?? style.roof) : style.wall);
     if (roof || ridge) continue;
     const normal = polygonNormal(face);
     for (let i = start; i < batch.vertices.length / 3; i++) masonry[i] = 1;
@@ -1184,14 +1184,14 @@ export function createBeatrixkerk() {
 
 // Extra exteriors share the masonry and glazing above. Choose each frontage on
 // its surveyed wall plane so the trim stays aligned with curved or angled sites.
-function surveyWalls(survey) {
-  return survey.faces.flatMap(([roof, ring]) => {
+function surveyWalls(survey, minWidth = 1.9) {
+  return survey.faces.flatMap(([roof, ring], faceIndex) => {
     if (roof) return [];
     const points = ring.map(i => survey.points[i]);
     const normal = polygonNormal(points);
     if (Math.abs(normal.y) > 0.12) return [];
     const { a, b, width } = wallExtent(points, normal);
-    if (width < 1.9) return [];
+    if (width < minWidth) return [];
     const wall = frontage([b.x, b.z], [a.x, a.z]);
     const outline = points.map(([x, y, z]) => [(x - wall.x) * wall.ux + (z - wall.z) * wall.uz, y]);
     const bottom = Math.min(...points.map(p => p[1])), top = Math.max(...points.map(p => p[1]));
@@ -1203,7 +1203,7 @@ function surveyWalls(survey) {
       return [];
     }));
     const cap = Math.min(shoulder(-width * 0.45), shoulder(width * 0.45));
-    return [{ ...wall, bottom, top, cap, topAt: shoulder }];
+    return [{ ...wall, faceIndex, bottom, top, cap, topAt: shoulder }];
   });
 }
 
@@ -1267,7 +1267,139 @@ function churchClock(batch, wall, u, nap, size) {
   bar(batch, wall, [u, nap], [u + size * 0.39, nap + size * 0.55], 0.031, 0xe4d6ab, 0.101);
 }
 
+function emmausEaves(batch, roof, segments) {
+  const rims = roof.map(([x, , z], i) => {
+    const [ax, , az] = roof[(i + roof.length - 1) % roof.length];
+    const [bx, , bz] = roof[(i + 1) % roof.length];
+    const a = frontage([x, z], [ax, az]), b = frontage([bx, bz], [x, z]);
+    const scale = 0.38 / Math.max(0.7, 1 + a.nx * b.nx + a.nz * b.nz);
+    return [x + (a.nx + b.nx) * scale, z + (a.nz + b.nz) * scale];
+  });
+  const edge = (i, drop, overhang) => {
+    const [x, nap, z] = roof[i];
+    const [px, pz] = overhang ? rims[i] : [x, z];
+    return [px, nap - SCENE_NAP_ORIGIN - drop + 0.014, pz];
+  };
+  for (const [start, end] of segments) {
+    for (let i = start; i < end; i++) {
+      const j = i + 1;
+      batch.quad(edge(i, 0, false), edge(i, 0, true), edge(j, 0, true), edge(j, 0, false), 0x617d86);
+      batch.quad(edge(i, 0, true), edge(i, 0.08, true), edge(j, 0.08, true), edge(j, 0, true), 0x4c666e);
+      batch.quad(edge(i, 0.08, true), edge(i, 0.35, true), edge(j, 0.35, true), edge(j, 0.08, true), 0xa7aaa5);
+      batch.quad(edge(i, 0.35, true), edge(i, 0.35, false), edge(j, 0.35, false), edge(j, 0.35, true), 0xb3b3a9);
+    }
+    batch.quad(edge(start, 0, true), edge(start, 0, false), edge(start, 0.35, false), edge(start, 0.35, true), 0x9c9f99);
+    batch.quad(edge(end, 0, false), edge(end, 0, true), edge(end, 0.35, true), edge(end, 0.35, false), 0x9c9f99);
+  }
+}
+
+function createEmmausChurch(site, survey, style) {
+  // Face and roof indices refer to the Emmaüs LoD 2.2 survey.
+  const walls = new Map(surveyWalls(survey, 0.9).map(wall => [wall.faceIndex, wall]));
+  const front = walls.get(15);
+  const ochre = 0xe1ad37, burgundy = 0x884952, slate = 0x858b8b;
+  const foyerGlass = [0x58747e, 0x6c868d, 0x506871];
+  const labels = [];
+  const sign = (wall, u, width, lo, hi, depth, text) => {
+    const [ax, , az] = point(wall, u - width / 2, lo, depth);
+    const [bx, , bz] = point(wall, u + width / 2, lo, depth);
+    labels.push({ text, a: { x: ax, z: az }, b: { x: bx, z: bz }, lo: lo - SCENE_NAP_ORIGIN,
+      hi: hi - SCENE_NAP_ORIGIN, color: '#e5e4de', textColor: '#3a3836' });
+  };
+  const group = church(site.name, survey, style, batch => {
+    const roof = face => survey.faces[face][1].map(i => survey.points[i]);
+    emmausEaves(batch, roof(57), [[2, 12], [15, 24]]);
+    emmausEaves(batch, roof(59), [[1, 12]]);
+
+    for (const i of [3, 8, 11, 12, 13, 15, 16, 17, 19, 20, 22]) {
+      const wall = walls.get(i);
+      for (const y of [9.59, 10.43, 11.42, 12.45]) {
+        rect(batch, wall, 0, wall.width - 0.025, y, Math.min(y + 0.19, wall.cap - 0.07), slate, 0.019);
+      }
+    }
+    const threshold = Math.max(survey.base, terrainHeightAt(front.x, front.z) + SCENE_NAP_ORIGIN);
+    const doorTop = Math.min(threshold + 2.25, 12.20);
+    rect(batch, front, 0, 2.18, threshold, doorTop, ochre, 0.046);
+    for (const u of [-0.53, 0.53]) {
+      rect(batch, front, u, 1.04, threshold + 0.018, doorTop - 0.025, burgundy, 0.062);
+      rect(batch, front, u, 0.66, threshold + 0.62, doorTop - 0.19, ochre, 0.073);
+      rect(batch, front, u, 0.59, threshold + 0.66, doorTop - 0.23, foyerGlass[0], 0.084, 1);
+      rect(batch, front, u * 0.23, 0.032, threshold + 0.96, threshold + 1.15, 0xc4c4b9, 0.093);
+    }
+    for (const u of [-1.49, 1.49]) {
+      windowBand(batch, front, u, 0.64, threshold + 0.09, doorTop - 0.02,
+        { columns: 1, rows: 2, tint: foyerGlass, trim: ochre, border: ochre });
+    }
+    sign(front, -1.94, 0.24, 11.36, 11.59, 0.05, '94');
+    const [x, y, z] = point(front, 0, 12.53, 0.24);
+    batch.solid(new THREE.BoxGeometry(front.width + 0.30, 0.45, 0.67)
+      .rotateY(Math.atan2(-front.uz, front.ux)).translate(x, y, z), ochre);
+    for (const i of [13, 16]) {
+      const wall = walls.get(i);
+      rect(batch, wall, 0, wall.width - 0.04, 12.30, 12.72, ochre, 0.043);
+    }
+    for (const i of [11, 12, 17, 19]) {
+      const wall = walls.get(i);
+      windowBand(batch, wall, 0, wall.width - 0.55, threshold + 0.18, 12.14, {
+        columns: Math.max(2, Math.round(wall.width / 0.92)), rows: 2,
+        tint: foyerGlass, trim: ochre, border: ochre,
+      });
+      rect(batch, wall, 0, wall.width - 0.12, 12.22, wall.cap - 0.07, burgundy, 0.039);
+    }
+
+    for (const i of [7, 14, 30, 31, 44, 45, 49, 51]) {
+      const wall = walls.get(i);
+      const hi = wall.cap - 0.27;
+      if (hi - wall.bottom < 0.45) continue;
+      windowBand(batch, wall, 0, wall.width - 0.35, wall.bottom + 0.16, hi, {
+        columns: Math.max(1, Math.round(wall.width / 0.78)), rows: 1, tint: CREAM_GLASS, trim: slate, border: 0xd4cfc2,
+      });
+      rect(batch, wall, 0, wall.width - 0.06, hi + 0.09, wall.cap - 0.05, burgundy, 0.025);
+    }
+    const oculus = (wall, nap, radius, tint) => {
+      circle(batch, wall, 0, nap, radius + 0.035, slate, 0.033);
+      circle(batch, wall, 0, nap, radius, ochre, 0.049);
+      circle(batch, wall, 0, nap, radius - 0.072, tint, 0.064);
+    };
+    oculus(walls.get(50), 13.43, 0.37, 0x68808a);
+    for (const [i, nap, tint] of [[1, 13.81, 0x57727c], [0, 13.47, 0x435a61], [4, 14.45, 0x5d7984],
+      [33, 14.07, 0x4e666a], [32, 15.03, 0x6a8890], [23, 14.03, 0x56747f], [26, 13.35, 0x405b69]]) {
+      oculus(walls.get(i), nap, 0.31, tint);
+    }
+    for (const i of [34, 42]) {
+      const wall = walls.get(i);
+      rect(batch, wall, 0, 0.73, threshold + 0.12, threshold + 1, burgundy, 0.041);
+      windowBand(batch, wall, 0, 0.68, threshold + 1.02, wall.cap - 0.23,
+        { columns: 1, rows: 7, tint: foyerGlass, trim: ochre, border: ochre });
+    }
+    for (const i of [41, 43, 46]) {
+      const wall = walls.get(i);
+      const lo = wall.bottom + 0.12, hi = wall.cap - 0.20;
+      const columns = Math.max(2, Math.round(wall.width / 0.86));
+      const width = wall.width - 0.22, step = width / columns;
+      rect(batch, wall, 0, width, lo, hi, ochre, 0.028);
+      for (let j = 0; j < columns; j++) {
+        const u = -width / 2 + (j + 0.5) * step;
+        rect(batch, wall, u, step - 0.055, lo + 0.07, hi - 0.047, foyerGlass[j % foyerGlass.length], 0.049, 1);
+      }
+      rect(batch, wall, 0, wall.width - 0.05, hi + 0.06, wall.cap - 0.025, slate, 0.041);
+    }
+    spindle(batch, -2362.24, 2926.28, 16, [[0.16, 18.69], [0.16, 18.79], [0.35, 18.81],
+      [0.32, 18.88], [0.11, 18.99]], 0x506468);
+
+    const [sx, , sz] = point(front, -3.1, threshold, 3.7);
+    const ground = terrainHeightAt(sx, sz) + SCENE_NAP_ORIGIN;
+    for (const u of [-2.11, -4.09]) rect(batch, front, u, 0.055, ground - 0.08, ground + 1.10, 0xb4b5af, 3.67);
+    sign(front, -3.1, 1.95, ground + 0.63, ground + 1.08, 3.73, 'EMMAÜS');
+    sign(front, -3.1, 1.95, ground + 0.43, ground + 0.63, 3.73, 'Kerkelijk centrum');
+  });
+  const signs = civicSigns(labels, { wide: true });
+  if (signs) group.add(signs);
+  return group;
+}
+
 export function createAdditionalChurch(site, survey, style) {
+  if (site.id === 'emmaus') return createEmmausChurch(site, survey, style);
   const group = church(site.name, survey, style, batch => {
     const walls = surveyWalls(survey);
     const approach = site.approach ?? { x: site.x, z: site.z - 20 };

@@ -8,6 +8,12 @@ import { terrainHeightAt } from './terrain.js';
 const CELL_W = 256, CELL_H = 40, COLS = 8, MAX_NAMES = 800;
 const MAX_WALL_DISTANCE = 25, MIN_WALL_LENGTH = 3, SIGN_Y = 3.4, MIN_SPACING = 2.5;
 
+// These landmark models supply their own shopfronts.
+const CUSTOM_STOREFRONTS = new Set([
+  'Lammert van de Bospoort', 'Het Pomphuis', "Dixie's", 'Da Aldo', 'Bistro Twaalf 14',
+  'De Koffiekamer', 'Pannenkoekenhuis De Langenberg', 'Villa Brutus',
+]);
+
 // Chain palettes are the fallback when a branch has no photographed sign.
 const BRANDS = {
   'Albert Heijn': ['#00a0e2', '#ffffff'], 'Albert Heijn to go': ['#00a0e2', '#ffffff'], 'HEMA': ['#d5112b', '#ffffff'],
@@ -92,7 +98,7 @@ export function createShopSigns(buildings, buildingGrounds) {
 
   // Reuse one atlas cell for identical text and colours, including repeated branches.
   const labels = new Map();
-  const sites = EDE_SHOPS.map(([name, x, z]) => {
+  const sites = EDE_SHOPS.filter(([name]) => !CUSTOM_STOREFRONTS.has(name)).map(([name, x, z]) => {
     const local = Object.hasOwn(LOCAL_SIGN_COLORS, name) ? LOCAL_SIGN_COLORS[name] : null;
     const useLocal = local && Math.hypot(x - local[0], z - local[1]) < 20;
     const [bg, fg] = useLocal ? local.slice(2)

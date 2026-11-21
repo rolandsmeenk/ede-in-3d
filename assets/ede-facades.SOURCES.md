@@ -13,6 +13,10 @@ Residential reviews around Kolkakkerweg use images by [thewizard](https://www.ma
 
 The motorway layer uses 3DBAG wall planes, an official BAG building-use snapshot and dated exterior references. [A12 source catalogue](../tools/data/ede-a12-facades.md) · [A30 source catalogue](../tools/data/ede-a30-facades.md)
 
+## Railway frontages
+
+The east–west mainline uses fitted 3DBAG walls and reviewed architectural references around Ede-Wageningen. Source images remain in the offline review cache. [Rail façade references](../tools/data/ede-rail-facades.md)
+
 ## Square frontages
 
 - Marktplein uses Allard Bijlsma’s market and Brouwerstraat photos from 2018 to 2021 and Dick Martens’s 2025 view of Chillerz. The square design archive credits Pieter Kers. [Atlas van Ede](https://www.atlasvanede.nl/ede-toen/van-centrum-tot-buitenwijk/centrum-van-ede-1/marktplein) · [EdeStad](https://www.edestad.nl/lokaal/mensen/1183695/het-gezicht-van-ede-centrum-cris-en-nettie-van-chillerz) · [Hosper](https://www.hosper.nl/plein-en-centrum/ede-marktplein/) · [Wall records](../tools/data/ede-square-facades/marktplein.json)
@@ -21,3 +25,7 @@ The motorway layer uses 3DBAG wall planes, an official BAG building-use snapshot
 - Oude Kerkplein uses Vendôme Makelaardij’s exterior views of number 45, the iLocate listing photo of number 5 and Allard Bijlsma’s April 2021 view across the square. [South façade](https://www.vendomemakelaardij.nl/ede/oude-kerkplein-45) · [North façade](https://www.ilocate.nl/details/155662-huur-oude-kerkplein-5-6711az) · [Atlas van Ede](https://www.atlasvanede.nl/naslag/mijn-boek-van-ede-nl/03-20-highlights-van-ede/3-02-oude-kerk) · [Wall records](../tools/data/ede-square-facades/oude-kerkplein.json)
 
 The square layouts use these photographs as offline evidence. The game ships opening dimensions, material parameters and source credits.
+
+## Horapark offices
+
+Bennekomseweg 41 and 43 use the light brick, pale frames and window bands visible in the office operator’s gallery and the tenants’ route guide. At Horapark 4 the leasing photograph shows the glazed inner wing, white panels and brick office wing surrounding the entry courtyard. Opening dimensions and the continuation of window rows onto similar bays are estimated from these views and fitted to the 3DBAG wall segments. [Horapark Ede](https://www.horapark-ede.nl/) · [Bennekomseweg 43 route guide](https://www.grondbezit.nl/l/nl/library/download/urn%3Auuid%3Ab0fa019e-0905-4306-9b14-93dcb2fa25b5/routebeschrijving%2Bnaar%2Bbennekomsweg%2B43%2B-%2Bbosgroepen%2Ben%2Bfpg.pdf?format=save_to_disk) · [Horapark 4 exterior](https://www.ilocate.nl/details/153804-huur-horapark-4-6717lz) · [Wall records](../tools/data/ede-square-facades/horapark.json)

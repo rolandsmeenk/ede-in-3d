@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { CivicBatch, along, offsetEdge, facePanel, wallExtent, wallColliders, makeGroup, polygonNormal } from './ede-civic-landmarks.js';
+import { CivicBatch, along, offsetEdge, facePanel, wallExtent, wallColliders, makeGroup, polygonNormal, addLandmarkLod } from './ede-civic-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleRoofColor } from './aerial-colors.js';
 import { CHE_BRIDGE_SOFFIT } from './ede-grade.js';
@@ -471,7 +471,7 @@ function wallFace(vertices) {
   return { ...face, n: normal, lo: Math.min(...levels), hi: Math.max(...levels) };
 }
 
-function groundWall(batch, colliders, face, base, color) {
+function groundWall(batch, silhouette, colliders, face, base, color) {
   const { a, b, width, lo, hi } = face;
   const count = Math.max(1, Math.ceil(width / 5));
   let minY = lo;
@@ -480,27 +480,33 @@ function groundWall(batch, colliders, face, base, color) {
       const p = along(a, b, i / count), q = along(a, b, (i + 1) / count);
       const y0 = Math.min(lo, terrainHeightAt(p.x, p.z) - 0.12);
       const y1 = Math.min(lo, terrainHeightAt(q.x, q.z) - 0.12);
-      if (Math.min(y0, y1) < lo - 0.001) batch.quad(point(p, y0), point(q, y1), point(q, lo), point(p, lo), color);
+      if (Math.min(y0, y1) < lo - 0.001) {
+        const vertices = [point(p, y0), point(q, y1), point(q, lo), point(p, lo)];
+        batch.quad(...vertices, color);
+        silhouette.quad(...vertices, color);
+      }
       minY = Math.min(minY, y0, y1);
     }
   }
   if (hi - minY > 0.35) colliders.push(...wallColliders(a, b, minY, hi));
 }
 
-function shell(batch, colliders, [points, surfaces], { roofId, ground, roofColor, wallColor, detail }) {
+function shell(batch, silhouette, colliders, [points, surfaces], { roofId, ground, roofColor, wallColor, detail }) {
   const rgb = [];
   const roof = sampleRoofColor(roofId, rgb) ? new THREE.Color().setRGB(...rgb) : roofColor;
   for (const [isRoof, id, ...rings] of surfaces) {
     const vertices = rings.map(ring => ring.map(j => points[j]));
     if (isRoof) {
       batch.polygon(vertices, roof);
+      silhouette.polygon(vertices, roof);
       continue;
     }
     const face = wallFace(vertices[0]);
     const color = face ? wallColor(face, id) : wallColor(null, id);
     batch.polygon(vertices, color);
+    silhouette.polygon(vertices, color);
     if (!face) continue;
-    groundWall(batch, colliders, face, ground, color);
+    groundWall(batch, silhouette, colliders, face, ground, color);
     detail(face, id);
   }
 }
@@ -546,9 +552,9 @@ function roofPanels(batch, heightAt, corners, columns, rows, margin = 0.01) {
   }
 }
 
-function spectrum(batch, colliders, labels) {
+function spectrum(batch, silhouette, colliders, labels) {
   const glazingIds = new Set([107, 429]);
-  shell(batch, colliders, SPECTRUM, {
+  shell(batch, silhouette, colliders, SPECTRUM, {
     roofId: 'r19854426', ground: -6.63, roofColor: 0x9d9b91,
     wallColor: (face, id) => glazingIds.has(id) ? glazing[0] : face?.lo >= 1.8 ? plinth : mortar,
     detail(face, id) {
@@ -571,7 +577,9 @@ function spectrum(batch, colliders, labels) {
       if (width < 3.4 || hi - lo < 3.15) return;
       for (let y = Math.ceil((lo + 0.6 + 6.1) / 3.43) * 3.43 - 6.1; y + 0.72 < hi; y += 3.43) {
         const margin = Math.min(0.12, 0.42 / width);
-        curtainWall(batch, face, margin, 1 - margin, y, Math.min(y + 1.53, hi - 0.34), 2.55);
+        const top = Math.min(y + 1.53, hi - 0.34);
+        curtainWall(batch, face, margin, 1 - margin, y, top, 2.55);
+        panel(silhouette, face, margin, 1 - margin, y, top, glazing[0]);
       }
     },
   });
@@ -580,8 +588,8 @@ function spectrum(batch, colliders, labels) {
   roofPanels(batch, heightAt, [[-531.8, 2904.3], [-526.5, 2903.1], [-521.5, 2927.7], [-526.5, 2928.8]], 3, 9, 0.008);
 }
 
-function prisma(batch, colliders, labels) {
-  shell(batch, colliders, PRISMA, {
+function prisma(batch, silhouette, colliders, labels) {
+  shell(batch, silhouette, colliders, PRISMA, {
     roofId: 'w403848890', ground: -5.80, roofColor: roofSilver,
     wallColor: () => 0x485c5d,
     detail(face, id) {
@@ -592,6 +600,7 @@ function prisma(batch, colliders, labels) {
       for (let bottom = lo + 0.56; bottom < hi - 0.6; bottom += 3.8) {
         const top = Math.min(bottom + 3.68, hi - 0.42);
         curtainWall(batch, face, 0, 1, bottom, top, 2.35);
+        panel(silhouette, face, 0.02, 0.98, bottom, top, 0x77918b);
       }
       mosaic(batch, face, lo + 0.61, hi - 0.48, 0.051);
       if (id === 2) {
@@ -614,13 +623,19 @@ function prisma(batch, colliders, labels) {
   roofPanels(batch, localRoofHeight(PRISMA), corners, 9, 17, 0.0035);
 }
 
-function bridge(batch, colliders) {
+function bridge(batch, silhouette, colliders) {
   const northWest = { x: -511.98, z: 2906.21 }, northEast = { x: -481.93, z: 2905.46 };
   const southWest = { x: -511.24, z: 2910.74 }, southEast = { x: -481.05, z: 2909.91 };
   const ring = [northWest, southWest, southEast, northEast];
   const bottom = CHE_BRIDGE_SOFFIT, top = CHE_BRIDGE_ROOF;
-  batch.quad(...ring.map(p => point(p, top)), roofSilver);
-  batch.quad(...[...ring].reverse().map(p => point(p, bottom)), 0x888780);
+  for (const target of [batch, silhouette]) {
+    target.quad(...ring.map(p => point(p, top)), roofSilver);
+    target.quad(...[...ring].reverse().map(p => point(p, bottom)), 0x888780);
+  }
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    silhouette.quad(point(a, bottom), point(b, bottom), point(b, top), point(a, top), glazing[0]);
+  }
   const glass = [];
   for (const [a, b] of [[northEast, northWest], [southWest, southEast]]) {
     const width = Math.hypot(b.x - a.x, b.z - a.z);
@@ -678,8 +693,8 @@ function wideStair(batch) {
   }
 }
 
-function knaap(batch, colliders, labels) {
-  shell(batch, colliders, HALL, {
+function knaap(batch, silhouette, colliders, labels) {
+  shell(batch, silhouette, colliders, HALL, {
     roofId: 'w562784777', ground: -6.06, roofColor: 0xa4a49c,
     wallColor: (face, id) => face && face.hi < -1.8 ? 0x4b4a44 : copper[id % copper.length],
     detail(face, id) {
@@ -715,20 +730,21 @@ function knaap(batch, colliders, labels) {
 
 export function createCheCampus() {
   const group = new THREE.Group();
-  const offices = new CivicBatch(), hall = new CivicBatch(), colliders = [], labels = [];
-  spectrum(offices, colliders, labels);
-  prisma(offices, colliders, labels);
+  const offices = new CivicBatch(), hall = new CivicBatch(), silhouette = new CivicBatch();
+  const colliders = [], labels = [];
+  spectrum(offices, silhouette, colliders, labels);
+  prisma(offices, silhouette, colliders, labels);
   const signY = terrainHeightAt(-457, 2970);
   offices.solid(new THREE.BoxGeometry(8.0, 0.32, 0.72).rotateY(0.195).translate(-457, signY + 0.13, 2970), plinth);
   labels.push(label({
     a: { x: -460.9, z: 2970.75 }, b: { x: -453.1, z: 2969.23 }, n: { x: 0.194, z: 0.981 },
   }, 0, 1, signY + 0.12, signY + 3.12, 'CHE'));
-  const bridgeGlass = bridge(offices, colliders);
-  knaap(hall, colliders, labels);
+  const bridgeGlass = bridge(offices, silhouette, colliders);
+  knaap(hall, silhouette, colliders, labels);
   group.add(makeGroup('CHE Spectrum, Prisma and footbridge', offices, colliders), bridgeGlass,
     makeGroup('Van der Knaaphal', hall, []));
   group.userData.colliders = colliders;
   const signs = campusSigns(labels);
   if (signs) group.add(signs);
-  return group;
+  return addLandmarkLod(group, silhouette, 250);
 }

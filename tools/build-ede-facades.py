@@ -24,7 +24,7 @@ APPEARANCE_COLORS = ('wallColor', 'roofColor', 'frameColor', 'doorColor', 'sillC
 OPENING_DIMENSIONS = {'frame': 0.3, 'sill': 0.3, 'surround': 0.5, 'depth': 3.0, 'arch': 2.0}
 OPENING_DETAILS = ('frame', 'sill', 'surround', 'depth', 'arch', 'panes', 'transom', 'tracery')
 TILE_SIZE = 384
-SQUARE_REVIEWS = Path(__file__).resolve().parent / 'data/ede-square-facades'
+REVIEWED_FACADES = Path(__file__).resolve().parent / 'data/ede-square-facades'
 MIN_BUILDINGS = 3
 MIN_CONFIDENCE = 0.7
 ATTRIBUTION = {
@@ -744,14 +744,14 @@ def tile_assets(path, value):
     manifest = dict(version=2, attribution=value['attribution'], tileSize=TILE_SIZE, tiles=tiles)
     if path.is_file():
         previous = json.loads(path.read_text())
-        for key in ('a12Tiles', 'a30Tiles'):
+        for key in ('a12Tiles', 'a30Tiles', 'railTiles'):
             if previous.get(key):
                 manifest[key] = previous[key]
     index_bytes = save(path, manifest)
     return {'tiles': len(tiles), 'tileBytes': tile_bytes, 'indexBytes': index_bytes}
 
 
-def load_square_walls(directory):
+def load_reviewed_walls(directory):
     rows = [row for path in sorted(directory.glob('*.json')) for row in load(path, 'walls')['walls']]
     if not rows:
         return {}, {}
@@ -759,7 +759,7 @@ def load_square_walls(directory):
     measurements = checked_observations(
         [{**row['appearance'], 'bagId': row['bagId'], 'wallId': row['wallId']} for row in rows], walls)
     if set(measurements) != set(walls) or any(walls[identity]['wallType'] != 'street' for identity in walls):
-        raise ValueError('Each reviewed square wall must be street-facing and have attributed observations')
+        raise ValueError('Each reviewed wall must face a street or approach and have attributed observations')
     counts = defaultdict(lambda: {'walls': 0, 'openings': 0, 'buildings': set()})
     tiles = defaultdict(list)
     for identity, observation in measurements.items():
@@ -783,7 +783,7 @@ def same_wall(a, b):
             and abs(a.get('baseOffset', 0) - b.get('baseOffset', 0)) <= .15)))
 
 
-def update_square_tiles(manifest_path, reviews, report, squares):
+def update_reviewed_tiles(manifest_path, reviews, report, sites):
     manifest = json.loads(manifest_path.read_text())
     if manifest.get('version') != 2 or manifest.get('tileSize') != TILE_SIZE:
         raise ValueError('Expected the published 384 m façade manifest')
@@ -834,7 +834,7 @@ def update_square_tiles(manifest_path, reviews, report, squares):
             inferred += sum(wall['wallType'] != 'shared' and wall['status'] == 'inferred' for wall in walls)
         report.update(observedWalls=observed, inferredWalls=inferred, blankSharedWalls=blank,
                       proceduralWalls=report['catalogueWalls'] - observed - inferred - blank,
-                      reliableObservedWalls=observed, reviewedSquares=squares,
+                      reliableObservedWalls=observed, reviewedSites=sites,
                       assets={'tiles': len(manifest_tiles), 'tileBytes': size, 'indexBytes': manifest_path.stat().st_size})
     return len(updates)
 
@@ -845,22 +845,22 @@ def main():
     parser.add_argument('observations', type=Path, nargs='?')
     parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parents[1] / 'assets/ede-facades.json')
     parser.add_argument('--report', type=Path, help='Write whole-building holdout errors and profile coverage')
-    parser.add_argument('--square-reviews', type=Path, default=SQUARE_REVIEWS,
-                        help='Reviewed square layouts. With no city inputs, update only the affected published tiles.')
+    parser.add_argument('--site-reviews', '--square-reviews', type=Path, default=REVIEWED_FACADES,
+                        help='Reviewed site layouts. With no city inputs, update only the affected published tiles.')
     parser.add_argument('--hold-out', action='append', metavar='BAG_ID', help='Override the automatic BAG ID holdout selection')
     args = parser.parse_args()
     if bool(args.catalogue) != bool(args.observations):
-        parser.error('Provide both the wall catalogue and observations, or update the published square tiles')
+        parser.error('Provide both the wall catalogue and observations, or update the published review tiles')
     try:
-        reviews, squares = load_square_walls(args.square_reviews)
+        reviews, sites = load_reviewed_walls(args.site_reviews)
         if not args.catalogue:
             if not reviews:
-                parser.error('No square review files to bake')
+                parser.error('No site review files to bake')
             report = json.loads(args.report.read_text()) if args.report else None
-            changed = update_square_tiles(args.output, reviews, report, squares)
+            changed = update_reviewed_tiles(args.output, reviews, report, sites)
             if args.report:
                 save(args.report, report)
-            print(json.dumps({'updatedTiles': changed, 'reviewedSquares': squares}, ensure_ascii=False))
+            print(json.dumps({'updatedTiles': changed, 'reviewedSites': sites}, ensure_ascii=False))
             return
         catalogue = load(args.catalogue, 'walls')
         observations = load(args.observations, 'observations')['observations']
@@ -880,7 +880,7 @@ def main():
         report['catalogueSources'] = catalogue.get('source', {})
         report['assets'] = tile_assets(args.output, asset)
         if reviews:
-            update_square_tiles(args.output, reviews, report, squares)
+            update_reviewed_tiles(args.output, reviews, report, sites)
         if args.report:
             save(args.report, report)
     except (ValueError, KeyError, TypeError, OSError) as error:

@@ -76,7 +76,7 @@ def fetch_access_tiles(directory, geographic_bounds):
         box_string = ','.join(f'{n:.8f}' for n in bounds)
         url = 'https://api.openstreetmap.org/api/0.6/map?bbox=' + box_string
         command = ['curl', '-fsS', '--compressed', '--max-time', '20', '--user-agent',
-                   'Ede in 3D offline furniture audit (github.com/rolandsmeenk/slop-ede)', url]
+                   'Ede in 3D offline furniture audit (github.com/rolandsmeenk/ede-in-3d)', url]
         try:
             raw = subprocess.check_output(command)
         except subprocess.CalledProcessError:

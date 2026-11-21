@@ -578,6 +578,131 @@ function addSign(group, config) {
   if (sign) group.add(sign);
 }
 
+// Rubensstraat 215C. The BAG roof and outline anchor the shell, with the parking
+// level, windows and sunshades fitted from the CROP and De Manen exterior photos.
+export function createCropOffice() {
+  const batch = new CivicBatch(), colliders = [];
+  const [sw, se, ne, nw] = [
+    { x: -1387.47, z: 3277.85 }, { x: -1360.37, z: 3272.40 },
+    { x: -1363.79, z: 3254.74 }, { x: -1391.10, z: 3260.16 },
+  ];
+  const roof = 10.31, officeFloor = -7.16, upperFloor = -3.77;
+  const corners = [sw, se, ne, nw];
+  const at = (u, v) => along(along(sw, se, u), along(nw, ne, u), v);
+  const edgeNormal = (a, b) => {
+    const width = Math.hypot(b.x - a.x, b.z - a.z);
+    return { x: (a.z - b.z) / width, z: (b.x - a.x) / width };
+  };
+  function volume(outline, base, tops, sides, cap) {
+    const top = outline.map(({ x, z }, i) => [x, tops[i], z]);
+    const bottom = outline.map(({ x, z }) => [x, base, z]);
+    batch.polygon([top], cap);
+    batch.polygon([bottom.slice().reverse()], sides);
+    for (let i = 0; i < top.length; i++) {
+      const next = (i + 1) % top.length;
+      batch.quad(top[next], top[i], bottom[i], bottom[next], sides);
+    }
+    const xs = outline.map(p => p.x), zs = outline.map(p => p.z);
+    colliders.push({ minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs),
+      minY: base, maxY: Math.max(...tops), polygon: { outer: outline, holes: [] } });
+  }
+  volume(corners, upperFloor, corners.map(() => roof), 0xd0d0c7, 0x5d6466);
+  const podium = [at(0.025, 0.06), at(0.975, 0.06), at(0.975, 0.94), at(0.025, 0.94)];
+  volume(podium, officeFloor, podium.map(() => upperFloor), 0x8d9293, 0x838988);
+  for (const v of [0.095, 0.905]) {
+    for (const u of [0.055, 0.275, 0.5, 0.725, 0.945]) {
+      const p = at(u, v);
+      const piers = [at(u - 0.011, v - 0.017), at(u + 0.011, v - 0.017),
+        at(u + 0.011, v + 0.017), at(u - 0.011, v + 0.017)];
+      volume(piers, Math.min(-10.59, terrainHeightAt(p.x, p.z) - 0.10), piers.map(() => officeFloor), 0x9c9e99, 0x9c9e99);
+    }
+  }
+  const core = [at(0.33, 0.37), at(0.68, 0.37), at(0.68, 0.84), at(0.33, 0.84)];
+  volume(core, -10.68, core.map(() => officeFloor), 0x424748, 0x565b59);
+
+  const housing = [
+    { x: -1381.00, z: 3270.19 }, { x: -1371.33, z: 3268.04 },
+    { x: -1372.28, z: 3262.92 }, { x: -1382.11, z: 3265.05 },
+  ];
+  volume(housing, roof - 0.02, [13.88, 15.55, 15.55, 13.84], 0x636e72, 0x535e62);
+  for (let y = 11.12; y < 12.45; y += 0.13)
+    facePanel(batch, housing[0], housing[1], edgeNormal(housing[0], housing[1]), 0.18, 0.40, y, y + 0.062, 0x344044, 0.025);
+
+  for (let side = 0; side < corners.length; side++) {
+    const index = (side + 1) % corners.length;
+    const a = corners[side], b = corners[index], normal = edgeNormal(a, b);
+    const width = Math.hypot(b.x - a.x, b.z - a.z);
+    const panel = (u, v, lo, hi, color, depth, sheen) => facePanel(batch, a, b, normal, u, v, lo, hi, color, depth, sheen);
+    const front = side === 0, screened = side === 3;
+    for (let y = upperFloor + 1.15; y < roof - 0.1; y += 1.15) panel(0, 1, y, y + 0.019, 0xb9bcb7, 0.013);
+    const seams = Math.round(width / 1.76);
+    for (let i = 1; i < seams; i++) panel(i / seams, i / seams + 0.001, upperFloor, roof, 0xb9bcb7, 0.012);
+    const [start, end] = screened ? [0.043, 0.957] : front ? [0.25, 0.87] : [0.09, 0.91];
+    if (screened) panel(start, end, -3.41, 9.18, 0x484f51, 0.021);
+    const bays = Math.round(width * (end - start) / 1.57);
+    for (const lo of screened ? [-3.07, 0.14, 3.35, 6.56] : [-2.73, 0.70, 4.13, 7.56]) {
+      const hi = lo + (screened ? 2.56 : 1.70), transom = hi - 0.36;
+      panel(start, end, lo, hi, 0x899397, 0.030);
+      for (let i = 0; i < bays; i++) {
+        const step = (end - start) / bays;
+        const left = start + step * i + 0.038 / width, right = start + step * (i + 1) - 0.038 / width;
+        panel(left, right, lo + 0.045, transom - 0.034, glass[i % glass.length], 0.046, 1);
+        panel(left, right, transom + 0.032, hi - 0.035, 0x788e99, 0.045, 0.83);
+      }
+    }
+    if (front || screened) {
+      const screens = front ? [[0.18, 0.25], [0.87, 0.938]] : [[start, end]];
+      for (const [u, v] of screens) {
+        if (front) panel(u, v, -2.77, 9.18, 0x3a454b, 0.035);
+        for (let y = screened ? -3.28 : -2.70; y < 9.17; y += 0.29)
+          panel(u, v, y, y + 0.054, 0x424b4f, 0.13);
+        if (screened) for (let i = 1; i < 5; i++) {
+          const x = u + (v - u) * i / 5;
+          panel(x - 0.0024, x + 0.0024, -3.4, 9.19, 0x545c60, 0.14);
+        }
+      }
+    }
+    const lowerA = podium[side], lowerB = podium[index];
+    glazing(batch, lowerA, lowerB, edgeNormal(lowerA, lowerB), width, -6.39, -4.13, 1.56);
+  }
+
+  const normal = edgeNormal(sw, se);
+  const [left, right] = offsetEdge(along(sw, se, 0.115), along(sw, se, 0.365), normal, -0.28);
+  for (let i = 0; i < 4; i++) {
+    const u = (i + 0.5) / 4;
+    facePanel(batch, left, right, normal, u - 0.009, u + 0.009, roof - 0.025, roof + 0.44, 0x303940, 0);
+  }
+  const group = makeGroup('CROP Accountants & Adviseurs', batch, colliders);
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 160;
+    const ctx = canvas.getContext('2d');
+    ctx.font = '900 148px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#17293e';
+    for (const [i, letter] of [...'CROP'].entries()) {
+      const x = 64 + i * 128;
+      ctx.strokeText(letter, x, 87);
+      ctx.fillStyle = letter === 'O' ? '#f6d412' : '#f6f6f1';
+      ctx.fillText(letter, x, 87);
+    }
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = 4;
+    const width = Math.hypot(right.x - left.x, right.z - left.z);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(width, 2.08),
+      new THREE.MeshBasicMaterial({ map, alphaTest: 0.42 }));
+    sign.name = 'CROP rooftop lettering';
+    sign.position.set((left.x + right.x) / 2 + normal.x * 0.026, roof + 1.08, (left.z + right.z) / 2 + normal.z * 0.026);
+    sign.rotation.y = Math.atan2(normal.x, normal.z);
+    group.add(sign);
+  }
+  return group;
+}
+
 export function createPatheEde() {
   const batch = new CivicBatch(), colliders = [];
   shell(batch, colliders, CINEMA, true);

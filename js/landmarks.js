@@ -23,7 +23,7 @@ import { createHoekelum, createGasfabriek } from './ede-estate-landmarks.js';
 import { createNizoLandmark, createGelderseValleiLandmark } from './ede-research-landmarks.js';
 import { createReehorst, createBuitenzorg, createJohannus } from './ede-venue-landmarks.js';
 import { createEderKuil, createPallasAthene, createTechnova, createTesqua } from './ede-next-landmarks.js';
-import { createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
+import { createCropOffice, createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
 import { createRiedelSilos, createKappaDocie } from './ede-riedel-silos.js';
 import { buildMuralWalls } from './ede-mural-surfaces.js';
 import { createRaadhuis, createCultura } from './ede-civic-landmarks.js';
@@ -38,6 +38,21 @@ import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
 import { PUBLIC_LANDMARK_FACTORIES } from './ede-public-landmarks.js';
 import { SCHOOL_LANDMARK_FACTORIES } from './ede-school-landmarks.js';
 import { SPORT_LANDMARK_FACTORIES } from './ede-sport-landmarks.js';
+import { AMSTERDAMSEWEG_LANDMARK_FACTORIES } from './ede-amsterdamseweg-landmarks.js';
+import { NIJVERHEIDPLEIN_LANDMARK_FACTORIES } from './ede-nijverheidplein-landmarks.js';
+import { STATIONSWEG_LANDMARK_FACTORIES } from './ede-stationsweg-landmarks.js';
+import { EDE_RESTAURANT_ROW_BUILDERS } from './ede-restaurant-row.js';
+import { EDE_RESTAURANT_ESTATE_BUILDERS } from './ede-restaurant-estates.js';
+import { createPomphuis } from './ede-pomphuis.js';
+import { createVillaBrutusTerraces } from './ede-villa-brutus.js';
+import { createUluCamii } from './ede-ulu-camii.js';
+import { MOSQUE_LANDMARK_FACTORIES } from './ede-mosque-landmarks.js';
+import { BARRACKS_HERITAGE_FACTORIES } from './ede-barracks-heritage-landmarks.js';
+import { VILLA_HERITAGE_FACTORIES } from './ede-villa-heritage-landmarks.js';
+import { VELDHUIZEN_LANDMARK_FACTORIES } from './ede-veldhuizen-landmarks.js';
+import { createKopParkweg } from './ede-kop-parkweg.js';
+import { createHartogshof } from './ede-hartogshof.js';
+import { createAkulaanApartments, createParkveste } from './ede-rail-apartments.js';
 
 // The engine's hand-built New York monuments are removed. Legacy exports keep the upstream controllers working.
 export let bryantParkLawn = null;
@@ -67,6 +82,7 @@ export function buildLandmarks(scene) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
   const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [];
+  const landmarkLods = [];
   scene.add(group);
 
   function place(model, { x, z }, heading, footprints = [], baseY, colliderHeights = [], worldSpace = false) {
@@ -115,6 +131,7 @@ export function buildLandmarks(scene) {
     'kappa-docie': createKappaDocie,
     stadspoort: createStadspoort,
     'pathe-ede': createPatheEde,
+    'crop-office': createCropOffice,
     lukkien: createLukkien,
     keetmolen: createKeetmolen,
     'de-peppel': createDePeppel,
@@ -141,9 +158,24 @@ export function buildLandmarks(scene) {
     'de-proosdij': createProosdij,
     'pallas-athene': createPallasAthene,
     tesqua: createTesqua,
+    'ulu-camii': createUluCamii,
+    ...MOSQUE_LANDMARK_FACTORIES,
+    ...BARRACKS_HERITAGE_FACTORIES,
+    ...VILLA_HERITAGE_FACTORIES,
+    ...VELDHUIZEN_LANDMARK_FACTORIES,
+    'kop-van-de-parkweg': createKopParkweg,
+    hartogshof: createHartogshof,
+    'akulaan-h2-h4': createAkulaanApartments,
+    parkveste: createParkveste,
     ...PUBLIC_LANDMARK_FACTORIES,
     ...SCHOOL_LANDMARK_FACTORIES,
     ...SPORT_LANDMARK_FACTORIES,
+    ...AMSTERDAMSEWEG_LANDMARK_FACTORIES,
+    ...NIJVERHEIDPLEIN_LANDMARK_FACTORIES,
+    ...STATIONSWEG_LANDMARK_FACTORIES,
+    'het-pomphuis': createPomphuis,
+    ...EDE_RESTAURANT_ROW_BUILDERS,
+    ...EDE_RESTAURANT_ESTATE_BUILDERS,
   };
   function registerDetail(detail) {
     const range = detail.userData.nearDetail;
@@ -166,7 +198,15 @@ export function buildLandmarks(scene) {
     helipads.push(...(model.userData.helipads ?? []));
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
     model.traverse(registerDetail);
+    if (model.userData.landmarkLod) {
+      const lod = model.userData.landmarkLod;
+      landmarkLods.push({ ...lod, bounds: new THREE.Box3().setFromObject(model), far: false });
+    }
   }
+  const brutus = createVillaBrutusTerraces();
+  group.add(brutus);
+  colliders.push(...brutus.userData.colliders);
+  brutus.traverse(registerDetail);
   const flags = createAkoesticumFlags();
   group.add(flags);
   flags.traverse(registerDetail);
@@ -192,6 +232,12 @@ export function buildLandmarks(scene) {
     for (const { detail, bounds, distance = 175 } of nearDetails) {
       const hysteresis = detail.visible ? Math.min(30, distance * 0.20) : 0;
       detail.visible = bounds.distanceToPoint(position) < distance + hysteresis;
+    }
+    for (const lod of landmarkLods) {
+      const distance = lod.bounds.distanceToPoint(position);
+      lod.far = distance > lod.distance + (lod.far ? -12 : 12);
+      lod.silhouette.visible = lod.far;
+      lod.detailedModel.visible = !lod.far;
     }
   }
   function updateWind(dt, reading) {

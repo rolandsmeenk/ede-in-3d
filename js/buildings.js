@@ -280,7 +280,7 @@ function colorEdeRoof(roof, id, fallback, aerial, tiles) {
 }
 
 // `bag`: 3D BAG meshes already supply the facades and roofs, so only colliders and street-level details are built here.
-function buildCityBlocks(scene, { bag = false, streamBag = false, motorwayFacades } = {}) {
+function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacades } = {}) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeCityBlocks' : 'ManhattanCityBlocks';
   const colliders = [];
@@ -428,8 +428,8 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, motorwayFacade
     neighbourhoodMaterials.set(style, facades.length);
     facades.push([createEdeFacadeBoxMaterial, { layout, floorHeight: layout[1], shed: style === 'shed' }]);
   }
-  const motorwayMaterials = new Map();
-  if (motorwayFacades) for (const [profile, layout, cladding] of [
+  const corridorMaterials = new Map();
+  if (corridorFacades) for (const [profile, layout, cladding] of [
     ['brick', [2.68, 2.95, 0.47, 0.42], 0],
     ['modern', [2.9, 3.25, 0.72, 0.58], 0],
     ['blank', [3.25, 3.2, 0, 0], 0],
@@ -438,7 +438,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, motorwayFacade
     ['rust', [4.2, 3.65, 0, 0], 6],
     ['showroom', [1.9, 4.2, 0.94, 0.75], 5],
   ]) {
-    motorwayMaterials.set(profile, facades.length);
+    corridorMaterials.set(profile, facades.length);
     facades.push([createEdeFacadeBoxMaterial, { layout, cladding, motorway: true, floorHeight: layout[1] }]);
   }
   const materials = facades.map(([create, opts]) => create({ ...opts, boxLocal: true }));
@@ -2096,7 +2096,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, motorwayFacade
       const neighbourhood = edeFacadeAt(cx, cz, height, source.buildYear, source.kind);
       const facadeColour = new THREE.Color(neighbourhood.color);
       const matIndex = neighbourhoodMaterials.get(shed ? 'shed' : neighbourhood.style);
-      const motorwayWalls = motorwayFacades?.[source.id];
+      const corridorWalls = corridorFacades?.[source.id];
       const detail = { id: source.id, name: source.name, cx, cz, ...bounds, district: districtAt(cx, cz), maxH: height,
         cornices: [], waterTowers: [], hvacUnits: [], fireEscapes: [], awnings: [], scaffoldSheds: [], yards: [],
         footprints: [{ x0: bounds.minX, x1: bounds.maxX, z0: bounds.minZ, z1: bounds.maxZ, h: height, tone, pts: poly, holes }],
@@ -2132,11 +2132,11 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, motorwayFacade
             }
           }
           let wallMat = matIndex, wallColour = facadeColour, renderFace = face;
-          const motorway = !ringIndex && motorwayWalls?.[i];
+          const corridor = !ringIndex && corridorWalls?.[i];
           // Confirm the surveyed start vertex so a later OSM footprint edit cannot shift all wall assignments.
-          if (motorway && a.x === motorway[0] && a.z === motorway[1] && b.x === motorway[2] && b.z === motorway[3]) {
-            wallMat = motorwayMaterials.get(motorway[4]) ?? matIndex;
-            wallColour = new THREE.Color(motorway[5]);
+          if (corridor && a.x === corridor[0] && a.z === corridor[1] && b.x === corridor[2] && b.z === corridor[3]) {
+            wallMat = corridorMaterials.get(corridor[4]) ?? matIndex;
+            wallColour = new THREE.Color(corridor[5]);
             renderFace = WALL_KINDS.rear;
           }
           const wallTop = ground + eave;

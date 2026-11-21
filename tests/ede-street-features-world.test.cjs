@@ -7,13 +7,14 @@ const { loadModule } = require('./helpers/module.cjs');
 
 async function loadWorld() {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
+  const { texture } = await import('../vendor/three/build/three.tsl.js');
   const filename = join(__dirname, '../js/ede-street-features-world.js');
   const source = readFileSync(filename, 'utf8')
     .replaceAll('import.meta.url', JSON.stringify(pathToFileURL(filename).href))
-    .replace('export async function', 'async function') + '\nexport { buildEdeStreetFeaturesWorld, matrixGantryMount };';
+    .replace('export async function', 'async function') + '\nexport { buildEdeStreetFeaturesWorld, collectSigns, matrixGantryMount };';
   const world = loadModule(source, { filename, imports: {
     'three/webgpu': THREE,
-    'three/tsl': {},
+    'three/tsl': { texture },
     './ede-grade.js': { gradeProfileAt: () => null, gradeWayAt: id => id === 'grade' ? { y: 8 } : null },
     './terrain.js': { terrainHeightAt: () => 2 },
     './tsl-materials.js': { createRoadSurfaceMaterial: () => new THREE.MeshStandardNodeMaterial() },
@@ -130,14 +131,55 @@ test('every explicitly painted crossing in the shipped asset reaches the mapped 
 test('a matrix face shares the surveyed beam and clears a destination sign on its approach', async () => {
   const { matrixGantryMount } = await loadWorld();
   const sign = { x: 10, z: 1, layer: 1 };
-  const gantry = { level: 1, x: 0, z: 0, ux: 1, uz: 0, length: 20, beam: 8,
+  const gantry = { level: 1, x: 0, z: 0, ux: 1, uz: 0, length: 20, beam: 8, halfDepth: 0.5,
     panels: [{ x: 10, y: 8.5, z: 1, angle: 0, width: 5, height: 3 }] };
   const wrongLevel = { ...gantry, z: 0.8, level: 0 };
   const mount = matrixGantryMount(sign, [0, 1], [wrongLevel, gantry]);
   assert.equal(mount.gantry, gantry);
   assert.equal(mount.x, 10);
-  assert.equal(mount.z, 0);
+  assert.equal(mount.z, 0.5);
   assert.ok(Math.abs(mount.y - 6.61) < 1e-6);
-  assert.ok(Math.abs(matrixGantryMount(sign, [0, -1], [gantry]).y - 7.44) < 1e-6);
+  const opposite = matrixGantryMount(sign, [0, -1], [gantry]);
+  assert.equal(opposite.z, -0.5);
+  assert.ok(Math.abs(opposite.y - 7.44) < 1e-6);
   assert.equal(matrixGantryMount({ ...sign, x: 21 }, [0, 1], [gantry]), null);
+});
+
+test('a surveyed matrix board hangs directly under the beam with a short vertical bracket', async () => {
+  const { THREE, collectSigns } = await loadWorld();
+  const sign = { x: 10, z: 1.4, bearing: 180, placement: 'ABOVE', rvvCode: 'A3', faceKey: 'A3' };
+  const atlas = { width: 80, height: 60, frames: { A3: [0, 0, 80, 60] }, map: new THREE.Texture() };
+  const gantry = { level: 0, x: 0, z: 0, ux: 1, uz: 0, length: 20, beam: 8, halfDepth: 0.5, panels: [] };
+  const faces = [], bracket = { positions: [], normals: [] };
+  const stats = collectSigns([sign], atlas, (_material, _sign, points) => faces.push(...points), () => bracket, [gantry]);
+
+  assert.equal(stats.mounted, 1);
+  assert.equal(faces.length, 8);
+  assert.ok(faces.every(([x, , z]) => Math.abs(x - sign.x) <= 0.44 && z > 0.5 && z < 0.56));
+  assert.ok(bracket.positions.length > 0);
+  for (let i = 0; i < bracket.positions.length; i += 3) {
+    const [x, y, z] = bracket.positions.slice(i, i + 3);
+    assert.ok(Math.abs(x - sign.x) < 0.06 && Math.abs(z - 0.5) < 0.06 && y >= 7.67 && y <= gantry.beam);
+  }
+});
+
+test('a gantry can span the sunken lanes of its own motorway at Exit 24', async () => {
+  const { matrixGantryMount } = await loadWorld();
+  const { gunzipSync } = require('node:zlib');
+  const readAsset = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets', name + '.json.gz'))));
+  const data = readAsset('ede-1gis-detail').features.find(feature => feature.id === '1gis:31:2102711040');
+  const [[x, z], [endX, endZ]] = data.points;
+  const length = Math.hypot(endX - x, endZ - z);
+  const gantry = { ...data, x, z, length, ux: (endX - x) / length, uz: (endZ - z) / length,
+    halfDepth: 0.8, beam: data.beamY - 22.54, panels: [] };
+  const signs = readAsset('ede-street-features').signs.filter(sign =>
+    sign.placement === 'ABOVE' && sign.rvvCode === 'A3' && Math.abs(sign.x - x) < 8 && Math.abs(sign.z - z) < length);
+  assert.equal(signs.length, 3);
+  for (const sign of signs) {
+    assert.equal(sign.layer, -1);
+    const bearing = sign.bearing * Math.PI / 180;
+    const facing = [Math.sin(bearing), -Math.cos(bearing)];
+    assert.equal(matrixGantryMount(sign, facing, [gantry])?.gantry, gantry);
+    assert.equal(matrixGantryMount({ ...sign, roadName: 'Rijksweg A30' }, facing, [gantry]), null);
+  }
 });

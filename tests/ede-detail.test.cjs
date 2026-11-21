@@ -104,6 +104,36 @@ test('instanced furniture and half gantry follow the culling and elevation contr
   assert.equal(farBench.visible, true);
 });
 
+test('a full gantry has three truss chords and keeps its destination panel in front', async () => {
+  const { buildEdeDetail, THREE } = await fixture();
+  const { group, gantries } = buildEdeDetail(new THREE.Scene(), [
+    { id: 'exit', source: 'nbd', type: 'directionalSign', mountId: 'portal', position: [12, 15.3],
+      centerY: 31.54, bracketY: 31.54, bracket: [12, 15], angle: 0, width: 4, height: 3, uv: [0, 0, 1, 1] },
+    { id: 'portal', source: '1gis', type: 'gantry', sourceSubtype: 'VDC106/CB-1',
+      points: [[0, 15], [24, 15]], beamY: 31.54 }
+  ], { nbdTexture: new THREE.Texture() });
+  const [gantry] = gantries;
+  assert.equal(gantry.halfDepth, 0.8);
+  const chords = group.getObjectByName('1GIS detail round');
+  assert.equal(chords.count, 3);
+  const centers = [];
+  for (let i = 0; i < chords.count; i++) {
+    const matrix = new THREE.Matrix4();
+    chords.getMatrixAt(i, matrix);
+    centers.push(new THREE.Vector3().setFromMatrixPosition(matrix));
+  }
+  const closeTo = (a, b) => Math.abs(a - b) < 1e-5;
+  assert.ok(centers.every(center => closeTo(center.x, 12)));
+  assert.ok(centers.some(center => closeTo(center.y, gantry.beam + Math.sqrt(3) * gantry.halfDepth) && closeTo(center.z, 15)));
+  for (const z of [14.2, 15.8]) {
+    assert.ok(centers.some(center => closeTo(center.y, gantry.beam) && closeTo(center.z, z)));
+  }
+  assert.ok(gantry.panels[0].z > 15.8);
+  const backing = group.getObjectByName('NBD detail solid').geometry;
+  backing.computeBoundingBox();
+  assert.ok(closeTo(backing.boundingBox.min.z, 15.8));
+});
+
 test('a mapped pond bank tapers to a low crown without adding a collider', async () => {
   const { buildEdeDetail, THREE } = await fixture({ gradeProfileAt: () => null });
   const { group, colliders } = buildEdeDetail(new THREE.Scene(), [

@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { CONCORDIA_SURVEY } from './ede-concordia-survey.js';
-import { createConcordiamolen } from './ede-concordiamolen.js';
+import { createConcordiamolen, addConcordiaTowerSilhouette } from './ede-concordiamolen.js';
+import { addLandmarkLod, CivicBatch } from './ede-civic-landmarks.js';
 import { buildVenue } from './ede-venue-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
 
@@ -177,10 +178,18 @@ function houseRoof(group, trim, _signs, view) {
 
 export function createConcordiaComplex([towerFootprint], site) {
   const group = new THREE.Group();
-  const tower = createConcordiamolen();
+  const { tower, shaft } = createConcordiamolen();
   tower.position.set(site.x, terrainHeightAt(site.x, site.z), site.z);
   tower.rotation.y = site.heading;
+  tower.updateMatrix();
+  const silhouette = new CivicBatch();
+  addConcordiaTowerSilhouette(silhouette, tower.matrix);
+  // The wind-driven cap and sails stay on their own hierarchy at both distances.
   group.add(tower);
+  shaft.position.copy(tower.position);
+  shaft.quaternion.copy(tower.quaternion);
+  group.add(shaft);
+  const staticParts = [shaft];
   const colliders = [{
     minX: Math.min(...towerFootprint.outer.map(p => p.x)), maxX: Math.max(...towerFootprint.outer.map(p => p.x)),
     minZ: Math.min(...towerFootprint.outer.map(p => p.z)), maxZ: Math.max(...towerFootprint.outer.map(p => p.z)),
@@ -189,6 +198,12 @@ export function createConcordiaComplex([towerFootprint], site) {
   for (const [key, survey] of Object.entries(CONCORDIA_SURVEY)) {
     const appearance = surfaces[key];
     const industrial = key === 'millworks';
+    for (const [roof, ...rings] of survey.faces) {
+      const points = rings.map(ring => ring.map(index => survey.vertices[index]));
+      const color = roof ? appearance.roof :
+        industrial && points[0].every(point => point[1] > 7) ? 0x988d7c : appearance.wall;
+      silhouette.polygon(points, color);
+    }
     const model = buildVenue(survey.name, survey, {
       masonry: 1,
       wall: (_, frame) => industrial && frame?.low > 7 ? 0x988d7c : appearance.wall,
@@ -203,8 +218,9 @@ export function createConcordiaComplex([towerFootprint], site) {
       return { windows };
     }, key === 'house' ? houseRoof : undefined);
     group.add(model);
+    staticParts.push(model);
     colliders.push(...model.userData.colliders);
   }
   group.userData.colliders = colliders;
-  return group;
+  return addLandmarkLod(group, silhouette, 175, staticParts);
 }

@@ -12,7 +12,7 @@ test.before(async () => {
 
 test('the scenic teleport buttons land in clear space and face their targets', () => {
   const buttons = [...read('index.html').matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
-  assert.equal(buttons.length, 16);
+  assert.equal(new Set(buttons).size, buttons.length, 'teleport destinations are unique');
   const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([, point]) => point.focus);
   assert.deepEqual(scenic.map(([name]) => name).sort(), buttons.sort());
   for (const [name, point] of scenic) {
@@ -45,6 +45,26 @@ test('the Eder Kuil teleport frames the stage from above the seating', () => {
   assert.match(point.name, /^van Pabstlaan$/i);
   assert.ok(point.z > point.focus.z && point.focus.z > venue.z);
   assert.ok(Math.hypot(point.focus.x - point.x, point.focus.z - point.z) < 40);
+});
+
+test('mosque arrivals use their named buildings and replace only the matching BAG records', async () => {
+  const { EDE_MODELED_LANDMARKS, landmarkBagExclusions } = await import('../js/ede-landmark-sites.js');
+  const records = [
+    ['ulu-camii', '0228100000078834'],
+    ['al-mouahidin', '0228100000066603'],
+    ['sic-ede', '0228100000087276'],
+    ['ede-mgt-moskee', '0228100000065566'],
+  ];
+  for (const [id, bag] of records) {
+    const landmark = EDE_MODELED_LANDMARKS.find(site => site.id === id);
+    assert.deepEqual(landmark.bagIds, [bag], id);
+    assert.ok(LANDMARK_SITES[landmark.name].ring.length >= 6, id);
+    assert.ok(TELEPORT_LOCATIONS[id].focus, id);
+    const bounds = { min: { x: landmark.x - 20, z: landmark.z - 20 }, max: { x: landmark.x + 20, z: landmark.z + 20 } };
+    const replacements = landmarkBagExclusions(bounds);
+    assert.ok(replacements.has(bag), id);
+    assert.ok(!replacements.has('0228100000069860'), 'keep the structure next to the Molenstraat hall');
+  }
 });
 
 test('preset and map teleports share arrival resets and mark the resolved landing point', () => {

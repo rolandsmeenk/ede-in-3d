@@ -4,6 +4,16 @@ import { OTHER_CHURCH_SHELLS } from './ede-other-church-shells.js';
 import { EDE_PUBLIC_LANDMARKS } from './ede-public-survey.js';
 import { EDE_SCHOOL_LANDMARKS } from './ede-school-survey.js';
 import { EDE_SPORT_LANDMARKS } from './ede-sport-landmark-survey.js';
+import { EDE_AMSTERDAMSEWEG_LANDMARKS } from './ede-amsterdamseweg-survey.js';
+import { EDE_NIJVERHEIDPLEIN_LANDMARKS } from './ede-nijverheidplein-survey.js';
+import { EDE_STATIONSWEG_LANDMARKS } from './ede-stationsweg-survey.js';
+import { EDE_RESTAURANT_ROW_LANDMARKS } from './ede-restaurant-row-survey.js';
+import { EDE_RESTAURANT_ESTATE_LANDMARKS } from './ede-restaurant-estate-survey.js';
+import { EDE_POMPHUIS } from './ede-pomphuis-survey.js';
+import { HARTOGSHOF_FOOTPRINTS } from './ede-hartogshof-survey.js';
+import { EDE_BARRACKS_HERITAGE_LANDMARKS } from './ede-barracks-heritage-survey.js';
+import { EDE_VILLA_HERITAGE_LANDMARKS } from './ede-villa-heritage-survey.js';
+import { EDE_VELDHUIZEN_LANDMARKS } from './ede-veldhuizen-survey.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -52,6 +62,8 @@ export const EDE_MODELED_LANDMARKS = [
     osmId: 'w271376070', bagIds: ['0228100000029361'], x: -1470.2, z: 3130.6, height: 15.3, worldSpace: true },
   { id: 'pathe-ede', name: 'Pathé Ede', district: 'Rietkampen', road: 'Laan der Verenigde Naties',
     osmId: 'w56105004', bagIds: ['0228100000046614'], x: -1590, z: 3369, height: 16.8, worldSpace: true },
+  { id: 'crop-office', name: 'CROP Accountants & Adviseurs', district: 'Maandereng', road: 'Rubensstraat',
+    osmId: 'w271467464', bagIds: ['0228100000000117'], x: -1375.8, z: 3266.4, height: 26.1, worldSpace: true },
   { id: 'lukkien', name: 'Lukkien', district: 'De Vallei', road: 'Copernicuslaan',
     osmId: 'w271178639', annexOsmIds: ['w271178396'], bagIds: ['0228100000026151', '0228100000026583'],
     x: -3217.36, z: 2637.95, height: 21, worldSpace: true },
@@ -139,9 +151,37 @@ export const EDE_MODELED_LANDMARKS = [
     bagIds: ['0228100000049983', '0228100000052209', '0228100000048949', '0228100000034592'],
     x: -1350.7, z: 636.9, height: 9.23, worldSpace: true, approach: { x: -1321.9, z: 631.9 } },
 
+  { id: 'ulu-camii', name: 'Ulu Camii', district: 'Ede-Zuid', road: 'Verlengde Blokkenweg',
+    osmId: 'w403848575', bagIds: ['0228100000078834'], x: -1074, z: 1788, height: 25, worldSpace: true },
+  { id: 'al-mouahidin', name: 'Moskee Al Mouahidin', district: 'Veldhuizen', road: 'Peppelensteeg',
+    osmId: 'w272136114', bagIds: ['0228100000066603'], x: -1862, z: 1054, height: 19, worldSpace: true },
+  { id: 'sic-ede', name: 'Islamitisch Centrum Ede', district: 'Veldhuizen', road: 'Hogerhorst',
+    osmId: 'w1337099704', bagIds: ['0228100000087276'], x: -2051, z: 110, height: 9.7, worldSpace: true },
+  { id: 'ede-mgt-moskee', name: 'Ede MGT Moskee', district: 'Indische Buurt', road: 'Molenstraat',
+    osmId: 'w271551221', bagIds: ['0228100000065566'], x: -1057, z: 13, height: 3.1, worldSpace: true },
+  { id: 'kop-van-de-parkweg', name: 'Kop van de Parkweg', district: 'Stationsgebied', road: 'Parkweg',
+    osmId: 'w1056707753', bagIds: ['0228100000084730'], x: -83.2, z: 2047.5, height: 18.5, worldSpace: true },
+  { id: 'hartogshof', name: '’t Hartogshof', district: 'ENKA', road: 'Akulaan',
+    osmId: 'w1332609140', bagIds: ['0228100000088255'], x: 263.9, z: 2278.1, height: 20,
+    worldSpace: true, surveyFootprints: HARTOGSHOF_FOOTPRINTS },
+  { id: 'akulaan-h2-h4', name: 'Akulaan H2 and H4', district: 'ENKA', road: 'Akulaan',
+    osmId: 'w972654587', annexOsmIds: ['w972654586'], bagIds: ['0228100000086250', '0228100000086249'],
+    x: 362, z: 2216, height: 22.1, worldSpace: true },
+  { id: 'parkveste', name: 'Parkveste', district: 'Stationsgebied', road: 'Parkweg',
+    osmId: 'w684424226', bagIds: ['0228100000082617'], x: -187, z: 2009, height: 20.27, worldSpace: true },
+
   ...EDE_PUBLIC_LANDMARKS,
   ...EDE_SCHOOL_LANDMARKS,
   ...EDE_SPORT_LANDMARKS,
+  ...EDE_AMSTERDAMSEWEG_LANDMARKS,
+  ...EDE_NIJVERHEIDPLEIN_LANDMARKS,
+  ...EDE_STATIONSWEG_LANDMARKS,
+  EDE_POMPHUIS,
+  ...EDE_RESTAURANT_ROW_LANDMARKS,
+  ...EDE_RESTAURANT_ESTATE_LANDMARKS,
+  ...EDE_BARRACKS_HERITAGE_LANDMARKS,
+  ...EDE_VILLA_HERITAGE_LANDMARKS,
+  ...EDE_VELDHUIZEN_LANDMARKS,
 
   ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, churchSurvey]) => {
     const { name, osm, bag, center: [x, z], road, district, approach, height } = churchSurvey;
@@ -166,6 +206,7 @@ for (const { id, ring } of EDE_DATA.buildings) {
 }
 
 export function modeledLandmarkFootprints(site) {
+  if (site.surveyFootprints) return site.surveyFootprints;
   if (site.churchSurvey) {
     const { ground, points } = site.churchSurvey;
     const [outer, ...holes] = ground.map(ring => ring.map(index => {

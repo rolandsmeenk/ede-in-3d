@@ -41,13 +41,13 @@ import { createEdeLevelCrossings } from './ede-level-crossings.js';
 import { BICYCLE, FOOT } from './road-access.js';
 import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js';
 import { loadEdeStreetFeatures } from './ede-street-features.js';
-import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js';
+import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js?v=20261121-gantry-trusses';
 import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
-import { loadEdeMotorwayFallbacks } from './ede-facades.js';
-import { buildEdeDetail, loadEdeDetail } from './ede-detail.js?v=20261120-sign-faces';
+import { loadEdeCorridorFallbacks } from './ede-facades.js';
+import { buildEdeDetail, loadEdeDetail } from './ede-detail.js?v=20261121-gantry-trusses';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
@@ -147,7 +147,7 @@ async function initApp() {
 
   await showLoadingStage('Loading Ede’s map and timetables…');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, motorwayFacadesResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult] = await Promise.allSettled([
     loadTerrain(), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
@@ -155,7 +155,7 @@ async function initApp() {
       directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null,
     enabled('laneFits') ? loadEdeFittedLanes() : null,
     enabled('sports') ? loadEdeSports() : null,
-    loadEdeMotorwayFallbacks(),
+    loadEdeCorridorFallbacks(),
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -250,9 +250,9 @@ async function initApp() {
     markInit('bag3d');
   }
   await showLoadingStage('Generating building facades...');
-  if (motorwayFacadesResult.status === 'rejected') console.warn('[facades] using basic motorway fallback walls:', motorwayFacadesResult.reason);
+  if (corridorFacadesResult.status === 'rejected') console.warn('[facades] using basic corridor fallback walls:', corridorFacadesResult.reason);
   const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag,
-    motorwayFacades: motorwayFacadesResult.value });
+    corridorFacades: corridorFacadesResult.value });
   const murals = createEdeMurals(scene, { enabled: enabled('murals'), isFallbackVisible: cityBlocks.isFallbackVisible });
   if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks });
   markInit('blocks');
@@ -394,7 +394,7 @@ async function initApp() {
   // (scene-culling.js)
   await showLoadingStage('Preparing scene visibility and shadows...');
   const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'EdeGradeWorld', 'Ede BGT structures', 'Ede sports fields',
-    'ManhattanLandmarks', 'EdeBoundaryContext', 'RoadMarkings', 'EdeStreetFeatures', 'EdeImportedDetail']
+    'EdeLandmarks', 'EdeBoundaryContext', 'RoadMarkings', 'EdeStreetFeatures', 'EdeImportedDetail']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
   setupSceneCulling(scene, cullingRoots, graphics.shadows ? lightingSystem.sunLight.shadow : null);
@@ -1120,6 +1120,8 @@ async function initApp() {
       }
       markInit('warmup');
     }
+    // Compile both landmark meshes behind the loader, then choose the first visible LOD.
+    if (!warmedUp) landmarks.update(cameraSystem.camera.position);
     renderPipeline.render();
     profiler?.stage('Render submission');
     profiler?.endFrame();

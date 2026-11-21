@@ -63,3 +63,14 @@ test('both Raadhuisstraat covered carriageways use the continuous mapped asphalt
     assert.ok(hasEdeMappedSurface({ road, a: { x: ax, z: az }, b: { x: bx, z: bz }, segmentIndex: 0 }));
   }
 });
+
+test('roadside pole clearance respects ground BGT road, cycle and driveway polygons', async t => {
+  const { isEdeTrafficPavement, loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
+  const square = x => [x, 0, x + 5, 0, x + 5, 5, x, 5];
+  const surfaces = ['rijbaan lokale weg', 'fietspad', 'inrit', 'voetpad', 'rijbaan lokale weg']
+    .map((kind, i) => ({ function: kind, layer: i === 4 ? 1 : 0, polygons: [[square(i * 10)]] }));
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ version: 1, covered: {}, surfaces })));
+  await loadEdeRoadSurfaces();
+  assert.deepEqual([2, 12, 22, 32, 42].map(x => isEdeTrafficPavement(x, 2)),
+    [true, true, true, false, false]);
+});

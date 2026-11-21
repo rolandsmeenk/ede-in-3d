@@ -317,6 +317,43 @@ test('BAG replaces only the named landmark features in a shared tile', () => {
   assert.equal(bakeTile(gltf, {}, null, null, null, [new Map([[6, true], [7, true]])]).length, 0);
 });
 
+test('a landmark switches visible models without hiding its static sun-shadow silhouette', async () => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const { CivicBatch, addLandmarkLod } = loadModule(read('ede-civic-landmarks.js'), {
+    imports: {
+      'three/webgpu': three, 'three/tsl': await import('../vendor/three/build/three.tsl.js'),
+      './bag3d.js': {}, './ede-grade.js': {}, './ede-geodata.js': {}, './terrain.js': {},
+      './ede-wind-props.js': {}, './aerial-colors.js': {}, './ede-facades.js': {}, './ede-facade-material.js': {},
+    },
+  });
+  const { setupSceneCulling, SHADOW_PROXY_LAYER } = loadModule(read('scene-culling.js'), {
+    imports: { 'three/webgpu': three },
+  });
+  const scene = new three.Scene(), landmark = new three.Group();
+  const batch = new CivicBatch();
+  batch.solid(new three.BoxGeometry(10, 7, 13).translate(5, 3.5, 7), 0x786057);
+  const closeUp = new three.Mesh(new three.BoxGeometry(10, 7, 13, 3, 3, 3), new three.MeshBasicMaterial());
+  closeUp.castShadow = true;
+  landmark.add(closeUp);
+  scene.add(landmark);
+  addLandmarkLod(landmark, batch, 180);
+  const camera = new three.PerspectiveCamera(), shadowCamera = new three.OrthographicCamera();
+  setupSceneCulling(scene, [landmark], { getViewportCount: () => 1, getCamera: () => shadowCamera });
+  const { silhouette, detailedModel } = landmark.userData.landmarkLod;
+  const proxy = scene.children.find(object => object.userData.shadowProxy);
+  assert.ok(proxy);
+  assert.equal(proxy.geometry.attributes.position.count, 36);
+  assert.equal(closeUp.castShadow, false);
+  assert.equal(silhouette.castShadow, false);
+  assert.equal(silhouette.geometry.attributes.position.count, proxy.geometry.attributes.position.count);
+  silhouette.visible = false;
+  assert.equal(detailedModel.visible, true);
+  assert.equal(proxy.visible && proxy.castShadow, true);
+  assert.equal(proxy.layers.isEnabled(SHADOW_PROXY_LAYER), true);
+  assert.equal(proxy.layers.test(camera.layers), false);
+  assert.equal(proxy.layers.test(shadowCamera.layers), true);
+});
+
 test('surveyed landmarks exclude only their surveyed buildings across both building sources', async () => {
   const { EDE_DATA } = await import('../js/ede-geodata.js');
   const landmarks = await import('../js/ede-landmark-sites.js');
@@ -327,6 +364,12 @@ test('surveyed landmarks exclude only their surveyed buildings across both build
   const { PUBLIC_LANDMARK_SURVEYS } = await import('../js/ede-public-survey.js');
   const { SCHOOL_SURVEYS } = await import('../js/ede-school-survey.js');
   const { SPORT_LANDMARK_SURVEYS } = await import('../js/ede-sport-landmark-survey.js');
+  const { AMSTERDAMSEWEG_SURVEYS } = await import('../js/ede-amsterdamseweg-survey.js');
+  const { NIJVERHEIDPLEIN_SURVEYS } = await import('../js/ede-nijverheidplein-survey.js');
+  const { EDE_STATIONSWEG_LANDMARKS, STATIONSWEG_SURVEYS } = await import('../js/ede-stationsweg-survey.js');
+  const { EDE_RESTAURANT_ROW_LANDMARKS, RESTAURANT_ROW_SURVEYS } = await import('../js/ede-restaurant-row-survey.js');
+  const { RESTAURANT_ESTATE_SURVEYS } = await import('../js/ede-restaurant-estate-survey.js');
+  const { POMPHUIS_SHELL } = await import('../js/ede-pomphuis-survey.js');
   const { OTHER_CHURCH_SHELLS } = await import('../js/ede-other-church-shells.js');
   const { CHURCH_STYLES } = await import('../js/ede-church-styles.js');
   assert.deepEqual(Object.keys(CHURCH_STYLES).sort(), Object.keys(OTHER_CHURCH_SHELLS).sort());
@@ -343,13 +386,20 @@ test('surveyed landmarks exclude only their surveyed buildings across both build
     ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, shell]) => [id, [shell]]),
     ...Object.entries(PUBLIC_LANDMARK_SURVEYS), ...Object.entries(SCHOOL_SURVEYS),
     ...Object.entries(SPORT_LANDMARK_SURVEYS),
+    ...Object.entries(AMSTERDAMSEWEG_SURVEYS), ...Object.entries(NIJVERHEIDPLEIN_SURVEYS),
+    ...EDE_STATIONSWEG_LANDMARKS.map(site => [site.id, site.bagIds.map(id => STATIONSWEG_SURVEYS[id])]),
+    ...EDE_RESTAURANT_ROW_LANDMARKS.map(site => [site.id, site.bagIds.map(id => RESTAURANT_ROW_SURVEYS[id])]),
+    ...Object.entries(RESTAURANT_ESTATE_SURVEYS), ['het-pomphuis', [POMPHUIS_SHELL]],
   ];
+  const museumplein = landmarks.landmarkBagExclusions({ min: { x: -240, z: 331 }, max: { x: -212, z: 357 } });
+  assert.ok(!museumplein.has('0228100000058648') && !museumplein.has('0228100000068490'),
+    'Villa Brutus conservatory keeps both existing restaurant and neighbour shells');
   for (const [key, models] of newSites) {
     const site = sites.get(key);
     assert.equal(site.bagIds.length, models.length);
     for (const id of [site.osmId, ...(site.annexOsmIds ?? [])]) assert.ok(osm.has(id), id);
     for (const [i, model] of models.entries()) {
-      const id = model.id ?? model.bag ?? site.bagIds[i];
+      const id = model.id ?? model.bag ?? model.bagId ?? site.bagIds[i];
       assert.ok(site.bagIds.includes(id));
       const vertices = model.points ?? model.vertices;
       const xs = vertices.map(p => p[0]), zs = vertices.map(p => p[2]);

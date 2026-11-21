@@ -491,10 +491,13 @@ function signMaterials(map) {
 }
 
 function matrixGantryMount(sign, [nx, nz], gantries) {
+  const roadLevel = layerOf(sign);
   let nearest = null, reach = 2.35;
   for (const gantry of gantries) {
-    const { x, z, ux, uz, length, level } = gantry;
-    if (layerOf(sign) !== level || Math.abs(nx * ux + nz * uz) > 0.35) continue;
+    const { x, z, ux, uz, length, level, route } = gantry;
+    // The portal legs can stand at grade alongside a sunken carriageway of the same motorway.
+    const sunkenCarriageway = roadLevel === -1 && level === 0 && route && sign.roadName === `Rijksweg ${route}`;
+    if ((roadLevel !== level && !sunkenCarriageway) || Math.abs(nx * ux + nz * uz) > 0.35) continue;
     const along = (sign.x - x) * ux + (sign.z - z) * uz;
     if (along < 0 || along > length) continue;
     const tx = x + ux * along, tz = z + uz * along;
@@ -514,7 +517,9 @@ function matrixGantryMount(sign, [nx, nz], gantries) {
       y = bottom - 0.39;
     }
   }
-  return { ...nearest, y };
+  // The two lower chords of a truss carry the boards on the side facing each approach.
+  const offset = (gantry.halfDepth ?? 0) * Math.sign(nx * gantry.uz - nz * gantry.ux);
+  return { gantry, x: nearest.x + gantry.uz * offset, y, z: nearest.z - gantry.ux * offset };
 }
 
 function collectSigns(signs, atlas, quad, batch, gantries) {
@@ -576,26 +581,29 @@ function collectSigns(signs, atlas, quad, batch, gantries) {
   let count = 0, mounted = 0, withheld = 0;
   for (const boards of poles.values()) {
     const { sign: post } = boards[0];
-    const ground = surfaceHeight(post, post.x, post.z, 3.5);
     const overhead = post.placement === 'ABOVE';
     if (overhead && post.rvvCode === 'A3' && boards.length === 1 && !boards[0].plates.length) {
       const forward = signBearing(post);
       const shared = matrixGantryMount(post, forward, gantries);
       if (shared) {
-        if (shared.y - 0.33 < ground + 4.50) {
+        const { x, y, z, gantry } = shared;
+        const ground = surfaceHeight(post, x, z, 3.5);
+        if (y - 0.33 < ground + 4.50) {
           withheld++;
           continue;
         }
         const { official, label } = boards[0];
-        if (official) board(post, forward, shared.y, official, atlas, officialMaterials, 0.88, 0.66, 0.055);
-        else board(post, forward, shared.y, labelsAtlas.frames.get(label), labelsAtlas, labelMaterials, 1.35, 0.66, 0.055);
-        tubeBetween(batch(steel, post), [post.x, shared.y + 0.24, post.z],
-          [shared.x, shared.gantry.beam, shared.z], 2);
+        // Keep the surveyed lane and hang the board directly under the selected chord.
+        const onBeam = { ...post, x, z };
+        if (official) board(onBeam, forward, y, official, atlas, officialMaterials, 0.88, 0.66, 0.055);
+        else board(onBeam, forward, y, labelsAtlas.frames.get(label), labelsAtlas, labelMaterials, 1.35, 0.66, 0.055);
+        tubeBetween(batch(steel, onBeam), [x, y + 0.24, z], [x, gantry.beam, z], 1.4);
         count++;
         mounted++;
         continue;
       }
     }
+    const ground = surfaceHeight(post, post.x, post.z, 3.5);
     const grade = overhead ? gradeWayAt(wayOf(post), post.x, post.z, 3.5) : null;
     const profile = grade?.span?.profile;
     const at = grade?.span?.at + grade?.along;

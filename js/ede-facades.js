@@ -15,7 +15,7 @@ function indexWalls(walls) {
   return byId;
 }
 
-export const isMotorwayFacade = wall => Boolean(wall.a12 || wall.motorway);
+export const isCorridorFacade = wall => Boolean(wall.a12 || wall.motorway || wall.rail);
 
 let facadeIndex;
 
@@ -27,23 +27,25 @@ async function readFacadePayload(response) {
     ? new Response(body.body.pipeThrough(new DecompressionStream('gzip'))) : body).json();
 }
 
-export async function loadEdeMotorwayFallbacks() {
-  const corridors = await Promise.all(['a12', 'a30'].map(async motorway => {
+export async function loadEdeCorridorFallbacks() {
+  const corridors = await Promise.all(['a12', 'a30', 'rail'].map(async corridor => {
     try {
-      const response = await fetch(new URL(`../assets/ede-${motorway}-fallbacks.json.gz`, import.meta.url));
+      const response = await fetch(new URL(`../assets/ede-${corridor}-fallbacks.json.gz`, import.meta.url));
       const data = await readFacadePayload(response);
       if (data.version !== 1 || !data.buildings || typeof data.buildings !== 'object' || Array.isArray(data.buildings)) {
         throw new Error('Invalid fallback façade data');
       }
       return data.buildings;
     } catch (error) {
-      console.warn(`[facades] using basic ${motorway.toUpperCase()} fallback walls:`, error.message);
+      console.warn(`[facades] using basic ${corridor.toUpperCase()} fallback walls:`, error.message);
       return {};
     }
   }));
-  const [a12, a30] = corridors;
-  for (const [id, edges] of Object.entries(a30)) a12[id] = { ...edges, ...a12[id] };
-  return a12;
+  const walls = {};
+  for (const corridor of corridors) {
+    for (const [id, edges] of Object.entries(corridor)) walls[id] = { ...edges, ...walls[id] };
+  }
+  return walls;
 }
 
 export function loadEdeFacades() {
@@ -62,7 +64,7 @@ async function readEdeFacades() {
   if (data.version !== 2 || !Number.isFinite(data.tileSize) || data.tileSize < 64 ||
       !data.tiles || typeof data.tiles !== 'object' || Array.isArray(data.tiles)) throw new Error('Invalid Ede façade index');
   const recent = new Map();
-  const corridorTiles = [data.a12Tiles, data.a30Tiles].filter(Boolean);
+  const corridorTiles = [data.a12Tiles, data.a30Tiles, data.railTiles].filter(Boolean);
   const tile = (uri) => {
     if (!/^ede-facades\/[a-zA-Z0-9_-]+\.json(?:\.gz)?$/.test(uri)) return null;
     let pending = recent.get(uri);
@@ -109,7 +111,7 @@ async function readEdeFacades() {
           Math.hypot(row.b[0] - wall.b[0], row.b[1] - wall.b[1]) < 0.3);
         if (index < 0) previous.push(wall);
         else if (previous[index].status !== 'observed' && previous[index].wallType !== 'shared'
-            && (wall.status === 'observed' || !isMotorwayFacade(previous[index]))) previous[index] = wall;
+            && (wall.status === 'observed' || !isCorridorFacade(previous[index]))) previous[index] = wall;
       }
       byId.set(id, previous);
     }
@@ -342,7 +344,7 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     const { wall, nx, nz, tx, tz } = frame;
     const first = triangles[0].ids[0];
     const base = buildingHeight.getX(first) - triangles[0].verts[0][1];
-    const useProceduralColor = wall.status !== 'observed' && !isMotorwayFacade(wall) && edeFacadeLayout?.getX(first) > 0;
+    const useProceduralColor = wall.status !== 'observed' && !isCorridorFacade(wall) && edeFacadeLayout?.getX(first) > 0;
     const eaves = edeFacadeBay?.getY(first);
     // Fall back to roofline-aware procedural openings when an inferred atlas would clip a window.
     if (useProceduralColor && eaves > 0 && wall.openings.some(opening =>

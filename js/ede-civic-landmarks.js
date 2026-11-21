@@ -572,6 +572,21 @@ export class CivicBatch {
   }
 }
 
+export function addLandmarkLod(model, batch, distance, details = [...model.children]) {
+  const silhouette = batch.mesh();
+  silhouette.name = 'Distant silhouette';
+  silhouette.userData.shadowStandIn = true;
+  const detailedModel = new THREE.Group();
+  detailedModel.name = 'Detailed model';
+  detailedModel.add(...details);
+  detailedModel.traverse(object => {
+    if (object.isMesh) object.castShadow = false;
+  });
+  model.add(detailedModel, silhouette);
+  model.userData.landmarkLod = { silhouette, detailedModel, distance };
+  return model;
+}
+
 export function along(a, b, t) {
   return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
 }

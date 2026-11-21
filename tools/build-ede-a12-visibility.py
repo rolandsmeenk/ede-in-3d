@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inventory building walls visible from a playable motorway and its links."""
+"""Inventory building walls visible from a playable motorway or the Ede mainline railway."""
 
 import argparse
 from collections import Counter, defaultdict
@@ -30,6 +30,8 @@ CATALOGUE = runpy.run_path(str(ROOT / 'tools/catalogue-ede-facade-walls.py'))
 Terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']
 
 EYE_HEIGHT = 1.2
+RAIL_EYE_HEIGHT = 2.2  # Metres above the rail head of the modeled trains.
+RAIL_DISTANCE = 100
 ROAD_STEP = 12
 NEAR_DISTANCE = 500
 FAR_CELL = 42
@@ -192,6 +194,44 @@ def road_samples(roads, area, terrain, grade, directions):
     return samples, skipped, profiles
 
 
+def rail_samples(area):
+    # Use the game's through-running passenger tracks and their fitted elevations.
+    command = ['node', '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', '--input-type=module', '-e', """
+        import { readFileSync } from 'node:fs';
+        import { setEdeGrade } from './js/ede-grade.js';
+        import { buildEdeTrainTracks } from './js/ede-train-tracks.js';
+        setEdeGrade(JSON.parse(readFileSync('assets/ede-grade.json', 'utf8')));
+        const paths = buildEdeTrainTracks().paths.filter(path => path.route === 'main' && !path.terminal);
+        const tracks = paths.filter(path => ['main-5-east', 'main-3-west', 'main-4-through-east'].includes(path.id));
+        const step = Number(process.argv[1]);
+        const rows = tracks.flatMap(path => {
+            const steps = Math.ceil(path.length / step);
+            return Array.from({length: steps + 1}, (_, i) => ({ ...path.sample(i * path.length / steps), trackId: path.id }));
+        });
+        console.log(JSON.stringify(rows));
+    """, str(ROAD_STEP)]
+    track_points = json.loads(subprocess.check_output(command, cwd=ROOT))
+    xs, zs = area.bounds[::2], area.bounds[1::2]
+    rows, seen = [], set()
+    for point in track_points:
+        x, y, z = (point[k] for k in ('x', 'y', 'z'))
+        if not (xs[0] <= x <= xs[1] and zs[0] <= z <= zs[1]):
+            continue
+        key = round(x, 1), round(z, 1)
+        if key in seen:
+            continue
+        seen.add(key)
+        ux, uz = math.cos(point['heading']), -math.sin(point['heading'])
+        if uz > 0:
+            ux, uz = -ux, -uz
+        for direction, sign in (('northSide', 1), ('southSide', -1)):
+            rows.append(dict(id=len(rows), trackId=point['trackId'], direction=direction, lane=0,
+                             x=round(x, 2), y=round(y + RAIL_EYE_HEIGHT, 3), z=round(z, 2),
+                             heading=[round(ux * sign, 6), round(uz * sign, 6)]))
+    assert rows and all(math.isfinite(row['y']) for row in rows)
+    return rows
+
+
 def osm_buildings(scene, corridor):
     records = []
     for row in scene['buildings']:
@@ -296,7 +336,7 @@ def barriers(corridor, motorway):
         if row['type'] != 'noiseBarrier':
             continue
         footprint = LineString(row['points']).buffer(max(0.08, row.get('width', 0) / 2))
-        if row.get('route') == motorway or (motorway == 'A30' and corridor.intersects(footprint)):
+        if row.get('route') == motorway or (motorway in ('A30', 'rail') and corridor.intersects(footprint)):
             yield footprint, None, 2.8, row['wayId']
 
 
@@ -571,6 +611,7 @@ def check_batch(batch):
 
 
 def build(cache, date_stamp, fetch, workers, max_distance=MAX_DISTANCE, motorway='A12'):
+    rail = motorway == 'rail'
     scene = load_scene(include_shorelines=False)
     bounds = scene['meta']['bounds']
     area = box(*bounds)
@@ -578,15 +619,25 @@ def build(cache, date_stamp, fetch, workers, max_distance=MAX_DISTANCE, motorway
     terrain = Terrain()
     grade = read_json(ROOT / 'assets/ede-grade.json')
     assert terrain.nap == grade['datumNAP']
-    roads, directions = motorway_roads(scene, motorway)
-    corridor = road_corridor(roads, area, max_distance)
-    sample_rows, skipped, profiles = road_samples(roads, area, terrain, grade, directions)
-    counts = Counter(sample['direction'] for sample in sample_rows)
-    assert all(counts[key] for key in (*DIRECTIONS[motorway], 'ramp')), counts
-    missing = roads.keys() - {s['wayId'] for s in sample_rows}
-    assert all(LineString(points(roads[way]['pts'])).intersection(area).length < ROAD_STEP
-               for way in missing), missing
-    print('Road viewpoints', counts, 'covered stations skipped', skipped, flush=True)
+    if rail:
+        sample_rows, skipped, profiles = rail_samples(area), {}, {}
+        tracks = defaultdict(list)
+        for sample in sample_rows[::2]:
+            tracks[sample['trackId']].append((sample['x'], sample['z']))
+        corridor = area.intersection(union_all([LineString(track) for track in tracks.values()]).buffer(
+            max_distance + ROAD_STEP))
+        counts = Counter(sample['direction'] for sample in sample_rows)
+        assert counts['northSide'] == counts['southSide'] > 0
+    else:
+        roads, directions = motorway_roads(scene, motorway)
+        corridor = road_corridor(roads, area, max_distance)
+        sample_rows, skipped, profiles = road_samples(roads, area, terrain, grade, directions)
+        counts = Counter(sample['direction'] for sample in sample_rows)
+        assert all(counts[key] for key in (*DIRECTIONS[motorway], 'ramp')), counts
+        missing = roads.keys() - {s['wayId'] for s in sample_rows}
+        assert all(LineString(points(roads[way]['pts'])).intersection(area).length < ROAD_STEP
+                   for way in missing), missing
+    print('Viewpoints', counts, 'covered stations skipped', skipped, flush=True)
     documents = archives(cache, frame, corridor, fetch, motorway)
     bag = CATALOGUE['build_buildings'](documents, frame, terrain, corridor)
     osm = osm_buildings(scene, corridor)
@@ -598,7 +649,7 @@ def build(cache, date_stamp, fetch, workers, max_distance=MAX_DISTANCE, motorway
     visible = check_walls(solver, walls, workers)
     visible.sort(key=lambda w: (w['closest'], w['bagId'] or w['osmId'], w['wallId']))
     stats = {
-        'roadWays': len({s['wayId'] for s in sample_rows}),
+        ('railPaths' if rail else 'roadWays'): len({s['trackId' if rail else 'wayId'] for s in sample_rows}),
         'samples': counts, 'coveredStationsSkipped': skipped, 'candidateWalls': len(walls),
         'buildingOccluders': len(blockers), 'barrierOccluders': len(screen),
         'visibleWalls': len(visible),
@@ -612,15 +663,19 @@ def build(cache, date_stamp, fetch, workers, max_distance=MAX_DISTANCE, motorway
                   grades='assets/ede-grade.json', terrain='assets/ede-ahn.bin',
                   laneFits='assets/ede-fitted-lanes.json.gz',
                   barriers=['assets/ede-bgt.json', 'assets/ede-1gis-detail.json.gz'])
-    # shortcut: Seasonal foliage and temporary obstructions need dated roadside evidence.
-    method = dict(eyeHeight=EYE_HEIGHT, sampleStep=ROAD_STEP, maximumDistance=max_distance, denseViewDistance=NEAR_DISTANCE,
+    if rail:
+        del source['laneFits']
+        source['alignments'] = 'js/ede-train-tracks.js'
+    # shortcut: Seasonal foliage and temporary obstructions need dated street-level evidence.
+    method = dict(eyeHeight=RAIL_EYE_HEIGHT if rail else EYE_HEIGHT, sampleStep=ROAD_STEP,
+                  maximumDistance=max_distance, denseViewDistance=NEAR_DISTANCE,
                   distantSampleCell=FAR_CELL,
                   forwardHalfAngleDeg=82, minimumFacadeIncidenceDeg=10,
                   minApparentWidthDeg=0.15, minApparentHeightDeg=0.12,
                   occlusion='AHN ground, building footprints to low roof, and mapped solid barriers',
                   exclusions='Seasonal vegetation, traffic, and temporary obstructions')
     return dict(version=1, date=date_stamp, bounds=bounds, source=source, method=method, stats=stats,
-                roadSamples=sample_rows, walls=visible)
+                walls=visible, **{('railSamples' if rail else 'roadSamples'): sample_rows})
 
 
 def main():
@@ -630,10 +685,13 @@ def main():
     parser.add_argument('--date', type=date.fromisoformat, default=date.today())
     parser.add_argument('--fetch', action='store_true', help='Download absent pinned 3DBAG archive files')
     parser.add_argument('--workers', type=int, default=min(8, os.cpu_count() or 1))
-    parser.add_argument('--motorway', choices=DIRECTIONS, default='A12')
-    parser.add_argument('--max-distance', type=int, default=MAX_DISTANCE,
-                        help='Maximum distance in metres from a motorway eye position')
+    corridor = parser.add_mutually_exclusive_group()
+    corridor.add_argument('--motorway', choices=DIRECTIONS, default='A12')
+    corridor.add_argument('--rail', action='store_true', help='Survey the east–west mainline railway')
+    parser.add_argument('--max-distance', type=int, help='Maximum distance in metres from a viewpoint')
     args = parser.parse_args()
+    if args.max_distance is None:
+        args.max_distance = RAIL_DISTANCE if args.rail else MAX_DISTANCE
     if args.max_distance < 1:
         parser.error('--max-distance must be positive')
     if args.workers < 1:
@@ -641,7 +699,7 @@ def main():
     if args.fetch:
         args.cache.mkdir(parents=True, exist_ok=True)
     write_json(args.output, build(args.cache, args.date.isoformat(), args.fetch, args.workers,
-                                  args.max_distance, args.motorway))
+                                  args.max_distance, 'rail' if args.rail else args.motorway))
 
 
 if __name__ == '__main__':

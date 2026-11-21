@@ -3,7 +3,7 @@ import { attribute, cameraPosition, color, float, floor, fract, fwidth, length, 
   normalGeometry, normalWorld, positionGeometry, positionView, positionWorld, smoothstep, step, texture,
   vec2, vec3, vec4, vertexColor } from 'three/tsl';
 import { bumpNormal, filteredPulse, WALL_KINDS } from './tsl-materials.js';
-import { archRise, isMotorwayFacade, openingTop } from './ede-facades.js';
+import { archRise, isCorridorFacade, openingTop } from './ede-facades.js';
 
 const PADDING = 6;
 const MAX_SIDE = 1024;
@@ -81,12 +81,12 @@ function pack(walls, density, measuredMinimum = 12) {
   const tiles = walls.map((wall) => {
     const metres = wallWidth(wall);
     const target = wall.status === 'inferred' ? density * 0.55 : Math.max(density, measuredMinimum);
-    // Seen at driving distance, a broad warehouse needs a small chart, even
-    // when the full wall is wider than a whole town-centre façade tile.
-    const motorway = isMotorwayFacade(wall);
-    const scale = motorway ? Math.min(measuredMinimum * 0.25, target) : target;
-    return { wall, metres, width: clamp(Math.ceil(metres * scale), 2, motorway ? 192 : 512),
-      height: clamp(Math.ceil(wall.height * scale), 2, motorway ? 56 : 512) };
+    // The reviewed rail walls are often visible at walking distance from platforms and paths.
+    const corridor = isCorridorFacade(wall);
+    const railDetail = wall.rail && wall.status === 'observed';
+    const scale = corridor ? Math.min(measuredMinimum * (railDetail ? 0.5 : 0.25), target) : target;
+    return { wall, metres, width: clamp(Math.ceil(metres * scale), 2, railDetail ? 256 : corridor ? 192 : 512),
+      height: clamp(Math.ceil(wall.height * scale), 2, railDetail ? 96 : corridor ? 56 : 512) };
   }).sort((a, b) => b.height - a.height);
   const widest = tiles.reduce((max, tile) => Math.max(max, tile.width + 2 * PADDING), 32);
   let packed;
@@ -157,7 +157,7 @@ function buildPalette(walls) {
       const value = wall[name] ?? wall.openings.find(opening => opening[name])?.[name];
       return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.slice(1) : fallback;
     });
-    const surface = (SURFACE_CODES[wall.wallMaterial ?? wall.masonry] ?? 1) + (isMotorwayFacade(wall) ? 16 : 0);
+    const surface = (SURFACE_CODES[wall.wallMaterial ?? wall.masonry] ?? 1) + (isCorridorFacade(wall) ? 16 : 0);
     const key = `${samples.join('/')}/${surface}`;
     if (!styles.has(key)) {
       styles.set(key, values.length / 16);
@@ -226,7 +226,7 @@ function* bakeFacadeMaskAtlas(walls) {
   }
   const palette = buildPalette(candidates);
   return { ...palette, texture: makeTexture(data, width, height, 'EdeFacadeMaskAtlas', true),
-    rects, physical, motorway: candidates.some(isMotorwayFacade),
+    rects, physical, motorway: candidates.some(isCorridorFacade),
     metal: candidates.some(wall => (SURFACE_CODES[wall.wallMaterial ?? wall.masonry] ?? 0) >= 4),
     byteLength: mipBytes(width, height) + palette.byteLength };
 }
@@ -257,7 +257,7 @@ export function projectFacadeUv(wall, rect, x, y, z, bottomY = wall.minY) {
   const dx = wall.b[0] - wall.a[0], dz = wall.b[1] - wall.a[1];
   const u = ((x - wall.a[0]) * dx + (z - wall.a[1]) * dz) / (dx * dx + dz * dz);
   const v = (y - bottomY) / wall.height;
-  const assigned = isMotorwayFacade(wall) || wall.wallType === 'shared' ||
+  const assigned = isCorridorFacade(wall) || wall.wallType === 'shared' ||
     wall.layoutMeasured !== false && (!wall.openings.length || rect[2] > 0) ? 1 : 0;
   return [rect[0] + clamp(u, 0, 1) * rect[2], rect[1] + clamp(v, 0, 1) * rect[3], assigned];
 }

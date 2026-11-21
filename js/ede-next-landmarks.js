@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { CivicBatch, along, facePanel, offsetEdge, wallExtent, wallColliders, polygonNormal, civicSigns } from './ede-civic-landmarks.js';
+import { CivicBatch, along, facePanel, offsetEdge, wallExtent, wallColliders, polygonNormal, civicSigns, addLandmarkLod } from './ede-civic-landmarks.js';
 import { edePolygonGeometry, edeStrip, drapeEdeSurface } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
 import { pointInPoly } from './city-config.js';
@@ -44,11 +44,13 @@ function finish(batch, details, colliders, signs = []) {
   return group;
 }
 
-function placeShell(batch, colliders, parts, surface) {
+function placeShell(batch, colliders, parts, surface, silhouette) {
   for (const { id, points, faces } of parts) for (const [roof, ...rings] of faces) {
     const polygon = rings.map(ring => ring.map(i => points[i]));
     if (roof) {
-      batch.polygon(polygon, surface.roof(id, polygon[0]));
+      const color = surface.roof(id, polygon[0]);
+      batch.polygon(polygon, color);
+      silhouette?.polygon(polygon, color);
       continue;
     }
     const ring = polygon[0], normal = polygonNormal(ring);
@@ -56,7 +58,9 @@ function placeShell(batch, colliders, parts, surface) {
     const edge = wallExtent(ring, normal);
     edge.low = Math.min(...ring.map(p => p[1]));
     edge.high = Math.max(...ring.map(p => p[1]));
-    batch.polygon(polygon, surface.wall(id, edge));
+    const color = surface.wall(id, edge);
+    batch.polygon(polygon, color);
+    silhouette?.polygon(polygon, color);
     if (Math.abs(normal.y) < 0.16 && edge.width > 0.4 && edge.high - edge.low > 0.75) {
       colliders.push(...wallColliders(edge.a, edge.b, edge.low, edge.high));
       surface.detail?.(edge, normal);
@@ -182,7 +186,8 @@ function pallasSign(signs, batch, edge, normal, centre) {
 }
 
 export function createPallasAthene() {
-  const batch = new CivicBatch(), details = new CivicBatch(), colliders = [], signs = [], screens = [];
+  const batch = new CivicBatch(), details = new CivicBatch(), silhouette = new CivicBatch();
+  const colliders = [], signs = [], screens = [];
   placeShell(batch, colliders, PALLAS_SHELLS, {
     roof(_, ring) {
       pallasSolar(details, ring);
@@ -197,6 +202,7 @@ export function createPallasAthene() {
         const count = Math.max(1, Math.round(width / 1.46));
         for (const [row, floor, ceiling] of [[0, low + 0.16, pallasBand], [1, pallasBand + 0.1, high - 0.18]]) {
           panes(batch, edge, normal, floor, ceiling, 1.46, 0.98);
+          facePanel(silhouette, a, b, normal, 0.02, 0.98, floor, ceiling, 0x819b4a, 0.03);
           for (let i = row % 2; i < count; i += 2) {
             const center = (i + 0.49) / count;
             const [p] = offsetEdge(along(a, b, center), along(a, b, center), normal, 0.38);
@@ -230,13 +236,14 @@ export function createPallasAthene() {
         if (floor < low - 0.2 || floor + 2.6 > high - 0.07 || mainEntrance && floor === pallasBase) continue;
         const curved = width < 3.6 && high < -4.2;
         panes(batch, edge, normal, floor + 0.94, floor + 2.68, 2.26, curved ? 0.97 : 0.70);
+        facePanel(silhouette, a, b, normal, 0.05, 0.95, floor + 0.96, floor + 2.55, 0x67797b);
       }
     },
-  });
+  }, silhouette);
   const group = finish(batch, details, colliders, signs);
   const material = pallasScreenMaterial();
   for (const geometry of screens) group.add(new THREE.Mesh(geometry, material));
-  return group;
+  return addLandmarkLod(group, silhouette, 180);
 }
 
 export function createTesqua() {

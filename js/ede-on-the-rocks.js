@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { atan, attribute, color, float, fract, hash, instanceIndex, mix, mx_noise_float,
   positionGeometry, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { addLandmarkLod, CivicBatch } from './ede-civic-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
 import { transparentEffectMRT } from './tsl-materials.js';
 
@@ -179,7 +180,7 @@ function addStoneBand(group) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.computeVertexNormals();
-  addMesh(group, 'Granite paving band', geometry, stone('#555350', '#777471', 0.82), false);
+  return addMesh(group, 'Granite paving band', geometry, stone('#555350', '#777471', 0.82), false);
 }
 
 function addMist(group) {
@@ -236,7 +237,22 @@ export function createOnTheRocks() {
   addGlass(basin);
   addMist(basin);
   addCork(cork);
-  addStoneBand(model);
+  const band = addStoneBand(model);
   model.userData.colliders = [collider(BASIN, basinGround, 1.62), collider(CORK, corkGround, 0.57)];
-  return model;
+  const silhouette = new CivicBatch();
+  silhouette.solid(band.geometry.clone(), 0x64635e);
+  const basinY = basin.position.y, corkY = cork.position.y;
+  silhouette.solid(new THREE.CylinderGeometry(BASIN.radius, 2.21, 0.54, 20)
+    .translate(BASIN.x, basinY + 0.18, BASIN.z), 0x252d2d);
+  silhouette.solid(new THREE.CylinderGeometry(CORK.radius, 0.54, 0.58, 12)
+    .translate(CORK.x, corkY + 0.20, CORK.z), 0x9b9485);
+  for (let i = 0; i < 9; i++) {
+    const angle = TURN * i / 9;
+    const radius = i % 2 ? 0.95 : 1.51;
+    const height = i % 2 ? 1.02 : 0.63;
+    silhouette.solid(new THREE.CylinderGeometry(0.32, 0.49, height, 5).rotateZ(0.18)
+      .translate(BASIN.x + Math.cos(angle) * radius, basinY + 0.42 + height / 2, BASIN.z + Math.sin(angle) * radius),
+    i % 3 ? 0x779c92 : 0xb8ccc5);
+  }
+  return addLandmarkLod(model, silhouette, 72);
 }

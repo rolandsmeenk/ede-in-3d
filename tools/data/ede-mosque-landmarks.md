@@ -1,0 +1,14 @@
+# Mosques in Ede
+
+The four mosque exteriors are available offline. They appear by name in map search and have framed approaches in the Teleport menu. The game replaces the matching OSM and BAG building records while keeping nearby buildings and paths. Model positions use the Oude Kerk scene frame, relative to 22.54 m NAP. [Coordinate system](ede-gis-unification.md) · [PDOK aerial imagery](https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0) · [AHN ground and surface models](https://www.pdok.nl/ogc-webservices/-/article/actueel-hoogtebestand-nederland-ahn)
+
+| Site | Model and evidence |
+| --- | --- |
+| Ulu Camii, Verlengde Blokkenweg 12 | The existing survey model uses the two rotated wings, an open entrance court, a steel-ribbed dome and a 25 m minaret. BAG `0228100000078834`, OSM `w403848575`. [Rail-side exterior survey](ede-rail-facades.md#custom-rail-side-exteriors) |
+| Moskee Al Mouahidin, Peppelensteeg 1B | The NW wing and rotated hall use the surveyed plan. AHN anchors the roof and tower heights. The glazing, brick inlay, skylight ribs and crescent are fitted from photos and the 2026 orthophoto. BAG `0228100000066603`, OSM `w272136114`. [Mosque](https://almouahidin.nl/moskee) · [Pimvantend’s exterior photograph](https://commons.wikimedia.org/wiki/File:Ede-sportpark-moskee.JPG) · [RCE heritage survey, photograph 19](https://www.cultureelerfgoed.nl/site/binaries/site-content/collections/documents/2020/01/01/post-65-gebedshuizen/post_65_gebedshuizen_brochure.pdf#page=61) |
+| Islamitisch Centrum Ede, Hogerhorst 4 | The current BAG polygon and 2026 aerial establish the rebuilt centre’s plan. Three floors, the projecting central bay and façade details follow Ferhat Bouw’s design rendering. The AHN survey predates completion, so roof and opening heights are estimated. BAG `0228100000087276`, OSM `w1337099704`. [SIC Ede](https://www.sicede.nl/over-ons/geschiedenis/) · [Current BAG record](https://bag.basisregistraties.overheid.nl/bag/id/pand/0228100000087276) · [Builder’s rendering](https://www.ferhatbouw.nl/wp-content/uploads/2024/04/ede1.jpg) |
+| Ede MGT Moskee, Molenstraat 169 | The survey supplies the tucked-away single-storey hall and courtyard-facing walls. The light fascia, black framed glazing and doors follow IGMG’s exterior photo. BAG `0228100000065566`, OSM `w271551221`. [IGMG address and exterior photo](https://igmg.nl/vestigingen/) |
+
+The Al Mouahidin and MGT plans use 3DBAG LoD 2.2 survey coordinates. 3DBAG © tudelft3d and 3DGI, CC BY 4.0. [3DBAG attribution](https://docs.3dbag.nl/en/copyright/) · [OpenStreetMap attribution](https://www.openstreetmap.org/copyright)
+
+The four Teleport entries landed at their intended ground positions in the offline WebGPU game. Each model rendered from the entrance and from above. The Molenstraat replacement tests also preserve the neighboring BAG building.
