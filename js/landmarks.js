@@ -43,6 +43,7 @@ import { NIJVERHEIDPLEIN_LANDMARK_FACTORIES } from './ede-nijverheidplein-landma
 import { STATIONSWEG_LANDMARK_FACTORIES } from './ede-stationsweg-landmarks.js';
 import { EDE_RESTAURANT_ROW_BUILDERS } from './ede-restaurant-row.js';
 import { EDE_RESTAURANT_ESTATE_BUILDERS } from './ede-restaurant-estates.js';
+import { EXPANSION_LANDMARK_FACTORIES } from './ede-expansion-landmarks.js';
 import { createPomphuis } from './ede-pomphuis.js';
 import { createVillaBrutusTerraces } from './ede-villa-brutus.js';
 import { createUluCamii } from './ede-ulu-camii.js';
@@ -78,11 +79,12 @@ export const LANDMARK_EXCLUSIONS = [
   ...[chicoSite, chicaSite].map(({ x, z }) => ({ minX: x - 1.8, maxX: x + 1.8, minZ: z - 1.8, maxZ: z + 1.8 })),
 ];
 
-export function buildLandmarks(scene) {
+export function buildLandmarks(scene, { historicUtilities } = {}) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
   const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [];
   const landmarkLods = [];
+  const replacements = { bag: new Set(), osm: new Set() };
   scene.add(group);
 
   function place(model, { x, z }, heading, footprints = [], baseY, colliderHeights = [], worldSpace = false) {
@@ -176,6 +178,7 @@ export function buildLandmarks(scene) {
     'het-pomphuis': createPomphuis,
     ...EDE_RESTAURANT_ROW_BUILDERS,
     ...EDE_RESTAURANT_ESTATE_BUILDERS,
+    ...EXPANSION_LANDMARK_FACTORIES,
   };
   function registerDetail(detail) {
     const range = detail.userData.nearDetail;
@@ -207,6 +210,19 @@ export function buildLandmarks(scene) {
   group.add(brutus);
   colliders.push(...brutus.userData.colliders);
   brutus.traverse(registerDetail);
+  for (const site of historicUtilities?.EDE_HISTORIC_UTILITIES ?? []) {
+    try {
+      const model = historicUtilities.createHistoricUtility(site);
+      if (!model?.children.length || !model.userData.colliders?.length) throw new Error('missing exterior or collision footprint');
+      model.name = site.name;
+      place(model, site, 0, [], undefined, [], true);
+      model.traverse(registerDetail);
+      if (site.bagId) replacements.bag.add(site.bagId);
+      if (site.osmId) replacements.osm.add(site.osmId);
+    } catch (error) {
+      console.warn(`[electricity landmark] ${site.name}: ${error.message}`);
+    }
+  }
   const flags = createAkoesticumFlags();
   group.add(flags);
   flags.traverse(registerDetail);
@@ -243,5 +259,5 @@ export function buildLandmarks(scene) {
   function updateWind(dt, reading) {
     for (const update of windUpdates) update(dt, reading);
   }
-  return { group, colliders, platforms, helipads, weatherCovers, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
+  return { group, colliders, platforms, helipads, weatherCovers, replacements, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
 }

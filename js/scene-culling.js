@@ -360,3 +360,77 @@ function updateSceneCulling(cameraPosition) {
 }
 
 export { setupSceneCulling, updateSceneCulling, SHADOW_PROXY_LAYER };
+
+// Detailed town meshes often survive frustum culling when viewed across the heath.
+// At those distances the aerial ground and forest canopy provide the landscape.
+export function createExpansionCulling(roots, bounds, getGroundHeight) {
+  if (!bounds) return null;
+  const reachByName = new Map([
+    ['EdeCityGrid', 680],
+    ['EdeCityBlocks', 820],
+    ['EdeGradeWorld', 720],
+    ['EdeLevelCrossings', 400],
+    ['EdeLandmarks', 940],
+    ['Ede BGT structures', 700],
+    ['Ede sports fields', 600],
+    ['RoadMarkings', 580],
+    ['EdeStreetFeatures', 550],
+    ['EdeImportedDetail', 620],
+  ]);
+  const batches = [];
+  let initialized = false;
+  function collectBatches() {
+    if (initialized) return;
+    initialized = true;
+    for (const root of roots) {
+      const reach = reachByName.get(root.name);
+      if (!reach) continue;
+      root.traverse(mesh => {
+        if (!mesh.isMesh || !mesh.layers.isEnabled(0) || mesh.name === 'Ede legacy terrain') return;
+        const tile = mesh.userData.buildingTile;
+        if (tile) {
+          const x = (tile.minX + tile.maxX) / 2, z = (tile.minZ + tile.maxZ) / 2;
+          const radius = Math.hypot(tile.maxX - x, tile.maxZ - z);
+          batches.push({ mesh, x, z, reach: reach + radius, hidden: false });
+          return;
+        }
+        if (mesh.isInstancedMesh && !mesh.boundingSphere) mesh.computeBoundingSphere();
+        if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+        const sphere = mesh.boundingSphere ?? mesh.geometry.boundingSphere;
+        if (!sphere || !Number.isFinite(sphere.radius)) return;
+        const { center, radius } = sphere.clone().applyMatrix4(mesh.matrixWorld);
+        batches.push({ mesh, x: center.x, z: center.z, reach: reach + radius, hidden: false });
+      });
+    }
+  }
+
+  let lastX = Infinity, lastZ = Infinity, lastY = Infinity, inExpansion = false;
+  const [west, north, east, south] = bounds;
+  const stats = { hiddenBatches: 0 };
+  return {
+    stats,
+    update(camera) {
+      const { x, y, z } = camera.position;
+      const outside = x < west || x > east || z < north || z > south;
+      if (!outside && !inExpansion) return;
+      collectBatches();
+      if (outside === inExpansion && Math.hypot(x - lastX, y - lastY, z - lastZ) < 18) return;
+      lastX = x;
+      lastY = y;
+      lastZ = z;
+      inExpansion = outside;
+      const air = outside ? THREE.MathUtils.clamp((y - getGroundHeight(x, z) - 38) * 2, 0, 500) : 0;
+      let hiddenBatches = 0;
+      for (const batch of batches) {
+        const reach = batch.reach + air + (batch.hidden ? 0 : 70);
+        const hidden = outside && (x - batch.x) ** 2 + (z - batch.z) ** 2 > reach ** 2;
+        if (hidden) hiddenBatches++;
+        if (hidden === batch.hidden) continue;
+        batch.hidden = hidden;
+        if (hidden) batch.mesh.layers.disable(0);
+        else batch.mesh.layers.enable(0);
+      }
+      stats.hiddenBatches = hiddenBatches;
+    },
+  };
+}

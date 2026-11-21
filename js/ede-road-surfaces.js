@@ -86,8 +86,9 @@ function pavementIn(section, surfaces) {
   return result;
 }
 
-export async function loadEdeRoadSurfaces() {
-  const response = await fetch(new URL('../assets/ede-road-surfaces.json.gz', import.meta.url));
+async function readSurfaces(name, optional = false) {
+  const response = await fetch(new URL(`../assets/${name}`, import.meta.url));
+  if (optional && response.status === 404) return null;
   if (!response.ok) throw new Error(`Ede road surfaces returned HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   const body = new Response(bytes);
@@ -96,6 +97,18 @@ export async function loadEdeRoadSurfaces() {
   const asset = await json.json();
   if (asset.version !== 1 || !asset.covered || !Array.isArray(asset.surfaces)) {
     throw new Error('Invalid Ede road surfaces');
+  }
+  return asset;
+}
+
+export async function loadEdeRoadSurfaces() {
+  const [asset, corridor] = await Promise.all([
+    readSurfaces('ede-road-surfaces.json.gz'),
+    readSurfaces('ede-corridor-paving.json.gz', true),
+  ]);
+  if (corridor) {
+    asset.surfaces = asset.surfaces.concat(corridor.surfaces);
+    Object.assign(asset.covered, corridor.covered);
   }
   const grade = new Map(), ground = new Map();
   for (const surface of asset.surfaces) {

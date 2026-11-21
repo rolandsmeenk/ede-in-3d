@@ -10,7 +10,7 @@ test('the built AHN asset covers Ede and retains metres relative to Oude Kerk', 
   const raw = readFileSync(path.join(__dirname, '../assets/ede-ahn.bin'));
   const bytes = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
   const terrain = decodeTerrain(bytes);
-  const [minX, minZ, maxX, maxZ] = EDE_DATA.meta.bounds;
+  const [minX, minZ, maxX, maxZ] = EDE_DATA.meta.baseBounds ?? EDE_DATA.meta.bounds;
   assert.ok(terrain.minX <= minX && terrain.minZ <= minZ && terrain.maxX >= maxX && terrain.maxZ >= maxZ);
   assert.equal(sampleTerrain(terrain, 0, 0), 0);
   assert.ok(Math.abs(terrain.napOrigin - 22.54) < 0.01);

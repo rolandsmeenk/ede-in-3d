@@ -1,6 +1,6 @@
 // Generate the packed Ede map from tools/data/osm_ede.json (Overpass, query q_ede.overpassql).
 // Frame: 1 unit = 1 m, x = east, z = south, origin at the Oude Kerk (true north up, no grid rotation).
-// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.json.gz] [wkd-geojson-directory]
+// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.json.gz] [wkd-geojson-directory] [--corridors]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,9 +11,13 @@ import { cycleFacilities, readWkd, roadAccess } from './ede-road-access.mjs';
 import { buildRoadTags, writeRoadTags } from './build-ede-road-tags.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
-const INPUT = process.argv[2] || path.join(DIR, 'data', 'osm_ede.json');
+const args = process.argv.slice(2).filter(argument => argument !== '--corridors');
+const corridors = process.argv.includes('--corridors');
+const INPUT = args[0] || path.join(DIR, 'data', 'osm_ede.json');
 const MAP_ASSET = path.join(DIR, '..', 'assets', 'ede-map-v1.json.gz');
-const OUT = process.argv[3] ? path.resolve(process.argv[3]) : MAP_ASSET;
+const OUT = args[1] ? path.resolve(args[1]) : corridors
+  ? path.join(DIR, '..', 'assets', 'ede-corridors-v1.json.gz') : MAP_ASSET;
+if (corridors && OUT === MAP_ASSET) throw new Error('Corridors must use a separate overlay path');
 if (!OUT.endsWith('.json.gz')) throw new Error('Expected a .json.gz map output path');
 const osm = JSON.parse(fs.readFileSync(INPUT, 'utf8'));
 if (!Array.isArray(osm.elements) || !osm.elements.length || osm.remark) throw new Error('Expected a complete Ede OpenStreetMap response');
@@ -21,7 +25,9 @@ const bgt = JSON.parse(fs.readFileSync(path.join(DIR, 'data', 'ede-bgt-road-evid
 const log = (...a) => console.log('[ede-geodata]', ...a);
 
 // Keep graph geometry and saved scenes on the coefficients of the checked-in map.
-const { geographicBounds, lonLatAffine } = JSON.parse(gunzipSync(fs.readFileSync(MAP_ASSET))).meta;
+const base = JSON.parse(gunzipSync(fs.readFileSync(MAP_ASSET)));
+const { lonLatAffine } = base.meta;
+const geographicBounds = corridors ? [52.012, 5.565, 52.080, 5.805] : base.meta.geographicBounds;
 const r1 = (v) => Math.round(v * 10) / 10;
 const toWorld = (lon, lat) => {
   const { x, z } = projectLonLatInto(lonLatAffine, lon, lat, {});
@@ -29,7 +35,7 @@ const toWorld = (lon, lat) => {
 };
 const cycleStripPath = path.join(DIR, 'data', 'ede-wkd-cycle-strips.json');
 const cycleStripFile = fs.existsSync(cycleStripPath) ? cycleStripPath : null;
-const wkd = readWkd(process.argv[4], toWorld, cycleStripFile);
+const wkd = readWkd(args[2], toWorld, cycleStripFile);
 const flat = (pts) => pts.flatMap(([x, z]) => [r1(x), r1(z)]);
 const geomPts = (g) => (g || []).map((p) => toWorld(p.lon, p.lat));
 
@@ -192,7 +198,8 @@ for (const e of osm.elements) {
   const { modes, limits, laneModes, sidewalk, sidewalkSides } = roadAccess(e.id, t, match, evidence);
   const available = modes[0] | modes[1];
   const boundary = BOUNDARY_APPROACHES.has(e.id), junction = SHORT_JUNCTION_LINKS.has(e.id);
-  const stationForecourt = kind === 'service' && t.name === 'Polar Bearsplein';
+  const stationForecourt = kind === 'service' && (t.name === 'Polar Bearsplein'
+    || corridors && t.name === 'Stationsplein' && t.bus === 'yes');
   const keepShape = boundary || bridge || tunnel || junction || kind === 'busway' || stationForecourt;
   const cycle = cycleFacilities(t, modes, width, evidence, match);
   const laneTagged = ['cycleway', 'cycleway:both', 'cycleway:left', 'cycleway:right']
@@ -238,9 +245,17 @@ function buildGraph(ways, active = false) {
   for (const w of ways) for (const id of new Set(w.nodes)) uses.set(id, (uses.get(id) || 0) + 1);
   const ids = new Map();
   const nodes = [];
+  const osmNodes = [];
   const names = [];
   const nameIds = new Map();
-  const nodeOf = (id, p) => { if (!ids.has(id)) { ids.set(id, nodes.length / 2); nodes.push(r1(p[0]), r1(p[1])); } return ids.get(id); };
+  const nodeOf = (id, p) => {
+    if (!ids.has(id)) {
+      ids.set(id, nodes.length / 2);
+      nodes.push(r1(p[0]), r1(p[1]));
+      if (corridors) osmNodes.push(id);
+    }
+    return ids.get(id);
+  };
   const nameOf = (n) => { if (!nameIds.has(n)) { nameIds.set(n, names.length); names.push(n); } return nameIds.get(n); };
   const links = [];
   for (const w of ways) {
@@ -259,7 +274,7 @@ function buildGraph(ways, active = false) {
       start = i;
     }
   }
-  return { nodes, links, names, ...(active ? { controls: Object.fromEntries([...crossingNodes].filter(([id]) => ids.has(id)).map(([id, v]) => [ids.get(id), v])) } : {}) };
+  return { nodes, links, names, ...(corridors && { osmNodes }), ...(active ? { controls: Object.fromEntries([...crossingNodes].filter(([id]) => ids.has(id)).map(([id, v]) => [ids.get(id), v])) } : {}) };
 }
 const roadGraph = buildGraph(drivable);
 const activeGraph = buildGraph(activeTravel, true);
@@ -272,13 +287,14 @@ for (const e of osm.elements) {
   const t = e.tags || {};
   if (e.type === 'node') continue;
   const isWater = t.natural === 'water' || /^(riverbank|dock)$/.test(t.waterway || '');
-  const isPark = t.natural === 'wood' || /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green|forest)$/.test(t.landuse || '');
+  const isPark = t.natural === 'wood' || corridors && t.natural === 'heath' || /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green|forest)$/.test(t.landuse || '');
   const isSquare = t.place === 'square' || (t.highway === 'pedestrian' && t.area === 'yes');
   if (!isWater && !isPark && !isSquare) continue;
   if (isSquare && ['no', 'private', 'customers', 'permit'].includes(t.foot ?? t.access)) continue;
   for (const p of polygons(e)) {
     const ring = cleanRing(p.ring);
-    if (ring.length < 3 || Math.abs(ringArea(ring)) < 20) continue;
+    const area = Math.abs(ringArea(ring));
+    if (ring.length < 3 || area < 20 || corridors && area > 2_000_000) continue;
     if (isWater) water.push({ id: `water${water.length}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: t.water || t.waterway || 'water' });
     else (isSquare ? squares : parks).push({ id: `${e.type[0]}${e.id}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: isSquare ? 'square' : t.leisure || t.landuse || t.natural });
   }
@@ -326,16 +342,136 @@ const data = {
       { name: 'Gemeente Ede traffic decision 2024-120844', url: 'https://zoek.officielebekendmakingen.nl/gmb-2024-120844.html' },
       { name: 'Kadaster BGT road areas', license: 'CC0', url: 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections' },
       ...(cycleStripFile ? [{ name: 'Rijkswaterstaat WKD Fiets(suggestie)stroken', license: 'CC0', url: 'https://data.overheid.nl/en/dataset/73729-wegkenmerkendatabase-voor-fiets-suggestie-stroken' }] : []),
-      ...(process.argv[4] ? [{ name: 'Rijkswaterstaat WKD Verkeerstypen and Hoogtebeperkingen', license: 'CC0', url: 'https://geo.rijkswaterstaat.nl/services/ogc/gdr/wkd_wegkenmerkendatabase/ows' }] : [])
+      ...(args[2] ? [{ name: 'Rijkswaterstaat WKD Verkeerstypen and Hoogtebeperkingen', license: 'CC0', url: 'https://geo.rijkswaterstaat.nl/services/ogc/gdr/wkd_wegkenmerkendatabase/ows' }] : [])
     ],
     areas: AREAS,
     counts: { buildings: buildings.length, roads: roads.length, water: water.length, parks: parks.length, squares: squares.length, railways: railways.length, trees: trees.length, signals: signals.length }
   },
   buildings, roads, water, parks, squares, railways, trees, signals, landmarks, roadGraph, activeGraph
 };
-const roadTagDir = OUT === MAP_ASSET ? path.join(DIR, '..', 'js') : path.dirname(OUT);
-writeRoadTags(path.join(roadTagDir, 'ede-road-tags.js'), buildRoadTags(osm, roads, bgt).fields);
-fs.writeFileSync(OUT, gzipSync(JSON.stringify(data), { level: 9 }));
+const roadTags = buildRoadTags(osm, roads, bgt).fields;
+function corridorOverlay() {
+  const [minX, minZ, maxX, maxZ] = base.meta.bounds;
+  const outside = (x, z) => x < minX || x > maxX || z < minZ || z > maxZ;
+  const shapeOutside = points => points.some((x, i) => i % 2 === 0 && outside(x, points[i + 1]));
+  const additions = (key, geometry) => {
+    const knownIds = new Set(base[key].map(row => row.id));
+    return data[key].filter(row => !knownIds.has(row.id) && shapeOutside(row[geometry]));
+  };
+  // Keep local detail around the five arrivals and the routes connecting them.
+  const arrivals = [[5.6488339, 52.0620776], [5.5738443, 52.0460819], [5.7351475, 52.03733],
+    [5.7616257, 52.0623555], [5.78636, 52.030766]].map(point => toWorld(...point));
+  const paths = [
+    [[5.649, 52.046], [5.648, 52.055], [5.6488339, 52.0620776]],
+    [[5.674, 52.0274], [5.626, 52.0337], [5.597, 52.04], [5.5738443, 52.0460819]],
+    [[5.697, 52.054], [5.719, 52.043], [5.7351475, 52.03733], [5.755, 52.034], [5.78636, 52.030766]],
+    [[5.7351475, 52.03733], [5.753, 52.049], [5.7616257, 52.0623555], [5.776, 52.054], [5.78636, 52.030766]]
+  ].map(route => route.map(point => toWorld(...point)));
+  const segments = paths.flatMap(path => path.slice(1).map(([x, z], i) => {
+    const [ax, az] = path[i];
+    const dx = x - ax, dz = z - az;
+    return { ax, az, dx, dz, size: dx * dx + dz * dz };
+  }));
+  const detailed = (x, z) => arrivals.some(([ax, az]) => Math.hypot(x - ax, z - az) <= 500)
+    || segments.some(({ ax, az, dx, dz, size }) => {
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / size));
+      return Math.hypot(x - ax - t * dx, z - az - t * dz) <= 150;
+    });
+  const newRoads = additions('roads', 'pts');
+  const [left, top, right, bottom] = data.meta.bounds;
+  function trimRail({ pts, ...rail }) {
+    const clipped = [];
+    for (let i = 2; i < pts.length; i += 2) {
+      const ax = pts[i - 2], az = pts[i - 1], dx = pts[i] - ax, dz = pts[i + 1] - az;
+      let enter = 0, exit = 1;
+      for (const [start, delta, low, high] of [[ax, dx, left - 150, right + 150], [az, dz, top - 150, bottom + 150]]) {
+        if (delta) {
+          const t0 = (low - start) / delta, t1 = (high - start) / delta;
+          enter = Math.max(enter, Math.min(t0, t1));
+          exit = Math.min(exit, Math.max(t0, t1));
+        } else if (start < low || start > high) {
+          exit = -1;
+        }
+      }
+      if (enter > exit) continue;
+      if (!clipped.length) clipped.push(r1(ax + enter * dx), r1(az + enter * dz));
+      clipped.push(r1(ax + exit * dx), r1(az + exit * dz));
+    }
+    return { ...rail, pts: clipped };
+  }
+  const indices = new Map(newRoads.map((road, index) => [road.id, base.roads.length + index]));
+
+  function graphExtension(key) {
+    const original = base[key];
+    const source = data[key];
+    const coordinates = new Map();
+    for (const link of original.links) {
+      for (const index of link.slice(0, 2)) {
+        const location = original.nodes.slice(index * 2, index * 2 + 2).join(',');
+        if (!coordinates.has(location)) coordinates.set(location, new Map());
+        const candidates = coordinates.get(location);
+        if (!candidates.has(index)) candidates.set(index, new Set());
+        candidates.get(index).add(link[7]);
+      }
+    }
+    const nodes = [], names = [], links = [], controls = {};
+    const nodeIndices = new Map();
+    const nameIndices = new Map(original.names.map((name, index) => [name, index]));
+    function node(index) {
+      if (nodeIndices.has(index)) return nodeIndices.get(index);
+      const point = source.nodes.slice(index * 2, index * 2 + 2);
+      const candidates = coordinates.get(point.join(','));
+      const shared = candidates && [...candidates].find(([, roads]) => [...roads].some(road =>
+        base.roads[road].nodeIds.includes(source.osmNodes[index])));
+      const target = shared ? shared[0] : (original.nodes.length + nodes.length) / 2;
+      if (!shared) {
+        nodes.push(...point);
+        if (source.controls?.[index]) controls[target] = source.controls[index];
+      }
+      nodeIndices.set(index, target);
+      return target;
+    }
+    for (const link of source.links) {
+      const road = indices.get(roads[link[7]].id);
+      if (road === undefined) continue;
+      const name = source.names[link[2]];
+      if (!nameIndices.has(name)) {
+        nameIndices.set(name, original.names.length + names.length);
+        names.push(name);
+      }
+      const a = node(link[0]), b = node(link[1]);
+      if (a !== b) links.push([a, b, nameIndices.get(name), ...link.slice(3, 7), road, ...link.slice(8)]);
+    }
+    return { nodes, names, links, ...(source.controls && { controls }) };
+  }
+
+  return {
+    version: 1,
+    base: { bounds: base.meta.bounds, roads: base.roads.length, buildings: base.buildings.length,
+      roadNodes: base.roadGraph.nodes.length, activeNodes: base.activeGraph.nodes.length },
+    bounds: data.meta.bounds,
+    geographicBounds,
+    detail: { arrivals, routes: paths },
+    buildings: additions('buildings', 'ring').filter(({ ring }) =>
+      ring.some((x, i) => i % 2 === 0 && detailed(x, ring[i + 1]))),
+    roads: newRoads.map(road => ({ ...road, ...roadTags[road.id] })),
+    railways: additions('railways', 'pts').map(trimRail).filter(rail => rail.pts.length >= 4),
+    water: water.filter(({ ring }) => ring.every((x, i) => i % 2 || outside(x, ring[i + 1]))).map((row, index) => ({ ...row, id: `corridor-water${index}` })),
+    parks: additions('parks', 'ring'),
+    squares: additions('squares', 'ring'),
+    trees: trees.filter(({ x, z }) => outside(x, z) && detailed(x, z)),
+    signals: signals.filter(({ x, z }) => outside(x, z)),
+    roadGraph: graphExtension('roadGraph'),
+    activeGraph: graphExtension('activeGraph'),
+  };
+}
+
+const output = corridors ? corridorOverlay() : data;
+if (!corridors) {
+  const roadTagDir = OUT === MAP_ASSET ? path.join(DIR, '..', 'js') : path.dirname(OUT);
+  writeRoadTags(path.join(roadTagDir, 'ede-road-tags.js'), roadTags);
+}
+fs.writeFileSync(OUT, gzipSync(JSON.stringify(output), { level: 9 }));
 log(`wrote ${OUT} (${(fs.statSync(OUT).size / 1048576).toFixed(1)} MB)`, JSON.stringify(data.meta.counts));
 log('landmarks:', Object.keys(landmarks).join(', '));
 log('WKD cycle strips matched', roads.filter(road => road.wkdCycleStrip).length, 'OSM lane-tagged ways');

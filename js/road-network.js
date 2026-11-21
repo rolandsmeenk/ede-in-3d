@@ -75,10 +75,11 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       Math.abs(x*sn+z*cs)<=hz+ax*Math.abs(sn)+az*Math.abs(cs);
   }
 
-  function onLand(minX, maxX, minZ, maxZ, boundary = false) {
+  const baseBounds = GEO.ede?.meta.baseBounds;
+  function onLand(minX, maxX, minZ, maxZ, boundary = false, legacy = false) {
     if (!boundary) {
-      const shore = getIslandBoundsAtZ(minZ);
-      const opposite = getIslandBoundsAtZ(maxZ);
+      const shore = legacy && baseBounds ? { westX: baseBounds[0], eastX: baseBounds[2] } : getIslandBoundsAtZ(minZ);
+      const opposite = legacy && baseBounds ? shore : getIslandBoundsAtZ(maxZ);
       if (minX < Math.max(shore.westX, opposite.westX) + SHORE_MARGIN ||
           maxX > Math.min(shore.eastX, opposite.eastX) - SHORE_MARGIN) return false;
     }
@@ -130,7 +131,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     }
     return false;
   }
-  const blockedOnStreet = (x, z, clear, boundary = false) => !onLand(x - clear, x + clear, z - clear, z + clear, boundary) ||
+  const blockedOnStreet = (x, z, clear, boundary = false, legacy = false) => !onLand(x - clear, x + clear, z - clear, z + clear, boundary, legacy) ||
     query(x - 0.3, x + 0.3, z - 0.3, z + 0.3, (r) => r.curb) ||
     nearMedian(x, z, clear) ||
     query(x - clear, x + clear, z - clear, z + clear, (r) => !r.curb && !r.pedestrianOnly && (r.maxX - r.minX < 50 || r.maxZ - r.minZ < 50) && !medianBox(r));
@@ -287,6 +288,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     const RG = GEO.roadGraph;
     const runs = [];
     if (!RG) return runs;
+    const legacyRoads = GEO.ede?.meta.baseRoadCount ?? Infinity;
+    const legacyNodes = GEO.ede?.meta.baseRoadNodeCount ?? Infinity;
     const pos = [];
     for (let i = 0; i < RG.nodes.length; i += 2) pos.push({ x: RG.nodes[i], z: RG.nodes[i + 1] });
     const pieceRows = new Map();
@@ -345,13 +348,15 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         if ((Math.abs(dz) > 0.94 && aveAt(x, z, 1.5)) || (Math.abs(dx) > 0.94 && pieceAt(x, z, 1.5, false))) hit++;
       });
       if (n && hit > n * 0.5) continue;
-      links.push({ a, b, name: RG.names[ni], w, lanes, dir, pts, len, road, modes, ...flags,
+      links.push({ a, b, name: RG.names[ni], w, lanes, dir, pts, len, road, modes, extension: roadIndex >= legacyRoads, ...flags,
         busOnly: ((modes[0] | modes[1]) & MOTOR) === BUS });
     }
     // Junctions a few metres apart (divided roads, offset corners) are one: collapse links under 14 m
     const parent = pos.map((_, i) => i);
     const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-    const portals = new Set(links.filter((l) => l.road?.bridge || l.road?.tunnel).flatMap((l) => [l.a, l.b]));
+    const portalNodes = (rows) => rows.filter(l => l.road?.bridge || l.road?.tunnel).flatMap(l => [l.a, l.b]);
+    const legacyPortals = new Set(portalNodes(links.filter(l => !l.extension)));
+    const portals = new Set(portalNodes(links));
     const restrictedJunctions = new Set();
     for (const l of links) {
       l.osmStart = EDE_TURN_RESTRICTIONS.nodeAt(l.road?.id, pos[l.a].x, pos[l.a].z);
@@ -360,7 +365,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       if (l.osmEnd) restrictedJunctions.add(l.b);
     }
     for (const l of links) {
-      if (portals.has(l.a) || portals.has(l.b)) l.keepShape = true;
+      const relevantPortals = l.extension ? portals : legacyPortals;
+      if (relevantPortals.has(l.a) || relevantPortals.has(l.b)) l.keepShape = true;
+      // New approach links may join a junction, but cannot move an existing fitted junction.
+      if (l.extension && (l.a < legacyNodes || l.b < legacyNodes)) l.keepShape = true;
       if (!l.keepShape && l.len < 14) {
         // Collapsing a restricted junction can bypass its explicit from/via/to path.
         if (restrictedJunctions.has(l.a) || restrictedJunctions.has(l.b)) l.keepShape = true;
@@ -577,10 +585,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   }
   // Centreline streets: any direction, so their lanes are checked for obstacles every 2.5 m (clear of the junctions,
   // where neighbouring corners would get in the way of the test) instead of over one bounding box
-  const laneOpen = (x0, z0, dx, dz, span, o, boundary = false) => {
+  const laneOpen = (x0, z0, dx, dz, span, o, boundary = false, legacy = false) => {
     const clear = Math.min(12, span / 2);
     for (let t = clear; t <= span - clear + 1e-6; t += 2.5) {
-      if (blockedOnStreet(x0 + dx * t - dz * o, z0 + dz * t + dx * o, LANE_CLEAR, boundary)) return false;
+      if (blockedOnStreet(x0 + dx * t - dz * o, z0 + dz * t + dx * o, LANE_CLEAR, boundary, legacy)) return false;
     }
     return true;
   };
@@ -598,7 +606,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     const tagged = laneDefinition?.lanes.map(lane => lane.permissions) ?? road?.laneModes?.[direction];
     const underpass = !!road?.tunnel, bridge = !!road?.bridge;
     const usable = lanes.flatMap((o, i) => (!tagged || tagged[i] & modes) &&
-      (underpass || bridge || laneOpen(x0, z0, dx, dz, span, o, boundary)) ? [i] : []);
+      (underpass || bridge || laneOpen(x0, z0, dx, dz, span, o, boundary, !run.extension)) ? [i] : []);
     const open = usable.map(i => lanes[i]);
     if (!open.length) return;
     let sourceRoad;
@@ -618,7 +626,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
         turnTagsAtEnd: !!run.turnTagsAtEnd[direction] && laneDefinition.lanes.some(lane => lane.turns), headings: run.headings[direction] } : {}),
       osmStart: direction ? run.osmEnd : run.osmStart, osmEnd: direction ? run.osmStart : run.osmEnd,
-      roadKind: road?.kind,
+      roadKind: road?.kind, extension: run.extension,
       motorway: road?.kind === 'motorway' && (road.ref === 'A12' || road.ref === 'A30'),
       motorwayLink: road?.kind === 'motorway_link',
       underpass, tunnelType: road?.tunnelType, bridge, boundary, keepShape, wayId: road?.id, layer: road?.layer || 0, limits: road?.limits });
@@ -716,7 +724,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       }
     }
     for (const [e, other] of partner) {
-      e.lanes = e.cand.map((o) => o - e.cand[0] + 1.8).filter((o) => laneOpen(e.x0, e.z0, e.dx, e.dz, e.span, o));
+      e.lanes = e.cand.map((o) => o - e.cand[0] + 1.8).filter((o) => laneOpen(e.x0, e.z0, e.dx, e.dz, e.span, o, false, !e.extension));
       e.half += other;
       if (e.half >= 7.25) e.axis = 'ave'; // as wide as a major road (see lanesOf)
       e.divided = true;
@@ -736,8 +744,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
       if (!outsOf.has(e.from)) outsOf.set(e.from, []);
       outsOf.get(e.from).push(e);
     }
-    const live = largestComponent(edges, (e) => (outsOf.get(e.to) || []).filter((f) => canTurn(e, f)));
-    for (const e of edges) e.live = live.has(e) || e.boundary;
+    const live = largestComponent(edges, e => (outsOf.get(e.to) || []).filter(f => canTurn(e, f)));
+    const legacy = edges.some(e => e.extension) ? largestComponent(edges.filter(e => !e.extension),
+      e => (outsOf.get(e.to) || []).filter(f => !f.extension && canTurn(e, f))) : live;
+    for (const e of edges) e.live = (e.extension ? live : legacy).has(e) || e.boundary;
   }
   const liveArm = (a) => !!((a.in && a.in.live) || (a.out && a.out.live));
 
@@ -949,7 +959,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     const street = e.general || f.general; // through a centreline junction: tested like its lanes
     for (let k = 1; k < 10; k++) {
       curvePoint(c, c.len * k / 10, p);
-      if (street ? blockedOnStreet(p.x, p.z, 0.8, e.boundary || f.boundary) : blocked(p.x - 1, p.x + 1, p.z - 1, p.z + 1)) return false;
+      if (street ? blockedOnStreet(p.x, p.z, 0.8, e.boundary || f.boundary, !e.extension && !f.extension) : blocked(p.x - 1, p.x + 1, p.z - 1, p.z + 1)) return false;
     }
     return true;
   }
@@ -1179,6 +1189,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
 
   // 7. Keep the largest strongly connected set of edges so no vehicle can ever reach a dead end
   const kept = largestComponent(edges, (e) => e.moves.map((m) => m.to));
+  if (edges.some(e => e.extension)) {
+    const legacy = largestComponent(edges.filter(e => !e.extension), e => e.moves.map(m => m.to).filter(edge => !edge.extension));
+    for (const edge of legacy) kept.add(edge);
+  }
   for (const e of edges) if (e.boundary || e.moves.some(m => m.modes & BUS)) kept.add(e);
   const genShortKept = edges.filter((e) => e.general).length;
   const genLost = edges.filter((e) => e.general && !kept.has(e));
@@ -1232,8 +1246,11 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     const onward = (e, i) => e.moves.some(m => (m.modes & mode) && m.to[lanes].includes(m.out[i]));
     // Collection trucks can circle in separate neighborhoods. Pruning the dead ends below keeps each loop usable.
     if (!allowed) {
-      const live = largestComponent(eligible, (e) => e.moves.filter(m => (m.modes & mode) && e[lanes].some(i => m.to[lanes].includes(m.out[i]))).map(m => m.to));
-      for (const e of eligible) if (!live.has(e)) e[lanes] = [];
+      const onwardEdges = e => e.moves.filter(m => (m.modes & mode) && e[lanes].some(i => m.to[lanes].includes(m.out[i]))).map(m => m.to);
+      const live = largestComponent(eligible, onwardEdges);
+      const legacy = eligible.some(e => e.extension)
+        ? largestComponent(eligible.filter(e => !e.extension), e => onwardEdges(e).filter(edge => !edge.extension)) : live;
+      for (const e of eligible) if (!live.has(e) && !legacy.has(e)) e[lanes] = [];
     }
     let changed;
     do {

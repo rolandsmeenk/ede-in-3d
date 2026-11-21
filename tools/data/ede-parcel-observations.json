@@ -1,0 +1,362 @@
+{
+  "version": 1,
+  "horizontalCrs": "EPSG:28992",
+  "imagery": {
+    "kernhem-east": {
+      "bboxRD": [
+        171210,
+        451270,
+        171443,
+        451394
+      ],
+      "pixelSize": [
+        1398,
+        744
+      ],
+      "layer": "2025_orthoHR"
+    },
+    "kernhem-west": {
+      "bboxRD": [
+        170972,
+        451110,
+        171115,
+        451448
+      ],
+      "pixelSize": [
+        858,
+        2028
+      ],
+      "layer": "2025_orthoHR"
+    },
+    "frankeneng": {
+      "bboxRD": [
+        171227,
+        448988,
+        171415,
+        449208
+      ],
+      "pixelSize": [
+        1128,
+        1320
+      ],
+      "layer": "2025_orthoHR"
+    }
+  },
+  "features": [
+    {
+      "id": "bemmelsewaard-rear-paving-1",
+      "pilot": "bemmelsewaard-east",
+      "crop": "kernhem-east",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              171331.667,
+              451351.0
+            ],
+            [
+              171334.833,
+              451350.667
+            ],
+            [
+              171335.0,
+              451347.833
+            ],
+            [
+              171331.5,
+              451348.0
+            ],
+            [
+              171331.667,
+              451351.0
+            ]
+          ]
+        ]
+      },
+      "notes": "Light rectangular paving between the detached house and shed. BAG footprint and access cut applied.",
+      "surface": "patio"
+    },
+    {
+      "id": "bemmelsewaard-rear-grass-1",
+      "pilot": "bemmelsewaard-east",
+      "crop": "kernhem-east",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              171361.5,
+              451349.667
+            ],
+            [
+              171369.667,
+              451349.0
+            ],
+            [
+              171368.833,
+              451345.333
+            ],
+            [
+              171361.167,
+              451345.833
+            ],
+            [
+              171361.5,
+              451349.667
+            ]
+          ]
+        ]
+      },
+      "notes": "One coherent grass patch in the rear garden. Hold out the adjacent plot from manual traces.",
+      "surface": "lawn"
+    },
+    {
+      "id": "bemmelsewaard-rear-divider-1",
+      "pilot": "bemmelsewaard-east",
+      "crop": "kernhem-east",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            171360.167,
+            451343.667
+          ],
+          [
+            171360.667,
+            451349.667
+          ],
+          [
+            171361.0,
+            451351.167
+          ]
+        ]
+      },
+      "notes": "Visible opaque garden division along the plot edge. Timber and height are profile estimates.",
+      "style": "timber"
+    },
+    {
+      "id": "kelvinstraat-load-yard",
+      "pilot": "kelvinstraat",
+      "crop": "frankeneng",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              171265.0,
+              449104.333
+            ],
+            [
+              171284.5,
+              449104.167
+            ],
+            [
+              171285.5,
+              449098.333
+            ],
+            [
+              171285.167,
+              449090.833
+            ],
+            [
+              171265.5,
+              449091.0
+            ],
+            [
+              171265.0,
+              449104.333
+            ]
+          ]
+        ]
+      },
+      "notes": "Open hardstanding next to the loading yard. Ground colour only. No occupied parking or obstacles added.",
+      "surface": "parking"
+    },
+    {
+      "id": "kelvinstraat-planted-edge",
+      "pilot": "kelvinstraat",
+      "crop": "frankeneng",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              171257.5,
+              449145.833
+            ],
+            [
+              171263.5,
+              449143.5
+            ],
+            [
+              171263.0,
+              449135.0
+            ],
+            [
+              171260.167,
+              449130.0
+            ],
+            [
+              171256.167,
+              449132.333
+            ],
+            [
+              171257.5,
+              449145.833
+            ]
+          ]
+        ]
+      },
+      "notes": "Planted strip inside the plot at the Kelvinstraat bend. Existing tree placements stay in place.",
+      "surface": "plantingBed"
+    },
+    {
+      "id": "kelvinstraat-visitor-paving",
+      "pilot": "kelvinstraat",
+      "crop": "frankeneng",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              171260.833,
+              449066.5
+            ],
+            [
+              171268.167,
+              449066.5
+            ],
+            [
+              171268.5,
+              449059.667
+            ],
+            [
+              171261.0,
+              449059.667
+            ],
+            [
+              171260.833,
+              449066.5
+            ]
+          ]
+        ]
+      },
+      "notes": "Light paved forecourt corner separated from the travelled lane.",
+      "surface": "parking"
+    }
+  ],
+  "holdout": [
+    {
+      "id": "bemmelsewaard-rear-plot-a",
+      "pilot": "bemmelsewaard-east",
+      "surface": "lawn",
+      "crop": "kernhem-east",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              171342.333,
+              451352.0
+            ],
+            [
+              171347.5,
+              451351.333
+            ],
+            [
+              171347.0,
+              451347.833
+            ],
+            [
+              171342.0,
+              451348.167
+            ],
+            [
+              171342.333,
+              451352.0
+            ]
+          ]
+        ]
+      },
+      "notes": "A lawn-sized patch in the untraced rear garden beside a shed. The image comparison measures coverage within the patch."
+    },
+    {
+      "id": "bemmelsewaard-rear-plot-b",
+      "pilot": "bemmelsewaard-east",
+      "surface": "patio",
+      "crop": "kernhem-east",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              171318.833,
+              451350.0
+            ],
+            [
+              171323.5,
+              451349.5
+            ],
+            [
+              171324.0,
+              451348.167
+            ],
+            [
+              171318.5,
+              451348.667
+            ],
+            [
+              171318.833,
+              451350.0
+            ]
+          ]
+        ]
+      },
+      "notes": "A short pale strip beyond a rear fa\u00e7ade on an untraced parcel."
+    },
+    {
+      "id": "bemmelsewaard-front-plot-c",
+      "pilot": "bemmelsewaard-east",
+      "surface": "plantingBed",
+      "crop": "kernhem-east",
+      "layer": "2025_orthoHR",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              171298.833,
+              451336.5
+            ],
+            [
+              171301.833,
+              451336.333
+            ],
+            [
+              171301.667,
+              451334.0
+            ],
+            [
+              171298.333,
+              451334.0
+            ],
+            [
+              171298.833,
+              451336.5
+            ]
+          ]
+        ]
+      },
+      "notes": "A narrow planted section in the front corner of an untraced parcel."
+    }
+  ]
+}

@@ -13,7 +13,7 @@ async function fixture(grade = {}, fetch = globalThis.fetch) {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const imports = { 'three/webgpu': THREE };
   const geometry = loadModule(source('ede-geometry.js').replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
-    imports: { ...imports, './city-config.js': {}, './terrain.js': {}, './ede-grade.js': {} }
+    imports: { ...imports, './city-config.js': {}, './terrain.js': { getTerrain: () => null }, './ede-grade.js': {} }
   });
   const detail = source('ede-detail.js')
     .replace('export async function loadEdeDetail', 'async function loadEdeDetail')
@@ -55,6 +55,70 @@ test('street detail honors gate gaps, surveyed levels, and polygon holes', async
   assert.equal(colliders[1].minYAt(12, 0), 11.6);
   assert.equal(colliders[2].polygon.holes[0].length, 4);
   assert.equal(colliders[2].minYAt(1, 5), 2);
+});
+
+test('parcel styles use tiled close detail and keep inferred boundaries decorative', async () => {
+  const { buildEdeDetail, THREE } = await fixture({ gradeProfileAt: () => null });
+  const fence = { source: 'parcel', type: 'fence', level: 0, collidable: true };
+  const result = buildEdeDetail(new THREE.Scene(), [
+    { ...fence, id: 'metal', status: 'observed', style: 'metalMesh', points: [[0, 0], [5, 0]] },
+    { ...fence, id: 'rear-fence', status: 'inferred', style: 'timber', points: [[0, 12], [5, 12]] },
+    { ...fence, id: 'front-hedge', type: 'hedge', status: 'inferred', style: 'clippedHedge', points: [[0, 24], [5, 24]] },
+    { id: 'patio', type: 'parcelSurface', source: 'parcel', level: 0, status: 'inferred',
+      surface: 'patio', polygon: [[0, 30], [3, 30], [3, 33], [0, 33]] },
+  ]);
+  assert.equal(result.stats.parcel, 4);
+  assert.equal(result.colliders.length, 1);
+  const wire = result.group.getObjectByName('PARCEL detail wireFence');
+  assert.equal(wire.geometry.attributes.uv.count, 4);
+  assert.equal(wire.material.map.generateMipmaps, true);
+  assert.equal(wire.userData.cullDistance, 105);
+  assert.equal(result.group.getObjectByName('PARCEL detail tuft').userData.cullDistance, 75);
+});
+
+test('utility replacements are registered only after valid exterior geometry is built', async () => {
+  const { buildEdeDetail, THREE } = await fixture();
+  const source = 'utility', type = 'utilityHouse', height = 2.45, baseY = 3;
+  const polygon = [[0, 0], [4, 0], [4, 3], [0, 3]];
+  const result = buildEdeDetail(new THREE.Scene(), [
+    { id: 'confirmed', source, type, polygon, height, baseY, roofRise: 0.7, bagId: '0123', osmId: 'w21', door: [0, 0.5] },
+    { id: 'broken', source, type, polygon: [[0, 0]], height, baseY, bagId: '0124', osmId: 'w22' },
+    { id: 'cabinet', type: 'electricalCabinet', source, position: [8, 5], height: 1.2, width: 0.5, depth: 0.3 },
+  ]);
+  assert.deepEqual([...result.group.userData.replacements.bag], ['0123']);
+  assert.deepEqual([...result.group.userData.replacements.osm], ['w21']);
+  assert.equal(result.stats.utility, 2);
+  assert.equal(result.stats.unresolved[0].id, 'broken');
+  assert.equal(result.colliders[0].maxYAt(1, 1), 5.45);
+  const shell = result.group.getObjectByName('UTILITY detail utilityShell');
+  shell.geometry.computeBoundingBox();
+  assert.equal(shell.userData.cullDistance, 0);
+  assert.ok(Math.abs(shell.geometry.boundingBox.max.y - 5.45) < 1e-6);
+});
+
+test('missing or invalid parcel assets preserve the previous BGT barriers', async () => {
+  const base = { id: 'bgt-id', type: 'fence', level: 0, points: [[0, 0], [2, 0]] };
+  let parcel = null;
+  const { loadEdeDetail } = await fixture({}, async url => {
+    if (url.pathname.endsWith('ede-parcel-detail.json.gz')) return parcel
+      ? new Response(JSON.stringify(parcel)) : new Response('', { status: 404 });
+    if (url.pathname.endsWith('ede-bgt-land.bin.gz')) {
+      const bytes = new Uint8Array(25), header = new DataView(bytes.buffer);
+      header.setUint32(0, 0x314c4742, true);
+      header.setUint32(4, 1, true);
+      header.setUint32(8, 1, true);
+      header.setFloat32(20, 2, true);
+      return new Response(bytes);
+    }
+    return new Response(JSON.stringify({ version: 1, features: [base] }));
+  });
+  const options = { parcels: true, motorway: false, directional: false, municipal: false };
+  const read = async () => Array.from((await loadEdeDetail(options)).features, f => f.source);
+  assert.deepEqual(await read(), ['bgt']);
+  parcel = { version: 1, replaces: ['bgt-id'], features: [{ id: 'broken', type: 'fence' }] };
+  assert.deepEqual(await read(), ['bgt']);
+  parcel.features = [{ ...base, id: 'reviewed', status: 'observed' }];
+  assert.deepEqual(await read(), ['parcel']);
 });
 
 test('instanced furniture and half gantry follow the culling and elevation contracts', async () => {

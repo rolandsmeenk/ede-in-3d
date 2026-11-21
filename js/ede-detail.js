@@ -18,6 +18,16 @@ const BARRIERS = {
   waterEdge: { width: 0.35, height: 0.15, color: 0x586046 },
 };
 
+const PARCEL_STYLES = {
+  clippedHedge: { color: 0x4c6539, taper: 0.20 },
+  denseHedge: { color: 0x3c5633, taper: 0.26 },
+  timber: { color: 0x867463, spacing: 1.8, solid: true },
+  lowTimber: { color: 0x8e8270, spacing: 1.8, solid: true },
+  metalMesh: { color: 0x53615a, spacing: 2.4, mesh: true },
+  ivyMesh: { color: 0x42573a, spacing: 2.4, mesh: true },
+};
+const PARCEL_SURFACES = { path: 0xa4a097, patio: 0xaaa197, plantingBed: 0x74634c, lawn: 0x7b874e, parking: 0x777b79 };
+
 const infrastructure = new Set(['balustrade', 'guardrail', 'gutter', 'drain',
   'canopy', 'landing', 'steps', 'bin', 'container']);
 
@@ -66,23 +76,31 @@ async function loadLandCover() {
   }
 }
 
-export async function loadEdeDetail({ bgt = true, motorway = true, directional = motorway, bgtStage = 'all', municipal = true } = {}) {
+export async function loadEdeDetail({
+  bgt = true, motorway = true, directional = motorway, bgtStage = 'all', municipal = true,
+  parcels = false, utilities = false,
+} = {}) {
   const files = { bgt: 'ede-bgt-detail', '1gis': 'ede-1gis-detail', nbd: 'ede-nbd-signs',
-    municipal: 'ede-municipal-detail' };
+    municipal: 'ede-municipal-detail', parcel: 'ede-parcel-detail', utility: 'ede-utility-detail' };
   const requests = [bgt && 'bgt', motorway && '1gis', directional && 'nbd',
-    bgt && bgtStage === 'all' && municipal && 'municipal'].filter(Boolean);
+    bgt && bgtStage === 'all' && municipal && 'municipal',
+    bgt && bgtStage === 'all' && parcels && 'parcel', utilities && 'utility'].filter(Boolean);
   const assetUrl = (source, extension) => new URL(`../assets/${files[source]}.${extension}`, import.meta.url);
-  let nbdTexture, replacedBgt;
+  let nbdTexture;
+  const replacedBgt = new Set();
   const land = bgt && bgtStage === 'all' ? loadLandCover() : null;
   const assets = await Promise.all(requests.map(async source => {
     try {
       const asset = await (await readPacked(assetUrl(source, 'json.gz'))).json();
       if (asset.version !== 1 || !Array.isArray(asset.features)) throw new Error('invalid asset format');
-      if (source === 'municipal') {
+      if (source === 'municipal' || source === 'parcel') {
         if (!Array.isArray(asset.replaces) || asset.replaces.some(id => typeof id !== 'string')) {
           throw new Error('invalid BGT replacement list');
         }
-        replacedBgt = new Set(asset.replaces);
+        if (source === 'parcel' && asset.features.some(feature => !validParcelFeature(feature))) {
+          throw new Error('invalid parcel geometry');
+        }
+        for (const id of asset.replaces) replacedBgt.add(id);
       }
       if (source === 'nbd' && asset.features.length) {
         nbdTexture = await new THREE.TextureLoader().loadAsync(assetUrl(source, 'png?v=20261120-traffic-blue').href);
@@ -97,14 +115,14 @@ export async function loadEdeDetail({ bgt = true, motorway = true, directional =
       return [];
     }
   }));
-  const features = assets.flat().filter(feature => feature.source !== 'bgt' || !replacedBgt?.has(feature.id));
+  const features = assets.flat().filter(feature => feature.source !== 'bgt' || !replacedBgt.has(feature.id));
   return { features: features.filter(f => f.type !== 'marking'), markings: features.filter(f => f.type === 'marking'),
     nbdTexture, landCover: await land };
 }
 
 function groundAt(feature, x, z, surveyY, height = 0) {
   const coarse = terrainHeightAt(x, z);
-  const localInventory = feature.source === 'bgt' || feature.source === 'municipal';
+  const localInventory = ['bgt', 'municipal', 'parcel'].includes(feature.source);
   const kind = feature.level > 0 ? 'bridge' : feature.level < 0 ? 'underpass' : null;
   const explicit = feature.profileId && gradeProfileAt(x, z, undefined, undefined, undefined, feature.profileId, ROAD_REACH);
   if (explicit && explicit.id === feature.profileId && (!kind || explicit.kind === kind)) return explicit.y;
@@ -120,9 +138,35 @@ function groundAt(feature, x, z, surveyY, height = 0) {
 
 const validPoint = point => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
 const validLine = points => Array.isArray(points) && points.length >= 2 && points.every(validPoint);
+const validPolygon = feature => Array.isArray(feature.polygon) && feature.polygon.length >= 3 &&
+  feature.polygon.every(validPoint) && (feature.holes === undefined || Array.isArray(feature.holes) &&
+    feature.holes.every(hole => Array.isArray(hole) && hole.length >= 3 && hole.every(validPoint)));
+function validParcelFeature(feature) {
+  if (!feature || typeof feature.id !== 'string' || !Number.isInteger(feature.level) ||
+      !['observed', 'inferred'].includes(feature.status)) return false;
+  if (feature.type === 'parcelSurface') return feature.level === 0 && Object.hasOwn(PARCEL_SURFACES, feature.surface) && validPolygon(feature);
+  return ['hedge', 'fence'].includes(feature.type) && (validPolygon(feature) || validLine(feature.points));
+}
+
 const dimension = (value, fallback) => Number.isFinite(value) && value > 0 ? value : fallback;
 const lerp = (a, b, t) => a + (b - a) * t;
 const facePattern = [0, 1, 2, 0, 2, 3];
+
+function fenceMeshTexture() {
+  const size = 32, data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const i = (y * size + x) * 4;
+    data.fill(255, i, i + 3);
+    data[i + 3] = x < 4 || y < 4 ? 255 : 0;
+  }
+  const map = new THREE.DataTexture(data, size, size);
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.magFilter = THREE.LinearFilter;
+  map.minFilter = THREE.LinearMipmapLinearFilter;
+  map.generateMipmaps = true;
+  map.needsUpdate = true;
+  return map;
+}
 
 function lineSamples(feature, height, resolve) {
   const sites = feature.points;
@@ -192,13 +236,18 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   group.name = 'EdeImportedDetail';
   const batches = new Map(), stopIds = new Set(), gantryLampMounts = new Map(), colliders = [];
   const gantries = [], portalPanels = new Map(), directionalPanels = [];
-  const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
+  const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, parcel: 0, utility: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
+  const replacements = { bag: new Set(), osm: new Set() };
   group.userData.stats = stats;
+  group.userData.replacements = replacements;
   group.userData.stopIds = [];
-  scene.add(group);
-  if (!features.length) return { group, colliders, stopIds, gantryLampMounts, gantries, stats };
+  if (!features.length) {
+    scene.add(group);
+    return { group, colliders, stopIds, gantryLampMounts, gantries, stats };
+  }
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.83 });
   const surface = new THREE.MeshStandardNodeMaterial({ roughness: 0.88, vertexColors: true, side: THREE.DoubleSide });
+  let wire;
   const glass = new THREE.MeshStandardNodeMaterial({ color: 0x78a9a2, roughness: 0.32, transparent: true, opacity: 0.42, depthWrite: false });
   const atlas = buildMarkerAtlas([...new Set(features.filter(f => f.type === 'hectometre' && typeof f.label === 'string' && f.label.length).map(f => f.label))]);
   const signs = atlas && new THREE.MeshBasicNodeMaterial({ map: atlas.texture });
@@ -234,13 +283,14 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     batch(kind, x, z, source, range).instances.push([x, y, z, sx, sy, sz, angle, paint]);
   }
 
-  function quad(target, points, paint) {
+  function face(target, points, paint) {
     const base = target.positions.length / 3;
     for (const p of points) target.positions.push(p.x, p.y, p.z);
-    for (const index of facePattern) target.indices.push(base + index);
+    const pattern = points.length === 3 ? facePattern.slice(0, 3) : facePattern;
+    for (const index of pattern) target.indices.push(base + index);
     if (paint !== undefined) {
       color.setHex(paint);
-      for (let i = 0; i < 4; i++) target.colors.push(color.r, color.g, color.b);
+      for (let i = 0; i < points.length; i++) target.colors.push(color.r, color.g, color.b);
     }
   }
 
@@ -279,13 +329,13 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     }));
     const front = corners(backing / 2), back = corners(-backing / 2);
     const tile = batch('directionalSign', x, z, feature.source);
-    quad(tile, front);
+    face(tile, front);
     // The textured face closes the panel. A metal front behind it can compete in the depth buffer.
     const shell = batch('solid', x, z, feature.source);
-    quad(shell, [back[3], back[2], back[1], back[0]], STEEL);
+    face(shell, [back[3], back[2], back[1], back[0]], STEEL);
     for (let i = 0; i < front.length; i++) {
       const next = (i + 1) % front.length;
-      quad(shell, [back[i], back[next], front[next], front[i]], STEEL);
+      face(shell, [back[i], back[next], front[next], front[i]], STEEL);
     }
     const [u0, v0, u1, v1] = feature.uv;
     tile.uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
@@ -313,19 +363,19 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
 
   const at = (p, offset) => ({ ...p, y: p.y + offset });
 
-  function stripe(source, a, b, low, high, paint, { caps = false, taper = 0, kind = 'solid' } = {}) {
-    const target = batch(kind, (a[0].x + b[0].x) / 2, (a[0].z + b[0].z) / 2, source);
+  function stripe(source, a, b, low, high, paint, { caps = false, taper = 0, kind = 'solid', range } = {}) {
+    const target = batch(kind, (a[0].x + b[0].x) / 2, (a[0].z + b[0].z) / 2, source, range);
     const [al, ar] = a, [bl, br] = b;
     const crown = (p, other) => ({ x: lerp(p.x, other.x, taper), y: p.y + high, z: lerp(p.z, other.z, taper) });
     const l0 = at(al, low), r0 = at(ar, low), l1 = crown(al, ar), r1 = crown(ar, al);
     const m0 = at(bl, low), n0 = at(br, low), m1 = crown(bl, br), n1 = crown(br, bl);
-    quad(target, [l1, m1, n1, r1], paint);
-    quad(target, [l0, m0, m1, l1], paint);
-    quad(target, [r0, r1, n1, n0], paint);
+    face(target, [l1, m1, n1, r1], paint);
+    face(target, [l0, m0, m1, l1], paint);
+    face(target, [r0, r1, n1, n0], paint);
     if (caps) {
-      quad(target, [l0, l1, r1, r0], paint);
-      quad(target, [m0, n0, n1, m1], paint);
-      quad(target, [l0, r0, n0, m0], paint);
+      face(target, [l0, l1, r1, r0], paint);
+      face(target, [m0, n0, n1, m1], paint);
+      face(target, [l0, r0, n0, m0], paint);
     }
   }
 
@@ -342,12 +392,15 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
 
   function barrier(feature) {
     const spec = BARRIERS[feature.type];
+    const style = feature.source === 'parcel' && Object.hasOwn(PARCEL_STYLES, feature.style) ? PARCEL_STYLES[feature.style] : null;
     const solidRail = feature.solid;
     const rail = feature.type === 'guardrail' && !solidRail;
     const fence = feature.type === 'fence' || feature.type === 'balustrade';
     const width = dimension(feature.width, solidRail ? 0.45 : spec.width), height = dimension(feature.height, spec.height);
-    const paint = solidRail ? 0x9a9a94 : spec.color;
-    const crossSection = feature.type === 'waterEdge' ? { taper: 0.36 } : undefined;
+    const paint = Number.isInteger(feature.color) ? feature.color : style?.color ?? (solidRail ? 0x9a9a94 : spec.color);
+    const crossSection = style?.taper ? { taper: style.taper, caps: true, range: 210 }
+      : feature.type === 'waterEdge' ? { taper: 0.36 } : feature.source === 'parcel' ? { range: 245 } : undefined;
+    const spacing = dimension(feature.spacing, style?.spacing ?? spec.spacing);
     if (feature.polygon) return extrudeFootprint(feature, height, paint);
     if (!validLine(feature.points)) return false;
     const points = lineSamples(feature, height, resolveGround);
@@ -369,19 +422,48 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         if ([...a, ...b].every(p => Number.isFinite(p.y))) stripe(feature.source, a, b, -0.61, 0, 0xa0a6a6, true);
       }
     }
-    let nextPost = 0;
+    let nextPost = 0, alongRun = 0, nextTuft = 0.5;
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1], b = points[i], size = Math.hypot(b.x - a.x, b.z - a.z);
-      stripe(feature.source, edges[i - 1], edges[i], rail ? Math.max(0, height - 0.29) : fence ? height - 0.06 : -0.025, height, paint, crossSection);
-      if (fence) stripe(feature.source, edges[i - 1], edges[i], height * 0.42, height * 0.42 + 0.045, paint);
-      if (feature.collidable) lineCollider(a, b, width, height);
-      if (!spec.spacing || solidRail) continue;
-      for (; nextPost < size; nextPost += spec.spacing) {
+      const low = rail ? Math.max(0, height - 0.29) : fence && !style?.solid ? height - 0.06 : -0.025;
+      stripe(feature.source, edges[i - 1], edges[i], low, height, paint, crossSection);
+      if (fence && !style?.solid) {
+        stripe(feature.source, edges[i - 1], edges[i], height * 0.42, height * 0.42 + 0.045, paint, crossSection);
+      }
+      if (feature.collidable && feature.status !== 'inferred') lineCollider(a, b, width, height);
+      if (style?.mesh) {
+        const target = batch('wireFence', (a.x + b.x) / 2, (a.z + b.z) / 2, feature.source, 105);
+        face(target, [at(a, 0.10), at(b, 0.10), at(b, height - 0.02), at(a, height - 0.02)], paint);
+        target.uv.push(alongRun / 0.095, 0, (alongRun + size) / 0.095, 0,
+          (alongRun + size) / 0.095, height / 0.17, alongRun / 0.095, height / 0.17);
+      }
+      if (style?.taper) {
+        for (; nextTuft < size; nextTuft += 0.95) {
+          const t = nextTuft / size;
+          instance(feature.source, 'tuft', lerp(a.x, b.x, t), lerp(a.y, b.y, t) + height - 0.065, lerp(a.z, b.z, t),
+            width * 0.92, 0.19, 1.05, Math.atan2(b.x - a.x, b.z - a.z), paint, 75);
+        }
+        nextTuft -= size;
+      }
+      alongRun += size;
+      if (!spacing || solidRail) continue;
+      for (; nextPost < size; nextPost += spacing) {
         const t = nextPost / size, thickness = rail ? 0.12 : 0.075;
         instance(feature.source, 'box', lerp(a.x, b.x, t), lerp(a.y, b.y, t) + height / 2, lerp(a.z, b.z, t),
-          thickness, height, thickness, Math.atan2(b.x - a.x, b.z - a.z), paint);
+          thickness, height, thickness, Math.atan2(b.x - a.x, b.z - a.z), paint,
+          feature.source === 'parcel' ? (style?.solid ? 75 : 175) : undefined);
       }
       nextPost -= size;
+    }
+    if (style?.solid) for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      const size = Math.hypot(b.x - a.x, b.z - a.z);
+      const angle = Math.atan2(b.x - a.x, b.z - a.z);
+      for (let along = 0.16; along < size - 0.10; along += 0.25) {
+        const t = along / size;
+        instance(feature.source, 'box', lerp(a.x, b.x, t), lerp(a.y, b.y, t) + height * 0.48, lerp(a.z, b.z, t),
+          0.013, height * 0.95, width + 0.009, angle, 0x65594e, 75);
+      }
     }
     return true;
   }
@@ -416,13 +498,68 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     cap.dispose();
     for (const ring of grounded) for (let i = 0; i < ring.length; i++) {
       const a = ring[i], b = ring[(i + 1) % ring.length];
-      quad(target, [at(a, baseHeight), at(b, baseHeight), at(b, height), at(a, height)], paint);
+      face(target, [at(a, baseHeight), at(b, baseHeight), at(b, height), at(a, height)], paint);
     }
     const levels = outer.map(p => p.y);
-    if (feature.collidable) {
+    if (feature.collidable && feature.status !== 'inferred') {
       colliders.push({ ...edeBounds(outer), minY: Math.min(...levels), maxY: Math.max(...levels) + height,
         polygon: { outer, holes }, kind: 'surveyed-barrier', minYAt: ground, maxYAt: (x, z) => ground(x, z) + height });
     }
+    return true;
+  }
+
+  function utilityHouse(feature) {
+    if (feature.status === 'inferred' || !validPolygon(feature) || !(feature.height > 1 && feature.height < 9)) return false;
+    const { polygon, height } = feature;
+    const base = Number.isFinite(feature.baseY) ? feature.baseY
+      : Math.min(...polygon.map(([x, z]) => resolveGround(feature, x, z))) - 0.05;
+    const paint = Number.isInteger(feature.color) ? feature.color : feature.style === 'brick' ? 0x916953 : 0x96988b;
+    const roofColor = feature.roofColor ?? 0x535458;
+    const pitch = polygon.length === 4 && !feature.holes?.length &&
+      feature.roofRise > 0 && feature.roofRise < height - 1 ? feature.roofRise : 0;
+    const eave = height - (pitch || 0.11);
+    if (!Number.isFinite(base) || !extrudeFootprint({ ...feature, collidable: true }, eave, paint,
+      { fixedY: base, kind: 'utilityShell' })) {
+      return false;
+    }
+    if (pitch) {
+      const edgeLength = (i) => Math.hypot(polygon[i][0] - polygon[(i + 1) % 4][0],
+        polygon[i][1] - polygon[(i + 1) % 4][1]);
+      const start = edgeLength(0) + edgeLength(2) >= edgeLength(1) + edgeLength(3) ? 0 : 1;
+      const [a, b, c, d] = Array.from({ length: 4 }, (_, i) => {
+        const [x, z] = polygon[(i + start) % 4];
+        return { x, y: base + eave, z };
+      });
+      const left = { x: (a.x + d.x) * 0.5, y: base + height, z: (a.z + d.z) * 0.5 };
+      const right = { x: (b.x + c.x) * 0.5, y: base + height, z: (b.z + c.z) * 0.5 };
+      const tile = batch('utilityShell', polygon[0][0], polygon[0][1], feature.source);
+      face(tile, [a, b, right, left], roofColor);
+      face(tile, [c, d, left, right], roofColor);
+      face(tile, [d, a, left], paint);
+      face(tile, [b, c, right], paint);
+    } else {
+      extrudeFootprint({ ...feature, collidable: false }, height, roofColor,
+        { fixedY: base, baseHeight: eave, kind: 'utilityShell' });
+    }
+    colliders.at(-1).maxY = base + height;
+    colliders.at(-1).maxYAt = () => base + height;
+    const [edge, fraction] = feature.door ?? [];
+    if (Number.isInteger(edge) && polygon[edge] && Number.isFinite(fraction)) {
+      const [ax, az] = polygon[edge], [bx, bz] = polygon[(edge + 1) % polygon.length];
+      const length = Math.hypot(bx - ax, bz - az);
+      if (length > 1) {
+        const [dx, dz] = [(bx - ax) / length, (bz - az) / length];
+        const doorHeight = Math.min(2.1, height - 0.18), doorWidth = Math.min(1.25, length * 0.58);
+        const t = Math.max(doorWidth / length, Math.min(1 - doorWidth / length, fraction));
+        const x = lerp(ax, bx, t), z = lerp(az, bz, t), angle = Math.atan2(-dz, dx);
+        instance(feature.source, 'box', x, base + doorHeight / 2 + 0.055, z,
+          doorWidth, doorHeight, 0.045, angle, 0x626860, 120);
+        instance(feature.source, 'box', x, base + doorHeight * 0.78, z,
+          doorWidth * 0.70, 0.22, 0.06, angle, 0x424842, 90);
+      }
+    }
+    if (feature.bagId) replacements.bag.add(feature.bagId);
+    if (feature.osmId) replacements.osm.add(feature.osmId);
     return true;
   }
 
@@ -542,11 +679,14 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const rings = [feature.polygon, ...(feature.holes ?? [])];
     if (feature.level || rings.some(ring => !Array.isArray(ring) || ring.length < 3 || !ring.every(validPoint))) return false;
     const [outer, ...holes] = rings.map(ring => ring.map(([x, z]) => ({ x, z })));
-    const cap = drapeEdeSurface(edePolygonGeometry(outer, holes, 0.079));
-    const target = batch('playSurface', outer[0].x, outer[0].z, feature.source, 310);
+    const parcel = feature.type === 'parcelSurface';
+    const cap = drapeEdeSurface(edePolygonGeometry(outer, holes, parcel ? 0.055 : 0.079));
+    const target = batch('playSurface', outer[0].x, outer[0].z, feature.source, parcel ? 225 : 310);
     const pos = cap.getAttribute('position'), index = cap.index;
     const base = target.positions.length / 3;
-    color.setHex(Object.hasOwn(PLAY_SURFACES, feature.material) ? PLAY_SURFACES[feature.material] : PLAY_SURFACES.sand);
+    const paint = feature.type === 'parcelSurface' ? PARCEL_SURFACES[feature.surface]
+      : Object.hasOwn(PLAY_SURFACES, feature.material) ? PLAY_SURFACES[feature.material] : PLAY_SURFACES.sand;
+    color.setHex(paint);
     for (let i = 0; i < pos.count; i++) {
       target.positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
       target.colors.push(color.r, color.g, color.b);
@@ -566,7 +706,8 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const angle = Number.isFinite(feature.angle) ? feature.angle : 0;
     const cos = Math.cos(angle), sin = Math.sin(angle);
     const play = feature.type === 'playEquipment';
-    const detailRange = (detail) => play ? (detail ? 92 : 245) : feature.source === 'municipal' ? 112 : undefined;
+    const detailRange = (detail) => play ? (detail ? 92 : 245)
+      : feature.type === 'electricalCabinet' ? (detail ? 65 : 145) : feature.source === 'municipal' ? 112 : undefined;
     const part = (sx, sy, sz, dx, dy, dz, paint, shape = 'box', detail = false) => {
       instance(feature.source, shape, x + cos * dx + sin * dz, y + dy, z - sin * dx + cos * dz,
         sx, sy, sz, angle, paint, detailRange(detail));
@@ -595,6 +736,14 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         minY: y + base, maxY: y + top, obb: { cx, cz, hx, hz, cs: cos, sn: sin }, kind: 'municipal-furniture' });
     };
     switch (feature.type) {
+      case 'electricalCabinet': {
+        const width = dimension(feature.width, 0.75), depth = dimension(feature.depth, 0.32);
+        part(width, height * 0.94, depth, 0, height * 0.47, 0, 0x727c70);
+        part(width * 1.06, height * 0.06, depth * 1.08, 0, height * 0.97, 0, 0x49554d);
+        part(width * 0.72, 0.045, 0.015, 0, height * 0.73, depth * 0.51, 0x46504a, 'box', true);
+        if (feature.collidable) body(width, depth, height);
+        break;
+      }
       case 'bench': {
         const length = dimension(feature.length, 1.75);
         part(0.51, 0.075, length, 0, 0.45, 0, WOOD);
@@ -707,7 +856,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         if (uv) {
           const world = (u, v) => ({ x: x + cos * u + sin * 0.019, z: z - sin * u + cos * 0.019, y: y + height + v });
           const target = batch('sign', x, z, feature.source);
-          quad(target, [world(-width / 2, -signHeight / 2), world(width / 2, -signHeight / 2),
+          face(target, [world(-width / 2, -signHeight / 2), world(width / 2, -signHeight / 2),
             world(width / 2, signHeight / 2), world(-width / 2, signHeight / 2)]);
           const [u0, v0, u1, v1] = uv;
           target.uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
@@ -720,7 +869,8 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   }
 
   function placeFeature(feature) {
-    const success = feature.type === 'playSurface' ? playSurface(feature)
+    const success = feature.type === 'playSurface' || feature.type === 'parcelSurface' ? playSurface(feature)
+      : feature.type === 'utilityHouse' ? utilityHouse(feature)
       : Object.hasOwn(BARRIERS, feature.type) ? barrier(feature)
       : feature.type === 'gantry' ? gantry(feature)
         : feature.type === 'directionalSign' ? directionalPanel(feature)
@@ -763,16 +913,20 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(target.positions, 3));
       geometry.setIndex(target.indices);
-      if (signFace) geometry.setAttribute('uv', new THREE.Float32BufferAttribute(target.uv, 2));
-      else geometry.setAttribute('color', new THREE.Float32BufferAttribute(target.colors, 3));
+      if (signFace || kind === 'wireFence') geometry.setAttribute('uv', new THREE.Float32BufferAttribute(target.uv, 2));
+      if (!signFace) geometry.setAttribute('color', new THREE.Float32BufferAttribute(target.colors, 3));
       geometry.computeVertexNormals();
-      mesh = new THREE.Mesh(geometry, kind === 'directionalSign' ? directionalSigns : kind === 'sign' ? signs : surface);
+      if (kind === 'wireFence') wire ??= new THREE.MeshStandardNodeMaterial({
+        map: fenceMeshTexture(), vertexColors: true, side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.24,
+      });
+      mesh = new THREE.Mesh(geometry, kind === 'directionalSign' ? directionalSigns : kind === 'sign' ? signs
+        : kind === 'wireFence' ? wire : surface);
       stats.triangles += target.indices.length / 3;
     }
     mesh.name = `${source.toUpperCase()} detail ${kind}`;
     mesh.receiveShadow = !signFace && kind !== 'glass';
-    mesh.userData.cullDistance = range ?? (kind === 'inset' ? 65 : kind === 'tuft' ? 130
-      : kind === 'leaf' ? 190 : source === 'bgt' ? 310 : 700);
+    mesh.userData.cullDistance = range ?? (kind === 'utilityShell' ? 0 : kind === 'inset' ? 65 : kind === 'tuft' ? 130
+      : kind === 'leaf' ? 190 : source === 'utility' ? 320 : source === 'parcel' ? 220 : source === 'bgt' ? 310 : 700);
     const pipeline = pipelines.get(kind);
     if (pipeline) mesh.userData.sharesPipelineWith = pipeline;
     else pipelines.set(kind, mesh);
@@ -783,5 +937,6 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   stats.sharedLampSupports = gantryLampMounts.size;
   group.userData.stopIds = [...stopIds];
   for (const gantry of gantries) gantry.panels = portalPanels.get(gantry.id) ?? [];
+  scene.add(group);
   return { group, colliders, stopIds, gantryLampMounts, gantries, stats };
 }

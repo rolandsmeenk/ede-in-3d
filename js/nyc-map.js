@@ -524,12 +524,13 @@ function drawWaypoint(ctx, x, y, r) {
 const overlaps = (boxes, b) => boxes.some((o) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
 
 class NYCMapSystem {
-  constructor({ controllerManager, cameraSystem, trafficSystem, allBlocks = [], onTeleport, onToggle }) {
+  constructor({ controllerManager, cameraSystem, trafficSystem, allBlocks = [], onTeleport, onLandmark, onToggle }) {
     this.controllerManager = controllerManager;
     this.cameraSystem = cameraSystem;
     this.trafficSystem = trafficSystem;
     this.allBlocks = allBlocks;
     this.onTeleport = onTeleport;
+    this.onLandmark = onLandmark;
     this.onToggle = onToggle;
 
     this.miniCanvas = document.getElementById('minimap-canvas');
@@ -684,7 +685,10 @@ class NYCMapSystem {
         if (mx >= 0 && mx <= rect.width && my >= 0 && my <= rect.height) {
           const wPos = this.screenToWorld(mx, my, rect.width, rect.height);
           if (this.elHoverInfo) {
-            this.elHoverInfo.textContent = `${getLocationLabel(wPos.x, wPos.z)} · Click to teleport here`;
+            const landmark = this.scenicLandmarkAt(wPos, rect);
+            this.elHoverInfo.textContent = landmark
+              ? `${landmark.name} · Click to teleport to the approach`
+              : `${getLocationLabel(wPos.x, wPos.z)} · Click to teleport here`;
           }
         }
       });
@@ -698,7 +702,14 @@ class NYCMapSystem {
           const mx = e.clientX - rect.left;
           const my = e.clientY - rect.top;
           if (mx >= 0 && mx <= rect.width && my >= 0 && my <= rect.height) {
-            const wPos = this.clampToManhattan(this.screenToWorld(mx, my, rect.width, rect.height));
+            const point = this.screenToWorld(mx, my, rect.width, rect.height);
+            const landmark = this.scenicLandmarkAt(point, rect);
+            if (landmark) {
+              this.onLandmark(landmark.id);
+              this.toggleFullMap(false);
+              return;
+            }
+            const wPos = this.clampToManhattan(point);
             this.waypoint = {
               x: wPos.x,
               z: wPos.z,
@@ -832,6 +843,25 @@ class NYCMapSystem {
       x: this.viewCenterX + (sx - width * 0.5) / this.viewZoom,
       z: this.viewCenterZ + (sy - height * 0.5) / this.viewZoom
     };
+  }
+
+  scenicLandmarkAt(point, { width, height }) {
+    if (!this.onLandmark) return null;
+    let closest = null;
+    let bestDistance = 6;
+    for (const landmark of NYC_LANDMARKS) {
+      const { x, z } = landmark;
+      if (Math.abs(x - this.viewCenterX) * this.viewZoom > width * 0.48 ||
+          Math.abs(z - this.viewCenterZ) * this.viewZoom > height * 0.48) continue;
+      const distance = Math.hypot(x - point.x, z - point.z) * this.viewZoom;
+      if (distance >= bestDistance) continue;
+      bestDistance = distance;
+      closest = landmark;
+    }
+    if (!closest?.mapScenic) return null;
+    const { x, z } = closest;
+    return x >= ISLAND_BOUNDS.minX && x <= ISLAND_BOUNDS.maxX && z >= ISLAND_BOUNDS.minZ && z <= ISLAND_BOUNDS.maxZ
+      ? closest : null;
   }
 
   // Teleports land on Manhattan: inside the island's extent at that latitude

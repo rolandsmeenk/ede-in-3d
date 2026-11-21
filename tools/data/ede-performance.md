@@ -44,3 +44,23 @@ Browser checks covered walking and driving on Kolkakkerweg, an Oude Kerk wall co
 ## Budget for future terrain patches
 
 The camera-jump p95 already reaches the 30 FPS budget. Keep future high-resolution AHN tiles off the first-playable path and avoid synchronous tile work on the jump frame. Start with at most 1 ms p95 of added steady-frame work and 16 MiB of resident decoded terrain geometry, less than half the measured terrain buffer savings. Repeat the same five views before accepting a patch. Steady p95 must stay within 33.3 ms, and the jump p95, worst-frame interval, cold startup and peak memory should stay within the measured variation.
+
+## Expanded terrain and Ginkelse Heide
+
+The expansion suite ran in Chrome WebGPU on Fast at 1600 × 900 with traffic, shadows and post-processing active. Each view sampled 60 frames or 120 for a ground arrival. The HTTP cache was disabled and terrain and canopy tiles received an artificial 600 ms delay.
+
+| View | Average draws | p95 draws |
+| --- | ---: | ---: |
+| Doesburgermolen approach | 376 | 380 |
+| Veenendaal-De Klomp rail and forecourt | 204 | 279 |
+| N224 to Ginkelse Heide | 152 | 265 |
+| Ginkelse Heide sheepfold walk | 274 | 276 |
+| Juffrouw Tok arrival | 473 | 482 |
+| De Mossel woodland landing | 356 | 459 |
+| Planken Wambuis approach | 382 | 466 |
+
+Frame time was at most 16.8 ms at p95 across these runs. The worst sampled frame was 33.2 ms. Streamed terrain, canopy and building geometry peaked at 30.7 MiB. The collision heightfield is tracked separately. A matched cold comparison with canopy meshes disabled averaged 437 draws at De Mossel and 150 on the N224 flight, compared with 356 and 152 with the meshes enabled.
+
+The delayed-tile run reached the first playable frame in 14.7 s. In the standard comparison on the same device and Fast preset, the expansion took 14.1 s against 12.1 s for the original revision, 16.4% longer. Kolkakkerweg and the camera jump rose from 16.8 to 33.4 ms p95. The station, Kuiperplein and helicopter views stayed within the 10% p95 tolerance.
+
+The browser resolved all seven arrivals to their configured ground positions. The De Mossel helicopter settled at the expected 0.25 m clearance with zero vertical speed. The draw-call target passed. The startup and legacy frame-time targets remain open. [Run the comparison](../../docs/running.md#graphics-and-profiling)

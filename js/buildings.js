@@ -46,7 +46,7 @@ import {
 } from './tsl-materials.js';
 import { GEO } from './nyc-geodata.js';
 import { pavedPlazaRects, parkTreeSites, sidewalkBlocks } from './city-grid.js';
-import { edePoints, edeBounds, edePolygonGeometry, nearestEdeRoad, edeSpatialGroups, edeGeometryGroups } from './ede-geometry.js';
+import { edePoints, edeBounds, edePolygonGeometry, nearestEdeRoad, edeSpatialGroups, EDE_RENDER_CELL } from './ede-geometry.js';
 import { createShopSigns } from './shop-signs.js';
 import { solidWallSpans } from './passages.js';
 import { buildingPassageOpenings } from './ede-grade.js';
@@ -280,7 +280,7 @@ function colorEdeRoof(roof, id, fallback, aerial, tiles) {
 }
 
 // `bag`: 3D BAG meshes already supply the facades and roofs, so only colliders and street-level details are built here.
-function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacades } = {}) {
+function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacades, replacementOsmIds } = {}) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeCityBlocks' : 'ManhattanCityBlocks';
   const colliders = [];
@@ -446,6 +446,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
   const storeys = facades.map(([, opts]) => opts.floorHeight);
 
   const buckets = materials.map(() => []);
+  const edeBuildingTiles = new Map();
   const broadwayBillboards = [];
 
   // Times Square's bowtie: the Broadway plaza strip (city-config.js GEO.plazas) and 7th Avenue's roadway between 47th
@@ -2042,7 +2043,8 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
     }, 0) / 2;
     let built = 0;
     for (const source of EDE_DATA.buildings || []) {
-      if (LANDMARK_SOURCE_EXCLUSIONS.has(source.id) || LANDMARK_SOURCE_EXCLUSIONS.has(source.osmId)) continue;
+      if (LANDMARK_SOURCE_EXCLUSIONS.has(source.id) || LANDMARK_SOURCE_EXCLUSIONS.has(source.osmId) ||
+          replacementOsmIds?.has(source.id) || replacementOsmIds?.has(source.osmId)) continue;
       if (!source.ring || source.ring.length < 6) continue;
       const poly = edePoints(source.ring), holes = (source.holes || []).map(edePoints);
       const bounds = edeBounds(poly);
@@ -2101,6 +2103,17 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
         cornices: [], waterTowers: [], hvacUnits: [], fireEscapes: [], awnings: [], scaffoldSheds: [], yards: [],
         footprints: [{ x0: bounds.minX, x1: bounds.maxX, z0: bounds.minZ, z1: bounds.maxZ, h: height, tone, pts: poly, holes }],
         sourceHeight: source.h, sourceHeightKind: source.heightSource };
+      const ownerKey = `${Math.floor(cx / EDE_RENDER_CELL)}/${Math.floor(cz / EDE_RENDER_CELL)}`;
+      let tile = edeBuildingTiles.get(ownerKey);
+      if (!tile) {
+        tile = { x: cx, z: cz, ...bounds };
+        edeBuildingTiles.set(ownerKey, tile);
+      } else {
+        tile.minX = Math.min(tile.minX, bounds.minX);
+        tile.minZ = Math.min(tile.minZ, bounds.minZ);
+        tile.maxX = Math.max(tile.maxX, bounds.maxX);
+        tile.maxZ = Math.max(tile.maxZ, bounds.maxZ);
+      }
       if (replacements && !shed) replacements.set(source.id, { tiles: 0, toggle: [] });
       for (const [ringIndex, ring] of [poly, ...holes].entries()) {
         const direction = Math.sign(signedArea(ring)) || 1;
@@ -2164,7 +2177,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
               if (bottom >= top) continue;
               const renderTop = Math.min(top, wallTop);
               if (renderExterior && bottom < renderTop) {
-                buckets[wallMat].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz, fallbackId: source.id,
+                buckets[wallMat].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz, fallbackId: source.id, tile,
                   w: (to - from) * length + 0.06, h: renderTop - bottom, d: thickness,
                   ry, tone, facadeColour: wallColour, facadeLevels: source.facadeLevels,
                   faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, renderFace, renderFace] });
@@ -2204,6 +2217,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
       if (roof) {
         const tiles = !shed && pitched && neighbourhood.roofColor ? new THREE.Color(neighbourhood.roofColor).toArray() : null;
         colorEdeRoof(roof, source.id, roofPalette[Math.floor(tone * 3)], aerial, tiles);
+        roof.userData.buildingTile = tile;
         if (replacements) roof.userData.fallbackId = source.id;
         roofs.push(roof);
       }
@@ -2213,7 +2227,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
       quadtree.insert(detail); allBlocks.push(detail); built++;
     }
     let firstMesh;
-    for (const cell of edeGeometryGroups(roofs)) for (let i = 0; i < cell.length; i += 250) {
+    for (const cell of edeSpatialGroups(roofs, roof => roof.userData.buildingTile)) for (let i = 0; i < cell.length; i += 250) {
       const sources = cell.slice(i, i + 250);
       const pieces = sources.map(g => {
         if (!g.index) return g;
@@ -2221,6 +2235,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
       });
       const mesh = new THREE.Mesh(mergeGeometries(pieces, false), roofMaterial);
       mesh.castShadow = mesh.receiveShadow = true; group.add(mesh);
+      mesh.userData.buildingTile = sources[0].userData.buildingTile;
       if (replacements) {
         mesh.userData.mutableFallback = true;
         const count = mesh.geometry.attributes.position.count;
@@ -2367,8 +2382,9 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
   buckets.forEach((items, matIdx) => {
     if (items.length === 0) return;
     let firstMesh;
-    for (const cell of EDE_DATA ? edeSpatialGroups(items) : [items]) {
+    for (const cell of EDE_DATA ? edeSpatialGroups(items, item => item.tile ?? item) : [items]) {
       const inst = createFacadeBoxes(materials[matIdx], cell);
+      if (cell[0].tile) inst.userData.buildingTile = cell[0].tile;
       inst.castShadow = true;
       inst.receiveShadow = true;
       if (replacements) {

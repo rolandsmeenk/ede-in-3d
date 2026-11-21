@@ -5,15 +5,16 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const read = (path) => readFileSync(join(__dirname, '..', path), 'utf8');
-let TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, waterAt, ISLAND_BOUNDS;
+let TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, waterAt, ISLAND_BOUNDS, NYC_LANDMARKS;
 test.before(async () => {
-  ({ TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, waterAt, ISLAND_BOUNDS } = await import('../js/city-config.js'));
+  ({ TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, waterAt, ISLAND_BOUNDS, NYC_LANDMARKS } = await import('../js/city-config.js'));
 });
 
 test('the scenic teleport buttons land in clear space and face their targets', () => {
   const buttons = [...read('index.html').matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(buttons).size, buttons.length, 'teleport destinations are unique');
-  const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([, point]) => point.focus);
+  const mapPinIds = new Set(NYC_LANDMARKS.filter(site => site.mapScenic).map(site => site.id));
+  const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([id, point]) => point.focus && !mapPinIds.has(id));
   assert.deepEqual(scenic.map(([name]) => name).sort(), buttons.sort());
   for (const [name, point] of scenic) {
     const { x, z, focus } = point;
@@ -24,6 +25,23 @@ test('the scenic teleport buttons land in clear space and face their targets', (
     assert.ok(z > ISLAND_BOUNDS.minZ && z < ISLAND_BOUNDS.maxZ);
     assert.ok(Number.isFinite(focus.height) && focus.height > 0);
     assert.equal(point.heading, Math.atan2(focus.x - x, focus.z - z));
+  }
+});
+
+test('expansion map pins have clear scenic approaches that face the surveyed landmark', () => {
+  const landmarks = NYC_LANDMARKS.filter(site => site.mapScenic);
+  assert.equal(landmarks.length, 7);
+  for (const landmark of landmarks) {
+    const { x, z, focus, heading } = TELEPORT_LOCATIONS[landmark.id];
+    const block = blockAt(x, z);
+    assert.ok(!block || block.sidewalk || block.park, landmark.id);
+    assert.ok(!waterAt(x, z), landmark.id);
+    assert.ok(x > ISLAND_BOUNDS.minX + 8 && x < ISLAND_BOUNDS.maxX - 8, landmark.id);
+    assert.ok(z > ISLAND_BOUNDS.minZ + 30 && z < ISLAND_BOUNDS.maxZ, landmark.id);
+    assert.equal(focus.x, landmark.x);
+    assert.equal(focus.z, landmark.z);
+    assert.equal(heading, Math.atan2(focus.x - x, focus.z - z));
+    assert.ok(focus.height > 0, landmark.id);
   }
 });
 

@@ -10,6 +10,7 @@ Most map layers are built offline and bundled with the game. Nearby 3DBAG tiles 
 | --- | --- | --- |
 | Base map and routing | Street and path connections, parks, waterways, tracks and fallback building footprints | [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) |
 | Terrain and surface colours | Ground elevations, local height checks and colour samples for roofs, roads and land cover | [AHN via PDOK](https://www.ahn.nl/dataroom) · [2025 aerial imagery via PDOK](https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566) |
+| Forest canopies | Distant woodland crowns and their measured relief | [Friedenau Society](https://www.friedenau.eu/praktijkvoorbeelden/boomkroonbedekkingskaart-voor-nederland) · [Klimaateffectatlas, CC BY 4.0](https://www.klimaateffectatlas.nl/nl/boomkroonbedekking) |
 | Buildings and façades | LoD 2.2 building shapes, offline façade measurements and neighbourhood profiles | [3DBAG](https://docs.3dbag.nl/en/) · [Façade evidence credits](../assets/ede-facades.SOURCES.md) · [CBS neighbourhood boundaries](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025) |
 | Street art | Wall assignments, real-reference paint decals and two approved painted reconstructions | [Mural sources and wall assignments](../tools/data/ede-murals.md) |
 | Streets and greenery | Surveyed road surfaces, bridges, platforms, shorelines, street furniture, lamps and trees | [PDOK BGT](https://www.pdok.nl/introductie/-/article/basisregistratie-grootschalige-topografie-bgt-) · [Municipal tree inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) |
@@ -69,7 +70,28 @@ Rebuild the aerial palettes after refreshing the map so their records follow the
 Rebuild the bus routes after changing the road graph.
 See the [traffic data notes](../tools/data/ede-traffic-sources.md) for the WKD input and the access review.
 
-The roughly 7.4 × 5.4 km extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the town-wide view. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain. [Coordinate conversion and verification](../tools/data/ede-gis-unification.md)
+The roughly 7.4 × 5.4 km base extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the full 16.4 × 7.6 km landscape. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain. [Coordinate conversion and verification](../tools/data/ede-gis-unification.md)
+
+## Rebuild the outer routes and terrain
+
+The expansion covers 5.565°–5.805° E and 52.012°–52.080° N. It adds detail along selected routes and at the arrivals near Doesburgermolen, Veenendaal-De Klomp, Ginkelse Heide, Boerderij Mossel and Planken Wambuis. The full map pins frame each custom exterior. The Ginkel arrivals include both historic sheepfolds, Juffrouw Tok and the Airborne Monument. [Schaapskudden and their locations](https://edeseschaapskudden.nl/schaapskudden/) · [Juffrouw Tok](https://www.juffrouwtok.nl/restaurants/ede) · [Airborne Monument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1310/ede-airborne-monument)
+
+The core retains its 12 m ground and surveyed local patches. The outer quadtree samples the AHN ground model on a 5 m grid and keeps its coarser parents visible while finer tiles load. The meshes carry PDOK aerial colours and use the existing RD New conversion and 22.54 m NAP datum. Soft building tiles own complete buildings, including footprints that extend across a tile edge. The canopy uses the 2022 crown coverage slice because the 2024 slice returned empty in Ede. Measured AHN crown heights shape the distant meshes, and individual trees provide near detail. [AHN ground and surface models](https://www.ahn.nl/dataroom) · [Canopy sources and terms](../tools/data/ede-tree-inventory.md)
+
+The OSM overlay appends to the existing snapshot so the city’s road and building indices still match its fitted lanes and aerial palette. BGT supplies the mapped paving where surveyed. ProRail supplies the six new fitted track profiles toward De Klomp. The train timetable serves both station platforms, and the updated bus line 3 variants reach the forecourt. [BGT sources](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer) · [Bus rebuild](simulation.md)
+
+```sh
+bash tools/overpass.sh /tmp/ede-corridors.json tools/data/q_ede_corridors.overpassql
+node tools/build-ede-geodata.mjs /tmp/ede-corridors.json --corridors
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' \
+  python -B tools/build-ede-corridor-paving.py /tmp/ede-corridor-bgt --date 2026-11-21 --fetch
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with pillow --with scipy \
+  python -B tools/build-ede-terrain-tiles.py /tmp/ede-outer-raster
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with scipy --with shapely \
+  python -B tools/build-ede-forest-canopy.py /tmp/ede-outer-raster --osm-source /tmp/ede-corridors.json
+```
+
+Publish each tile directory with its manifest, payloads and the matching corridor overlay.
 
 ## Refresh the AHN terrain
 
@@ -220,6 +242,55 @@ uv run --with pyproj==3.8.0 --with 'pillow>=12.1' python tools/build-ede-nbd-sig
 ```
 
 The game loads the baked assets locally in the Oude Kerk scene frame. Props use spatially tiled instances. Long barriers and directional sign faces use batched geometry. For a performance comparison, open the game with `?perf=1` and use `bgtStage=street`, `bgtStage=infrastructure`, or `bgtStage=all`. The existing `detail=off`, `bgtDetail=off`, `motorwayDetail=off`, and `nbdSigns=off` switches remain available. [Town and shoreline verification](../tools/data/ede-bgt-town-verification.md) · [Motorway pilot verification](../tools/data/ede-1gis-verification.md)
+
+### Refresh parcel details and electricity houses
+
+The parcel bake combines BRK parcel edges, BAG footprints, BGT terrain and barriers, and OSM gates and access in RD New. The inventory covers the 39.92 km² Ede town extent used for the BGT street-detail bake. The outer scenic corridors keep their existing scenery. Inferred layouts are confined to Bemmelsewaard in Kernhem B-West and Kelvinstraat in Frankeneng. The two pilots include front paths, planted areas, garden privacy boundaries, and paved yard details. Keep the dated evidence and review decisions with the offline snapshot. The shared terrain and travel surfaces continue to supply ground height and clearance. The 21 November 2026 bake produced 499 rows, including 425 confirmed barrier pieces and 28 exact BGT replacements. It trimmed 161 source ways for clearance and withheld 32 fully conflicting ways and one with an unverified level. Five of six reviewed traces survived clearance. The 2026 aerial service returned blank crops for the pilot windows, so the parcel review used the dated 2025 imagery. [BRK parcel data](https://api.pdok.nl/kadaster/brk-kadastrale-kaart/ogc/v1/collections?f=html) · [BGT collections](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) · [Beeldmateriaal imagery](https://www.beeldmateriaal.nl/producten)
+
+The electricity bake uses Alliander's CC BY 4.0 Liander station data to identify candidate structures. It publishes confirmed exteriors and active mapped electrical cabinets. A successful placement supplies the exact BAG and OSM IDs to replace. A missing optional asset leaves the original geometry available. The historic exteriors at Asakkerweg 4A and Oranjelaan 2 use the existing landmark renderer and shared materials. The 21 November snapshot produced 64 reviewed ordinary buildings and two cabinets from 408 station records and two active BGT cabinet points. The ordinary models include 63 measured heights and 15 simplified pitched roofs. [Liander station data](https://www.arcgis.com/home/item.html?id=11b7bcf1b78b4462b91db0dff234cf78) · [Asakkerweg heritage record](https://monumentenregister.cultureelerfgoed.nl/monumenten/523576) · [Asakkerweg exterior reference](https://landschaplopen.com/2022/06/30/trafohuisjes/) · [Oranjelaan heritage record](https://www.monumenten.nl/monument/1000241300) · [Oranjelaan exterior reference](https://commons.wikimedia.org/wiki/File:Ede-oranjelaan-transformatorhuisje.JPG)
+
+Three held-out parcel patches had 100% lawn, 98% patio and 96.5% planting coverage relative to the traced areas. Those figures measure recall on three patches. The parcel audit checks for intrusion into travel and access space separately. The historic roof pitches, trim and brick colours approximate photographs. Two small source footway slivers total 0.087 m² at the Oranjelaan building apron, clear of the mapped travel edge. [Parcel placement review](../tools/data/ede-parcel-detail.review.json) · [Parcel imagery observations](../tools/data/ede-parcel-observations.json) · [Utility source and review notes](../tools/data/ede-utility-detail.sources.md)
+
+Fetch and archive dated snapshots. Use the same date and omit the network switches for repeatable offline bakes.
+
+```sh
+uv run --python 3.12 --with 'shapely>=2.1' --with osmium --with pyproj==3.8.0 \
+  python -B tools/build-ede-parcel-detail.py /tmp/ede-parcel-detail --date 2026-11-21 \
+  --fetch --osm /tmp/gelderland.osm.pbf /tmp/utrecht.osm.pbf
+uv run --offline --python 3.12 --with 'shapely>=2.1' --with osmium --with pyproj==3.8.0 \
+  python -B tools/build-ede-parcel-detail.py /tmp/ede-parcel-detail --date 2026-11-21
+
+uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 --with pillow \
+  python -B tools/build-ede-utility-detail.py /tmp/ede-utility-review --date 2026-11-21 \
+  --fetch --contact-sheets
+uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 \
+  python -B tools/build-ede-utility-detail.py /tmp/ede-utility-review --date 2026-11-21 --fetch-roofs
+uv run --offline --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 \
+  python -B tools/build-ede-utility-detail.py /tmp/ede-utility-review --date 2026-11-21
+```
+
+The profiler accepts independent `parcelDetail=on|off` and `utilityDetail=on|off` switches with `perf=1`. The `parcels` benchmark suite includes the two pilot streets, a Kernhem aerial pass and both historic houses.
+
+```sh
+EDE_BENCH_SCENARIOS=parcels EDE_BENCH_RUNS=3 EDE_BENCH_VIEWPORT=1200x720 \
+  node tools/benchmark-ede.mjs /tmp/ede-parcel-utility-benchmark.json http://127.0.0.1:8000 9297 \
+  'perf=1&parcelDetail=off&utilityDetail=off&treeQuality=high&treeSeason=summer' \
+  'perf=1&parcelDetail=on&utilityDetail=off&treeQuality=high&treeSeason=summer' \
+  'perf=1&parcelDetail=off&utilityDetail=on&treeQuality=high&treeSeason=summer' \
+  'perf=1&parcelDetail=on&utilityDetail=on&treeQuality=high&treeSeason=summer'
+```
+
+The first benchmark used three runs per configuration on Chrome WebGPU, Fast at 1200 × 720, fixed midday and summer tree settings, and seeded traffic and parking with updates paused during timing. Median warm startup was **15.10 s** with neither feature, **15.18 s** with parcels, **15.13 s** with electricity, and **15.27 s** with both. All three enabled medians were inside the 14.92–15.53 s baseline range. The two compressed runtime assets add 23,391 bytes.
+
+| View | p95 off → both | Median draws off → both | Median triangles off → both |
+| --- | ---: | ---: | ---: |
+| Bemmelsewaard street sweep | 33.5 → 33.4 ms | 2,987 → 3,034 | 12.920M → 12.920M |
+| Kelvinstraat drive | 16.8 → 16.8 ms | 1,089 → 1,110 | 3.245M → 3.246M |
+| Kernhem aerial pass | 16.8 → 16.7 ms | 1,038 → 1,048 | 3.781M → 3.776M |
+| Asakkerweg transformer house | 33.4 → 33.4 ms | 2,493 → 2,514 | 7.602M → 7.582M |
+| Oranjelaan transformer house | 33.4 → 33.4 ms | 2,827 → 2,851 | 10.520M → 10.519M |
+
+The game loaded all 499 parcel placements and 66 utility placements without unresolved renderer records. Sightline checks at Kernhem, Frankeneng and both historic houses covered ground contact and clearance. The benchmark car drove on Kelvinstraat with both layers active. A vertical roof probe found no duplicate streamed geometry at Ericalaan, Asakkerweg, or Oranjelaan while surrounding 3DBAG tiles loaded and evicted. Blocking both new assets and the historic model module restored the previous BGT barriers and all three probed generic roofs. The original Bemmelsewaard sweep looked along the lake, and the original Oranjelaan camera started within the adjacent building. The current suite has direct garden and clear Oranjelaan views. A follow-up matched pair on these views recorded 33.3 → 16.7 ms p95 at the Bemmelsewaard frontage and 16.7 → 16.7 ms at the Kelvinstraat frontage. Warm startup in that pair was 15.04 → 15.22 s.
 
 ### Refresh municipal bins, collection sites and playgrounds
 

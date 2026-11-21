@@ -28,7 +28,7 @@ The game can stay on GitHub Pages if the feed server is deployed separately over
 
 ## Graphics and profiling
 
-The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and keeps bloom and color grading. Standard enables screen-space reflections and multisample antialiasing. The terrain uses the same 12 m AHN grid in both presets.
+The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and keeps bloom and color grading. Standard enables screen-space reflections and multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
 
 Append `?perf=1` to collect a rolling frame history. Open the browser console and run `await __slopwaw.perf.report()` for median and p95 frame time, subsystem CPU time, and render pass statistics. Pass `{frames: true}` for individual samples. GPU times are available on WebGPU devices with timestamp queries. `__slopwaw.perf.reset()` starts a fresh sample.
 
@@ -41,3 +41,13 @@ EDE_BENCH_TRAFFIC=active node tools/benchmark-ede.mjs /tmp/ede-benchmark.json ht
 ```
 
 The frame budget is 33.3 ms for 30 FPS. Use p95 for recurring dips and the maximum interval for single-frame jumps. The [performance report](../tools/data/ede-performance.md) records the comparison and terrain budget.
+
+Run the expansion suite with active traffic to check the 800-draw average for each view. It includes the shadow and post-processing passes. The report also records peak streamed geometry and p95 frame time. The delay option exercises terrain and canopy fallback during loading.
+
+```sh
+EDE_BENCH_SCENARIOS=expansion EDE_BENCH_TRAFFIC=active EDE_BENCH_CACHE=cold \
+  EDE_BENCH_TILE_DELAY_MS=600 EDE_BENCH_RUNS=1 \
+  node tools/benchmark-ede.mjs /tmp/ede-expansion.json http://127.0.0.1:8000 9297 'perf=1'
+```
+
+Use a second variant with `forestCanopy=off` to compare the individual-tree rendering.

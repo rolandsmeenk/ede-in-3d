@@ -4,6 +4,7 @@ import { terrainHeightAt } from './terrain.js';
 
 const WAGENINGEN = 'ede-wageningen';
 const CENTRUM = 'ede-centrum';
+const KLOMP = 'de-klomp';
 const APPROACH_MARGIN = 120;
 
 const eastbound = [
@@ -15,6 +16,15 @@ const westbound = [
   458879658, 556549482, 431570154, 431533794, 431657554, 1092211191,
   431658944, 431533773, 556549455, 431925039
 ];
+// Shared OSM endpoints continue both main tracks west past the De Klomp platforms.
+const klompApproaches = [
+  [431677499, 89448802, 431666249],
+  [431672567, 6306043]
+];
+const klompStops = {
+  '1': [-6780.56, -10.71],
+  '2': [-6546.74, 62.94],
+};
 const sprinterEast = [431639755, 1052080205, 1054198061, 1092211189, 556549460, 431925036];
 const sprinterWest = [431639755, 1052080205, 1092211190, 431658944, 431533773, 556549455, 431925039];
 // The western crossover joins the eastbound approach at an interior map node.
@@ -153,7 +163,7 @@ function buildAlignment(ids, ways, bounds) {
   return { start, end, project, positionAt, elevationAt };
 }
 
-function trainPath(id, route, direction, platform, alignment, terminal) {
+function trainPath(id, route, direction, platform, alignment, terminal, klompPlatform) {
   const { start, end } = alignment;
   const fromAlignment = distance => direction === 1 ? distance - start : end - distance;
   const before = {}, after = {};
@@ -175,6 +185,10 @@ function trainPath(id, route, direction, platform, alignment, terminal) {
     }
   };
   path.stops[WAGENINGEN] = { distance: path.project(...stopsByPlatform[platform]).distance, platform };
+  if (klompPlatform) {
+    const { distance } = path.project(...klompStops[klompPlatform]);
+    path.stops[KLOMP] = { distance, platform: klompPlatform };
+  }
   if (route === 'rs34') {
     path.stops[CENTRUM] = { distance: path.project(...centrumStop).distance, platform: '1' };
     // OVapi boarding coordinates for Ede-Wageningen stops 3133741 and 3133742.
@@ -190,18 +204,22 @@ export function buildEdeTrainTracks() {
   const ways = new Map(EDE_DATA.railways.map(way => [way.id, way]));
   const [minX, minZ, maxX, maxZ] = EDE_DATA.meta.bounds;
   const bounds = [minX - APPROACH_MARGIN, minZ - APPROACH_MARGIN, maxX + APPROACH_MARGIN, maxZ + APPROACH_MARGIN];
-  const track5 = buildAlignment(eastbound, ways, bounds);
-  const track3 = buildAlignment(westbound, ways, bounds);
+  const extendsToKlomp = klompApproaches.flat().every(id => ways.has(`w${id}`));
+  const klompEast = extendsToKlomp ? '2' : undefined;
+  const klompWest = extendsToKlomp ? '1' : undefined;
+  const mainAlignment = (ids, side) => buildAlignment(extendsToKlomp ? [...klompApproaches[side], ...ids] : ids, ways, bounds);
+  const track5 = mainAlignment(eastbound, 0);
+  const track3 = mainAlignment(westbound, 1);
   const track1 = buildAlignment(valleilijn, ways, [bounds[0], bounds[1], 230, bounds[3]]);
   const paths = [
-    trainPath('main-5-east', 'main', 1, '5', track5),
-    trainPath('main-3-west', 'main', -1, '3', track3),
+    trainPath('main-5-east', 'main', 1, '5', track5, undefined, klompEast),
+    trainPath('main-3-west', 'main', -1, '3', track3, undefined, klompWest),
     trainPath('main-4-east', 'main', 1, '4', buildAlignment(sprinterEast, ways, bounds), WAGENINGEN),
     trainPath('main-4-west', 'main', -1, '4', buildAlignment(sprinterWest, ways, bounds), WAGENINGEN),
-    trainPath('main-3-east', 'main', 1, '3', buildAlignment(crossoverTo3, ways, bounds)),
-    trainPath('main-5-west', 'main', -1, '5', track5),
-    trainPath('main-4-through-east', 'main', 1, '4', buildAlignment(through4East, ways, bounds)),
-    trainPath('main-4-through-west', 'main', -1, '4', buildAlignment(through4West, ways, bounds)),
+    trainPath('main-3-east', 'main', 1, '3', mainAlignment(crossoverTo3, 0), undefined, klompEast),
+    trainPath('main-5-west', 'main', -1, '5', track5, undefined, klompEast),
+    trainPath('main-4-through-east', 'main', 1, '4', mainAlignment(through4East, 0), undefined, klompEast),
+    trainPath('main-4-through-west', 'main', -1, '4', mainAlignment(through4West, 1), undefined, klompWest),
     trainPath('rs34-south', 'rs34', 1, '1', track1, WAGENINGEN),
     trainPath('rs34-north', 'rs34', -1, '1', track1, WAGENINGEN)
   ];

@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { EDE_DATA } from './city-config.js';
-import { getTerrain, getTerrainPatch, getTerrainPatches, terrainHeightAt } from './terrain.js';
+import { getExpansionTerrain, getTerrain, getTerrainPatch, getTerrainPatches, terrainHeightAt } from './terrain.js';
 import { clipEdeGround, gradeCuts, localGradeSurface, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, terrainGradeCuts } from './ede-grade.js';
 
 // Geometry adapters only: rendering stays in the upstream WebGPU/TSL systems.
@@ -179,6 +179,7 @@ export function* edeTerrainGeometries(y) {
   const { columns, rows, minX, minZ, maxX, maxZ, step, minY } = terrain;
   yield* terrainGridGeometries(terrain, y, true);
   for (const patch of getTerrainPatches()) yield* terrainGridGeometries(patch, y);
+  if (getExpansionTerrain()) return;
   // Continue the measured edges into coarse distant scenery.
   const border = 16000;
   const rim = (n, sample, outside) => {
@@ -228,17 +229,19 @@ function emitSurface(polygon, positions, lift = 0) {
 export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false, keepAttribute) {
   const field = getTerrain();
   if (!field || !geometry) return geometry;
-  const { step, minX, minZ, columns, rows } = field;
+  let outerField = getExpansionTerrain?.()?.field;
   const position = geometry.getAttribute('position'), index = geometry.index;
   if (!position.count) return geometry;
   const lift = position.getY(0), positions = [];
   const candidate = wayId && localGradeSurface(wayId);
   let local;
   let cuts = [];
-  if (cutGrade || candidate || mappedPavement) {
+  if (cutGrade || candidate || mappedPavement || outerField) {
     geometry.computeBoundingBox();
     const { min, max } = geometry.boundingBox;
     const bounds = { minX: min.x, maxX: max.x, minZ: min.z, maxZ: max.z };
+    if (outerField && bounds.minX >= field.minX && bounds.maxX <= field.maxX
+        && bounds.minZ >= field.minZ && bounds.maxZ <= field.maxZ) outerField = null;
     if (cutGrade) cuts = gradeCuts(bounds, wayId);
     local = candidate || (mappedPavement && localGradeSurface(null, bounds));
     if (local && !overlaps(bounds, local)) local = null;
@@ -265,8 +268,9 @@ export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavemen
       for (const part of cuts.length ? clipEdeGround(surface, cuts) : [surface]) emitSurface(part, positions);
     }
   };
-  const visit = polygon => {
+  const visit = (polygon, grid) => {
     if (polygon.length < 3) return;
+    const { step, minX, minZ, columns, rows } = grid;
     const bounds = edeBounds(polygon);
     const x0 = Math.max(0, Math.floor((bounds.minX + 1e-6 - minX) / step) + 1);
     const z0 = Math.max(0, Math.floor((bounds.minZ + 1e-6 - minZ) / step) + 1);
@@ -276,14 +280,14 @@ export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavemen
       const d = x1 - x0 >= z1 - z0
         ? p => p.x - (minX + Math.floor((x0 + x1) / 2) * step)
         : p => p.z - (minZ + Math.floor((z0 + z1) / 2) * step);
-      visit(clipSurface(polygon, d));
-      visit(clipSurface(polygon, p => -d(p)));
+      visit(clipSurface(polygon, d), grid);
+      visit(clipSurface(polygon, p => -d(p)), grid);
       return;
     }
     const col = Math.floor(((bounds.minX + bounds.maxX) / 2 - minX) / step);
     const row = Math.floor(((bounds.minZ + bounds.maxZ) / 2 - minZ) / step);
     const cellX = minX + col * step, cellZ = minZ + row * step;
-    const patch = getTerrainPatch(cellX, cellZ);
+    const patch = grid === field && getTerrainPatch(cellX, cellZ);
     if (patch) {
       const fine = patch.step;
       const split = (piece, axis, edge) => {
@@ -312,6 +316,23 @@ export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavemen
       emit(clipSurface(polygon, p => -d(p)));
     } else emit(polygon);
   };
+  const boundaries = outerField && [[1, 0, field.minX], [-1, 0, -field.maxX],
+    [0, 1, field.minZ], [0, -1, -field.maxZ]];
+  function drapeTriangle(polygon) {
+    if (boundaries) {
+      for (const [nx, nz, limit] of boundaries) {
+        const d = point => nx * point.x + nz * point.z - limit;
+        if (polygon.every(p => d(p) >= 0)) continue;
+        if (polygon.every(p => d(p) <= 0)) {
+          visit(polygon, outerField);
+          return;
+        }
+        visit(clipSurface(polygon, p => -d(p)), outerField);
+        polygon = clipSurface(polygon, d);
+      }
+    }
+    visit(polygon, field);
+  }
   const count = index ? index.count : position.count;
   const source = keepAttribute && geometry.getAttribute(keepAttribute);
   const attributeValues = [];
@@ -321,7 +342,7 @@ export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavemen
     const ia = vertexIndex(i), ib = vertexIndex(i + 1), ic = vertexIndex(i + 2);
     const a = point(ia), b = point(ib), c = point(ic);
     const start = positions.length;
-    visit([a, b, c]);
+    drapeTriangle([a, b, c]);
     if (!source || positions.length === start) continue;
     // Every emitted point stays on this source triangle in plan.
     const bx = b.x - a.x, bz = b.z - a.z, cx = c.x - a.x, cz = c.z - a.z;

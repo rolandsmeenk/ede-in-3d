@@ -7,13 +7,18 @@ const [output = '/tmp/ede-benchmark.json', origin = 'http://127.0.0.1:8990', por
 const repeats = Number(process.env.EDE_BENCH_RUNS || 3);
 const frameCount = Number(process.env.EDE_BENCH_FRAMES || 75);
 const startupOnly = process.env.EDE_BENCH_STARTUP_ONLY === '1';
-const caches = process.env.EDE_BENCH_WARM_ONLY === '1' ? ['warm'] : ['cold', 'warm'];
+const cacheMode = process.env.EDE_BENCH_CACHE;
+const caches = cacheMode === 'cold' || cacheMode === 'warm' ? [cacheMode] :
+  process.env.EDE_BENCH_WARM_ONLY === '1' ? ['warm'] : ['cold', 'warm'];
 const freezeTraffic = process.env.EDE_BENCH_TRAFFIC !== 'active';
 const [width, height] = (process.env.EDE_BENCH_VIEWPORT || '1600x900').split('x').map(Number);
 const viewport = { width, height, deviceScaleFactor: 1, mobile: false };
 const freezeClock = Date.parse('2026-11-19T13:00:00+01:00');
 const suite = process.env.EDE_BENCH_SCENARIOS || 'standard';
 const screenshots = process.env.EDE_BENCH_SCREENSHOTS;
+const tileDelay = Number(process.env.EDE_BENCH_TILE_DELAY_MS || 0);
+const noHttpCache = process.env.EDE_BENCH_NO_HTTP_CACHE === '1';
+const expansionOnly = suite === 'expansion';
 if (screenshots) await mkdir(screenshots, { recursive: true });
 
 function facadeWalk(name, a, b, distance, lookHeight) {
@@ -26,7 +31,19 @@ function facadeWalk(name, a, b, distance, lookHeight) {
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = suite === 'bag' ? [
+const shots = expansionOnly ? [
+  { name: 'Doesburgermolen approach', arrival: 'doesburgermolen', travel: ['person'] },
+  { name: 'Veenendaal-De Klomp rail and forecourt', arrival: 'veenendaal-de-klomp',
+    from: [-5280, 24, 384], to: [-6600, 15, 10], look: [-6150, 1, 180], lookTo: [-6682, 3, 6] },
+  { name: 'N224 to Ginkelse Heide', from: [1990, 22, 240], to: [4245, 17, 961],
+    look: [3190, 5, 690], lookTo: [4352, 6, 1000], changeSeason: true },
+  { name: 'Ginkelse Heide sheepfold walk', arrival: 'schaapskooi-ginkelse-heide', travel: ['person'] },
+  { name: 'Juffrouw Tok arrival', arrival: 'juffrouw-tok', travel: ['person'] },
+  { name: 'De Mossel woodland landing', arrival: 'mossel',
+    from: [4790, 85, -1240], to: [6151, 2.5, -1802], look: [5450, 6, -1280], lookTo: [6167, 4, -1817] },
+  { name: 'Planken Wambuis approach', arrival: 'planken-wambuis',
+    from: [6590, 20, 1450], to: [7842, 2.5, 1681], look: [7300, 3, 1590], lookTo: [7856, 5, 1704] },
+] : suite === 'bag' ? [
   { name: 'Fast helicopter pass', from: [-1400, 95, 660], to: [-515, 95, 848],
     look: [-940, 18, 860], lookTo: [-140, 17, 1035], waitForBag: true },
 ] : suite === 'municipal' ? [
@@ -92,6 +109,18 @@ const shots = suite === 'bag' ? [
   { name: 'A12 Ede exit on-ramp', way: 'w1121900829', from: [-1403, 2.4, 3650], to: [-1432, 2.4, 3649], look: [-1455, 2.2, 3648] },
   { name: 'A30 Ede-Noord south', way: 'w6960119', from: [-3599, 2.4, 39], to: [-3602, 2.4, 85], look: [-3604, 2.2, 114] },
   { name: 'A30 Ede-Noord north', way: 'w6960136', from: [-3590, 2.4, 92], to: [-3587, 2.4, 47], look: [-3585, 2.2, 24] },
+] : suite === 'parcels' ? [
+  { name: 'Bemmelsewaard walking view', from: [-3198, 1.65, -446], to: [-3128, 1.65, -436],
+    look: [-3192, 1.1, -455], lookTo: [-3133, 1.1, -448] },
+  { name: 'Kelvinstraat parcel view', from: [-3128, 2, 1834], to: [-3154, 2, 1804],
+    look: [-3156, 1.8, 1824], lookTo: [-3195, 1.8, 1799] },
+  { name: 'Kelvinstraat drive', travel: ['car', -3145, 1864, 0.04] },
+  { name: 'Kernhem aerial pass', from: [-3410, 122, -302], to: [-2972, 122, -422],
+    look: [-3272, 1, -465], lookTo: [-2960, 1, -560] },
+  { name: 'Asakkerweg transformer house', from: [145.6, 1.65, -781.5], to: [144, 1.65, -779.5],
+    look: [136.045, 2.55, -781.052] },
+  { name: 'Oranjelaan transformer house', from: [-57.0, 1.65, 2077.0], to: [-55.8, 1.65, 2075.4],
+    look: [-55.968, 2.1, 2065.198] },
 ] : suite === 'detail' ? [
   { name: 'Oude Kerkplein walk', travel: ['person', -37, 20.02, 1.214] },
   { name: 'Kolkakkerweg cycle', travel: ['cyclist', -893, 863.2, 1.736] },
@@ -156,8 +185,10 @@ async function playable() {
       return {
         ms: app.firstFrameAt, stages: app.init, backend: app.backend, quality: app.graphics?.quality,
         bagMeshes: app.scene.getObjectByName('bag3d-buildings')?.children.length ?? 0,
+        terrainTiles: app.terrainTiles && { ...app.terrainTiles }, forestCanopy: app.forestCanopy && { ...app.forestCanopy },
         trees: app.treeInventory && {...app.treeInventory, planted: app.treeStats?.trees},
-        detail: detail && { bgt: detail.bgt, municipal: detail.municipal, motorway: detail['1gis'] ?? detail.dtb, signs: detail.nbd, unresolved: detail.unresolved.length },
+        detail: detail && { bgt: detail.bgt, municipal: detail.municipal, motorway: detail['1gis'] ?? detail.dtb, signs: detail.nbd,
+          parcel: detail.parcel, utility: detail.utility, unresolved: detail.unresolved.length },
       };
     })()`);
     if (state) return state;
@@ -179,14 +210,23 @@ function sampleShot(shot, frames) {
     const lookTo = shot.lookTo && ground(shot.lookTo);
     app.time(shot.time || 'midday');
     if (shot.changeSeason) app.perf?.setTreeSeason?.('summer');
-    if (shot.travel) {
+    let arrival;
+    if (shot.arrival) {
+      const loc = app.TELEPORT_LOCATIONS[shot.arrival];
+      if (!loc?.focus) throw new Error('Missing scenic arrival ' + shot.arrival);
+      app.mode('person');
+      const destination = await app.teleport(shot.arrival);
+      arrival = { x: destination.x, z: destination.z, clearance: Math.hypot(destination.x - loc.x, destination.z - loc.z) };
+      if (arrival.clearance > 22) throw new Error(shot.arrival + ' failed to reach its mapped approach');
+    }
+    if (shot.travel && !shot.arrival) {
       const [mode, x, z, heading, height] = shot.travel;
       const deck = shot.way && gradeWayAt(shot.way, x, z, 4);
       app.mode(mode);
       controller.teleportActiveTo(x, z, heading, height ?? deck?.y);
       app.cameraSystem.resetForTeleport();
       app.camera('chase');
-    } else app.setCamera(...from, ...look);
+    } else if (!shot.travel) app.setCamera(...from, ...look);
     if (app.perf) app.perf.setTrafficUpdates(true);
     const bagGroup = app.scene.getObjectByName('bag3d-buildings');
     const bagCoversLook = () => Boolean(bagGroup?.children.some(tile =>
@@ -206,6 +246,9 @@ function sampleShot(shot, frames) {
     }
     await wait(36);
     const bagAtStart = shot.waitForBag && bagGroup ? { ...bagGroup.userData.stats } : undefined;
+    const streamedBytes = () => (bagGroup?.userData.stats?.geometryBytes ?? 0) +
+      (app.terrainTiles?.residentBytes ?? 0) + (app.forestCanopy?.residentBytes ?? 0);
+    let peakStreamedGeometryBytes = streamedBytes();
     const textureBytes = () => {
       const s = bagGroup?.userData.stats;
       return (s?.maskTextureBytes ?? 0) + (s?.photoTextureBytes ?? 0) + (s?.surfaceTextureBytes ?? 0);
@@ -227,7 +270,7 @@ function sampleShot(shot, frames) {
     let last = await frame();
     const start = shot.travel && controller.getActiveEntity().position.clone();
     const sampleCount = shot.travel ? frames * 2 : frames;
-    if (shot.travel) controller.setTouchInput('forward', 0.75);
+    if (shot.travel && !shot.arrival) controller.setTouchInput('forward', 0.75);
     for (let i = 1; i <= sampleCount; i++) {
       if (!shot.travel) {
         const t = shot.jump ? 1 : i / sampleCount;
@@ -247,6 +290,7 @@ function sampleShot(shot, frames) {
       last = now;
       draws.push(app.renderer.info.render.drawCalls);
       triangles.push(app.renderer.info.render.triangles);
+      peakStreamedGeometryBytes = Math.max(peakStreamedGeometryBytes, streamedBytes());
       if (treeStats) {
         const visible = treeStats.visibleTrees ?? 0;
         if (visibleTrees.length) biggestCountChange = Math.max(biggestCountChange, Math.abs(visible - visibleTrees.at(-1)));
@@ -263,7 +307,8 @@ function sampleShot(shot, frames) {
     if (shot.travel) controller.resetInput();
     const stats = a => {
       a.sort((a, b) => a - b);
-      return { median: a[Math.ceil(a.length * 0.5) - 1], p95: a[Math.ceil(a.length * 0.95) - 1], max: a.at(-1) };
+      return { average: a.reduce((sum, x) => sum + x, 0) / a.length,
+        median: a[Math.ceil(a.length * 0.5) - 1], p95: a[Math.ceil(a.length * 0.95) - 1], max: a.at(-1) };
     };
     const profiler = await app.perf?.report();
     if (app.perf) app.perf.setTrafficUpdates(true);
@@ -285,7 +330,8 @@ function sampleShot(shot, frames) {
     });
     const travelledMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
     const drivenMetres = shot.travel?.[0] === 'car' ? travelledMetres : undefined;
-    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, bagAtStart, travelledMetres, drivenMetres, coverage,
+    return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, bagAtStart,
+      travelledMetres, drivenMetres, coverage, arrival, peakStreamedGeometryBytes, terrainTiles: app.terrainTiles, forestCanopy: app.forestCanopy,
       ...(shot.facade && { bagCoversLook: bagCoversLook(), facadeTextureBytes,
         facadeRequests: [...new Set(facadeRequests)], textureCount: app.renderer.info.memory?.textures }) };
   }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic}, ${suite === 'trees'})`);
@@ -297,7 +343,6 @@ async function run(search, cache, trial) {
   const url = new URL(absolute ? search : origin);
   if (!absolute) url.search = search;
   if (url.searchParams.get('perf') === '1') url.searchParams.set('bench', '1');
-  await send('Page.navigate', { url: 'about:blank' });
   wireBytes = 0;
   failures.length = 0;
   const memory = { jsHeap: 0, backingStorage: 0, combined: 0 };
@@ -317,16 +362,17 @@ async function run(search, cache, trial) {
     startup.wireBytes = wireBytes;
     startup.peakMemory = { ...memory };
     const samples = [];
-    if (!startupOnly && cache === 'warm') {
+    if (!startupOnly && (cache === 'warm' || expansionOnly)) {
       for (const shot of shots) {
         samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
-        if (screenshots && ['facades', 'trees', 'municipal'].includes(suite)) {
+        if (screenshots && ['facades', 'trees', 'municipal', 'expansion', 'parcels'].includes(suite)) {
           const label = shot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const { data } = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
           const variant = suite === 'trees'
             ? [url.port, url.searchParams.get('treeInventory'), url.searchParams.get('treeQuality'), url.searchParams.get('treeSeason'), trial].filter(v => v != null).join('-')
             : suite === 'municipal' ? [url.port, url.searchParams.get('municipalDetail') ?? 'on', trial].join('-')
-              : url.port;
+              : suite === 'parcels' ? [url.searchParams.get('parcelDetail') ?? 'on', url.searchParams.get('utilityDetail') ?? 'on', trial].join('-')
+                : url.port;
           await writeFile(join(screenshots, `${variant}-${label}.jpg`), Buffer.from(data, 'base64'));
         }
       }
@@ -343,13 +389,25 @@ try {
   await send('Page.enable');
   await send('Page.bringToFront');
   await send('Network.enable');
-  await send('Network.setCacheDisabled', { cacheDisabled: false });
+  await send('Network.setCacheDisabled', { cacheDisabled: noHttpCache });
   await send('Network.setBlockedURLs', { urls: ['https://fonts.googleapis.com/*', 'https://fonts.gstatic.com/*'] });
   await send('Emulation.setDeviceMetricsOverride', viewport);
   const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
     if (!location.protocol.startsWith('http')) return;
     localStorage.removeItem('slop-ede-player-state');
     if (${JSON.stringify(suite)} === 'facades') performance.setResourceTimingBufferSize(1000);
+    const delay = ${tileDelay};
+    if (delay > 0) {
+      const request = window.fetch.bind(window);
+      window.fetch = async (input, ...args) => {
+        const url = String(input?.url ?? input);
+        if ((url.includes('/ede-terrain-tiles/') || url.includes('/ede-forest-canopy/'))
+            && url.endsWith('.bin') && !url.endsWith('/collision.bin')) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        return request(input, ...args);
+      };
+    }
     Date.now = () => ${freezeClock};
     let seed = 0x45de;
     Math.random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
@@ -361,12 +419,19 @@ try {
       for (const cache of caches) {
         const result = await run(search, cache, trial);
         results.push({ trial, ...result });
-        await writeFile(output, JSON.stringify({ suite, viewport, freezeClock, freezeTraffic, results }, null, 2));
+        await writeFile(output, JSON.stringify({ suite, viewport, freezeClock, freezeTraffic, tileDelay, noHttpCache, results }, null, 2));
         console.log(`${search || 'default'} ${cache} ${Math.round(result.startup.ms)} ms`, result.samples.map(s => [s.name, s.frameMs.median, s.frameMs.p95]));
       }
     }
   }
   await send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+  if (expansionOnly && !freezeTraffic) {
+    const missed = results.filter(run => run.startup.quality === 'fast' &&
+      !run.search.includes('forestCanopy=off') && !run.search.includes('terrainTiles=off'))
+      .flatMap(run => run.samples.filter(sample => sample.drawCalls.average > 800));
+    if (missed.length) throw new Error('800-draw average exceeded: ' +
+      missed.map(sample => `${sample.name} (${Math.round(sample.drawCalls.average)})`).join(', '));
+  }
 } finally {
   socket.close();
 }

@@ -10,15 +10,15 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 
 - **Walk the town centre.** Explore the shops and squares around Grotestraat, see Cultura and Raadhuis Ede, and look for street art at Astrant and the Van Eekelenflat.
 - **Cycle or drive across town.** Follow mapped cycle routes, pass buses on local streets, and watch the trains at Ede-Wageningen and Ede Centrum.
-- **Take off or jump straight to a landmark.** Fly over Ede or use the **Teleport** menu to visit the ENKA factory, Johan Willem Friso-kazerne, Openluchttheater Ede, and more.
+- **Take off or jump straight to a landmark.** Fly over Ede or use the **Teleport** menu to visit the ENKA factory, Johan Willem Friso-kazerne, Openluchttheater Ede, and more. Search the full map for Doesburgermolen, De Klomp, Schaapskooi Ginkelse Heide, Juffrouw Tok, Boerderij Mossel, and Planken Wambuis.
 
 ## Ede by the numbers
 
 | Feature | Count or coverage |
 | --- | ---: |
-| Map extent | 7.4 × 5.4 km |
+| Map extent | 16.4 × 7.6 km |
 | Teleport menu destinations | 30 |
-| Custom landmark models | 121 |
+| Custom landmark models | 132 |
 | Building footprints in the base map | 44,844 |
 | Street litter bins | 555 |
 | Waste collection sites | 395 |
@@ -29,11 +29,11 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 | Mapped traffic-light locations | 251 |
 | Lamp posts | 15,241 |
 | Mapped tree records | 50,352 |
-| Mapped roads and paths | 937 km |
-| Mapped railway tracks | 37 km |
+| Mapped roads and paths | 1,879 km |
+| Mapped railway tracks | 40 km |
 | Modeled parking spaces | 18,193 |
 
-Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 117 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
+Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 128 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
 
 ## Screenshots
 

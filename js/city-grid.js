@@ -37,13 +37,13 @@ let pavedPlazaRects;
 let sidewalkBlocks;
 let edeStreetSites = [];
 
-function setAerialSurfaceColors(geometry, segment, asphalt) {
+function setAerialSurfaceColors(geometry, segment, asphalt, sampleGround = true) {
   const position = geometry.getAttribute('position');
   const colors = new Uint8Array(position.count * 4);
   const sample = [0, 0, 0];
   const hasRoadColor = segment && sampleRoadColor(segment.road.id, segment.segmentIndex, sample);
   for (let i = 0; i < position.count; i++) {
-    if (!(segment ? hasRoadColor : sampleGroundColor(position.getX(i), position.getZ(i), sample))) continue;
+    if (!hasRoadColor && !(sampleGround && sampleGroundColor(position.getX(i), position.getZ(i), sample))) continue;
     // Suppress green reflected from trees while retaining red cycleway paving.
     if (asphalt) sample[1] = Math.min(sample[1], Math.max(sample[0], sample[2]) * 1.2);
     const offset = i * 4;
@@ -55,10 +55,35 @@ function setAerialSurfaceColors(geometry, segment, asphalt) {
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4, true));
 }
 
-function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches) {
+function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches, forestCells) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
+  const { baseBounds, baseRoadCount, baseParkCount, corridorDetail } = EDE_DATA.meta;
+  const baseRoads = baseRoadCount === undefined ? null :
+    new Set(EDE_DATA.roads.slice(0, baseRoadCount).map(road => road.id));
+  const detailCells = new Set();
+  const detailStep = 60;
+  const detailKey = (x, z) => x * 65536 + z;
+  const markDetail = (ax, az, bx, bz, radius) => {
+    for (let x = Math.floor((Math.min(ax, bx) - radius) / detailStep);
+      x <= Math.floor((Math.max(ax, bx) + radius) / detailStep); x++) {
+      for (let z = Math.floor((Math.min(az, bz) - radius) / detailStep);
+        z <= Math.floor((Math.max(az, bz) + radius) / detailStep); z++) {
+        const dx = bx - ax, dz = bz - az;
+        const cx = (x + 0.5) * detailStep, cz = (z + 0.5) * detailStep;
+        const t = Math.min(1, Math.max(0, ((cx - ax) * dx + (cz - az) * dz) / (dx * dx + dz * dz || 1)));
+        if (Math.hypot(cx - ax - dx * t, cz - az - dz * t) <= radius + detailStep * Math.SQRT1_2) {
+          detailCells.add(detailKey(x, z));
+        }
+      }
+    }
+  };
+  for (const [x, z] of corridorDetail?.arrivals ?? []) markDetail(x, z, x, z, 500);
+  for (const route of corridorDetail?.routes ?? []) for (let i = 1; i < route.length; i++) {
+    markDetail(...route[i - 1], ...route[i], 150);
+  }
+  const nearExpansionDetail = (x, z) => detailCells.has(detailKey(Math.floor(x / detailStep), Math.floor(z / detailStep)));
   const aerial = !!getAerialColors();
   const roadMat = createRoadSurfaceMaterial(aerial, false, true);
   roadMat.name = 'Ede asphalt';
@@ -77,7 +102,10 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const collect = (geometry, material, segment, trackLayer) => {
     if (!geometry?.getAttribute('position')?.count) return;
     if (material === roadMat) geometry = addAsphaltLanes(geometry, segment, trackLayer);
-    if (aerial && aerialMaterials.has(material)) setAerialSurfaceColors(geometry, segment, material === roadMat);
+    if (aerial && aerialMaterials.has(material)) {
+      const ground = !segment || (baseRoads && !baseRoads.has(segment.road.id));
+      setAerialSurfaceColors(geometry, segment, material === roadMat, !!ground);
+    }
     if (!collections.has(material)) collections.set(material, []);
     collections.get(material).push(geometry);
   };
@@ -126,7 +154,12 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       }
     }
   }
-  for (const park of [...(EDE_DATA.parks || []), ...(EDE_DATA.squares || [])]) {
+  const baseParks = baseParkCount ?? EDE_DATA.parks?.length ?? 0;
+  const scenery = [...(EDE_DATA.parks || []), ...(EDE_DATA.squares || [])];
+  for (const [index, park] of scenery.entries()) {
+    // Aerial terrain supplies the natural ground in the expansion.
+    if (index >= baseParks && index < EDE_DATA.parks.length
+        && !['pitch', 'square', 'pedestrian', 'plaza'].includes(park.kind)) continue;
     if (!park.ring || park.ring.length < 6 || park.kind === 'pitch' && replacedPitches?.has(park.id)) continue;
     const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints);
     const paved = ['square', 'pedestrian', 'plaza'].includes(park.kind);
@@ -159,7 +192,9 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     }
   }
 
-  const roadSegments = edeRoadSegments();
+  const roadSegments = baseRoads && detailCells.size ? edeRoadSegments().filter(({ road, a, b }) =>
+    baseRoads.has(road.id) || /^(motorway|trunk|primary|secondary)/.test(road.kind)
+    || nearExpansionDetail(a.x, a.z) || nearExpansionDetail(b.x, b.z)) : edeRoadSegments();
   const carriagewayKinds = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link',
     'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'residential', 'unclassified', 'service', 'living_street']);
   const curbedKinds = new Set(['trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link',
@@ -473,12 +508,22 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   }
   const landmarkTrees = parkTreeSites.length - mappedTreeCount;
   const hash = (x, z, seed) => { const n = Math.sin(x * 12.9898 + z * 78.233 + seed) * 43758.5453; return n - Math.floor(n); };
-  for (const park of EDE_DATA.parks || []) {
+  const measuredForest = new Set((forestCells || []).filter(cell => cell.step === 10)
+    .map(({ bounds }) => detailKey(Math.floor(bounds[0] / 500), Math.floor(bounds[1] / 500))));
+  const outsideTown = (x, z) => baseBounds &&
+    (x < baseBounds[0] || x > baseBounds[2] || z < baseBounds[1] || z > baseBounds[3]);
+  for (const [i, park] of (EDE_DATA.parks || []).entries()) {
     if (!['wood', 'forest'].includes(park.kind)) continue;
     const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints), bounds = edeBounds(ring);
-    for (let gx = Math.ceil(Math.max(bounds.minX, ISLAND_BOUNDS.minX) / 14); gx <= Math.floor(Math.min(bounds.maxX, ISLAND_BOUNDS.maxX) / 14); gx++) {
-      for (let gz = Math.ceil(Math.max(bounds.minZ, ISLAND_BOUNDS.minZ) / 14); gz <= Math.floor(Math.min(bounds.maxZ, ISLAND_BOUNDS.maxZ) / 14); gz++) {
+    const [left, top, right, bottom] = baseBounds && i < baseParks ? baseBounds :
+      [ISLAND_BOUNDS.minX, ISLAND_BOUNDS.minZ, ISLAND_BOUNDS.maxX, ISLAND_BOUNDS.maxZ];
+    for (let gx = Math.ceil(Math.max(bounds.minX, left) / 14); gx <= Math.floor(Math.min(bounds.maxX, right) / 14); gx++) {
+      for (let gz = Math.ceil(Math.max(bounds.minZ, top) / 14); gz <= Math.floor(Math.min(bounds.maxZ, bottom) / 14); gz++) {
         const x = gx * 14 + (hash(gx, gz, 1) - 0.5) * 10, z = gz * 14 + (hash(gx, gz, 2) - 0.5) * 10;
+        if (outsideTown(x, z) && !nearExpansionDetail(x, z)) {
+          const stride = measuredForest.has(detailKey(Math.floor(x / 500), Math.floor(z / 500))) ? 8 : 4;
+          if (gx % stride || gz % stride) continue;
+        }
         if (!pointInPoly(ring, x, z) || holes.some(h => pointInPoly(h, x, z)) || nearbyTree(x, z) || waterAt(x, z)) continue;
         const fill = canopyDensity?.get(`${Math.floor(x / 200)}/${Math.floor(z / 200)}`);
         if (fill !== undefined && hash(gx, gz, 4) > fill) continue;
@@ -506,6 +551,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       if (!merged) continue;
       const mesh = new THREE.Mesh(merged, material);
       mesh.receiveShadow = material !== waterMat; mesh.castShadow = material === curbMat;
+      if (terrain && material === terrainMat) mesh.name = 'Ede legacy terrain';
       if (material === railMat) mesh.name = 'Ede rails';
       if (material === ballastMat) mesh.name = 'Ede rail ballast';
       if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;

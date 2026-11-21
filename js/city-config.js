@@ -342,6 +342,14 @@ const SCENIC_ARRIVALS = {
  hartogshof:       [213, 2230, 250, 2256, 6.5, 'Akulaan'],
  'akulaan-h2-h4':   [401, 2255, 406, 2226, 8, 'Akulaan'],
  parkveste:        [-187, 2027.5, -185, 2008, 7, 'Parkweg'],
+ // Use the public De Ginkel car park for the three N224 landmarks.
+ 'schaapskooi-ginkelse-heide': [4385.3, 953.77, 4337.48, 1071.32, 3.3, 'Parkeerplaats De Ginkel'],
+ 'juffrouw-tok': [4380, 976, 4352.30, 960.90, 3.5, 'Parkeerplaats De Ginkel'],
+ 'airborne-monument-ginkel': [4396, 969, 4279.28, 1009.78, 1.8, 'Parkeerplaats De Ginkel'],
+ doesburgermolen: [-1584.07, -1778.56, -1553.53, -1787.15, 7.8, 'Doesburger Molenweg'],
+ mossel: [6145.87, -1805.28, 6167.24, -1817.47, 3.6, 'Mosselseweg'],
+ 'planken-wambuis': [7887.27, 1700.51, 7856.50, 1704.20, 3.8, 'Verlengde Arnhemseweg'],
+ 'veenendaal-de-klomp': [-6654.63, 6.67, -6682.56, 6.21, 2.3, 'Stationsplein'],
 };
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){

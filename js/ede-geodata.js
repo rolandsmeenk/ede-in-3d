@@ -5,6 +5,7 @@ import { EDE_FUEL_FALLBACK_FOOTPRINTS } from './ede-fuel-sites.js';
 const mapUrl = new URL('../assets/ede-map-v1.json.gz', import.meta.url);
 const shorelineUrl = new URL('../assets/ede-shorelines.json.gz', import.meta.url);
 const yearsUrl = new URL('../assets/ede-building-years.json.gz', import.meta.url);
+const corridorsUrl = new URL('../assets/ede-corridors-v1.json.gz', import.meta.url);
 
 async function readMapAsset(url, optional = false) {
   let bytes;
@@ -72,8 +73,38 @@ function applyBuildingYears(buildings, table) {
   }
 }
 
+function applyCorridors(data, corridors) {
+  const arrays = ['buildings', 'roads', 'railways', 'water', 'parks', 'squares', 'trees', 'signals'];
+  const original = corridors.base;
+  if (corridors.version !== 1 || original?.buildings !== data.buildings.length
+      || original?.roads !== data.roads.length || original?.roadNodes !== data.roadGraph.nodes.length
+      || original?.activeNodes !== data.activeGraph.nodes.length
+      || !data.meta.bounds.every((bound, index) => bound === original.bounds?.[index])) {
+    throw new Error('Ede corridor asset does not match the OSM map');
+  }
+  const baseParkCount = data.parks.length;
+  for (const key of arrays) {
+    data[key] = data[key].concat(corridors[key]);
+    data.meta.counts[key] = data[key].length;
+  }
+  for (const key of ['roadGraph', 'activeGraph']) {
+    for (const field of ['nodes', 'links', 'names']) data[key][field] = data[key][field].concat(corridors[key][field]);
+    if (corridors[key].controls) Object.assign(data[key].controls, corridors[key].controls);
+  }
+  Object.assign(data.meta, {
+    baseBounds: data.meta.bounds,
+    baseBuildingCount: original.buildings,
+    baseRoadCount: original.roads,
+    baseRoadNodeCount: original.roadNodes / 2,
+    baseParkCount,
+    bounds: corridors.bounds,
+    geographicBounds: corridors.geographicBounds,
+    corridorDetail: corridors.detail,
+  });
+}
+
 async function loadMap() {
-  const [data, shoreline, years] = await Promise.all([
+  const [data, shoreline, years, corridors] = await Promise.all([
     readMapAsset(mapUrl),
     readMapAsset(shorelineUrl, true).catch(error => {
       console.warn('[Ede shorelines] using OSM geometry:', error);
@@ -81,6 +112,10 @@ async function loadMap() {
     }),
     readMapAsset(yearsUrl, true).catch(error => {
       console.warn('[Ede BAG years] using the default façade palette:', error);
+      return null;
+    }),
+    readMapAsset(corridorsUrl, true).catch(error => {
+      console.warn('[Ede corridors] using the city extent:', error);
       return null;
     }),
   ]);
@@ -105,6 +140,7 @@ async function loadMap() {
     if (building) Object.assign(building, { ring, holes });
   }
   for (const road of data.roads) Object.assign(road, EDE_ROAD_TAGS[road.id]);
+  if (corridors) applyCorridors(data, corridors);
   return data;
 }
 

@@ -1,0 +1,21 @@
+[out:json][timeout:240][bbox:52.012,5.565,52.080,5.805];
+(
+  way["building"];
+  relation["building"];
+  way["building:part"];
+  way["highway"];
+  way["railway"~"^(rail|light_rail|tram|subway)$"];
+  way["natural"="water"];
+  relation["natural"="water"];
+  way["waterway"~"^(river|canal|riverbank|dock)$"];
+  nwr["shop"]["name"];
+  nwr["amenity"~"^(cafe|restaurant|fast_food|bank|pharmacy)$"]["name"];
+  wr["natural"~"^(wood|heath)$"];
+  wr["leisure"~"^(park|garden|playground|pitch)$"];
+  wr["landuse"~"^(grass|recreation_ground|cemetery|village_green|forest)$"];
+  wr["place"="square"];
+  relation["highway"="pedestrian"]["area"="yes"];
+  node["natural"="tree"];
+  node["highway"~"^(traffic_signals|crossing|give_way|stop|bus_stop)$"];
+);
+out geom;

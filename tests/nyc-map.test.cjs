@@ -91,7 +91,7 @@ function classList() {
   };
 }
 
-function mapHarness() {
+function mapHarness(landmarks = []) {
   const window = { ...eventTarget(), innerWidth: 200, innerHeight: 200 };
   const canvas = {
     ...eventTarget(), style: {}, clientWidth: 200, clientHeight: 200,
@@ -120,7 +120,7 @@ function mapHarness() {
     canvas.dispatch('lostpointercapture', { pointerId: id });
   };
   const config = {
-    ROADS: [], BLOCKS: [], NYC_LANDMARKS: [],
+    ROADS: [], BLOCKS: [], NYC_LANDMARKS: landmarks,
     ISLAND_BOUNDS,
     getIslandBoundsAtZ: () => ({ westX: -10000, eastX: 10000 }),
     getLocationLabel: (x, z) => `${x}, ${z}`,
@@ -130,10 +130,11 @@ function mapHarness() {
     globals: { window, document },
     imports: { './nyc-geodata.js': { GEO: { frame: {} } }, './city-config.js': config }
   });
-  const teleports = [], toggles = [];
+  const teleports = [], landmarkTeleports = [], toggles = [];
   const map = new NYCMapSystem({
     controllerManager: { getActiveEntity: () => ({ position: { x: 1000, z: 2000 } }) },
     onTeleport: (x, z) => teleports.push([x, z]),
+    onLandmark: (id) => landmarkTeleports.push(id),
     onToggle: (open) => toggles.push(open)
   });
   // Exercise the real viewport/input state without drawing the map's geographic layers.
@@ -141,7 +142,7 @@ function mapHarness() {
   map.viewZoom = 1;
   map.toggleFullMap(true);
   return {
-    map, canvas, controls, wrapper, window, document, captured, teleports, toggles, zoomIn, zoomOut, viewAll, hoverInfo,
+    map, canvas, controls, wrapper, window, document, captured, teleports, landmarkTeleports, toggles, zoomIn, zoomOut, viewAll, hoverInfo,
     pointer(target, type, id, x = 110, y = 120, pointerType = 'touch', button = 0) {
       const event = { pointerId: id, clientX: x, clientY: y, pointerType, button, preventDefault() {} };
       (captured.has(id) ? canvas : target).dispatch(type, event);
@@ -180,6 +181,23 @@ test('a normal map tap teleports once and releases capture', () => {
   assert.equal(h.map.waypoint.name, '1000, 2000');
   assert.equal(h.captured.size, 0);
   assert.equal(h.map.isPanning, false);
+});
+
+test('a map tap on an expansion pin selects its scenic arrival', () => {
+  const sheepfold = { id: 'schaapskooi-ginkelse-heide', name: 'Schaapskooi Ginkelse Heide', x: 1000, z: 2000, mapScenic: true };
+  const h = mapHarness([sheepfold, { id: 'old-site', name: 'Old Site', x: 1003, z: 2000 }]);
+  h.pointer(h.canvas, 'pointermove', 1, 110, 120, 'mouse');
+  assert.match(h.hoverInfo.textContent, /teleport to the approach/);
+  h.pointer(h.canvas, 'pointerdown', 1);
+  h.pointer(h.canvas, 'pointerup', 1);
+  assert.deepEqual(h.landmarkTeleports, [sheepfold.id]);
+  assert.equal(h.teleports.length, 0);
+  assert.equal(h.map.isFullMapOpen, false);
+
+  h.map.toggleFullMap(true);
+  h.pointer(h.canvas, 'pointerdown', 2, 113, 120);
+  h.pointer(h.canvas, 'pointerup', 2, 113, 120);
+  assert.deepEqual(h.teleports, [[1003, 2000]]);
 });
 
 for (const interruption of ['pointercancel', 'lostpointercapture', 'blur', 'hidden', 'close']) {

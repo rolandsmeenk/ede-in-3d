@@ -14,6 +14,7 @@ import { HARTOGSHOF_FOOTPRINTS } from './ede-hartogshof-survey.js';
 import { EDE_BARRACKS_HERITAGE_LANDMARKS } from './ede-barracks-heritage-survey.js';
 import { EDE_VILLA_HERITAGE_LANDMARKS } from './ede-villa-heritage-survey.js';
 import { EDE_VELDHUIZEN_LANDMARKS } from './ede-veldhuizen-survey.js';
+import { EDE_EXPANSION_LANDMARKS } from './ede-expansion-landmark-surveys.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -182,6 +183,7 @@ export const EDE_MODELED_LANDMARKS = [
   ...EDE_BARRACKS_HERITAGE_LANDMARKS,
   ...EDE_VILLA_HERITAGE_LANDMARKS,
   ...EDE_VELDHUIZEN_LANDMARKS,
+  ...EDE_EXPANSION_LANDMARKS,
 
   ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, churchSurvey]) => {
     const { name, osm, bag, center: [x, z], road, district, approach, height } = churchSurvey;

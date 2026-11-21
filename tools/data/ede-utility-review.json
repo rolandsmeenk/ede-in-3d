@@ -1,0 +1,612 @@
+{
+  "version": 1,
+  "date": "2026-11-21",
+  "imageryLayer": "2026_orthoHR",
+  "houses": {
+    "0228100000020441": {
+      "center": [
+        173783.6,
+        450228.3
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000046799": {
+      "center": [
+        169271.9,
+        448684.1
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000052449": {
+      "center": [
+        169832.0,
+        447250.9
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000064905": {
+      "center": [
+        169484.6,
+        448969.6
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000065587": {
+      "center": [
+        174402.0,
+        449014.0
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000065917": {
+      "center": [
+        170949.5,
+        449328.5
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000066155": {
+      "center": [
+        172006.8,
+        450289.7
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068501": {
+      "center": [
+        172845.0,
+        450312.1
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068530": {
+      "center": [
+        172226.7,
+        448180.1
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068566": {
+      "center": [
+        172640.4,
+        451651.6
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068589": {
+      "center": [
+        172183.4,
+        450412.5
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068659": {
+      "center": [
+        172062.8,
+        450926.8
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068661": {
+      "center": [
+        174015.9,
+        450675.6
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068680": {
+      "center": [
+        172588.2,
+        448642.4
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068732": {
+      "center": [
+        172433.2,
+        450670.5
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000068951": {
+      "center": [
+        172696.9,
+        448854.9
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069078": {
+      "center": [
+        174421.3,
+        451452.9
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069093": {
+      "center": [
+        174054.7,
+        448757.1
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069174": {
+      "center": [
+        171494.4,
+        450806.2
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069218": {
+      "center": [
+        170885.0,
+        448987.0
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069330": {
+      "center": [
+        172080.7,
+        447946.7
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069419": {
+      "center": [
+        172074.9,
+        450496.6
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069478": {
+      "center": [
+        173414.3,
+        450347.1
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069528": {
+      "center": [
+        173248.7,
+        450525.8
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069530": {
+      "center": [
+        172521.0,
+        450410.9
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069569": {
+      "center": [
+        171824.2,
+        447563.6
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069610": {
+      "center": [
+        172013.7,
+        451230.5
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069616": {
+      "center": [
+        169883.5,
+        450832.4
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069620": {
+      "center": [
+        173171.8,
+        448575.6
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069629": {
+      "center": [
+        172978.5,
+        448721.7
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069714": {
+      "center": [
+        174375.0,
+        450068.7
+      ],
+      "style": "brick",
+      "styleSource": "Brick and pitched tiled roof confirmed by Ericalaan street photo and 2026 aerial",
+      "streetSource": "https://www.ededoet.nl/verslag/2001",
+      "streetPoints": [
+        [
+          -135.27,
+          833.62
+        ]
+      ]
+    },
+    "0228100000069738": {
+      "center": [
+        174885.1,
+        451223.8
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069756": {
+      "center": [
+        170841.8,
+        448668.8
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069789": {
+      "center": [
+        173242.2,
+        448158.0
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069882": {
+      "center": [
+        173405.5,
+        450065.3
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000069896": {
+      "center": [
+        173191.8,
+        451252.2
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070024": {
+      "center": [
+        172967.8,
+        450960.3
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070062": {
+      "center": [
+        172532.0,
+        450953.5
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070180": {
+      "center": [
+        173803.1,
+        450963.2
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070272": {
+      "center": [
+        175081.1,
+        450720.2
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070319": {
+      "center": [
+        173115.6,
+        448340.7
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070346": {
+      "center": [
+        173227.8,
+        447748.4
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070365": {
+      "center": [
+        171619.7,
+        450203.4
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070372": {
+      "center": [
+        173406.1,
+        450658.8
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070379": {
+      "center": [
+        173656.9,
+        449188.9
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070412": {
+      "center": [
+        172200.2,
+        450247.3
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070501": {
+      "center": [
+        171836.0,
+        449602.1
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070554": {
+      "center": [
+        172022.0,
+        448537.2
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070603": {
+      "center": [
+        173418.7,
+        448610.6
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070659": {
+      "center": [
+        174276.8,
+        451170.2
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070759": {
+      "center": [
+        174669.8,
+        451212.0
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070951": {
+      "center": [
+        171284.0,
+        449484.0
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000070979": {
+      "center": [
+        172421.0,
+        448336.6
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071004": {
+      "center": [
+        172388.1,
+        449119.6
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071014": {
+      "center": [
+        172642.9,
+        451082.3
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071034": {
+      "center": [
+        172738.0,
+        448036.3
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071214": {
+      "center": [
+        172133.5,
+        450732.9
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071319": {
+      "center": [
+        172370.1,
+        447828.9
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071360": {
+      "center": [
+        171751.7,
+        451696.0
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071373": {
+      "center": [
+        173900.5,
+        451131.3
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071396": {
+      "center": [
+        172647.3,
+        447769.2
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071413": {
+      "center": [
+        173491.7,
+        448363.4
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000071462": {
+      "center": [
+        173341.0,
+        447514.5
+      ],
+      "style": "brick",
+      "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000100623": {
+      "center": [
+        175114.1,
+        449051.7
+      ],
+      "style": "prefab",
+      "styleSource": "approximate exterior type from aerial view"
+    }
+  },
+  "withheld": [
+    "0228100000000061",
+    "0228100000007221",
+    "0228100000012932",
+    "0228100000013351",
+    "0228100000019790",
+    "0228100000020323",
+    "0228100000034620",
+    "0228100000052561",
+    "0228100000064913",
+    "0228100000065022",
+    "0228100000065152",
+    "0228100000065261",
+    "0228100000065339",
+    "0228100000065464",
+    "0228100000065811",
+    "0228100000066035",
+    "0228100000066481",
+    "0228100000066592",
+    "0228100000068458",
+    "0228100000068505",
+    "0228100000068506",
+    "0228100000068575",
+    "0228100000068655",
+    "0228100000068694",
+    "0228100000068700",
+    "0228100000068736",
+    "0228100000068800",
+    "0228100000068813",
+    "0228100000068859",
+    "0228100000068957",
+    "0228100000069082",
+    "0228100000069098",
+    "0228100000069119",
+    "0228100000069144",
+    "0228100000069152",
+    "0228100000069237",
+    "0228100000069316",
+    "0228100000069433",
+    "0228100000069534",
+    "0228100000069562",
+    "0228100000069598",
+    "0228100000069746",
+    "0228100000069816",
+    "0228100000069848",
+    "0228100000069878",
+    "0228100000069957",
+    "0228100000070029",
+    "0228100000070072",
+    "0228100000070096",
+    "0228100000070104",
+    "0228100000070130",
+    "0228100000070146",
+    "0228100000070152",
+    "0228100000070206",
+    "0228100000070257",
+    "0228100000070263",
+    "0228100000070280",
+    "0228100000070369",
+    "0228100000070427",
+    "0228100000070460",
+    "0228100000070566",
+    "0228100000070589",
+    "0228100000070666",
+    "0228100000070712",
+    "0228100000070802",
+    "0228100000070838",
+    "0228100000070859",
+    "0228100000071039",
+    "0228100000071040",
+    "0228100000071065",
+    "0228100000071145",
+    "0228100000071191",
+    "0228100000071200",
+    "0228100000071223",
+    "0228100000071285",
+    "0228100000071309",
+    "0228100000071370",
+    "0228100000071412",
+    "0228100000071433",
+    "0228100000075907",
+    "0228100000076574",
+    "0228100000087542",
+    "0228100000091066",
+    "0228100000101868"
+  ]
+}

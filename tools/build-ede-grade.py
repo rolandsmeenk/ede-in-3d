@@ -10,7 +10,8 @@ import struct
 
 from ede_map import load_scene
 from ede_scene import SceneAffine
-from ede_rail_profiles import fit as fit_rail_profiles, point_on_line, station_at, stations_of, SURVEY
+from ede_rail_profiles import extend_corridor_profiles, fit as fit_rail_profiles
+from ede_rail_profiles import point_on_line, station_at, stations_of, SURVEY
 
 ROOT = Path(__file__).resolve().parents[1]
 PRO_RAIL = 'https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer'
@@ -597,6 +598,7 @@ def build(osm, output, survey_dir, rail_survey=SURVEY):
     result = dict(version=1, datumNAP=terrain.nap, sources=dict(osm='https://www.openstreetmap.org/copyright',
         ahn=AHN, bgt=BGT, proRail=PRO_RAIL, verified='2026-11-18'), sites=sites, railHeights=rail_heights)
     result['railCorridors'] = fit_rail_profiles(scene, result, json.loads(rail_survey.read_text()))
+    extend_corridor_profiles(result, scene['meta']['lonLatAffine'])
     output.write_text(json.dumps(result, ensure_ascii=False, separators=(',', ':')) + '\n')
     print(f'Wrote {len(sites)} sites, {sum(len(s["profiles"]) for s in sites)} routes and '
           f'{len(result["railCorridors"])} rail alignments to {output}')

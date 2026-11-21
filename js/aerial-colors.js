@@ -1,3 +1,4 @@
+import { getExpansionTerrain } from './terrain.js';
 import { EDE_DATA } from './ede-geodata.js';
 
 // Byte RGB from the orthophoto is sRGB; the mesh attributes are linear.
@@ -50,6 +51,18 @@ async function decodeGround({ width, height, minX, minZ, step }, blob) {
   }
 }
 
+export async function loadExpansionGroundColors() {
+  const expansion = getExpansionTerrain();
+  if (!aerial || !expansion?.manifest.ground) return;
+  try {
+    const response = await fetch(new URL('ground.jpg', expansion.directory));
+    if (!response.ok) throw new Error(`PDOK overview HTTP ${response.status}`);
+    aerial.expansion = await decodeGround(expansion.manifest.ground, await response.blob());
+  } catch (error) {
+    console.warn('[aerial] expansion overview unavailable:', error);
+  }
+}
+
 export async function loadAerialColors() {
   const [metadata, photo, palette] = await Promise.all([
     requestAsset('ede-aerial.json').then((response) => response.json()),
@@ -57,7 +70,10 @@ export async function loadAerialColors() {
     requestAsset('ede-aerial-colors.bin').then((response) => response.arrayBuffer()),
   ]);
   const ground = await decodeGround(metadata, photo);
-  aerial = { ground, ...decodeAerialPalette(palette, EDE_DATA.buildings, EDE_DATA.roads) };
+  const { baseBuildingCount, baseRoadCount } = EDE_DATA.meta;
+  const buildings = baseBuildingCount === undefined ? EDE_DATA.buildings : EDE_DATA.buildings.slice(0, baseBuildingCount);
+  const roads = baseRoadCount === undefined ? EDE_DATA.roads : EDE_DATA.roads.slice(0, baseRoadCount);
+  aerial = { ground, ...decodeAerialPalette(palette, buildings, roads) };
   return aerial;
 }
 
@@ -84,8 +100,14 @@ export function sampleRoadColor(roadId, segmentIndex, out) {
 
 export function sampleGroundColor(x, z, out) {
   if (!aerial) return false;
-  const { width, height, minX, minZ, step, data } = aerial.ground;
-  const u = (x - minX) / step, v = (z - minZ) / step;
+  let ground = aerial.ground;
+  let u = (x - ground.minX) / ground.step, v = (z - ground.minZ) / ground.step;
+  if (aerial.expansion && !(u >= 0 && v >= 0 && u <= ground.width - 1 && v <= ground.height - 1)) {
+    ground = aerial.expansion;
+    u = (x - ground.minX) / ground.step;
+    v = (z - ground.minZ) / ground.step;
+  }
+  const { width, height, data } = ground;
   if (!(u >= 0 && v >= 0 && u <= width - 1 && v <= height - 1)) return false;
   const col = Math.min(width - 2, Math.floor(u)), row = Math.min(height - 2, Math.floor(v));
   const dx = u - col, dz = v - row;

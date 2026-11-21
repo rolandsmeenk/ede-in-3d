@@ -197,3 +197,66 @@ def fit(scene, grade, survey):
             raise ValueError(f'Fitted rail grade exceeds 3% on {way_id}')
         result.append(dict(wayId=way_id, bridge=bridge, points=points))
     return result
+
+
+def extend_corridor_profiles(result, affine):
+    """Fit ProRail grades at the OSM axis and tie into the existing fitted endpoints."""
+    import gzip
+    import json
+
+    from ede_scene import SceneAffine
+
+    overlay = ROOT / 'assets/ede-corridors-v1.json.gz'
+    if not overlay.exists():
+        return
+    with gzip.open(overlay, 'rt') as source:
+        rails = json.load(source)['railways']
+    evidence = json.loads((ROOT / 'tools/data/ede-corridor-prorail-z.json').read_text())
+    result['sources']['proRailCorridorElevations'] = evidence['source']
+    frame = SceneAffine(affine)
+    survey_lines = [
+        [(frame.lon_lat_to_scene(lon, lat), z - result['datumNAP']) for lon, lat, z in points]
+        for _, points in evidence['features']
+    ]
+    legacy = {tuple(point[:2]): point[2] for profile in result['railCorridors']
+              for point in (profile['points'][0], profile['points'][-1])}
+
+    def sample(line, point):
+        best = (math.inf, 0.0)
+        for (a, ya), (b, yb) in zip(line, line[1:]):
+            dx, dz = b[0] - a[0], b[1] - a[1]
+            t = min(1, max(0, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dz) / (dx * dx + dz * dz)))
+            distance = math.hypot(point[0] - a[0] - t * dx, point[1] - a[1] - t * dz)
+            best = min(best, (distance, ya + t * (yb - ya)))
+        return best
+
+    ways = {rail['id']: list(zip(rail['pts'][::2], rail['pts'][1::2])) for rail in rails}
+    pending = set(ways)
+    while pending:
+        component = [min(pending)]
+        pending.remove(component[0])
+        for key in component:
+            reachable = sorted(next_key for next_key in pending
+                               if set((ways[next_key][0], ways[next_key][-1])) & set((ways[key][0], ways[key][-1])))
+            pending.difference_update(reachable)
+            component.extend(reachable)
+        points = [point for key in component for point in ways[key]]
+        line = min(survey_lines, key=lambda candidate: median(sample(candidate, point)[0] for point in points))
+        anchors = set(points).intersection(legacy)
+        corrections = {point: legacy[point] - sample(line, point)[1] for point in anchors}
+
+        for key in component:
+            geometry = ways[key]
+            stations = stations_of(geometry)
+            positions = sorted(set(stations).union(range(0, math.ceil(stations[-1]), 8)))
+            fitted = []
+            for station in positions:
+                point = geometry[stations.index(station)] if station in stations else point_on_line(geometry, stations, station)
+                elevation = sample(line, point)[1]
+                if corrections:
+                    anchor = min(corrections, key=lambda candidate: math.dist(point, candidate))
+                    t = max(0, 1 - math.dist(point, anchor) / 350)
+                    elevation += corrections[anchor] * t * t * (3 - 2 * t)
+                fitted.append([*point, round(legacy.get(point, elevation), 3)])
+            rail = next(row for row in rails if row['id'] == key)
+            result['railCorridors'].append(dict(wayId=key, bridge=rail['bridge'], points=fitted))

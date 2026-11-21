@@ -944,7 +944,7 @@ function createTreeClearance(colliders) {
  * Call update(camera, { deltaMs, viewportHeight, groundHeight, renderer }) from the frame loop.
  * The benchmark can also use the original update(cameraPosition) interface in legacy mode.
  */
-function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', season = false } = {}) {
+function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', season = false, canopyCovers } = {}) {
   const group = new THREE.Group();
   group.name = 'Trees';
   const atlas = createLeafAtlas();
@@ -1407,7 +1407,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
   const plannedPosition = new V3(Infinity, Infinity, Infinity);
   let plan = 0, planAt = 0, plannedPixelScale = 0, plannedAgl = 0;
   let clock = 1;
-  let lastCameraLevel = '';
+  let lastCameraLevel = '', lastCanopyRevision = 0;
   const largestCell = cellList.reduce((max, cell) => Math.max(max, cell.trees.length), 0);
   const uploadBudget = Math.max(256 * 1024, largestCell * INSTANCE_BYTES * 3);
   stats.uploadBudget = uploadBudget;
@@ -1448,6 +1448,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     if (distance > edge + margin || (!priority[i] && keep[i] > density)) return 255;
     if (pixels > detail.near * (prior === 0 ? 0.87 : 1.08)) return 0;
     if (pixels > detail.mid * (prior <= 1 ? 0.88 : 1.08)) return 1;
+    if (distance > 520 && !priority[i] && canopyCovers?.(px[i], pz[i])) return 255;
     return 2;
   }
 
@@ -1513,7 +1514,8 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     const above = smooth(23, 94, agl);
     const aheadAbove = smooth(23, 94, agl + Math.max(0, travel.y));
     const climbing = aheadAbove - above > 0.04;
-    if (jump || clock - planAt > 0.24 && (position.distanceToSquared(plannedPosition) > 16 ||
+    const canopyRevision = options.canopyRevision ?? 0;
+    if (jump || clock - planAt > 0.24 && (canopyRevision !== lastCanopyRevision || position.distanceToSquared(plannedPosition) > 16 ||
         direction.dot(plannedDirection) < 0.98 && looking || Math.abs(focal - plannedPixelScale) > 5 ||
         Math.abs(agl - plannedAgl) > 3) || lastCameraLevel !== stats.qualityLevel) {
       plan++;
@@ -1523,6 +1525,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       plannedPixelScale = focal;
       plannedAgl = agl;
       lastCameraLevel = stats.qualityLevel;
+      lastCanopyRevision = canopyRevision;
     }
 
     uploadContext = options.renderer?.backend?.isWebGPUBackend && options.renderer._attributes?.update
@@ -1705,7 +1708,12 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     }
     return () => { for (let i = restore.length - 1; i >= 0; i--) restore[i](); };
   };
-  return { group, material, atlas, update, setQuality, prepareWarmup, meshes: instanced, stats, sites: plantedSites };
+  function coveragePending(x, z) {
+    const cellX = Math.floor(x / TREE_CELL_SIZE), cellZ = Math.floor(z / TREE_CELL_SIZE);
+    const cell = cells.get((cellX + 32768) * 65536 + (cellZ + 32768));
+    return mode !== 'legacy' && cell && !cell.hasCoverage;
+  }
+  return { group, material, atlas, update, setQuality, prepareWarmup, coveragePending, meshes: instanced, stats, sites: plantedSites };
 }
 
 export { createTreeField, createLeafAtlas, buildTreeGeometries, SPECIES as TREE_SPECIES };

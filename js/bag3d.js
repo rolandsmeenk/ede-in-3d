@@ -707,9 +707,10 @@ function disposeFacadeAtlas(atlas) {
   atlas?.palette.dispose();
 }
 
-async function bagGeometry(gltf, facades, tile, stillWanted = () => true, pacing) {
+async function bagGeometry(gltf, facades, tile, stillWanted = () => true, pacing, replacementBagIds) {
   let features, atlas;
   const excluded = landmarkBagExclusions(tile.bounds);
+  for (const id of replacementBagIds ?? []) excluded.set(id, true);
   let byId = facades && await facades.forBounds(tile.bounds);
   if (excluded.size && byId?.size) {
     byId = new Map(byId);
@@ -788,7 +789,7 @@ function addBagGeometry(group, geometries, material, detailedMaterial) {
   return { walls: matched.size, observed: [...matched].filter(wall => wall.status === 'observed').length, recesses };
 }
 
-export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fetchJson, loader } = {}) {
+export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fetchJson, loader, replacementBagIds } = {}) {
   const [tiles, facades] = await Promise.all([
     selectTileRecords({ fetchJson }),
     loadEdeFacades().catch(error => {
@@ -807,7 +808,7 @@ export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fet
     while (next < tiles.length) {
       const tile = tiles[next++];
       const gltf = await gltfLoader.loadAsync(tile.url);
-      const { geometries, atlas } = await bagGeometry(gltf, facades, tile);
+      const { geometries, atlas } = await bagGeometry(gltf, facades, tile, undefined, undefined, replacementBagIds);
       let detailedMaterial;
       if (atlas) {
         surface ??= createFacadeSurfaceTexture();
@@ -843,7 +844,7 @@ async function fetchTile(url, signal) {
   return response.arrayBuffer();
 }
 
-export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer = fetchTile, loader } = {}) {
+export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer = fetchTile, loader, replacementBagIds } = {}) {
   const group = new THREE.Group();
   group.name = 'bag3d-buildings';
   scene.add(group);
@@ -964,7 +965,7 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     try {
       const gltf = await gltfLoader.parseAsync(buffer, new URL('.', tile.url).href);
       if (!stillWanted()) return;
-      const appearance = await bagGeometry(gltf, await facades, tile, stillWanted, pacing);
+      const appearance = await bagGeometry(gltf, await facades, tile, stillWanted, pacing, replacementBagIds);
       if (!appearance) return;
       ({ geometries, atlas } = appearance);
       const covered = await finishBagWorkIncrementally(coveredFallbackChunks(geometries, fallback), stillWanted, pacing);

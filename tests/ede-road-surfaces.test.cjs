@@ -4,7 +4,11 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { gunzipSync } = require('node:zlib');
 
-const asset = JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets/ede-road-surfaces.json.gz'))));
+const packed = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets', name))));
+const asset = packed('ede-road-surfaces.json.gz');
+const extension = packed('ede-corridor-paving.json.gz');
+const mockedSurfaces = async (url) => new Response(JSON.stringify(
+  url.pathname.endsWith('/ede-corridor-paving.json.gz') ? extension : asset));
 
 test('the same Kernhem street keeps its mapped asphalt to fired-brick change', () => {
   const materials = [
@@ -43,7 +47,7 @@ test('generic BGT materials only use compatible OSM ways', () => {
 });
 
 test('Westtunnel gets BGT tiles only on its fitted lower pedestrian section', async t => {
-  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(asset)));
+  t.mock.method(globalThis, 'fetch', mockedSurfaces);
   const { gradePavement, loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
   await loadEdeRoadSurfaces();
   const section = { a: { x: -3.270067786, z: 2040.3691188 }, b: { x: -3.48, z: 2037.64 } };
@@ -53,7 +57,7 @@ test('Westtunnel gets BGT tiles only on its fitted lower pedestrian section', as
 });
 
 test('both Raadhuisstraat covered carriageways use the continuous mapped asphalt', async t => {
-  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify(asset)));
+  t.mock.method(globalThis, 'fetch', mockedSurfaces);
   const { EDE_DATA } = await import('../js/ede-geodata.js');
   const { hasEdeMappedSurface, loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
   await loadEdeRoadSurfaces();
@@ -69,7 +73,8 @@ test('roadside pole clearance respects ground BGT road, cycle and driveway polyg
   const square = x => [x, 0, x + 5, 0, x + 5, 5, x, 5];
   const surfaces = ['rijbaan lokale weg', 'fietspad', 'inrit', 'voetpad', 'rijbaan lokale weg']
     .map((kind, i) => ({ function: kind, layer: i === 4 ? 1 : 0, polygons: [[square(i * 10)]] }));
-  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ version: 1, covered: {}, surfaces })));
+  t.mock.method(globalThis, 'fetch', async url => url.pathname.endsWith('/ede-corridor-paving.json.gz') ?
+    new Response(null, { status: 404 }) : new Response(JSON.stringify({ version: 1, covered: {}, surfaces })));
   await loadEdeRoadSurfaces();
   assert.deepEqual([2, 12, 22, 32, 42].map(x => isEdeTrafficPavement(x, 2)),
     [true, true, true, false, false]);

@@ -3,7 +3,7 @@ import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { createPostProcessing } from './post-processing.js?v=20261119-perf';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
-import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
+import { getLocationLabel, isTypingInField, EDE_DATA, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
 import { buildLandmarks } from './landmarks.js';
 import { createEdeMurals } from './ede-murals.js';
@@ -23,10 +23,12 @@ import { createLiveWeather, formatWeatherTime, weatherCondition } from './ede-we
 import { createWeatherPrecipitation } from './weather-precipitation.js';
 import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js';
-import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
+import { createExpansionCulling, setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js?v=20261120-acv-truck';
 import { loadTerrain, terrainHeightAt } from './terrain.js';
-import { loadAerialColors } from './aerial-colors.js';
+import { createTerrainTiles } from './ede-terrain-tiles.js';
+import { createForestCanopy, loadForestCanopy } from './ede-forest-canopy.js';
+import { loadAerialColors, loadExpansionGroundColors } from './aerial-colors.js';
 import { loadEdeTrees } from './ede-tree-data.js';
 import { TREE_SEASONS, setTreeSeason, getTreeSeason, refreshTreeSeason } from './tree-seasons.js';
 import { loadEdeLamps } from './ede-lamp-data.js';
@@ -47,7 +49,7 @@ import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
 import { loadEdeCorridorFallbacks } from './ede-facades.js';
-import { buildEdeDetail, loadEdeDetail } from './ede-detail.js?v=20261121-gantry-trusses';
+import { buildEdeDetail, loadEdeDetail } from './ede-detail.js?v=20261121-parcel-utility';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
@@ -146,16 +148,19 @@ async function initApp() {
   markInit('lighting');
 
   await showLoadingStage('Loading Ede’s map and timetables…');
+  const useUtilityDetails = enabled('detail') && enabled('utilityDetail');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult] = await Promise.allSettled([
-    loadTerrain(), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult] = await Promise.allSettled([
+    loadTerrain({ expanded: query.get('terrainTiles') !== 'off' }), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
-      motorway: enabled('motorwayDetail'),
+      motorway: enabled('motorwayDetail'), parcels: enabled('parcelDetail'), utilities: useUtilityDetails,
       directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null,
     enabled('laneFits') ? loadEdeFittedLanes() : null,
     enabled('sports') ? loadEdeSports() : null,
     loadEdeCorridorFallbacks(),
+    enabled('forestCanopy') ? loadForestCanopy() : null,
+    useUtilityDetails ? import('./ede-utility-landmarks.js') : null,
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -195,7 +200,9 @@ async function initApp() {
     console.warn('[sports] using basic pitch surfaces:', error);
   }
   markInit('sports fields');
-  const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity, replacedPitches);
+  await loadExpansionGroundColors();
+  const terrainTiles = createTerrainTiles(scene);
+  const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity, replacedPitches, forestCanopyResult.value);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
   const gradeWorld = buildEdeGradeWorld(scene);
@@ -230,11 +237,35 @@ async function initApp() {
   }
   markInit('grade and BGT structures');
   await showLoadingStage('Building landmarks...');
-  const landmarks = buildLandmarks(scene);
+  if (historicUtilitiesResult.status === 'rejected') console.warn('[electricity landmarks] using existing buildings:', historicUtilitiesResult.reason);
+  const landmarks = buildLandmarks(scene, { historicUtilities: historicUtilitiesResult.value });
   setEdePlatforms([...(bgtWorld?.platforms ?? []), ...landmarks.platforms]);
   setEdeHelipads(landmarks.helipads);
   setEdeStructureRoofs([...(bgtWorld?.weatherCovers ?? []), ...landmarks.weatherCovers]);
   markInit('landmarks');
+  const mappedLamps = lampResult.status === 'fulfilled' ? lampResult.value : undefined;
+  let importedDetail;
+  try {
+    if (detailResult.status === 'rejected') throw detailResult.reason;
+    if (detailData?.features.length) {
+      importedDetail = buildEdeDetail(scene, detailData.features, {
+        deckProfiles: bgtWorld?.deckProfiles, mappedLamps, nbdTexture: detailData.nbdTexture,
+      });
+      importedDetail.stats.surveyedMarkings = detailData.markings.length;
+      document.getElementById('ede-parcel-credit')?.toggleAttribute('hidden', !importedDetail.stats.parcel);
+      document.getElementById('ede-utility-credit')?.toggleAttribute('hidden', !importedDetail.stats.utility);
+      markInit('imported street and motorway detail');
+    }
+  } catch (error) {
+    console.warn('[detail] street and motorway detail unavailable:', error);
+  }
+  // Exclude generic buildings only after their local replacement meshes are ready.
+  const replacements = landmarks.replacements;
+  const detailReplacements = importedDetail?.group.userData.replacements;
+  if (detailReplacements) {
+    for (const id of detailReplacements.bag) replacements.bag.add(id);
+    for (const id of detailReplacements.osm) replacements.osm.add(id);
+  }
   const eagerBag = graphics.buildingDetail && profiling && query.get('bag') === 'eager';
   const streamBag = graphics.buildingDetail && !eagerBag;
   let bagBuildings = null;
@@ -242,6 +273,7 @@ async function initApp() {
     await showLoadingStage('Loading 3D BAG buildings...');
     try {
       bagBuildings = await loadBagBuildings(scene, {
+        replacementBagIds: replacements?.bag,
         onProgress: (done, total) => { if (loadingStatus) loadingStatus.textContent = `Loading 3D BAG buildings ${done}/${total}…`; }
       });
     } catch (error) {
@@ -252,30 +284,18 @@ async function initApp() {
   await showLoadingStage('Generating building facades...');
   if (corridorFacadesResult.status === 'rejected') console.warn('[facades] using basic corridor fallback walls:', corridorFacadesResult.reason);
   const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag,
-    corridorFacades: corridorFacadesResult.value });
+    corridorFacades: corridorFacadesResult.value, replacementOsmIds: replacements?.osm });
   const murals = createEdeMurals(scene, { enabled: enabled('murals'), isFallbackVisible: cityBlocks.isFallbackVisible });
-  if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks });
+  if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks, replacementBagIds: replacements?.bag });
   markInit('blocks');
   const allColliders = [...landmarks.colliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
     ...gradeWorld.colliders, ...(bgtWorld?.colliders || [])];
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');
-  const mappedLamps = lampResult.status === 'fulfilled' ? lampResult.value : undefined;
-  let importedDetail;
-  try {
-    if (detailResult.status === 'rejected') throw detailResult.reason;
-    if (detailData?.features.length) {
-      importedDetail = buildEdeDetail(scene, detailData.features, {
-        deckProfiles: bgtWorld?.deckProfiles, mappedLamps, nbdTexture: detailData.nbdTexture,
-      });
-      importedDetail.stats.surveyedMarkings = detailData.markings.length;
-      markInit('imported street and motorway detail');
-    }
-  } catch (error) {
-    console.warn('[detail] street and motorway detail unavailable:', error);
-  }
+  const forestCanopy = terrainTiles && createForestCanopy(scene, forestCanopyResult.value, treeSeasonsEnabled);
+  if (forestCanopy) forestCanopy.group.visible = graphics.vegetation;
   const streetDetails = buildStreetDetails(scene, allColliders, mappedLamps, importedDetail?.gantryLampMounts,
-    { quality: treeQuality, season: treeSeasonsEnabled });
+    { quality: treeQuality, season: treeSeasonsEnabled, canopyCovers: forestCanopy?.covers });
   const { treeField } = streetDetails;
   treeField.group.visible = graphics.vegetation;
   if (busSchedule) buildEdeBusStops(scene, busSchedule.variants);
@@ -412,6 +432,8 @@ async function initApp() {
   ].filter(Boolean);
   scene.updateMatrixWorld(true);
   scene.matrixWorldAutoUpdate = false;
+  const expansionCulling = terrainTiles && createExpansionCulling(
+    [...cullingRoots, scene.getObjectByName('EdeLevelCrossings')].filter(Boolean), EDE_DATA.meta.baseBounds, terrainHeightAt);
   markInit('culling');
 
   // On WebGPU, small InstancedMeshes (<= 1000 instances) keep their matrices in uniform buffers that three.js
@@ -833,7 +855,8 @@ async function initApp() {
         mapHint.textContent = 'Tap to teleport · Drag to pan · Use + / − to zoom';
       }
     },
-    onTeleport: teleportTo
+    onTeleport: teleportTo,
+    onLandmark: teleportToLandmark
   });
 
   teleportButtons.forEach((btn) => {
@@ -1041,7 +1064,8 @@ async function initApp() {
     gamepadControls.update(dt);
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
     cameraSystem.update(dt, elapsed);
-    profiler?.stage('Player and camera');
+    terrainTiles?.update(cameraSystem.camera, renderer.domElement.height);
+    profiler?.stage('Player, camera and terrain');
     if (trafficUpdates) {
       trafficClock += dt;
       const railTime=Date.now()/1000;
@@ -1067,9 +1091,11 @@ async function initApp() {
         refreshTreeSeason(dateNow());
         nextSeasonRefresh = now + 60000;
       }
+      forestCanopy?.update(camera, treeField);
       treeField.update(camera, {
         renderer, deltaMs: rawDt * 1000, viewportHeight: renderer.domElement.height,
         groundHeight: terrainHeightAt(camera.position.x, camera.position.z),
+        canopyRevision: forestCanopy?.stats.revision,
       });
     }
     profiler?.stage('Vegetation');
@@ -1090,6 +1116,7 @@ async function initApp() {
     mapSystem.update();
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
     profiler?.stage('Map and audio');
+    if (warmedUp) expansionCulling?.update(cameraSystem.camera);
     if (warmedUp) updateSceneCulling(cameraSystem.camera.position); // the warm-up frame draws every chunk
     // Traffic collisions can move the player after controller updates; finalize moving hierarchies here.
     for (const root of dynamicRoots) root.updateMatrixWorld();
@@ -1150,6 +1177,9 @@ async function initApp() {
             setTreeQuality: selectTreeQuality,
             setTreeSeason: selectTreeSeason,
           },
+          terrainTiles: terrainTiles?.stats,
+          expansionCulling: expansionCulling?.stats,
+          forestCanopy: forestCanopy?.stats,
           treeStats: treeField.stats,
           treeInventory: {
             source: loadedTrees?.inventory ?? 'osm', records: cityGrid.group.userData.treeInventory,
