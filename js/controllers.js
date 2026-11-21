@@ -13,6 +13,7 @@ import {
 import { cityUniforms, createCarPaintMaterial, createContactShadowMaterial } from './tsl-materials.js';
 import {
   BODY_SPECS,
+  PARKED_CAR_LAMPS,
   buildCarGeometry,
   buildCarSidePatch,
   buildSteerableWheelGeo,
@@ -541,7 +542,14 @@ class ThirdPersonControllerManager {
       active._posedX = NaN;
     }
     const car = this.entities.car;
-    if (mode !== 'car' && car?.carState) car.carState.value.x = car.carState.value.w = 0;
+    if (car?.carState) {
+      if (mode !== 'car') {
+        car.carState.value.x = PARKED_CAR_LAMPS;
+        car.carState.value.w = 0;
+      } else if (car.carState.value.x === PARKED_CAR_LAMPS) {
+        car.carState.value.x = 0;
+      }
+    }
   }
 
   getActiveEntity() {
@@ -1913,7 +1921,7 @@ class ThirdPersonControllerManager {
     if (car.headLights) {
       for (const spot of car.headLights) {
         // Accelerating does not change the headlamp output or range.
-        spot.intensity = HEADLIGHTS.intensity * beamScale;
+        spot.intensity = this.activeMode === 'car' ? HEADLIGHTS.intensity * beamScale : 0;
       }
     }
     for (const mode of ['cyclist', 'cargobike']) {

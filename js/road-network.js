@@ -498,9 +498,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         return distance && [dx / distance, dz / distance];
       };
       const original = lanesOf(l);
-      const fast = /^(motorway|trunk)(?:_link)?$/.test(l.road?.kind);
+      // The long N224 bend east of Ginkelse Heide also needs a lateral error limit.
+      const preserveCurve = /^(motorway|trunk)(?:_link)?$/.test(l.road?.kind) || l.road?.id === 'w6850904';
       function addRun(start, end, from, to, source) {
-        if (fast) {
+        if (preserveCurve) {
           const span = Math.hypot(to.x - from.x, to.z - from.z);
           const dx = (to.x - from.x) / span, dz = (to.z - from.z) / span;
           let pivot = -1, deviation = 1;
@@ -534,6 +535,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         runs.push({ ...l, ...lanes, definitions, turnTagsAtEnd, from, to, original, source, keepShape: l.keepShape || !!source,
           osmStart: start === 0 ? l.osmStart : undefined, osmEnd: end === pts.length - 1 ? l.osmEnd : undefined,
           sourceCenter: { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 },
+          paintPath: end - start > 1 ? l.pts.slice(start, end + 1) : undefined,
           headings: [[heading(start, start + 1), heading(end - 1, end)], [heading(end, end - 1), heading(start + 1, start)]] });
       }
       for (let k = 0; k + 1 < stations.length; k++) addRun(stationIndices[k], stationIndices[k + 1], stations[k], stations[k + 1]);
@@ -620,7 +622,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
     }
     edges.push({ from, to, axis, x0, z0, dx, dz, rx: -dz, rz: dx, span, half, lanes: open, moves: [],
       general: true, cand: lanes, divided: !!divided, busOnly: modes === BUS, modes,
-      ...sourceRoad,
+      ...sourceRoad, paintPath: run.paintPath,
       ...(tagged ? { laneModes: usable.map(i => tagged[i]) } : {}),
       ...(laneDefinition ? { laneDefinition, driveLanes: usable.map(i => laneDefinition.lanes[i]), direction,
         graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
@@ -927,10 +929,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   const paintEdges = edges.filter(e => e.laneDefinition ? !e.underpass || gradeWays?.has(e.wayId) : !e.busOnly && !e.underpass && !e.boundary)
     .map(({ from, to, axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes, wayId, layer,
       bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd,
-      sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan }) => ({
+      sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan, paintPath }) => ({
     from: paintNodes.get(from), to: paintNodes.get(to), axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes,
     wayId, layer, bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd,
-    sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan
+    sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan, paintPath
   }));
 
   // 6. Movements at each intersection (no U-turns) and the lane each lane leads to, along obstacle-free curves:

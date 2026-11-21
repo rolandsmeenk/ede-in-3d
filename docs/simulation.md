@@ -2,6 +2,20 @@
 
 Traffic, weather, parking and public transport in Ede in 3D. [Hosting and feed availability](running.md#github-pages-and-live-data) · [Traffic pilot and verification](../tools/data/ede-traffic-pilot.md)
 
+## Night lighting
+
+Live Time follows the sun at Oude Kerk. As dusk ends, the scene settles into the same sky and cool fill as the Night preset. Window lights follow a separate Europe/Amsterdam schedule. Homes gradually light up as daylight fades, peak around 21:00 and taper off overnight. Offices begin switching off after the workday and have fewer lit windows at weekends. Manual lighting presets have fixed window profiles. The same local hour can have lit windows in winter and full daylight in summer.
+
+The window simulation uses building uses from the public BAG register. A 64 KB offline asset matches those uses to 25,470 of the map's footprints, including 22,820 homes and 501 office or education matches. OpenStreetMap tags cover additional buildings, with a conservative profile where use is unknown. Windows are emissive surfaces on the existing façade meshes. Their pattern is seeded per building and changes as the schedule fades. These are illustrative schedules. [Kadaster building-use definitions](https://catalogus.kadaster.nl/bag/nl/page/Gebruiksdoel) · [PDOK BAG](https://www.pdok.nl/ogc-apis/-/article/basisregistratie-adressen-en-gebouwen-ba-1)
+
+The streetlights use BGT and 1GIS fixture locations. The public inventory provides positions and available fixture details. Ede documents energy-saving dimming in its municipal plan, and the game estimates which lights are on. Satellite night-light data measures the combined light of a broad area. [Streetlight inventory](../tools/data/ede-lamps.sources.md) · [Ede CO₂ management plan](https://www.ede.nl/fileadmin/ede.nl/Pdf-en/CO2_Communicatie_2023.pdf) · [NASA Black Marble](https://blackmarble.gsfc.nasa.gov/)
+
+To rebuild the window-use asset from a cached BAG snapshot made by the parcel-detail import:
+
+```sh
+uv run --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-window-uses.py /path/to/parcel-cache
+```
+
 ## Live road traffic
 
 The live server caches the national NDW DATEX II v3 and OVapi GTFS-Realtime feeds and serves only matches within the Ede map. NDW readings change demand and cruising speed on their matched direction. Posted or applicable temporary limits cap speed. Valid closures block new entry. The camera-local simulation uses Amsterdam time-of-day demand and the timetable when live data expires. See the [traffic data notes](../tools/data/ede-traffic-sources.md) for coverage, fallbacks, and the frame-time measurements.
@@ -12,11 +26,11 @@ Turn on **Live Weather** in the toolbar to use current model estimates for Oude 
 
 The game requests an update about every 15 minutes while visible. The local server shares one cached reading across clients. Static hosting requests the same conditions from Open-Meteo when the server endpoint is absent. A reading is marked stale after 30 minutes and fades back to the selected mode after an hour. When no reading is available, the selected mode supplies the weather settings.
 
-Concordiamolen and De Keetmolen use the 10 m reading by Oude Kerk. The Maanderbroek turbines use model wind at the wind farm, interpolated between 80 m and 120 m. The Live Weather card shows both the town wind and the modeled wind at the 99.5 m hubs. Preset weather supplies a simulated 18 km/h southwesterly breeze when Live Weather is off or a reading is unavailable.
+Concordiamolen, De Keetmolen and Doesburgermolen use the 10 m reading by Oude Kerk. The Maanderbroek turbines use model wind at the wind farm, interpolated between 80 m and 120 m. The Live Weather card shows both the town wind and the modeled wind at the 99.5 m hubs. Preset weather supplies a simulated 18 km/h southwesterly breeze when Live Weather is off or a reading is unavailable.
 
 The Maanderbroek Siemens SWT-3.2-101 turbines have a 3 m/s cut-in speed and a 25 m/s cut-out speed at hub height. Siemens lists a 6.5–19 RPM operating range. The game approximates the controller’s speed curve within that range. If the wind farm forecast is unavailable, it estimates wind at the hubs from a 10 m reading with the 1/7 power law. Blinking red beacons mark the rear of both nacelles at dusk and at night. [Wind farm construction record](https://verwaard-bv.nl/raedthuys-windpark-a30-a12-maanderbroek/) · [Siemens datasheet](https://datasheet.datasheetarchive.com/originals/crawler/siemens.com/d1ee0e9960c2d8b87e5d46af432194c2.pdf) · [Wind shear reference](https://docs.nrel.gov/docs/fy15osti/63696.pdf)
 
-Concordiamolen and De Keetmolen show canvas on their wooden lattices as they turn. The game shortens the canvas in stronger winds and shows bare lattices in high wind or at rest. The wind thresholds approximate a miller’s sail settings. [Gilde van Molenaars handbook](https://gildevanmolenaars.nl/f/files/download/opleidingen/lesmateriaal/handboek-windmolenaar/hoofdstuk-7-de-praktijk-dl-1-vs-23.pdf)
+The three historic mills show canvas on their wooden lattices as they turn. At Doesburgermolen, the timber body and access steps turn with the sails above the fixed thatched base. The game shortens the canvas in stronger winds and shows bare lattices in high wind or at rest. The wind thresholds approximate a miller’s sail settings. [Gilde van Molenaars handbook](https://gildevanmolenaars.nl/f/files/download/opleidingen/lesmateriaal/handboek-windmolenaar/hoofdstuk-7-de-praktijk-dl-1-vs-23.pdf)
 
 The Raadhuis flags and the Lukkien windsock trail downwind. The weather vanes at Oude Kerk, Beatrixkerk and the Evangelisch-Lutherse Kerk point into the same town wind used by the historic mills. [Raadhuis photo](https://www.ede.nl/fileadmin/ede.nl/Pdf-en/Zienswijze__bezwaar_of_beroep/Jaarverslag_commissie_voor_de_bezwaarschriften_2023.pdf) · [Oude Kerk vane](https://indebuurt.nl/ede/genieten-van/mysteries/mysterie-opgelost-dit-betekenen-die-bol-kruis-en-haan-op-de-toren-van-de-oude-kerk~85582/) · [Beatrixkerk vane](https://www.kerkvaan.nl/115-ede.html) · [Lutherse Kerk vane](https://edesemonumenten.nl/fiets-en-wandelroute/)
 
@@ -52,6 +66,14 @@ Parked cars use reusable instance tiles. Departures replace ambient spawns and a
 The local server supplies `/api/ede-parking`. Exact Q-Park readings require authorised NPR credentials in `EDE_NPR_USERNAME` and `EDE_NPR_PASSWORD` on the server. The simulation places cars in the mapped spaces or at garage entrances and exits. Readings expire after three minutes and occupancy eases into the local profile. Parkweg, Kuiperplein and the new station garage use surveyed or inferred occupancy. [NPR data access](https://www.nationaalparkeerregister.nl/downloads/certificaten-en-aanvraagformulieren)
 
 For profiling, append `?parking=off` to the game URL. The debug API `window.__slopwaw.trafficSystem.parking.summary()` reports local capacity, occupancy, source, and completed arrivals and departures by area. The [parking verification report](../tools/data/ede-parking-verification.md) records the fixed-time checks and performance comparison.
+
+### Bicycle parking
+
+The pilot fits 262 outdoor positions across 15 sites. It uses PDOK BGT bicycle racks and mapped OpenStreetMap parking areas, with an aerial-photo-based sample of 24 spaces at Pallas Athene College. Other sites include Dulon College, Het Streek College, Noordplein at Ede-Wageningen, Ede Centrum and Kuiperplein. The positions represent estimated display capacity. For example, the Noordplein rows model 73 outdoor positions within a facility of 1,600 spaces. [Ede’s bicycle parking programme](https://www.ede.nl/in-de-gemeente-ede/ede-fietst/verbeteren-fietsenstallingen) · [Pallas Athene’s courtyard parking](https://www.pallasathenecollege.nl/dinsdag-6-januari/) · [Noordplein capacity](https://www.spoorzone-ede.nl/nieuws/opening-westtunnel-en-fietsenstalling-station-ede-wageningen)
+
+Occupancy follows Europe/Amsterdam profiles for schools, stations, shops, sports grounds and public racks. Parked bikes use camera-local instances with stable appearances. At Dulon College, Het Streek College, Pallas Athene College and Noordplein, cyclists can finish a cycle-network trip at a vacant space with a checked same-level approach. Departures keep the bike’s style and use a slot in the existing moving cyclist pool. The final walking transfer between the path and the rack happens outside the close view. The other sites show parked bikes according to their occupancy profile. The simulation works offline. Append `?bikeParking=off` to compare, or inspect `window.__slopwaw.trafficSystem.bikeParking.stats` for local rendering and turnover totals.
+
+The simulation targets an estimated 8% fatbike share for secondary-school and vocational-school trips and racks, and 4% elsewhere. The 2025 national roadside count found 4% fatbikes overall. RIVM found that 29% of Dutch cyclists aged 12–17 used an e-bike in 2025, and about a quarter of that group used a fatbike. Public bicycle-parking data can supply locations and some capacity or occupancy readings. Ede’s 2022 centre survey counted bicycles together and recorded mopeds separately. The available data leaves the bike-type mix at individual Ede schools and streets unmeasured. [National roadside count, table 5](https://open.overheid.nl/documenten/59161a38-741d-4d9b-98cf-9dc526630b41/file) · [RIVM youth usage](https://www.rivm.nl/nieuws/forse-stijging-van-aantal-jongeren-en-jongvolwassenen-dat-elektrisch-fietst) · [VeiligStallen data](https://ntm.ndw.nu/publicaties/1a4ad51e-8a3d-4d4c-a62a-bc9ecffdce50) · [Ede centre survey](https://open.ede.nl/woo-verzoeken/woo/publicatie/c32e83a0-71c4-46df-a186-bdc1e747213d?cHash=f1112c11c60c2a7ba7ee252f366835e3)
 
 ## Passenger trains
 

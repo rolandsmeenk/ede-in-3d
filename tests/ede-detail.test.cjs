@@ -9,11 +9,12 @@ const { loadModule } = require('./helpers/module.cjs');
 const file = name => path.join(__dirname, '..', 'js', name);
 const source = name => readFileSync(file(name), 'utf8');
 
-async function fixture(grade = {}, fetch = globalThis.fetch) {
+async function fixture(grade = {}, fetch = globalThis.fetch, roadPavement = () => false) {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const imports = { 'three/webgpu': THREE };
   const geometry = loadModule(source('ede-geometry.js').replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
-    imports: { ...imports, './city-config.js': {}, './terrain.js': { getTerrain: () => null }, './ede-grade.js': {} }
+    imports: { ...imports, './city-config.js': { EDE_DATA: { roads: [] } }, './ede-road-surfaces.js': { isEdeTrafficPavement: roadPavement },
+      './terrain.js': { getTerrain: () => null }, './ede-grade.js': {} }
   });
   const detail = source('ede-detail.js')
     .replace('export async function loadEdeDetail', 'async function loadEdeDetail')
@@ -22,10 +23,11 @@ async function fixture(grade = {}, fetch = globalThis.fetch) {
     THREE,
     ...loadModule(detail, {
       imports: { ...imports, './ede-geometry.js': geometry, './ede-grade.js': grade,
+        './ede-signal-hardware.js?v=20261121-signal-optics': await import('../js/ede-signal-hardware.js'),
         './ede-playground-equipment.js': loadModule(source('ede-playground-equipment.js')),
         './ede-scene-coordinates.js': loadModule(source('ede-scene-coordinates.js')),
         './terrain.js': { getTerrain: () => ({ napOrigin: 22.54 }), terrainHeightAt: () => 2 } },
-      globals: { fetch, URL, Response, DecompressionStream }
+      globals: { fetch, URL, Response, DecompressionStream, AbortController }
     }),
     ...loadModule(source('scene-culling.js'), { imports })
   };
@@ -74,6 +76,38 @@ test('parcel styles use tiled close detail and keep inferred boundaries decorati
   assert.equal(wire.material.map.generateMipmaps, true);
   assert.equal(wire.userData.cullDistance, 105);
   assert.equal(result.group.getObjectByName('PARCEL detail tuft').userData.cullDistance, 75);
+});
+
+test('parcel tiles build close to the camera and dispose on a long jump', async () => {
+  const row = { id: 'garden', type: 'parcelSurface', source: 'parcel', level: 0, status: 'inferred',
+    surface: 'patio', polygon: [[1, 1], [3, 1], [3, 3], [1, 3]] };
+  const requests = [];
+  const { THREE, buildEdeDetail, streamParcelTiles } = await fixture({ gradeProfileAt: () => null }, async url => {
+    requests.push(url.pathname.split('/').at(-1));
+    return new Response(JSON.stringify({ version: 1, features: [row] }));
+  });
+  const scene = new THREE.Scene();
+  const { resources } = buildEdeDetail(scene, [row]);
+  const stream = streamParcelTiles(scene, [
+    { id: '0_0', bounds: [0, 0, 5, 5], count: 1 },
+    { id: '3_0', bounds: [500, 0, 510, 5], count: 1 },
+  ], resources, false);
+  const camera = new THREE.Vector3(0, 3, 0);
+  stream.update(camera, 0);
+  await new Promise(resolve => setImmediate(resolve));
+  stream.update(camera, 40);
+  assert.deepEqual(requests, ['0_0.json.gz']);
+  assert.equal(stream.stats.placements, 1);
+  const group = scene.getObjectByName('EdeParcelTiles');
+  let disposed = false;
+  group.children[0].children[0].geometry.addEventListener('dispose', () => { disposed = true; });
+  camera.x = 500;
+  stream.update(camera, 41);
+  assert.deepEqual(requests, ['0_0.json.gz', '3_0.json.gz']);
+  assert.equal(stream.stats.placements, 0);
+  assert.equal(group.children.length, 0);
+  assert.equal(disposed, true);
+  stream.dispose();
 });
 
 test('utility replacements are registered only after valid exterior geometry is built', async () => {
@@ -153,9 +187,17 @@ test('instanced furniture and half gantry follow the culling and elevation contr
   const mount = result.gantryLampMounts.get(coincidentLamp);
   assert.equal(mount.x, 0);
   assert.ok(Math.abs(mount.top - 9.18) < 1e-6);
-  const beam = result.group.children.find(mesh => mesh.name === '1GIS detail solid');
-  beam.geometry.computeBoundingBox();
-  assert.ok(Math.abs(beam.geometry.boundingBox.max.y - 9.18) < 1e-6);
+  const beam = tiles.find(mesh => mesh.name === '1GIS detail round');
+  assert.equal(beam.count, 1);
+  assert.equal(beam.geometry.type, 'CylinderGeometry');
+  const matrix = new THREE.Matrix4();
+  beam.getMatrixAt(0, matrix);
+  assert.ok(new THREE.Vector3().setFromMatrixPosition(matrix).distanceTo(new THREE.Vector3(6, 9, 15)) < 1e-6);
+  const along = new THREE.Vector3().setFromMatrixColumn(matrix, 1);
+  assert.ok(along.distanceTo(new THREE.Vector3(12, 0, 0)) < 1e-6);
+  for (const column of [0, 2]) {
+    assert.ok(Math.abs(new THREE.Vector3().setFromMatrixColumn(matrix, column).length() - 0.36) < 1e-6);
+  }
 
   setupSceneCulling(scene, [result.group]);
   assert.ok(tiles.every(tile => tile.parent === result.group && tile.boundingSphere));
@@ -196,6 +238,19 @@ test('a full gantry has three truss chords and keeps its destination panel in fr
   const backing = group.getObjectByName('NBD detail solid').geometry;
   backing.computeBoundingBox();
   assert.ok(closeTo(backing.boundingBox.min.z, 15.8));
+});
+
+test('a surveyed cantilever corrects its foot independently of the optional signal asset', async () => {
+  const { buildEdeDetail, THREE } = await fixture({}, globalThis.fetch, (x, z, layer) => layer === 0 && x < 3);
+  const { gantries, group } = buildEdeDetail(new THREE.Scene(), [
+    { id: 'signal-span', source: '1gis', type: 'gantry', half: true, points: [[0, 0], [8, 0]], beamY: 31.54 },
+  ]);
+  assert.equal(gantries[0].x, 8);
+  assert.equal(gantries[0].ux, -1);
+  const post = group.getObjectByName('1GIS detail box');
+  const matrix = new THREE.Matrix4();
+  post.getMatrixAt(0, matrix);
+  assert.equal(matrix.elements[12], 8);
 });
 
 test('a mapped pond bank tapers to a low crown without adding a collider', async () => {

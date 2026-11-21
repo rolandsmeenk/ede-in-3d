@@ -13,8 +13,17 @@ import { EDE_POMPHUIS } from './ede-pomphuis-survey.js';
 import { HARTOGSHOF_FOOTPRINTS } from './ede-hartogshof-survey.js';
 import { EDE_BARRACKS_HERITAGE_LANDMARKS } from './ede-barracks-heritage-survey.js';
 import { EDE_VILLA_HERITAGE_LANDMARKS } from './ede-villa-heritage-survey.js';
+import { ZUIDERPOORT_SITE } from './ede-zuiderpoort-survey.js';
+import { EDE_INDUSTRIAL_HERITAGE_LANDMARKS } from './ede-industrial-heritage-survey.js';
+import { EDE_STREET_HERITAGE_LANDMARKS } from './ede-street-heritage-survey.js';
+import { EDE_MODERN_NEIGHBORHOOD_LANDMARKS } from './ede-modern-neighborhood-survey.js';
 import { EDE_VELDHUIZEN_LANDMARKS } from './ede-veldhuizen-survey.js';
 import { EDE_EXPANSION_LANDMARKS } from './ede-expansion-landmark-surveys.js';
+import { EDE_AMADEUS_LANDMARKS } from './ede-amadeus-survey.js';
+import { EDE_REEMST_LANDMARKS } from './ede-reemst-landmark-survey.js';
+import { EDE_WEST_EXPANSION_LANDMARKS } from './ede-west-expansion-surveys.js';
+import { EDE_GINKEL_LANDMARKS } from './ede-ginkel-landmark-surveys.js';
+import { EDE_ZONNEOORD_LANDMARKS } from './ede-zonneoord-surveys.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -182,8 +191,17 @@ export const EDE_MODELED_LANDMARKS = [
   ...EDE_RESTAURANT_ESTATE_LANDMARKS,
   ...EDE_BARRACKS_HERITAGE_LANDMARKS,
   ...EDE_VILLA_HERITAGE_LANDMARKS,
+  ZUIDERPOORT_SITE,
+  ...EDE_INDUSTRIAL_HERITAGE_LANDMARKS,
+  ...EDE_STREET_HERITAGE_LANDMARKS,
+  ...EDE_MODERN_NEIGHBORHOOD_LANDMARKS,
   ...EDE_VELDHUIZEN_LANDMARKS,
   ...EDE_EXPANSION_LANDMARKS,
+  ...EDE_AMADEUS_LANDMARKS,
+  ...EDE_REEMST_LANDMARKS,
+  ...EDE_WEST_EXPANSION_LANDMARKS,
+  ...EDE_GINKEL_LANDMARKS,
+  ...EDE_ZONNEOORD_LANDMARKS,
 
   ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, churchSurvey]) => {
     const { name, osm, bag, center: [x, z], road, district, approach, height } = churchSurvey;

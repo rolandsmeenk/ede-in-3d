@@ -44,12 +44,21 @@ import { STATIONSWEG_LANDMARK_FACTORIES } from './ede-stationsweg-landmarks.js';
 import { EDE_RESTAURANT_ROW_BUILDERS } from './ede-restaurant-row.js';
 import { EDE_RESTAURANT_ESTATE_BUILDERS } from './ede-restaurant-estates.js';
 import { EXPANSION_LANDMARK_FACTORIES } from './ede-expansion-landmarks.js';
+import { EDE_AMADEUS_LANDMARK_FACTORIES } from './ede-amadeus-landmark.js';
+import { REEMST_LANDMARK_FACTORIES } from './ede-reemst-landmarks.js';
+import { WEST_EXPANSION_LANDMARK_FACTORIES } from './ede-west-expansion-landmarks.js';
+import { GINKEL_LANDMARK_FACTORIES } from './ede-ginkel-landmarks.js';
+import { ZONNEOORD_LANDMARK_FACTORIES } from './ede-zonneoord-landmarks.js';
 import { createPomphuis } from './ede-pomphuis.js';
 import { createVillaBrutusTerraces } from './ede-villa-brutus.js';
 import { createUluCamii } from './ede-ulu-camii.js';
 import { MOSQUE_LANDMARK_FACTORIES } from './ede-mosque-landmarks.js';
 import { BARRACKS_HERITAGE_FACTORIES } from './ede-barracks-heritage-landmarks.js';
 import { VILLA_HERITAGE_FACTORIES } from './ede-villa-heritage-landmarks.js';
+import { createZuiderpoort } from './ede-zuiderpoort-landmark.js';
+import { INDUSTRIAL_HERITAGE_FACTORIES } from './ede-industrial-heritage-landmarks.js';
+import { STREET_HERITAGE_FACTORIES } from './ede-street-heritage-landmarks.js';
+import { MODERN_NEIGHBORHOOD_FACTORIES } from './ede-modern-neighborhood-landmarks.js';
 import { VELDHUIZEN_LANDMARK_FACTORIES } from './ede-veldhuizen-landmarks.js';
 import { createKopParkweg } from './ede-kop-parkweg.js';
 import { createHartogshof } from './ede-hartogshof.js';
@@ -60,7 +69,7 @@ export let bryantParkLawn = null;
 export const LANDMARKS = [];
 export const BERGHAIN_TREE_SITES = [];
 export const LANDMARK_SOURCE_EXCLUSIONS = new Set([
-  ...EDE_MODELED_LANDMARKS.flatMap(site => [site.osmId, ...(site.annexOsmIds ?? []), ...(site.excludeOsmIds ?? [])]),
+  ...EDE_MODELED_LANDMARKS.flatMap(site => [site.osmId, ...(site.annexOsmIds ?? []), ...(site.excludeOsmIds ?? [])]).filter(Boolean),
   ...EDE_FUEL_SITES.flatMap(site => [site.canopyOsmId, site.shop?.osmId].filter(Boolean)),
   // The second outline is over the real station steps and bicycle parking.
   'w1156797030', 'w1156797029',
@@ -84,7 +93,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   group.name = 'EdeLandmarks';
   const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [];
   const landmarkLods = [];
-  const replacements = { bag: new Set(), osm: new Set() };
+  const replacements = { bag: new Set(), osm: new Set(), parcelSources: new Set() };
   scene.add(group);
 
   function place(model, { x, z }, heading, footprints = [], baseY, colliderHeights = [], worldSpace = false) {
@@ -164,6 +173,10 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     ...MOSQUE_LANDMARK_FACTORIES,
     ...BARRACKS_HERITAGE_FACTORIES,
     ...VILLA_HERITAGE_FACTORIES,
+    'de-zuiderpoort': createZuiderpoort,
+    ...INDUSTRIAL_HERITAGE_FACTORIES,
+    ...STREET_HERITAGE_FACTORIES,
+    ...MODERN_NEIGHBORHOOD_FACTORIES,
     ...VELDHUIZEN_LANDMARK_FACTORIES,
     'kop-van-de-parkweg': createKopParkweg,
     hartogshof: createHartogshof,
@@ -179,6 +192,11 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     ...EDE_RESTAURANT_ROW_BUILDERS,
     ...EDE_RESTAURANT_ESTATE_BUILDERS,
     ...EXPANSION_LANDMARK_FACTORIES,
+    ...EDE_AMADEUS_LANDMARK_FACTORIES,
+    ...REEMST_LANDMARK_FACTORIES,
+    ...WEST_EXPANSION_LANDMARK_FACTORIES,
+    ...GINKEL_LANDMARK_FACTORIES,
+    ...ZONNEOORD_LANDMARK_FACTORIES,
   };
   function registerDetail(detail) {
     const range = detail.userData.nearDetail;
@@ -198,6 +216,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
       : models[site.id](footprints, site);
     model.name = site.name;
     platforms.push(...(model.userData.platforms ?? []));
+    for (const source of site.replaceParcelSources ?? []) replacements.parcelSources.add(source);
     helipads.push(...(model.userData.helipads ?? []));
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
     model.traverse(registerDetail);

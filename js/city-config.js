@@ -336,20 +336,31 @@ const SCENIC_ARRIVALS = {
  'enka-ehbo':       [431, 2364, 414, 2355, 2.3, 'Sterkerij'],
  oranjestaete:      [15.5, 2249, 34, 2228, 6.3, 'Oude Bennekomseweg'],
  'villa-sterrenberg': [254.9, -46.3, 270, -72, 4.7, 'Bergstraat'],
+ 'de-zuiderpoort':  [-833, 1953.3, -867.2, 1950.1, 3.6, 'Poortplein'],
+ 'enka-bitterzoutloods': [319, 2513.2, 323, 2498.1, 4, 'Enkalaan'],
+ 'van-essenkazerne': [437.5, 1229.3, 437.5, 1263.8, 5.8, 'Van Essenkwartier'],
+ fischerhuis:       [-137.2, -237.3, -143.5, -249.0, 1.25, 'Notaris Fischerstraat'],
+ 'boerderij-de-driehoek': [126.4, -38.5, 138.4, -50.2, 4, 'Driehoek'],
+ 'historische-winkelpuien': [-112, 246, -118.9, 236.7, 2.5, 'Grotestraat'],
+ 'de-verbinding':   [1521.8, 989.2, 1546, 1017, 5.4, 'Elbert Veenendaalhof'],
+ 'mhc-ede':         [576.5, -572.9, 552, -581, 3.6, 'Bosrand'],
  bellestein:        [-1877.8, 507, -1867.7, 479.8, 4.5, 'Bellestein'],
  laathof:           [-2487, 466.2, -2518, 449.4, 5.5, 'Laathof'],
  'kop-van-de-parkweg': [-129.8, 2031, -92, 2049, 6.5, 'Parkweg'],
  hartogshof:       [213, 2230, 250, 2256, 6.5, 'Akulaan'],
  'akulaan-h2-h4':   [401, 2255, 406, 2226, 8, 'Akulaan'],
  parkveste:        [-187, 2027.5, -185, 2008, 7, 'Parkweg'],
- // Use the public De Ginkel car park for the three N224 landmarks.
- 'schaapskooi-ginkelse-heide': [4385.3, 953.77, 4337.48, 1071.32, 3.3, 'Parkeerplaats De Ginkel'],
- 'juffrouw-tok': [4380, 976, 4352.30, 960.90, 3.5, 'Parkeerplaats De Ginkel'],
+ // Use the public paths and parking at De Ginkel.
+ 'schaapskooi-ginkelse-heide': [4330.0, 1048.3, 4337.48, 1071.32, 3.3, 'Wijde Veldweg'],
+ 'juffrouw-tok': [4374, 978, 4352.30, 960.90, 3.5, 'Parkeerplaats De Ginkel'],
  'airborne-monument-ginkel': [4396, 969, 4279.28, 1009.78, 1.8, 'Parkeerplaats De Ginkel'],
+ 'vensters-op-het-verleden': [4263.8, 1057.8, 4270.4, 1055.7, 2.9, 'Wijde Veldweg'],
+ huzarenmonument: [4384, 975.5, 4375.8, 973.6, 0.86, 'Parkeerplaats De Ginkel'],
  doesburgermolen: [-1584.07, -1778.56, -1553.53, -1787.15, 7.8, 'Doesburger Molenweg'],
  mossel: [6145.87, -1805.28, 6167.24, -1817.47, 3.6, 'Mosselseweg'],
  'planken-wambuis': [7887.27, 1700.51, 7856.50, 1704.20, 3.8, 'Verlengde Arnhemseweg'],
  'veenendaal-de-klomp': [-6654.63, 6.67, -6682.56, 6.21, 2.3, 'Stationsplein'],
+ amadeus: [1224.9, -2215.5, 1196.5, -2229.0, 3.3, 'Otterloseweg'],
 };
 const TELEPORT_LOCATIONS={};
 for(const lm of NYC_LANDMARKS){
@@ -358,7 +369,8 @@ for(const lm of NYC_LANDMARKS){
  const streetPoint=point&&nearestRoadPoint(point.x,point.z,ROADS.filter(r=>r.name===lm.road));
  const t=streetPoint?{x:streetPoint.x,z:streetPoint.z,name:streetPoint.road.name}:arrival(lm.lon,lm.lat,lm.road);
  t.heading=Math.atan2(lm.x-t.x,lm.z-t.z);
- const scenic = SCENIC_ARRIVALS[lm.id];
+ const scenic = SCENIC_ARRIVALS[lm.id] ?? (lm.mapScenic && lm.approach &&
+   [lm.approach.x, lm.approach.z, lm.x, lm.z, lm.focusHeight ?? Math.max(1, Math.min(12, lm.height / 2)), lm.road]);
  if (scenic) {
    const [x, z, tx, tz, height, name, offset] = scenic;
    TELEPORT_LOCATIONS[lm.id] = { x, z, name, heading: Math.atan2(tx - x, tz - z), focus: { x: tx, z: tz, height, offset } };

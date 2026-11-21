@@ -78,6 +78,7 @@ test('draped faces keep their offset across terrain cells and both sides of the 
       'three/webgpu': { BufferGeometry: Geometry, BufferAttribute: Attribute, Float32BufferAttribute: Attribute },
       './city-config.js': {},
       './terrain.js': { getTerrain: () => terrain, getTerrainPatch: () => null, terrainHeightAt: heightAt },
+      './ede-road-surfaces.js': {},
       './ede-grade.js': {}
     }
   });
@@ -139,7 +140,7 @@ test('surveyed station footway shares a continuous grade with pavement in both d
   }
   const source = readFileSync(path.join(__dirname, '../js/ede-geometry.js'), 'utf8');
   const geometry = loadModule(source.replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
-    imports: { 'three/webgpu': THREE, './city-config.js': {}, './terrain.js': terrain, './ede-grade.js': grade },
+    imports: { 'three/webgpu': THREE, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {}, './ede-grade.js': grade },
   });
   const asPoint = ([x, z]) => ({x, z});
   const input = geometry.edeStrip(asPoint(point(-2)), asPoint(point(length + 2)), 1.5, 0.055);
@@ -184,4 +185,74 @@ test('surveyed station footway shares a continuous grade with pavement in both d
       }
     }
   }
+});
+
+test('the Ginkelse Heide detail resolves both sand areas with continuous terrain, collision and paths', async ({ mock }) => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const terrain = await import('../js/terrain.js');
+  const root = path.join(__dirname, '..');
+  const file = name => readFileSync(path.join(root, 'assets/ede-terrain-tiles', name));
+  let detailAvailable = true;
+  mock.method(globalThis, 'fetch', async url => !detailAvailable && url.pathname.endsWith('/ginkel-detail.bin')
+    ? new Response(null, { status: 404 }) : new Response(readFileSync(url)));
+  await terrain.loadTerrain({ expanded: true });
+  const { detail, field, manifest } = terrain.getExpansionTerrain();
+  assert.equal(detail.step, 1.25);
+  assert.deepEqual([detail.minX, detail.minZ, detail.maxX, detail.maxZ], [4000, 1000, 4500, 1250]);
+
+  const testEdges = (count, point) => {
+    for (let i = 0; i < count; i++) {
+      const [x, z] = point(i * detail.step);
+      assert.ok(Math.abs(terrain.sampleTerrain(detail, x, z) - terrain.sampleTerrain(field, x, z)) < 5e-7);
+    }
+  };
+  for (const z of [detail.minZ, detail.maxZ]) testEdges(detail.columns, offset => [detail.minX + offset, z]);
+  for (const x of [detail.minX, detail.maxX]) testEdges(detail.rows, offset => [x, detail.minZ + offset]);
+
+  const { tileGeometry } = loadModule(readFileSync(path.join(root, 'js/ede-terrain-tiles.js'), 'utf8'), {
+    imports: {
+      'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
+      './tsl-materials.js': {}, './terrain.js': terrain,
+    },
+  });
+  const tileFor = id => {
+    const tile = manifest.tiles[id];
+    const geometry = tileGeometry(Uint8Array.from(file(id + '.bin')).buffer,
+      { ...tile, detail, skirts: [3, 3, 3, 3] }, terrain.getTerrain(), field);
+    assert.equal(geometry.index.count, (200 * 200 + 4 * 200) * 6);
+    return new three.Mesh(geometry);
+  };
+  const west = tileFor('250_4000_1000'), east = tileFor('250_4250_1000');
+  const posWest = west.geometry.getAttribute('position'), posEast = east.geometry.getAttribute('position');
+  for (let row = 0; row <= 200; row++) assert.equal(posWest.getY(row * 201 + 200), posEast.getY(row * 201));
+
+  for (const [x, z, depth] of [[4267.5, 1117.5, 0.28], [4377.5, 1073.75, 0.59]]) {
+    const floor = terrain.terrainHeightAt(x, z);
+    assert.ok(terrain.sampleTerrain(field, x, z) - floor > depth);
+    const ray = new three.Raycaster(new three.Vector3(x, 15, z), new three.Vector3(0, -1, 0));
+    assert.ok(Math.abs(ray.intersectObject(east)[0].point.y - (floor - 0.025)) < 1e-6);
+  }
+
+  const source = readFileSync(path.join(root, 'js/ede-geometry.js'), 'utf8');
+  const { drapeEdeSurface } = loadModule(source.replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
+    imports: { 'three/webgpu': three, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {}, './ede-grade.js': {} },
+  });
+  const pathGeometry = new three.BufferGeometry();
+  const lift = 0.06;
+  pathGeometry.setAttribute('position', new three.Float32BufferAttribute([
+    4245, lift, 1090, 4256, lift, 1091, 4245, lift, 1094,
+  ], 3));
+  const draped = drapeEdeSurface(pathGeometry).getAttribute('position');
+  assert.ok(draped.count > 40);
+  for (let i = 0; i < draped.count; i += 3) {
+    const mean = fn => (fn(i) + fn(i + 1) + fn(i + 2)) / 3;
+    const mx = mean(j => draped.getX(j)), mz = mean(j => draped.getZ(j));
+    assert.ok(Math.abs(mean(j => draped.getY(j)) - terrain.terrainHeightAt(mx, mz) - lift) < 0.0002);
+  }
+
+  detailAvailable = false;
+  mock.method(console, 'warn', () => {});
+  await terrain.loadTerrain({ expanded: true });
+  assert.equal(terrain.getExpansionTerrain().detail, null);
+  assert.equal(terrain.terrainHeightAt(4377.5, 1073.75), terrain.sampleTerrain(field, 4377.5, 1073.75));
 });

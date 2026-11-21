@@ -159,7 +159,7 @@ const cars = loadModule(readFileSync(join(__dirname, '../js/cars.js'), 'utf8'), 
     'three/tsl': tslStub,
     'three/addons/utils/BufferGeometryUtils.js': { mergeGeometries: () => ({}) },
     'three/addons/geometries/LoftGeometry.js': { LoftGeometry: class {} },
-    './tsl-materials.js': { cityUniforms: { uInteriorGlow: wrap([0.48]) } },
+    './tsl-materials.js': { cityUniforms: { uInteriorGlow: new TNode(() => [env.interiorGlow ?? 0.48]) } },
     './vehicles.js': { part: (g) => g, mirrorSection: (s) => s, roundedRectShape: () => ({}), roundedBox: () => ({}) }
   },
   globals: {
@@ -282,6 +282,25 @@ test('near instanced wheels match far proxy wheel shading across NYPD, blackout,
   });
   assert.ok(Math.abs(patternSamples[0] - patternSamples[1]) > 0.2,
     `spoke styles 0 and 1 produce distinct spoke patterns: ${patternSamples}`);
+});
+
+test('parked car bodies emit no headlight or taillight glow at night', (t) => {
+  env.interiorGlow = 1.55;
+  t.after(() => { delete env.interiorGlow; });
+  const spec = BODY_SPECS.sedan;
+  const material = createLoftedCarMaterial(spec);
+  const [hx, hy, hw, hh] = spec.headlight;
+  const [tx, ty] = spec.taillight;
+  for (const [position, facing] of [
+    [[hx + hw * .16, hy + hh * .08 + hw * .16 * .032, spec.zFront], 1],
+    [[tx, ty, spec.zRear], -1]
+  ]) {
+    env.attrs = { position, normal: [0, 0, facing], partId: [CAR_PARTS.BODY], paintColor: [0.5, 0.5, 0.5],
+      carState: [0, 0, 0, 0] };
+    assert.ok(material.emissiveNode.eval().some(channel => channel > 0));
+    env.attrs.carState[0] = cars.PARKED_CAR_LAMPS;
+    assert.ok(material.emissiveNode.eval().every(channel => channel === 0));
+  }
 });
 
 test('renderCar writes per-car wheel styles to both front and rear wheel slots with dirty tracking', () => {

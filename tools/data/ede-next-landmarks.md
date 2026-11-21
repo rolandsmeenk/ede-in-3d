@@ -1,6 +1,6 @@
 # Ten Ede exterior landmarks and the De Vuurvogel tree
 
-The November 2026 batch follows the [Ede landmark survey catalogue](ede-landmark-exteriors.md). The game bundles the exterior meshes, paint and measurement data locally. The ordinary Teleport menu has one approach per destination. Prospective campus changes were left out of the reference set.
+The November 2026 batch follows the [Ede landmark survey catalogue](ede-landmark-exteriors.md). The game bundles the exterior meshes, paint and measurement data locally. Search the map for individual landmarks and click their pins to reach their approaches. Prospective campus changes were left out of the reference set.
 
 ## Sources and fit
 

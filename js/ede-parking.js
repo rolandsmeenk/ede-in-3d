@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { PARKED_CAR_LAMPS } from './cars.js';
 import { createParkingAccess, findParkingArrival } from './ede-parking-access.js';
 import { ParkingDemand } from './ede-parking-demand.js';
 
@@ -149,7 +150,7 @@ function parkedTiles(parent, base, styles) {
         dummy.updateMatrix();
         mesh.setMatrixAt(i,dummy.matrix);
         paintColor.setXYZ(i,style.col.r,style.col.g,style.col.b);
-        carState.setXYZW(i,0,0,0,style.style);
+        carState.setXYZW(i,PARKED_CAR_LAMPS,0,0,style.style);
       }
       mesh.count=rows.length;
       mesh.visible=rows.length>0;

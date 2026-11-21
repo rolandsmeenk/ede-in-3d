@@ -3,7 +3,7 @@
 // Footprint references and arrival points are from OpenStreetMap (ODbL).
 export const EXPANSION_LANDMARK_SURVEYS = {
   'schaapskooi-ginkelse-heide': [
-    { bagId: '0228100000071170', osmId: 'w271707633', ground: 1.17, wallColor: 0x775643, roofColor: 0x71624d,
+    { bagId: '0228100000071170', osmId: 'w271707633', ground: 1.17, wallColor: 0x896750, roofColor: 0x554935,
       outline: [[[4332.57,1060.6],[4334.53,1082.71],[4337.16,1083.9],[4340.03,1083.68],[4342.4,1082.04],[4340.44,1059.93],[4337.82,1058.74],[4334.94,1058.96]]],
       points: [
         [4332.57,3.91,1060.6], [4332.57,1.17,1060.6], [4334.53,1.17,1082.71], [4334.53,3.79,1082.71], [4333.58,5.1,1059.9],
@@ -22,7 +22,7 @@ export const EXPANSION_LANDMARK_SURVEYS = {
         [1,[17,15,6,4,18]], [1,[29,19,18,4,0,3]], [1,[32,16,18,19,22,24,30,20,8,11]], [1,[17,32,11,13,15]], [1,[29,25,23,22,19]],
       ],
     },
-    { bagId: '0228100000070381', osmId: 'w271707673', ground: 1.57, wallColor: 0x493e32, roofColor: 0x71624d,
+    { bagId: '0228100000070381', osmId: 'w271707673', ground: 1.57, wallColor: 0x3c382d, roofColor: 0x574a35,
       outline: [[[4362.1,1091.16],[4362.55,1092.79],[4364.26,1093.66],[4368.41,1092.55],[4369.46,1090.96],[4369.01,1089.33],[4367.29,1088.46],[4363.15,1089.58]]],
       points: [
         [4367.95,5.66,1090.74], [4362.4,5.71,1092.26], [4362.1,4.41,1091.16], [4362.1,1.57,1091.16], [4362.4,1.57,1092.26],
@@ -40,7 +40,7 @@ export const EXPANSION_LANDMARK_SURVEYS = {
     },
   ],
   'juffrouw-tok': [
-    { bagId: '0228100000005270', osmId: 'w271708843', ground: 1.34, wallColor: 0xddd0b5, roofColor: 0x744942,
+    { bagId: '0228100000005270', osmId: 'w271708843', ground: 1.34, wallColor: 0xe0d4bb, roofColor: 0x6a4e44,
       outline: [[[4339.18,970.98],[4339.41,972.32],[4339.25,973.15],[4339.39,973.94],[4339.81,974.64],[4340.32,977.59],[4354.69,975.2],[4354.96,976.82],[4358.78,976.19],[4358.51,974.57],[4363.57,973.72],[4362.72,968.54],[4362.8,968.53],[4362.2,964.9],[4365.41,964.36],[4362.62,947.51],[4359.42,948.02],[4358.79,944.21],[4345.36,946.44],[4345.96,950.18],[4342.75,950.7],[4345.68,968.74],[4344.37,968.96],[4344.56,970.05]]],
       points: [
         [4344.37,6.57,968.96], [4344.37,1.34,968.96], [4344.56,1.34,970.05], [4344.56,6.92,970.05], [4356.07,9.23,974.84],
@@ -120,7 +120,7 @@ export const EXPANSION_LANDMARK_SURVEYS = {
     },
   ],
   'mossel': [
-    { bagId: '0228100000081874', osmId: 'w940750559', ground: 14.65, wallColor: 0x775d4c, roofColor: 0x695748,
+    { bagId: '0228100000081874', osmId: 'w940750559', ground: 14.65, wallColor: 0x292923, roofColor: 0x999491,
       outline: [[[6168.92,-1828.32],[6158.09,-1811.45],[6165.58,-1806.62],[6176.38,-1823.55]]],
       points: [
         [6158.09,18.06,-1811.45], [6158.09,14.65,-1811.45], [6160.25,14.65,-1810.06], [6160.25,19.98,-1810.06], [6160.25,20.6,-1810.06],
@@ -147,7 +147,7 @@ export const EXPANSION_LANDMARK_SURVEYS = {
         [1,[8,47,22,5,3]], [1,[46,50,53,57,54,56,42,44,40,18,28,30,34,33,36,48]], [1,[46,48,49,9,13,15,0,4,6,24]], [1,[51,45,23,47,8,37,41,44,43,56,55,57,52]],
       ],
     },
-    { bagId: '0228100000008445', osmId: 'w271860854', ground: 14.79, wallColor: 0x846758, roofColor: 0x67554b,
+    { bagId: '0228100000008445', osmId: 'w271860854', ground: 14.79, wallColor: 0xc9c1ab, roofColor: 0x6e5b49,
       outline: [[[6153.46,-1794.03],[6166.44,-1784.31],[6171.92,-1792.08],[6168.19,-1794.72],[6169.77,-1796.97],[6162.83,-1802.17],[6157.66,-1795.23],[6155.51,-1796.82]]],
       points: [
         [6156.26,18.65,-1794.45], [6156.26,14.79,-1794.45], [6154.86,14.79,-1795.94], [6154.86,16.88,-1795.94], [6161.88,19.21,-1800.9],
@@ -174,7 +174,7 @@ export const EXPANSION_LANDMARK_SURVEYS = {
     },
   ],
   'planken-wambuis': [
-    { bagId: '0228100000015122', osmId: 'w271707674', ground: 9.63, wallColor: 0x906c57, roofColor: 0x53443a,
+    { bagId: '0228100000015122', osmId: 'w271707674', ground: 9.63, wallColor: 0xe1d9c7, roofColor: 0x514d49,
       outline: [[[7845.89,1712.49],[7856.32,1717.22],[7860.51,1707.94],[7861.97,1708.61],[7867.11,1697.19],[7853.83,1691.19],[7848.74,1702.48],[7850.11,1703.1]]],
       points: [
         [7860.17,12.36,1708.68], [7860.17,9.63,1708.68], [7860.51,9.63,1707.94], [7860.51,13.11,1707.94], [7850.7,14.81,1714.67],
@@ -248,6 +248,17 @@ EDE_EXPANSION_LANDMARKS.push({
   road: 'Wijde Veldweg', mapScenic: true, osmId: 'n1534503752', x: 4279.28, z: 1009.78, height: 3, heading: 0,
   approach: { x: 4285.61, z: 1018.90 },
 });
+
+// The relocated steel panels are visible in PDOK 2025 imagery. The terrace-side
+// stone is placed from the register's 2026 photos and the restaurant outline.
+EDE_EXPANSION_LANDMARKS.push(
+  { id: 'vensters-op-het-verleden', name: 'Vensters op het Verleden', district: 'Ginkelse Heide',
+    road: 'Wijde Veldweg', mapScenic: true, x: 4270.4, z: 1055.7, height: 6, heading: -0.57,
+    approach: { x: 4263.8, z: 1057.8 } },
+  { id: 'huzarenmonument', name: 'Huzarenmonument', district: 'De Ginkel',
+    road: 'Verlengde Arnhemseweg', mapScenic: true, x: 4375.8, z: 973.6, height: 1.32, heading: Math.PI / 2,
+    approach: { x: 4384, z: 975.5 } },
+);
 
 // OSM platform outlines and local farmyard fences (ODbL).
 export const DE_KLOMP_PLATFORMS = [

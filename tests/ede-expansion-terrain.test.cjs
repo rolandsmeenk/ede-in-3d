@@ -1,7 +1,9 @@
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const test = require('node:test');
+const { loadModule } = require('./helpers/module.cjs');
 
 const assets = path.resolve(__dirname, '../assets');
 const read = name => readFileSync(path.join(assets, name));
@@ -98,6 +100,72 @@ test('terrain hierarchy covers the expansion and stores the collision vertices a
   }
 });
 
+async function terrainRenderer() {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const terrain = await import('../js/terrain.js');
+  const filename = path.resolve(__dirname, '../js/ede-terrain-tiles.js');
+  const tiles = loadModule(readFileSync(filename, 'utf8'), { filename, imports: {
+    'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
+    './tsl-materials.js': {}, './terrain.js': { ...terrain, expansionSeamOffset: () => 0 },
+  } });
+  return { three, terrain, ...tiles };
+}
+
+test('the finer tile skirt reaches below a much coarser neighbour and faces the gap', async () => {
+  const { three, terrain, sizeTerrainSkirts, tileGeometry } = await terrainRenderer();
+  const { roots, tiles } = json('ede-terrain-tiles/manifest.json');
+  const field = terrain.decodeTerrain(Uint8Array.from(terrainFile('collision.bin')).buffer);
+  const town = terrain.decodeTerrain(Uint8Array.from(read('ede-ahn.bin')).buffer);
+  sizeTerrainSkirts(Object.values(tiles), roots.map(id => tiles[id]), field);
+  const fineId = '250_6500_0', coarseId = '4000_4000_-4000';
+  const fine = tiles[fineId], coarse = tiles[coarseId];
+  const rawFine = terrainFile(fineId + '.bin'), rawCoarse = terrainFile(coarseId + '.bin');
+  function height(raw, tile, row, x) {
+    const [west, , east] = tile.bounds;
+    const u = (x - west) * 50 / (east - west), i = Math.floor(u);
+    const at = j => raw.readInt16LE(5 * (51 * row + j)) / 100 - field.napOrigin;
+    return at(i) + (at(i + 1) - at(i)) * (u - i);
+  }
+  let peak = 0, testX;
+  for (let x = fine.bounds[0] + 0.01; x < fine.bounds[2]; x += 5) {
+    const gap = height(rawFine, fine, 0, x) - height(rawCoarse, coarse, 50, x);
+    if (gap > peak) {
+      peak = gap;
+      testX = x;
+    }
+  }
+  assert.ok(peak > 8 && fine.skirts[0] > peak, 'the previous 3 m skirt left a gap');
+  const mesh = new three.Mesh(tileGeometry(Uint8Array.from(rawFine).buffer, fine, town, field));
+  const y = height(rawCoarse, coarse, 50, testX) - 0.025;
+  const ray = new three.Raycaster(new three.Vector3(testX, y, -0.5), new three.Vector3(0, 0, 1), 0, 1);
+  assert.ok(ray.intersectObject(mesh).length, 'the skirt is visible from the lower tile');
+  assert.equal(mesh.geometry.index.count, (50 * 50 + 4 * 50) * 6, 'the skirt stays in the original mesh batch');
+});
+
+test('skirts cover the coarse overview while the neighbouring root payload loads', async () => {
+  const { sizeTerrainSkirts } = await terrainRenderer();
+  const field = { minX: 0, minZ: -250, step: 5, columns: 51, rows: 101, heights: new Float32Array(51 * 101) };
+  field.heights[50 * 51 + 1] = 12;
+  // The 5 m payload captures the peak, but the overview misses it.
+  const root = { bounds: [0, -250, 250, 0], error: 0 };
+  const leaf = { bounds: [0, 0, 250, 250], error: 0 };
+  sizeTerrainSkirts([leaf, root], [root], field);
+  assert.equal(leaf.skirts[0], 15);
+  assert.equal(leaf.skirts[1], 3);
+});
+
+test('skirts stop at the retained town boundary within a tile edge segment', async () => {
+  const { three, tileGeometry } = await terrainRenderer();
+  const tile = { bounds: [0, 0, 10, 10], skirts: [3, 3, 3, 3] };
+  const town = { minX: 2, minZ: -1, maxX: 4, maxZ: 1, columns: 2, rows: 2, step: 2, heights: [0, 0, 0, 0] };
+  const mesh = new three.Mesh(tileGeometry(new ArrayBuffer(3 * 3 * 5), tile, town, { napOrigin: 0 }, 3));
+  const hits = x => new three.Raycaster(new three.Vector3(x, -1, -0.5), new three.Vector3(0, 0, 1), 0, 1)
+    .intersectObject(mesh).length;
+  assert.ok(hits(1));
+  assert.equal(hits(3), 0);
+  assert.ok(hits(4.5));
+});
+
 test('canopy mesh payloads share exact top heights along equal-resolution tile seams', () => {
   const { cells } = json('ede-forest-canopy/manifest.json');
   const [west, north, east, south] = json('ede-terrain-tiles/manifest.json').bounds;
@@ -107,7 +175,7 @@ test('canopy mesh payloads share exact top heights along equal-resolution tile s
   const edge = 50;
   const side = edge + 1;
   const maskBytes = edge * edge;
-  for (const { id, bounds: [x, z, maxX, maxZ], step, children } of cells) {
+  for (const { id, bounds: [x, z, maxX, maxZ], step, children, neighborMask } of cells) {
     assert.equal(maxX - x, edge * step);
     assert.equal(maxZ - z, edge * step);
     for (const child of children ?? []) {
@@ -130,17 +198,51 @@ test('canopy mesh payloads share exact top heights along equal-resolution tile s
       }
     }
     assert.ok(coverage > 0);
-    tiles.set(`${step}/${x}/${z}`, { x, z, step, top });
+    const occupied = (row, col) => Number(data[row * edge + col] > 0);
+    tiles.set(`${step}/${x}/${z}`, { x, z, step, top, occupied, neighborMask });
   }
   const seams = new Set();
-  for (const { x, z, step, top } of tiles.values()) {
+  for (const { x, z, step, top, neighborMask } of tiles.values()) {
     const east = tiles.get(`${step}/${x + edge * step}/${z}`);
     const south = tiles.get(`${step}/${x}/${z + edge * step}`);
+    const westTile = tiles.get(`${step}/${x - edge * step}/${z}`);
+    const northTile = tiles.get(`${step}/${x}/${z - edge * step}`);
     if (east || south) seams.add(step);
+    for (let i = 0; i < edge; i++) {
+      const expected = [northTile?.occupied(edge - 1, i), east?.occupied(i, 0),
+        south?.occupied(0, i), westTile?.occupied(i, edge - 1)];
+      for (const [side, bit] of expected.entries()) assert.equal(Math.floor(neighborMask[side] / 2 ** i) % 2, bit ?? 0);
+    }
     for (let i = 0; i < side; i++) {
       if (east) assert.equal(top(i, edge), east.top(i, 0));
       if (south) assert.equal(top(edge, i), south.top(0, i));
     }
   }
   assert.deepEqual(seams, new Set([10, 20]));
+});
+
+test('canopy walls reach the ground along connected crowns and leave continued tile edges open', async () => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const filename = path.resolve(__dirname, '../js/ede-forest-canopy.js');
+  const source = readFileSync(filename, 'utf8').replaceAll('import.meta.url', JSON.stringify(pathToFileURL(filename).href))
+    .replace('export async function loadForestCanopy', 'async function loadForestCanopy');
+  const { canopyGeometry } = loadModule(source, { filename, globals: { URL }, imports: {
+    'three/webgpu': three, 'three/tsl': {}, './ede-scene-coordinates.js': { SCENE_NAP_ORIGIN: 0 },
+    './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {},
+  } });
+  const buffer = new ArrayBuffer(2500 + 51 * 51 * 2);
+  const mask = new Uint8Array(buffer, 0, 2500);
+  mask[10 * 50] = mask[10 * 50 + 1] = mask[20 * 50 + 20] = 255;
+  new Int16Array(buffer, 2500).fill(1500);
+  const mesh = new three.Mesh(canopyGeometry(buffer, {
+    bounds: [0, 0, 500, 500], step: 10, neighborMask: [0, 0, 0, 2 ** 10],
+  }).geometry);
+  const hits = (origin, direction) =>
+    new three.Raycaster(new three.Vector3(...origin), new three.Vector3(...direction), 0, 4).intersectObject(mesh);
+  assert.ok(hits([15, 7, 98], [0, 0, 1]).length, 'an outer edge rises to the measured crown');
+  assert.equal(hits([15, 4, 98], [0, 0, 1]).length, 0, 'the edge follows the ground elevation');
+  assert.equal(hits([-2, 7, 105], [1, 0, 0]).length, 0, 'a forest crossing the cell edge has no internal wall');
+  assert.equal(hits([205, 7, 198], [0, 0, 1]).length, 0, 'isolated crowns stay out of the forest walls');
+  assert.ok(hits([205, 17, 205], [0, -1, 0]).length, 'the measured crown surface is retained');
+  assert.equal(hits([19.8, 17, 100.2], [0, -1, 0]).length, 0, 'outward corners are bevelled');
 });

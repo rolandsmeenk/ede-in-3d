@@ -3,6 +3,7 @@ import {
   ROADS,
   BLOCKS,
   NYC_LANDMARKS,
+  TELEPORT_LOCATIONS,
   LANDMARK_SITES,
   ISLAND_BOUNDS,
   getIslandBoundsAtZ,
@@ -858,7 +859,7 @@ class NYCMapSystem {
       bestDistance = distance;
       closest = landmark;
     }
-    if (!closest?.mapScenic) return null;
+    if (!closest || !TELEPORT_LOCATIONS[closest.id]?.focus) return null;
     const { x, z } = closest;
     return x >= ISLAND_BOUNDS.minX && x <= ISLAND_BOUNDS.maxX && z >= ISLAND_BOUNDS.minZ && z <= ISLAND_BOUNDS.maxZ
       ? closest : null;

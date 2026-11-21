@@ -15,8 +15,9 @@ import {
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
 import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
-import { getRailCorridors, gradeCuts, gradeWayAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
+import { getRailCorridors, gradeCuts, gradeWayAt, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
 import { edeTreeSite } from './ede-tree-data.js';
+import { REEMST_TREES } from './ede-reemst-landmark-survey.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
 import { addAsphaltLanes } from './ede-asphalt-lanes.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
@@ -500,9 +501,9 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     }
     return false;
   };
-  // Photo-referenced trees and undergrowth around Berghain use the original
-  // tree geometry, instancing and LOD. Keep mapped trees in preference to extras.
-  for (const tree of BERGHAIN_TREE_SITES) {
+  // Site surveys share the ordinary terrain grounding, instancing and canopy LOD.
+  const surveyedTrees = REEMST_TREES.map(tree => edeTreeSite(tree, terrainHeightAt(tree.x, tree.z)));
+  for (const tree of [...BERGHAIN_TREE_SITES, ...surveyedTrees]) {
     if (waterAt(tree.x, tree.z) || nearbyTree(tree.x, tree.z, tree.isShrub ? 1.25 : 5)) continue;
     parkTreeSites.push(tree); indexTree(tree);
   }
@@ -512,26 +513,71 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     .map(({ bounds }) => detailKey(Math.floor(bounds[0] / 500), Math.floor(bounds[1] / 500))));
   const outsideTown = (x, z) => baseBounds &&
     (x < baseBounds[0] || x > baseBounds[2] || z < baseBounds[1] || z > baseBounds[3]);
+  const plantWoodlandTree = (x, z, gx, gz, extra) => {
+    if (nearbyTree(x, z) || waterAt(x, z)) return;
+    const fill = canopyDensity?.get(`${Math.floor(x / 200)}/${Math.floor(z / 200)}`);
+    if (fill !== undefined && hash(gx, gz, extra ? 8 : 4) > fill) return;
+    if (LANDMARK_EXCLUSIONS.some(b => x > b.minX - 4 && x < b.maxX + 4 && z > b.minZ - 4 && z < b.maxZ + 4)) return;
+    if (nearestRoads(x, z, 20).some(q => q.dist < q.road.w / 2 + 3)) return;
+    if (extra && nearbyRailHeightAt(x, z, 5) !== undefined) return;
+    const block = blockAt(x, z);
+    if (block && !block.park && !block.sidewalk) return;
+    const h = hash(gx, gz, extra ? 7 : 3);
+    const tree = { x, z, y: terrainHeightAt(x, z) + 0.09, scale: 0.7 + h * 0.5,
+      species: h < 0.5 ? 0 : h < 0.8 ? 1 : 2, yaw: h * Math.PI * 2 };
+    parkTreeSites.push(tree);
+    indexTree(tree);
+  };
+
+  const woodland = [];
   for (const [i, park] of (EDE_DATA.parks || []).entries()) {
     if (!['wood', 'forest'].includes(park.kind)) continue;
     const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints), bounds = edeBounds(ring);
     const [left, top, right, bottom] = baseBounds && i < baseParks ? baseBounds :
       [ISLAND_BOUNDS.minX, ISLAND_BOUNDS.minZ, ISLAND_BOUNDS.maxX, ISLAND_BOUNDS.maxZ];
-    for (let gx = Math.ceil(Math.max(bounds.minX, left) / 14); gx <= Math.floor(Math.min(bounds.maxX, right) / 14); gx++) {
-      for (let gz = Math.ceil(Math.max(bounds.minZ, top) / 14); gz <= Math.floor(Math.min(bounds.maxZ, bottom) / 14); gz++) {
-        const x = gx * 14 + (hash(gx, gz, 1) - 0.5) * 10, z = gz * 14 + (hash(gx, gz, 2) - 0.5) * 10;
-        if (outsideTown(x, z) && !nearExpansionDetail(x, z)) {
-          const stride = measuredForest.has(detailKey(Math.floor(x / 500), Math.floor(z / 500))) ? 8 : 4;
-          if (gx % stride || gz % stride) continue;
+    woodland.push({ ring, holes, west: Math.max(bounds.minX, left), north: Math.max(bounds.minZ, top),
+      east: Math.min(bounds.maxX, right), south: Math.min(bounds.maxZ, bottom) });
+  }
+  const land = landCover?.texture.image;
+  const coverAt = (x, z) => {
+    if (!land) return 0;
+    const col = Math.floor((x - landCover.minX) * land.width / landCover.sizeX);
+    const row = Math.floor((z - landCover.minZ) * land.height / landCover.sizeZ);
+    return col >= 0 && col < land.width && row >= 0 && row < land.height ? land.data[row * land.width + col] : 0;
+  };
+  // Keep the original trunks, then fill the spaces between their grid points.
+  const spacing = 14;
+  for (const offset of [0, spacing / 2]) {
+    const extra = offset !== 0;
+    const jitter = extra ? 7 : 10;
+    for (const { ring, holes, west, north, east, south } of woodland) {
+      for (let gx = Math.ceil((west - offset) / spacing); gx <= Math.floor((east - offset) / spacing); gx++) {
+        for (let gz = Math.ceil((north - offset) / spacing); gz <= Math.floor((south - offset) / spacing); gz++) {
+          const x = gx * spacing + offset + (hash(gx, gz, extra ? 5 : 1) - 0.5) * jitter;
+          const z = gz * spacing + offset + (hash(gx, gz, extra ? 6 : 2) - 0.5) * jitter;
+          if (outsideTown(x, z) && !nearExpansionDetail(x, z)) {
+            const measured = measuredForest.has(detailKey(Math.floor(x / 500), Math.floor(z / 500)));
+            const stride = !extra && measured ? 8 : 4;
+            if (gx % stride || gz % stride) continue;
+          }
+          const cover = extra && coverAt(x, z);
+          if (cover && cover !== 1) continue;
+          if (!pointInPoly(ring, x, z) || holes.some(h => pointInPoly(h, x, z))) continue;
+          plantWoodlandTree(x, z, gx, gz, extra);
         }
-        if (!pointInPoly(ring, x, z) || holes.some(h => pointInPoly(h, x, z)) || nearbyTree(x, z) || waterAt(x, z)) continue;
-        const fill = canopyDensity?.get(`${Math.floor(x / 200)}/${Math.floor(z / 200)}`);
-        if (fill !== undefined && hash(gx, gz, 4) > fill) continue;
-        if (LANDMARK_EXCLUSIONS.some(b => x > b.minX - 4 && x < b.maxX + 4 && z > b.minZ - 4 && z < b.maxZ + 4)) continue;
-        if (nearestRoads(x, z, 20).some(q => q.dist < q.road.w / 2 + 3)) continue;
-        const block = blockAt(x, z); if (block && !block.park && !block.sidewalk) continue;
-        const h = hash(gx, gz, 3), tree = { x, z, y: terrainHeightAt(x, z) + 0.09, scale: 0.7 + h * 0.5, species: h < 0.5 ? 0 : h < 0.8 ? 1 : 2, yaw: h * Math.PI * 2 };
-        parkTreeSites.push(tree); indexTree(tree);
+      }
+    }
+  }
+  if (land) {
+    // BGT also marks wooded patches missing from OSM. Sample beyond the trunk so that narrow hedges stay clear.
+    for (let gx = Math.ceil(landCover.minX / spacing); gx * spacing < landCover.minX + landCover.sizeX; gx++) {
+      for (let gz = Math.ceil(landCover.minZ / spacing); gz * spacing < landCover.minZ + landCover.sizeZ; gz++) {
+        const x = gx * spacing + (hash(gx, gz, 1) - 0.5) * 10;
+        const z = gz * spacing + (hash(gx, gz, 2) - 0.5) * 10;
+        if (coverAt(x, z) !== 1 || coverAt(x - 2.5, z) !== 1 || coverAt(x + 2.5, z) !== 1 ||
+            coverAt(x, z - 2.5) !== 1 || coverAt(x, z + 2.5) !== 1) continue;
+        if (x < ISLAND_BOUNDS.minX || x > ISLAND_BOUNDS.maxX || z < ISLAND_BOUNDS.minZ || z > ISLAND_BOUNDS.maxZ) continue;
+        plantWoodlandTree(x, z, gx, gz, true);
       }
     }
   }

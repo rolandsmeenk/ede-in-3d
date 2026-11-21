@@ -118,6 +118,7 @@ const cityUniforms = {
   uSkyHorizonColor: uniform(new THREE.Color(0xebd1b5)),
   uSkySunDir: uniform(new THREE.Vector3(-0.66, 0.34, -0.67).normalize()),
   uInteriorGlow: uniform(0.78),
+  uWindowLights: uniform(new THREE.Vector3()),
   uRoadWetness: uniform(0),
   uRoadPuddles: uniform(0),
   uCanyonBounce: uniform(0.52)
@@ -1136,6 +1137,8 @@ function createFacadeBoxes(material, boxes) {
   geometry.setAttribute('faces', faces);
   const appearance = new THREE.InstancedBufferAttribute(new Float32Array(boxes.length * 4), 4);
   geometry.setAttribute('facadeAppearance', appearance);
+  const windowKeys = boxes[0]?.windowKey === undefined ? null : new Float32Array(boxes.length);
+  if (windowKeys) geometry.setAttribute('windowKey', new THREE.InstancedBufferAttribute(windowKeys, 1));
 
   const mesh = new THREE.InstancedMesh(geometry, material, boxes.length);
   const matrix = new THREE.Matrix4();
@@ -1150,6 +1153,7 @@ function createFacadeBoxes(material, boxes) {
     if (b.faces) faces.setXYZW(i, b.faces[0], b.faces[1], b.faces[2], b.faces[3]);
     const c = b.facadeColour;
     appearance.setXYZW(i, c?.r ?? -1, c?.g ?? -1, c?.b ?? -1, b.facadeLevels > 0 ? b.h / b.facadeLevels : 0);
+    if (windowKeys) windowKeys[i] = b.windowKey;
   });
   return mesh;
 }

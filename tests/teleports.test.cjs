@@ -10,12 +10,14 @@ test.before(async () => {
   ({ TELEPORT_LOCATIONS, LANDMARK_SITES, defaultSpawn, blockAt, nearestRoads, waterAt, ISLAND_BOUNDS, NYC_LANDMARKS } = await import('../js/city-config.js'));
 });
 
-test('the scenic teleport buttons land in clear space and face their targets', () => {
+test('the area menu uses a subset of clear, framed arrivals', () => {
   const buttons = [...read('index.html').matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(buttons).size, buttons.length, 'teleport destinations are unique');
-  const mapPinIds = new Set(NYC_LANDMARKS.filter(site => site.mapScenic).map(site => site.id));
-  const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([id, point]) => point.focus && !mapPinIds.has(id));
-  assert.deepEqual(scenic.map(([name]) => name).sort(), buttons.sort());
+  assert.deepEqual(buttons, ['oudekerk', 'edewageningen', 'enka-westhal', 'johan-willem-friso',
+    'de-zuiderpoort', 'emmaus', 'bellestein', 'huis-kernhem', 'hoekelum', 'schaapskooi-ginkelse-heide',
+    'planken-wambuis', 'veenendaal-de-klomp', 'hervormde-kerk-ederveen']);
+  for (const id of buttons) assert.ok(TELEPORT_LOCATIONS[id]?.focus, id);
+  const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([, point]) => point.focus);
   for (const [name, point] of scenic) {
     const { x, z, focus } = point;
     const block = blockAt(x, z);
@@ -30,7 +32,13 @@ test('the scenic teleport buttons land in clear space and face their targets', (
 
 test('expansion map pins have clear scenic approaches that face the surveyed landmark', () => {
   const landmarks = NYC_LANDMARKS.filter(site => site.mapScenic);
-  assert.equal(landmarks.length, 7);
+  for (const id of ['schaapskooi-ginkelse-heide', 'juffrouw-tok', 'mossel', 'planken-wambuis',
+    'airborne-monument-ginkel', 'vensters-op-het-verleden', 'huzarenmonument', 'amadeus',
+    'natuurcentrum-de-ginkel', 'schaapskooi-de-kreel', 'belgenmonument', 'valenberg', 'nieuw-reemst',
+    'wildkijkscherm-nieuw-reemst', 'de-klomp-maalderij', 'hervormde-kerk-ederveen', 'groot-zonneoord',
+    'jan-hilgers-monument']) {
+    assert.ok(landmarks.some(landmark => landmark.id === id), id + ' has a scenic map pin');
+  }
   for (const landmark of landmarks) {
     const { x, z, focus, heading } = TELEPORT_LOCATIONS[landmark.id];
     const block = blockAt(x, z);
@@ -82,6 +90,26 @@ test('mosque arrivals use their named buildings and replace only the matching BA
     const replacements = landmarkBagExclusions(bounds);
     assert.ok(replacements.has(bag), id);
     assert.ok(!replacements.has('0228100000069860'), 'keep the structure next to the Molenstraat hall');
+  }
+});
+
+test('streamed tiles exclude the surveyed buildings for every grouped heritage landmark', async () => {
+  const { EDE_MODELED_LANDMARKS, landmarkBagExclusions, modeledLandmarkFootprints } = await import('../js/ede-landmark-sites.js');
+  const cases = [
+    ['fischerhuis', 3], ['boerderij-de-driehoek', 2], ['historische-winkelpuien', 4], ['van-essenkazerne', 2],
+  ];
+  for (const [id, count] of cases) {
+    const site = EDE_MODELED_LANDMARKS.find(landmark => landmark.id === id);
+    assert.ok(TELEPORT_LOCATIONS[id].focus, id);
+    assert.equal(new Set(site.bagIds).size, count, id);
+    const footprints = modeledLandmarkFootprints(site);
+    assert.equal(footprints.length, count, id);
+    for (const { outer } of footprints) {
+      const x = outer.reduce((sum, point) => sum + point.x, 0) / outer.length;
+      const z = outer.reduce((sum, point) => sum + point.z, 0) / outer.length;
+      const exclusions = landmarkBagExclusions({ min: { x: x - 1, z: z - 1 }, max: { x: x + 1, z: z + 1 } });
+      assert.ok(site.bagIds.every(bagId => exclusions.has(bagId)), id);
+    }
   }
 });
 

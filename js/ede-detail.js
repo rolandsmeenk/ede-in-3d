@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { drapeEdeSurface, edeBounds, edePolygonGeometry } from './ede-geometry.js';
+import { drapeEdeSurface, edeBounds, edePolygonGeometry, overlapsEdeTravelPavement } from './ede-geometry.js';
 import { playgroundEquipment } from './ede-playground-equipment.js';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
+import { fitEdeSignalSpan } from './ede-signal-hardware.js?v=20261121-signal-optics';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 
@@ -38,8 +39,8 @@ const WASTE_COLORS = {
 };
 const PLAY_SURFACES = { sand: 0xbba984, bark: 0x84664e, gravel: 0xaca394, rubber: 0x794c45, path: 0x9d927f };
 
-async function readPacked(url) {
-  const response = await fetch(url);
+async function readPacked(url, signal) {
+  const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   const body = new Response(bytes);
@@ -86,12 +87,12 @@ export async function loadEdeDetail({
     bgt && bgtStage === 'all' && municipal && 'municipal',
     bgt && bgtStage === 'all' && parcels && 'parcel', utilities && 'utility'].filter(Boolean);
   const assetUrl = (source, extension) => new URL(`../assets/${files[source]}.${extension}`, import.meta.url);
-  let nbdTexture;
+  let nbdTexture, parcelTiles;
   const replacedBgt = new Set();
   const land = bgt && bgtStage === 'all' ? loadLandCover() : null;
   const assets = await Promise.all(requests.map(async source => {
     try {
-      const asset = await (await readPacked(assetUrl(source, 'json.gz'))).json();
+      const asset = await (await readPacked(assetUrl(source, source === 'parcel' ? 'json.gz?v=20261121-map' : 'json.gz'))).json();
       if (asset.version !== 1 || !Array.isArray(asset.features)) throw new Error('invalid asset format');
       if (source === 'municipal' || source === 'parcel') {
         if (!Array.isArray(asset.replaces) || asset.replaces.some(id => typeof id !== 'string')) {
@@ -100,6 +101,7 @@ export async function loadEdeDetail({
         if (source === 'parcel' && asset.features.some(feature => !validParcelFeature(feature))) {
           throw new Error('invalid parcel geometry');
         }
+        if (source === 'parcel') parcelTiles = (asset.tiles ?? []).filter(validParcelTile);
         for (const id of asset.replaces) replacedBgt.add(id);
       }
       if (source === 'nbd' && asset.features.length) {
@@ -117,7 +119,7 @@ export async function loadEdeDetail({
   }));
   const features = assets.flat().filter(feature => feature.source !== 'bgt' || !replacedBgt.has(feature.id));
   return { features: features.filter(f => f.type !== 'marking'), markings: features.filter(f => f.type === 'marking'),
-    nbdTexture, landCover: await land };
+    nbdTexture, parcelTiles, landCover: await land };
 }
 
 function groundAt(feature, x, z, surveyY, height = 0) {
@@ -136,11 +138,21 @@ function groundAt(feature, x, z, surveyY, height = 0) {
   return kind ? undefined : coarse;
 }
 
+export function bikeRackGround(feature, x, z) {
+  const y = groundAt(feature, x, z, feature.surveyY ?? feature.topY, feature.surveyY == null ? feature.height ?? .85 : 0);
+  return y === undefined ? undefined : y + (feature.baseOffset ?? 0);
+}
+
 const validPoint = point => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
 const validLine = points => Array.isArray(points) && points.length >= 2 && points.every(validPoint);
 const validPolygon = feature => Array.isArray(feature.polygon) && feature.polygon.length >= 3 &&
   feature.polygon.every(validPoint) && (feature.holes === undefined || Array.isArray(feature.holes) &&
     feature.holes.every(hole => Array.isArray(hole) && hole.length >= 3 && hole.every(validPoint)));
+function validParcelTile(tile) {
+  return tile && /^-?\d+_-?\d+$/.test(tile.id) && Number.isInteger(tile.count) && tile.count > 0 &&
+    Array.isArray(tile.bounds) && tile.bounds.length === 4 && tile.bounds.every(Number.isFinite) &&
+    tile.bounds[0] <= tile.bounds[2] && tile.bounds[1] <= tile.bounds[3];
+}
 function validParcelFeature(feature) {
   if (!feature || typeof feature.id !== 'string' || !Number.isInteger(feature.level) ||
       !['observed', 'inferred'].includes(feature.status)) return false;
@@ -231,27 +243,10 @@ function buildMarkerAtlas(labels) {
   return { cells, texture };
 }
 
-export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps = [], nbdTexture } = {}) {
-  const group = new THREE.Group();
-  group.name = 'EdeImportedDetail';
-  const batches = new Map(), stopIds = new Set(), gantryLampMounts = new Map(), colliders = [];
-  const gantries = [], portalPanels = new Map(), directionalPanels = [];
-  const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, parcel: 0, utility: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
-  const replacements = { bag: new Set(), osm: new Set() };
-  group.userData.stats = stats;
-  group.userData.replacements = replacements;
-  group.userData.stopIds = [];
-  if (!features.length) {
-    scene.add(group);
-    return { group, colliders, stopIds, gantryLampMounts, gantries, stats };
-  }
+function detailResources() {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.83 });
   const surface = new THREE.MeshStandardNodeMaterial({ roughness: 0.88, vertexColors: true, side: THREE.DoubleSide });
-  let wire;
   const glass = new THREE.MeshStandardNodeMaterial({ color: 0x78a9a2, roughness: 0.32, transparent: true, opacity: 0.42, depthWrite: false });
-  const atlas = buildMarkerAtlas([...new Set(features.filter(f => f.type === 'hectometre' && typeof f.label === 'string' && f.label.length).map(f => f.label))]);
-  const signs = atlas && new THREE.MeshBasicNodeMaterial({ map: atlas.texture });
-  const directionalSigns = nbdTexture && new THREE.MeshBasicNodeMaterial({ map: nbdTexture });
   const box = new THREE.BoxGeometry(1, 1, 1);
   const leaf = new THREE.IcosahedronGeometry(0.5, 1);
   const leafPosition = leaf.getAttribute('position');
@@ -262,6 +257,28 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   }
   const shapes = { box, glass: box, pole: new THREE.CylinderGeometry(0.5, 0.5, 1, 6), round: new THREE.CylinderGeometry(0.5, 0.5, 1, 10),
     leaf, tuft: new THREE.IcosahedronGeometry(0.5) };
+  return { material, surface, glass, shapes };
+}
+
+export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps = [], signalSupportIds, nbdTexture, resources, parcelTile = false } = {}) {
+  const group = new THREE.Group();
+  group.name = 'EdeImportedDetail';
+  const batches = new Map(), stopIds = new Set(), gantryLampMounts = new Map(), colliders = [];
+  const gantries = [], signSupports = [], portalPanels = new Map(), directionalPanels = [];
+  const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, parcel: 0, utility: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
+  const replacements = { bag: new Set(), osm: new Set() };
+  group.userData.stats = stats;
+  group.userData.replacements = replacements;
+  group.userData.stopIds = [];
+  if (!features.length) {
+    scene.add(group);
+    return { group, colliders, stopIds, gantryLampMounts, gantries, signSupports, stats, resources };
+  }
+  resources ??= detailResources();
+  const { material, surface, glass, shapes } = resources;
+  const atlas = buildMarkerAtlas([...new Set(features.filter(f => f.type === 'hectometre' && typeof f.label === 'string' && f.label.length).map(f => f.label))]);
+  const signs = atlas && new THREE.MeshBasicNodeMaterial({ map: atlas.texture });
+  const directionalSigns = nbdTexture && new THREE.MeshBasicNodeMaterial({ map: nbdTexture });
   const color = new THREE.Color(), dummy = new THREE.Object3D();
   const pipelines = new Map();
   const up = new THREE.Vector3(0, 1, 0), axis = new THREE.Vector3();
@@ -274,7 +291,8 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
 
   function batch(kind, x, z, source, range) {
     const cell = kind === 'inset' || source === 'municipal' ? 90 : CELL;
-    const key = `${kind}/${source}/${range ?? ''}/${Math.floor(x / cell)}/${Math.floor(z / cell)}`;
+    const groupKey = parcelTile ? '' : `${Math.floor(x / cell)}/${Math.floor(z / cell)}`;
+    const key = `${kind}/${source}/${range ?? ''}/${groupKey}`;
     if (!batches.has(key)) batches.set(key, { kind, source, range, instances: [], positions: [], indices: [], colors: [], uv: [] });
     return batches.get(key);
   }
@@ -398,7 +416,8 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const fence = feature.type === 'fence' || feature.type === 'balustrade';
     const width = dimension(feature.width, solidRail ? 0.45 : spec.width), height = dimension(feature.height, spec.height);
     const paint = Number.isInteger(feature.color) ? feature.color : style?.color ?? (solidRail ? 0x9a9a94 : spec.color);
-    const crossSection = style?.taper ? { taper: style.taper, caps: true, range: 210 }
+    const crossSection = parcelTile ? { taper: style?.taper, caps: true, range: 112 }
+      : style?.taper ? { taper: style.taper, caps: true, range: 210 }
       : feature.type === 'waterEdge' ? { taper: 0.36 } : feature.source === 'parcel' ? { range: 245 } : undefined;
     const spacing = dimension(feature.spacing, style?.spacing ?? spec.spacing);
     if (feature.polygon) return extrudeFootprint(feature, height, paint);
@@ -432,12 +451,12 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       }
       if (feature.collidable && feature.status !== 'inferred') lineCollider(a, b, width, height);
       if (style?.mesh) {
-        const target = batch('wireFence', (a.x + b.x) / 2, (a.z + b.z) / 2, feature.source, 105);
+        const target = batch('wireFence', (a.x + b.x) / 2, (a.z + b.z) / 2, feature.source, parcelTile ? 75 : 105);
         face(target, [at(a, 0.10), at(b, 0.10), at(b, height - 0.02), at(a, height - 0.02)], paint);
         target.uv.push(alongRun / 0.095, 0, (alongRun + size) / 0.095, 0,
           (alongRun + size) / 0.095, height / 0.17, alongRun / 0.095, height / 0.17);
       }
-      if (style?.taper) {
+      if (style?.taper && !parcelTile) {
         for (; nextTuft < size; nextTuft += 0.95) {
           const t = nextTuft / size;
           instance(feature.source, 'tuft', lerp(a.x, b.x, t), lerp(a.y, b.y, t) + height - 0.065, lerp(a.z, b.z, t),
@@ -451,11 +470,11 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         const t = nextPost / size, thickness = rail ? 0.12 : 0.075;
         instance(feature.source, 'box', lerp(a.x, b.x, t), lerp(a.y, b.y, t) + height / 2, lerp(a.z, b.z, t),
           thickness, height, thickness, Math.atan2(b.x - a.x, b.z - a.z), paint,
-          feature.source === 'parcel' ? (style?.solid ? 75 : 175) : undefined);
+          parcelTile ? 60 : feature.source === 'parcel' ? (style?.solid ? 75 : 175) : undefined);
       }
       nextPost -= size;
     }
-    if (style?.solid) for (let i = 1; i < points.length; i++) {
+    if (style?.solid && !parcelTile) for (let i = 1; i < points.length; i++) {
       const a = points[i - 1], b = points[i];
       const size = Math.hypot(b.x - a.x, b.z - a.z);
       const angle = Math.atan2(b.x - a.x, b.z - a.z);
@@ -629,6 +648,8 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         if (Number.isFinite(base)) foot.y = Math.min(base - 0.08, beam - 0.4);
         const tip = position(along, beam, side * 0.14);
         member(foot, tip, 0.32, 'box');
+        signSupports.push({ x: foot.x, z: foot.z, baseY: foot.y, topY: tip.y, topX: tip.x, topZ: tip.z,
+          layer: feature.level ?? 0, radius: 0.23, kind: 'gantry' });
         member(lower(along, side), upper(along), 0.10);
       }
     }
@@ -640,7 +661,18 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
 
   function gantry(feature) {
     if (!validLine(feature.points)) return false;
-    const endpoints = [feature.points[0], feature.points.at(-1)];
+    const original = [feature.points[0], feature.points.at(-1)];
+    const halfDepth = feature.half ? 0 : /[BCD]-1$/.test(feature.sourceSubtype) ? 0.8 : 0.5;
+    let endpoints = original;
+    if (feature.half || signalSupportIds?.has(feature.id)) {
+      const [a, b] = original;
+      const dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz);
+      const offsets = feature.half ? [0] : [-halfDepth - 0.75, halfDepth + 0.75];
+      const clear = (x, z) => offsets.every(offset => !overlapsEdeTravelPavement(
+        x + dz / length * offset, z - dx / length * offset, feature.level ?? 0, 0.24));
+      endpoints = fitEdeSignalSpan(original, feature.half, clear);
+      if (!endpoints) return false;
+    }
     const points = endpoints.map(([x, z]) => ({ x, z, y: resolveGround(feature, x, z, feature.surveyY) }));
     if (points.some(p => !Number.isFinite(p.y)) || Math.hypot(points[1].x - points[0].x, points[1].z - points[0].z) < 2) return false;
     const top = Math.max(...points.map(p => p.y));
@@ -648,18 +680,24 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     if (beam < top + 3.4) return false;
     const [start, end] = points;
     const length = Math.hypot(end.x - start.x, end.z - start.z);
-    const halfDepth = feature.half ? 0 : /[BCD]-1$/.test(feature.sourceSubtype) ? 0.8 : 0.5;
     const mount = { id: feature.id, x: start.x, z: start.z, beam, level: feature.level ?? 0, route: feature.route, length,
-      ux: (end.x - start.x) / length, uz: (end.z - start.z) / length, halfDepth };
+      ux: (end.x - start.x) / length, uz: (end.z - start.z) / length, halfDepth,
+      adjusted: endpoints.some((point, i) => point !== original[i]) };
     if (feature.half) {
       const height = beam - start.y;
       instance(feature.source, 'box', start.x, start.y + height / 2, start.z, 0.32, height, 0.32, 0, GALVANIZED);
-      const [a, b] = strokeEdges(points.map(p => ({ ...p, y: beam })), 0.20);
-      stripe(feature.source, a, b, -0.18, 0.18, GALVANIZED, { caps: true });
+      signSupports.push({ x: start.x, z: start.z, baseY: start.y, topY: beam,
+        layer: mount.level, radius: 0.23, kind: 'gantry' });
+      const rotation = new THREE.Quaternion().setFromUnitVectors(up, axis.set(mount.ux, 0, mount.uz));
+      instance(feature.source, 'round', (start.x + end.x) / 2, beam, (start.z + end.z) / 2,
+        0.36, length, 0.36, rotation, GALVANIZED);
     } else {
       gantryTruss(feature, points, mount);
     }
-    for (const p of feature.half ? points.slice(0, 1) : points) {
+    const lampPoints = mount.adjusted
+      ? original.map(([x, z]) => ({ x, z, y: resolveGround(feature, x, z, feature.surveyY) }))
+      : points;
+    for (const [i, p] of (feature.half ? lampPoints.slice(0, 1) : lampPoints).entries()) {
       let attached = null, nearest = 0.30 ** 2;
       for (const lamp of mappedLamps) {
         const dx = lamp.x - p.x;
@@ -669,7 +707,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
         attached = lamp;
         nearest = distance;
       }
-      if (attached) gantryLampMounts.set(attached, { x: p.x, z: p.z, top: beam + (halfDepth ? Math.sqrt(3) * halfDepth : 0.18) });
+      if (attached) gantryLampMounts.set(attached, { x: points[i].x, z: points[i].z, top: beam + (halfDepth ? Math.sqrt(3) * halfDepth : 0.18) });
     }
     gantries.push(mount);
     return true;
@@ -681,7 +719,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const [outer, ...holes] = rings.map(ring => ring.map(([x, z]) => ({ x, z })));
     const parcel = feature.type === 'parcelSurface';
     const cap = drapeEdeSurface(edePolygonGeometry(outer, holes, parcel ? 0.055 : 0.079));
-    const target = batch('playSurface', outer[0].x, outer[0].z, feature.source, parcel ? 225 : 310);
+    const target = batch('playSurface', outer[0].x, outer[0].z, feature.source, parcelTile ? 120 : parcel ? 225 : 310);
     const pos = cap.getAttribute('position'), index = cap.index;
     const base = target.positions.length / 3;
     const paint = feature.type === 'parcelSurface' ? PARCEL_SURFACES[feature.surface]
@@ -916,11 +954,11 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       if (signFace || kind === 'wireFence') geometry.setAttribute('uv', new THREE.Float32BufferAttribute(target.uv, 2));
       if (!signFace) geometry.setAttribute('color', new THREE.Float32BufferAttribute(target.colors, 3));
       geometry.computeVertexNormals();
-      if (kind === 'wireFence') wire ??= new THREE.MeshStandardNodeMaterial({
+      if (kind === 'wireFence') resources.wire ??= new THREE.MeshStandardNodeMaterial({
         map: fenceMeshTexture(), vertexColors: true, side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.24,
       });
       mesh = new THREE.Mesh(geometry, kind === 'directionalSign' ? directionalSigns : kind === 'sign' ? signs
-        : kind === 'wireFence' ? wire : surface);
+        : kind === 'wireFence' ? resources.wire : surface);
       stats.triangles += target.indices.length / 3;
     }
     mesh.name = `${source.toUpperCase()} detail ${kind}`;
@@ -938,5 +976,117 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   group.userData.stopIds = [...stopIds];
   for (const gantry of gantries) gantry.panels = portalPanels.get(gantry.id) ?? [];
   scene.add(group);
-  return { group, colliders, stopIds, gantryLampMounts, gantries, stats };
+  return { group, colliders, stopIds, gantryLampMounts, gantries, signSupports, stats, resources };
+}
+
+export function streamParcelTiles(scene, tiles, resources, webgpu) {
+  if (!tiles?.length || !resources) return null;
+  const group = new THREE.Group();
+  group.name = 'EdeParcelTiles';
+  scene.add(group);
+  const residents = new Map(), active = new Map(), decoded = new Map(), failed = new Set();
+  const stats = { tiles: tiles.length, resident: 0, placements: 0, visibleBatches: 0, errors: 0 };
+  let nextBuild = 0;
+  let nextPlan = 0, lastX = Infinity, lastZ = Infinity, nearest = [], wasLow;
+  const distanceSquared = (x, z, [west, north, east, south]) =>
+    Math.max(west - x, 0, x - east) ** 2 + Math.max(north - z, 0, z - south) ** 2;
+  const tileUrl = id => new URL(`../assets/ede-parcel-tiles/${id}.json.gz?v=20261121-map`, import.meta.url);
+
+  function release(id, tile) {
+    for (const { mesh } of tile.meshes) {
+      if (mesh.isInstancedMesh) mesh.dispose();
+      else mesh.geometry.dispose();
+    }
+    tile.group.removeFromParent();
+    residents.delete(id);
+    stats.resident--;
+    stats.placements -= tile.placements;
+  }
+
+  async function request(tile) {
+    const controller = new AbortController();
+    active.set(tile.id, controller);
+    try {
+      const asset = await (await readPacked(tileUrl(tile.id), controller.signal)).json();
+      if (controller.signal.aborted) return;
+      if (asset.version !== 1 || !Array.isArray(asset.features) || asset.features.length !== tile.count ||
+          asset.features.some(row => !validParcelFeature(row) || row.level !== 0 || row.collidable ||
+            row.type !== 'parcelSurface' && row.status !== 'inferred')) {
+        throw new Error('invalid parcel tile');
+      }
+      decoded.set(tile.id, asset.features.map(row => ({ ...row, source: 'parcel' })));
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      failed.add(tile.id);
+      stats.errors++;
+      console.warn(`[parcel detail] ${tile.id}: ${error.message}`);
+    } finally {
+      if (active.get(tile.id) === controller) active.delete(tile.id);
+    }
+  }
+
+  return {
+    stats,
+    update(camera, now) {
+      const { x, y, z } = camera;
+      const low = y - terrainHeightAt(x, z) < 95;
+      const shifted = Math.hypot(x - lastX, z - lastZ);
+      if (now >= nextPlan || shifted > 32 || low !== wasLow) {
+        const distances = tiles.map(tile => [tile, distanceSquared(x, z, tile.bounds)]);
+        nearest = low ? distances.filter(([, distance]) => distance < 150 ** 2)
+          .sort((a, b) => a[1] - b[1]).slice(0, 16).map(([tile]) => tile) : [];
+        const keep = new Set(distances.filter(([, distance]) => low && distance < 255 ** 2).map(([tile]) => tile.id));
+        const wanted = new Set(nearest.map(tile => tile.id));
+        for (const [id, entry] of residents) if (!keep.has(id)) release(id, entry);
+        for (const [id, controller] of active) if (!wanted.has(id)) { controller.abort(); active.delete(id); }
+        for (const id of decoded.keys()) if (!wanted.has(id)) decoded.delete(id);
+        for (const id of failed) if (!keep.has(id)) failed.delete(id);
+        nextPlan = now + 180;
+        lastX = x;
+        lastZ = z;
+        wasLow = low;
+      }
+
+      stats.visibleBatches = 0;
+      for (const { meshes } of residents.values()) {
+        for (const { mesh, centre, reach } of meshes) {
+          mesh.visible = low && camera.distanceToSquared(centre) < reach * reach;
+          if (mesh.visible) stats.visibleBatches++;
+        }
+      }
+
+      if (!low) return;
+      for (const tile of nearest) {
+        if (active.size >= 3 || decoded.size >= 4) break;
+        if (!residents.has(tile.id) && !active.has(tile.id) && !decoded.has(tile.id) && !failed.has(tile.id)) void request(tile);
+      }
+      if (now < nextBuild) return;
+      const tile = nearest.find(item => decoded.has(item.id));
+      if (!tile) return;
+      const result = buildEdeDetail(group, decoded.get(tile.id), { resources, parcelTile: true });
+      decoded.delete(tile.id);
+      result.group.updateMatrixWorld(true);
+      const meshes = result.group.children.map(mesh => {
+        if (mesh.isInstancedMesh) {
+          if (webgpu) mesh.instanceMatrix = new THREE.StorageInstancedBufferAttribute(mesh.instanceMatrix.array, 16);
+          mesh.computeBoundingSphere();
+        } else mesh.geometry.computeBoundingSphere();
+        const { center, radius } = mesh.boundingSphere ?? mesh.geometry.boundingSphere;
+        const reach = (mesh.userData.cullDistance ?? 180) + radius;
+        mesh.visible = camera.distanceToSquared(center) < reach * reach;
+        return { mesh, centre: center, reach };
+      });
+      residents.set(tile.id, { group: result.group, meshes, placements: result.stats.parcel });
+      stats.resident++;
+      stats.placements += result.stats.parcel;
+      stats.errors += result.stats.unresolved.length;
+      nextBuild = now + 50;
+    },
+    dispose() {
+      for (const controller of active.values()) controller.abort();
+      for (const [id, tile] of residents) release(id, tile);
+      decoded.clear();
+      group.removeFromParent();
+    },
+  };
 }

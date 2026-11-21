@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { EDE_DATA } from './city-config.js';
-import { getExpansionTerrain, getTerrain, getTerrainPatch, getTerrainPatches, terrainHeightAt } from './terrain.js';
+import { getExpansionTerrain, getExpansionTerrainPatch, getTerrain, getTerrainPatch, getTerrainPatches, terrainHeightAt } from './terrain.js';
+import { hasEdeMappedSurface, isEdeTrafficPavement } from './ede-road-surfaces.js';
 import { clipEdeGround, gradeCuts, localGradeSurface, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, terrainGradeCuts } from './ede-grade.js';
 
 // Geometry adapters only: rendering stays in the upstream WebGPU/TSL systems.
@@ -121,6 +122,41 @@ export function nearestEdeRoad(x, z, reach = 40, wayId, layer) {
     }
   }
   return best;
+}
+
+let generatedTravel;
+const TRAVEL_CELL = 32;
+const CIRCLE_PROBES = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.707, 0.707], [-0.707, 0.707], [-0.707, -0.707], [0.707, -0.707]];
+
+// Test the same traffic paving that the world draws, including OSM strips where BGT has gaps.
+export function overlapsEdeTravelPavement(x, z, layer = 0, radius = 0) {
+  if (isEdeTrafficPavement(x, z, layer) || radius > 0 && CIRCLE_PROBES.some(([dx, dz]) =>
+    isEdeTrafficPavement(x + dx * radius, z + dz * radius, layer))) return true;
+  if (!generatedTravel) {
+    generatedTravel = new Map();
+    for (const segment of edeRoadSegments()) {
+      if (segment.pedestrian && segment.road.kind !== 'cycleway' || hasEdeMappedSurface(segment)) continue;
+      const { a, b, width, road } = segment;
+      const pad = Math.max(0.75, width / 2) + 1;
+      for (let i = Math.floor((Math.min(a.x, b.x) - pad) / TRAVEL_CELL);
+        i <= Math.floor((Math.max(a.x, b.x) + pad) / TRAVEL_CELL); i++) {
+        for (let j = Math.floor((Math.min(a.z, b.z) - pad) / TRAVEL_CELL);
+          j <= Math.floor((Math.max(a.z, b.z) + pad) / TRAVEL_CELL); j++) {
+          const key = `${road.layer ?? 0}/${i}/${j}`;
+          if (!generatedTravel.has(key)) generatedTravel.set(key, []);
+          generatedTravel.get(key).push(segment);
+        }
+      }
+    }
+  }
+  const cell = generatedTravel.get(`${layer}/${Math.floor(x / TRAVEL_CELL)}/${Math.floor(z / TRAVEL_CELL)}`);
+  return cell?.some(({ a, ux, uz, len, width, pedestrian }) => {
+    const dx = x - a.x, dz = z - a.z;
+    const along = dx * ux + dz * uz;
+    const half = pedestrian ? Math.max(0.75, width / 2) : width / 2;
+    const across = Math.abs(dz * ux - dx * uz);
+    return Math.hypot(Math.max(0, -along, along - len), Math.max(0, across - half)) <= radius;
+  }) ?? false;
 }
 
 function surfaceGeometry(positions, indices, uv) {
@@ -287,6 +323,11 @@ export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavemen
     const col = Math.floor(((bounds.minX + bounds.maxX) / 2 - minX) / step);
     const row = Math.floor(((bounds.minZ + bounds.maxZ) / 2 - minZ) / step);
     const cellX = minX + col * step, cellZ = minZ + row * step;
+    const detail = grid === outerField && getExpansionTerrainPatch(cellX, cellZ);
+    if (detail) {
+      visit(polygon, detail);
+      return;
+    }
     const patch = grid === field && getTerrainPatch(cellX, cellZ);
     if (patch) {
       const fine = patch.step;

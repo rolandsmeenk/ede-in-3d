@@ -68,6 +68,32 @@ test('both Raadhuisstraat covered carriageways use the continuous mapped asphalt
   }
 });
 
+test('N224 lane markings and traffic follow the paved bend east of Ginkelse Heide', async t => {
+  t.mock.method(globalThis, 'fetch', mockedSurfaces);
+  const { buildRoadNetwork } = await import('../js/road-network.js');
+  const { isEdeTrafficPavement, loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
+  await loadEdeRoadSurfaces();
+  const { paintEdges, edges } = buildRoadNetwork([], []);
+  const wayId = 'w6850904';
+  const east = paintEdges.filter(edge => edge.wayId === wayId && edge.direction === 0);
+  assert.ok(east.length && east[0].from.x < 4600 && east.at(-1).to.x > 8100);
+  let samples = 0;
+  for (const edge of east) {
+    for (let s = 0; s < edge.span; s += 10) {
+      const x = edge.x0 + edge.dx * s, z = edge.z0 + edge.dz * s;
+      if (x < 4700 || x > 7600) continue;
+      assert.ok(isEdeTrafficPavement(x, z), `N224 divider at ${x}, ${z}`);
+      samples++;
+    }
+  }
+  assert.ok(samples > 280);
+  const lanes = edges.filter(edge => edge.wayId === wayId && edge.direction === 0);
+  assert.equal(lanes.length, east.length);
+  for (let i = 1; i < lanes.length; i++) {
+    assert.ok(lanes[i - 1].moves.some(move => move.to === lanes[i]), 'traffic can continue east around the curve');
+  }
+});
+
 test('roadside pole clearance respects ground BGT road, cycle and driveway polygons', async t => {
   const { isEdeTrafficPavement, loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
   const square = x => [x, 0, x + 5, 0, x + 5, 5, x, 5];

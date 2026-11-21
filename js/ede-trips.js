@@ -132,7 +132,7 @@ export function findRoadTrip(network, roadTraffic, origin, goals, mode=CAR, { bu
   });
 }
 
-export function createEdeTrips(network, roadTraffic, { places=destinations, random=Math.random }={}) {
+export function createEdeTrips(network, roadTraffic, { places=destinations, bikeParking=[], random=Math.random }={}) {
   const eligible=network.edges.filter(e=>e.ambientLanes?.length || e.vanLanes?.length);
   const nearRoad=indexLocalRoads(eligible,[]);
   const objectIds=new WeakMap(), cache=new Map();
@@ -173,6 +173,7 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, rand
     }).slice(0,9);
   }
   const hubs=places.map(place=>({...place, anchors:{ road:bake(place,'road'),bike:bake(place,'bike'),foot:bake(place,'foot') }}));
+  const parkingHubs=bikeParking.map(({bikeAnchors,...place})=>({...place, anchors:{bike:bikeAnchors}}));
 
   function updateClock(clock, now=Date.now()) {
     if (clock!==frame) {frame=clock;plans=0;}
@@ -195,6 +196,15 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, rand
       const weight=(profile[hub.kind]??0)/(1+distance*0.004);
       return weight>0 || preferred ? [{hub,weight:weight||1}] : [];
     });
+    if (kind==='bike' && !preferred) {
+      const nearby = parkingHubs.flatMap(hub => {
+        const {x:px,z:pz}=hub.anchors.bike[0];
+        const distance=Math.hypot(x-px,z-pz), weight=profile[hub.kind]??0;
+        return distance>=31 && distance<=miles.bike && weight>0
+          ? [{hub,distance,weight:weight*.65/(1+distance*.004)}] : [];
+      });
+      choices.push(...nearby.sort((a,b)=>a.distance-b.distance).slice(0,4));
+    }
     for (let tried=0; choices.length && tried<3; tried++) {
       let draw=random()*choices.reduce((sum,item)=>sum+item.weight,0);
       let index=choices.findIndex(item=>(draw-=item.weight)<0);

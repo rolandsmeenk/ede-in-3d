@@ -31,7 +31,25 @@ function facadeWalk(name, a, b, distance, lookHeight) {
 
 // [x, metres above the AHN ground, z] in the Oude Kerk scene coordinate frame.
 const station = { name: 'station', from: [36, 4, 2102], to: [85, 4, 2119], look: [154, 2, 2170] };
-const shots = expansionOnly ? [
+const newLandmarks = suite === 'expansion-landmarks' ? (await Promise.all([
+  import('../js/ede-ginkel-landmark-surveys.js').then(mod => mod.EDE_GINKEL_LANDMARKS),
+  import('../js/ede-reemst-landmark-survey.js').then(mod => mod.EDE_REEMST_LANDMARKS),
+  import('../js/ede-west-expansion-surveys.js').then(mod => mod.EDE_WEST_EXPANSION_LANDMARKS),
+  import('../js/ede-zonneoord-surveys.js').then(mod => mod.EDE_ZONNEOORD_LANDMARKS),
+])).flat() : null;
+const shots = newLandmarks ? newLandmarks.flatMap(site => {
+  const { id, name, x, z, height, focusHeight, approach } = site;
+  const dx = approach.x - x, dz = approach.z - z;
+  const distance = Math.hypot(dx, dz);
+  const cameraSeparation = Math.max(24, distance * 1.2) / distance;
+  const altitude = Math.max(18, height * 1.65);
+  const origin = [x + dx * cameraSeparation, altitude, z + dz * cameraSeparation];
+  return [
+    { name: name + ' approach', arrival: id, travel: ['person'] },
+    { name: name + ' elevated', from: origin, to: [origin[0] - dz * 0.15, altitude, origin[2] + dx * 0.15],
+      look: [x, focusHeight, z] },
+  ];
+}) : expansionOnly ? [
   { name: 'Doesburgermolen approach', arrival: 'doesburgermolen', travel: ['person'] },
   { name: 'Veenendaal-De Klomp rail and forecourt', arrival: 'veenendaal-de-klomp',
     from: [-5280, 24, 384], to: [-6600, 15, 10], look: [-6150, 1, 180], lookTo: [-6682, 3, 6] },
@@ -109,6 +127,15 @@ const shots = expansionOnly ? [
   { name: 'A12 Ede exit on-ramp', way: 'w1121900829', from: [-1403, 2.4, 3650], to: [-1432, 2.4, 3649], look: [-1455, 2.2, 3648] },
   { name: 'A30 Ede-Noord south', way: 'w6960119', from: [-3599, 2.4, 39], to: [-3602, 2.4, 85], look: [-3604, 2.2, 114] },
   { name: 'A30 Ede-Noord north', way: 'w6960136', from: [-3590, 2.4, 92], to: [-3587, 2.4, 47], look: [-3585, 2.2, 24] },
+] : suite === 'parcel-map' ? [
+  { name: 'Kernhem aerial pass', from: [-3410, 122, -302], to: [-2972, 122, -422],
+    look: [-3272, 1, -465], lookTo: [-2960, 1, -560] },
+  { name: 'Kolkakkerweg residential walk', from: [-881, 1.7, 861.2], to: [-840, 1.7, 855.2],
+    look: [-863.3, 1.0, 852.1], lookTo: [-824.7, 1.0, 845.6] },
+  { name: 'Frankeneng business perimeter', from: [-3253, 2.3, 1314.8], to: [-3274, 2.3, 1316.7],
+    look: [-3255.2, 1.1, 1303.5], lookTo: [-3269.5, 1.1, 1302.2] },
+  { name: 'De Klomp aerial jump', from: [-6920, 40, -18], to: [-6795, 34, 20],
+    look: [-6840, 1.7, -53], lookTo: [-6745, 1.7, -5] },
 ] : suite === 'parcels' ? [
   { name: 'Bemmelsewaard walking view', from: [-3198, 1.65, -446], to: [-3128, 1.65, -436],
     look: [-3192, 1.1, -455], lookTo: [-3133, 1.1, -448] },
@@ -331,7 +358,7 @@ function sampleShot(shot, frames) {
     const travelledMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
     const drivenMetres = shot.travel?.[0] === 'car' ? travelledMetres : undefined;
     return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, bagAtStart,
-      travelledMetres, drivenMetres, coverage, arrival, peakStreamedGeometryBytes, terrainTiles: app.terrainTiles, forestCanopy: app.forestCanopy,
+      travelledMetres, drivenMetres, coverage, arrival, parcelTiles: app.parcelTiles && { ...app.parcelTiles }, peakStreamedGeometryBytes, terrainTiles: app.terrainTiles, forestCanopy: app.forestCanopy,
       ...(shot.facade && { bagCoversLook: bagCoversLook(), facadeTextureBytes,
         facadeRequests: [...new Set(facadeRequests)], textureCount: app.renderer.info.memory?.textures }) };
   }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic}, ${suite === 'trees'})`);
@@ -365,13 +392,14 @@ async function run(search, cache, trial) {
     if (!startupOnly && (cache === 'warm' || expansionOnly)) {
       for (const shot of shots) {
         samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
-        if (screenshots && ['facades', 'trees', 'municipal', 'expansion', 'parcels'].includes(suite)) {
+        if (screenshots && ['facades', 'trees', 'municipal', 'expansion', 'parcels', 'parcel-map', 'expansion-landmarks'].includes(suite)) {
           const label = shot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const { data } = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
           const variant = suite === 'trees'
             ? [url.port, url.searchParams.get('treeInventory'), url.searchParams.get('treeQuality'), url.searchParams.get('treeSeason'), trial].filter(v => v != null).join('-')
             : suite === 'municipal' ? [url.port, url.searchParams.get('municipalDetail') ?? 'on', trial].join('-')
-              : suite === 'parcels' ? [url.searchParams.get('parcelDetail') ?? 'on', url.searchParams.get('utilityDetail') ?? 'on', trial].join('-')
+              : ['parcels', 'parcel-map'].includes(suite) ? [url.searchParams.get('parcelDetail') ?? 'on', url.searchParams.get('parcelTiles') ?? 'on',
+                url.searchParams.get('utilityDetail') ?? 'on', trial].join('-')
                 : url.port;
           await writeFile(join(screenshots, `${variant}-${label}.jpg`), Buffer.from(data, 'base64'));
         }

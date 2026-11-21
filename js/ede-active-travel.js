@@ -458,5 +458,13 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
     }
     if (destination) destinations.push(destination);
   }
-  return { bikes: build(BICYCLE), foot, destinations };
+  function motorAt(x, z, layer, clearance = 0) {
+    motorsNear(x, z, 16 + clearance, nearbyMotors);
+    return nearbyMotors.some(track => {
+      if ((track.layer ?? 0) !== layer) return false;
+      const s = Math.max(0, Math.min(track.len, (x - track.ax) * track.ux + (z - track.az) * track.uz));
+      return Math.hypot(x - track.ax - track.ux * s, z - track.az - track.uz * s) < track.width / 2 + clearance;
+    });
+  }
+  return { bikes: build(BICYCLE), foot, destinations, motorAt };
 }

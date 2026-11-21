@@ -91,7 +91,7 @@ function classList() {
   };
 }
 
-function mapHarness(landmarks = []) {
+function mapHarness(landmarks = [], teleportsById = {}) {
   const window = { ...eventTarget(), innerWidth: 200, innerHeight: 200 };
   const canvas = {
     ...eventTarget(), style: {}, clientWidth: 200, clientHeight: 200,
@@ -120,7 +120,7 @@ function mapHarness(landmarks = []) {
     canvas.dispatch('lostpointercapture', { pointerId: id });
   };
   const config = {
-    ROADS: [], BLOCKS: [], NYC_LANDMARKS: landmarks,
+    ROADS: [], BLOCKS: [], NYC_LANDMARKS: landmarks, TELEPORT_LOCATIONS: teleportsById,
     ISLAND_BOUNDS,
     getIslandBoundsAtZ: () => ({ westX: -10000, eastX: 10000 }),
     getLocationLabel: (x, z) => `${x}, ${z}`,
@@ -183,14 +183,15 @@ test('a normal map tap teleports once and releases capture', () => {
   assert.equal(h.map.isPanning, false);
 });
 
-test('a map tap on an expansion pin selects its scenic arrival', () => {
-  const sheepfold = { id: 'schaapskooi-ginkelse-heide', name: 'Schaapskooi Ginkelse Heide', x: 1000, z: 2000, mapScenic: true };
-  const h = mapHarness([sheepfold, { id: 'old-site', name: 'Old Site', x: 1003, z: 2000 }]);
+test('a map tap finds the framed approach to a landmark outside the area menu', () => {
+  const theatre = { id: 'openluchttheater', name: 'De Eder Kuil', x: 1000, z: 2000 };
+  const h = mapHarness([theatre, { id: 'old-site', name: 'Old Site', x: 1003, z: 2000 }],
+    { [theatre.id]: { focus: { x: theatre.x, z: theatre.z } } });
   h.pointer(h.canvas, 'pointermove', 1, 110, 120, 'mouse');
   assert.match(h.hoverInfo.textContent, /teleport to the approach/);
   h.pointer(h.canvas, 'pointerdown', 1);
   h.pointer(h.canvas, 'pointerup', 1);
-  assert.deepEqual(h.landmarkTeleports, [sheepfold.id]);
+  assert.deepEqual(h.landmarkTeleports, [theatre.id]);
   assert.equal(h.teleports.length, 0);
   assert.equal(h.map.isFullMapOpen, false);
 

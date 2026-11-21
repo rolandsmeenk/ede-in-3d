@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake mapped barriers and the Bemmelsewaard and Kelvinstraat parcel pilots."""
+"""Bake mapped barriers and evidence-based parcel detail across the playable map."""
 
 import argparse
 from collections import Counter
@@ -34,6 +34,10 @@ BAG = f'{PDOK}/bag/ogc/v2/collections'
 BGT = f'{PDOK}/bgt/ogc/v1/collections'
 WMS = 'https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0'
 RD_URI = 'http://www.opengis.net/def/crs/EPSG/0/28992'
+HOUSE_EXTRAS = {'overige gebruiksfunctie', 'kantoorfunctie'}
+BUSINESS_USES = {'industriefunctie', 'kantoorfunctie', 'winkelfunctie'}
+FRONTAGE_ROADS = {'residential', 'living_street', 'unclassified', 'tertiary', 'secondary'}
+PAVED_COVER = {'tegels', 'gebakken klinkers', 'betonstraatstenen', 'grasklinkers'}
 PILOTS = {
     'bemmelsewaard-west': ('residential', 'w1484241791'),
     'bemmelsewaard-east': ('residential', 'w1013756437'),
@@ -62,41 +66,71 @@ def request(url):
     return subprocess.check_output(['curl', '-fsSL', '--max-time', '45', '--retry', '2', url])
 
 
-def fetch_layers(directory, pilots, frame, day):
+def snapshot_tiles(scene, frame):
+    left, top, right, bottom = scene['meta']['bounds']
+    size = 2000
+    bounds = transform(box(left, top, right, bottom).segmentize(125), frame.scene_to_rd, interleaved=False).bounds
+    x0, y0, x1, y1 = bounds
+    for x in range(int(x0 // size), ceil(x1 / size)):
+        for y in range(int(y0 // size), ceil(y1 / size)):
+            tile = box(x * size, y * size, (x + 1) * size, (y + 1) * size)
+            yield f'rd-{x}-{y}', transform(tile.segmentize(125), frame.rd_to_scene, interleaved=False).bounds
+
+
+def fetch_layers(directory, tiles, frame, day):
     jobs = []
-    for pilot, (_, road) in pilots.items():
-        area = road.buffer(58, cap_style='square')
-        bounds = transform(area, frame.rd_to_scene, interleaved=False).bounds
-        bbox = ','.join(f'{n:.8f}' for n in frame.geographic_bounds(bounds))
+    for tile, bounds in tiles:
+        geographic = frame.geographic_bounds(bounds)
         for service, names in (
             (BRK, ('perceel', 'kadastralegrens')),
             (BAG, ('pand',)),
             (BGT, ('begroeidterreindeel', 'onbegroeidterreindeel')),
         ):
-            for name in names:
-                params = {'bbox': bbox, 'crs': RD_URI, 'f': 'json', 'limit': 1000}
-                if service == BGT:
-                    params['datetime'] = f'{day}T00:00:00Z'
-                path = directory / f'{pilot}-{name}.geojson'
-                jobs.append((path, f'{service}/{name}/items?{urlencode(params)}'))
+            jobs.extend((directory / f'{tile}-{name}.geojson', f'{service}/{name}/items', service == BGT, geographic)
+                        for name in names)
+
+    def pages(endpoint, timed, bounds, splits=0):
+        params = {'bbox': ','.join(f'{n:.8f}' for n in bounds), 'crs': RD_URI, 'f': 'json', 'limit': 1000}
+        if timed:
+            params['datetime'] = f'{day}T00:00:00Z'
+        url = f'{endpoint}?{urlencode(params)}'
+        seen, features = set(), {}
+        try:
+            while url:
+                if url in seen:
+                    raise ValueError(f'Repeated page for {endpoint}')
+                seen.add(url)
+                page = json.loads(subprocess.check_output(['curl', '-fsSL', '--compressed', '--max-time', '18', url]))
+                features.update((row['id'], row) for row in page['features'])
+                url = next((row['href'] for row in page.get('links', ()) if row['rel'] == 'next'), None)
+        except subprocess.CalledProcessError:
+            if splits >= 2:
+                raise
+            west, south, east, north = bounds
+            longitude, latitude = (west + east) / 2, (south + north) / 2
+            return {key: row for x0, x1 in ((west, longitude), (longitude, east))
+                    for y0, y1 in ((south, latitude), (latitude, north))
+                    for key, row in pages(endpoint, timed, (x0, y0, x1, y1), splits + 1).items()}
+        return features
 
     def fetch_one(job):
-        path, initial_url = job
+        path, endpoint, timed, bounds = job
         if path.exists():
-            return
-        url, seen, features = initial_url, set(), []
-        while url:
-            if url in seen:
-                raise ValueError(f'Repeated page for {path.name}')
-            seen.add(url)
-            page = json.loads(request(url))
-            features.extend(page['features'])
-            url = next((row['href'] for row in page.get('links', ()) if row['rel'] == 'next'), None)
-        write_json(path, {'type': 'FeatureCollection', 'horizontalCrs': RD_URI, 'features': features})
-        print(f'{path.name}: {len(features)}', flush=True)
+            return None
+        try:
+            features = list(pages(endpoint, timed, bounds).values())
+            temporary = path.with_suffix('.partial')
+            write_json(temporary, {'type': 'FeatureCollection', 'horizontalCrs': RD_URI, 'features': features})
+            temporary.replace(path)
+            print(f'{path.name}: {len(features)}', flush=True)
+            return None
+        except (subprocess.CalledProcessError, ValueError, KeyError) as error:
+            return f'{path.name}: {error}'
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        list(pool.map(fetch_one, jobs))
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        failures = [error for error in pool.map(fetch_one, jobs) if error]
+    if failures:
+        raise ValueError('Incomplete parcel snapshot:\n' + '\n'.join(failures))
 
 
 def fetch_review_images(directory):
@@ -141,7 +175,7 @@ def read_shapes(path):
 
 def extract_osm(directory, paths, bounds):
     path = directory / 'osm.json'
-    if path.exists() and not paths:
+    if path.exists() and not paths and json.loads(path.read_bytes()).get('bounds') == list(bounds):
         return
     if not paths:
         raise ValueError('Provide Gelderland and Utrecht province extracts with --osm')
@@ -171,7 +205,7 @@ def extract_osm(directory, paths, bounds):
         with osmium.io.Reader(str(pbf)) as reader:
             dates[pbf.name] = reader.header().get('osmosis_replication_timestamp')
         Extract().apply_file(str(pbf), locations=True, filters=[tags])
-    write_json(path, {'sourceDates': dates, 'elements': dict(sorted(elements.items()))})
+    write_json(path, {'sourceDates': dates, 'bounds': bounds, 'elements': dict(sorted(elements.items()))})
     print(f'OSM: {len(elements)} tagged features', flush=True)
 
 
@@ -309,7 +343,13 @@ def import_barriers(osm, base, existing_tree, frame, area, clearance, review):
                     # Keep existing height and width unless evidence supplies a valid measurement.
                     replacement['height'] = measured_dimension(tags.get('height'), known['height'], .35, 4)
                     if 'width' in known:
-                        replacement['width'] = measured_dimension(tags.get('width'), known['width'], .05, 4)
+                        width = measured_dimension(tags.get('width'), known['width'], .05, 4)
+                        if geometry.geom_type == 'LineString' and width > known['width']:
+                            extended = geometry.buffer(width / 2).difference(geometry.buffer(known['width'] / 2))
+                            if not extended.intersection(local_union(clearance, extended)).is_empty:
+                                width = known['width']
+                                review.append({'id': identity, 'reason': 'kept-surveyed-width-for-clearance'})
+                        replacement['width'] = width
                     rows.append(replacement)
                     replacements.add(known['id'])
         if duplicate_ids:
@@ -410,25 +450,23 @@ def surface_record(rows, key, surface, geometry, status, source_ids, frame, pilo
                          'level': 0, **record})
 
 
-def local_observed_surfaces(path, file, category, area):
-    shapes = []
-    for identity, prop, geometry in read_shapes(path / file):
+def surveyed_ground(records, collection, category, area):
+    for identity, prop, geometry in records:
         if (prop.get('status') != 'bestaand' or prop.get('eind_registratie') or
                 prop.get('plus_status') in {'plan', 'historie'} or prop.get('relatieve_hoogteligging') not in (None, 0)):
             continue
-        land_class = DETAIL['land_class'](file.split('-')[-1].split('.')[0], prop)
+        land_class = DETAIL['land_class'](collection, prop)
         if land_class == 'grass':
             surface = 'lawn'
         elif land_class == 'plantingBed':
             surface = 'plantingBed'
-        elif prop.get('plus_fysiek_voorkomen') in ('tegels', 'gebakken klinkers', 'betonstraatstenen', 'grasklinkers'):
+        elif prop.get('plus_fysiek_voorkomen') in PAVED_COVER:
             # Pavers establish a ground material, not whether a patio is private parking.
             surface = 'path' if category == 'residential' else 'parking'
         else:
             continue
         if geometry.intersects(area):
-            shapes.append((prop.get('lokaal_id') or identity, surface, geometry))
-    return shapes
+            yield prop.get('lokaal_id') or identity, surface, geometry
 
 
 def choose_edge_style(line, candidate, category):
@@ -449,10 +487,37 @@ def projection_bounds_for_line(line, origin, direction):
     return float(min(values)), float(max(values))
 
 
+def garden_surfaces(rows, name, candidate, available, occupied, reserve, frame):
+    identity, _, building_id, building, origin, direction, rear, front, exit, wall = candidate
+    source_ids = [f'BRK:{identity}', f'BAG:{building_id}']
+    access_path = LineString([exit, wall])
+    path = reserve.intersection(available).difference(occupied)
+    if access_path.length >= 1.15 and path.area < 28:
+        surface_record(rows, f'{name}:{identity}:entrance', 'path', path, 'inferred', source_ids, frame, name)
+    front_yard = rectangle(origin, direction, front + .30, front + 18, -30, 30)
+    planting = available.intersection(front_yard).difference(occupied.union(reserve.buffer(.16)))
+    if 1.7 < planting.area < 68:
+        surface_record(rows, f'{name}:{identity}:front', 'plantingBed', planting, 'inferred', source_ids,
+                       frame, name, 1.7)
+    opposite_left, opposite_right = projection_bounds(building, origin, np.array([-direction[1], direction[0]]))
+    # Deck defaults are sized from the building frontage and occupy the first few metres beyond its rear wall.
+    patio = rectangle(origin, direction, rear - 2.85, rear - .22,
+                      opposite_left + .45, opposite_right - .45)
+    rear_free = available.difference(occupied.union(reserve))
+    patio = patio.intersection(rear_free)
+    if 2.0 < patio.area < 32:
+        surface_record(rows, f'{name}:{identity}:rear', 'patio', patio, 'inferred', source_ids, frame, name, 2)
+    rear_yard = rectangle(origin, direction, rear - 20, rear - 2, -30, 30)
+    lawn = rear_free.intersection(rear_yard).difference(patio)
+    if 4 < lawn.area < 100:
+        surface_record(rows, f'{name}:{identity}:rear', 'lawn', lawn, 'inferred', source_ids, frame, name, 4)
+
+
 def pilot_features(directory, name, category, road, frame, clearance, base_tree, prior_hedges, prior_fences,
-                   photo_surfaces, audit):
-    raw_grounds = [row for name_suffix in ('begroeidterreindeel', 'onbegroeidterreindeel')
-                  for row in local_observed_surfaces(directory, f'{name}-{name_suffix}.geojson', category, road.buffer(65))]
+                   photo_surfaces, audit, covered_parcels):
+    raw_grounds = [row for suffix in ('begroeidterreindeel', 'onbegroeidterreindeel')
+                   for row in surveyed_ground(read_shapes(directory / f'{name}-{suffix}.geojson'), suffix, category,
+                                              road.buffer(65))]
     ground_index = STRtree([row[2] for row in raw_grounds])
     rows, inference_access, candidates = [], [], {}
     bag_file = directory / f'{name}-pand.geojson'
@@ -482,27 +547,9 @@ def pilot_features(directory, name, category, road, frame, clearance, base_tree,
         reserve = access_path.buffer(.65 if category == 'residential' else 3.6, cap_style='square')
         inference_access.append(reserve)
         if category == 'residential':
-            # Keep the whole inferred path clear through the projected front edge, including a gate gap.
-            path = reserve.intersection(available).difference(occupied)
-            if access_path.length >= 1.15 and path.area < 28:
-                surface_record(rows, f'{name}:{identity}:entrance', 'path', path, 'inferred', source_ids, frame, name)
-            front_yard = rectangle(origin, direction, front + .30, front + 18, -30, 30)
-            planting = available.intersection(front_yard).difference(occupied.union(reserve.buffer(.16)))
-            if 1.7 < planting.area < 68:
-                surface_record(rows, f'{name}:{identity}:front', 'plantingBed', planting, 'inferred', source_ids,
-                               frame, name, 1.7)
-            opposite_left, opposite_right = projection_bounds(building, origin, np.array([-direction[1], direction[0]]))
-            # Deck defaults are sized from the building frontage and occupy the first few metres beyond its rear wall.
-            patio = rectangle(origin, direction, rear - 2.85, rear - .22,
-                              opposite_left + .45, opposite_right - .45)
-            rear_free = available.difference(occupied.union(reserve))
-            patio = patio.intersection(rear_free)
-            if 2.0 < patio.area < 32:
-                surface_record(rows, f'{name}:{identity}:rear', 'patio', patio, 'inferred', source_ids, frame, name, 2)
-            rear_yard = rectangle(origin, direction, rear - 20, rear - 2, -30, 30)
-            lawn = rear_free.intersection(rear_yard).difference(patio)
-            if 4 < lawn.area < 100:
-                surface_record(rows, f'{name}:{identity}:rear', 'lawn', lawn, 'inferred', source_ids, frame, name, 4)
+            garden_surfaces(rows, name, candidate, available, occupied, reserve, frame)
+
+    covered_parcels.update(candidates)
 
     access_index = STRtree(inference_access)
     accepted = set()
@@ -552,6 +599,184 @@ def pilot_features(directory, name, category, road, frame, clearance, base_tree,
     audit['streetFacingParcels'] = len(candidates)
     audit['consideredBoundaries'] = len(accepted)
     return rows
+
+
+def tiled_shapes(directory, tiles, collection, key):
+    seen = set()
+    for tile in tiles:
+        for identity, prop, geometry in read_shapes(directory / f'{tile}-{collection}.geojson'):
+            stable_id = prop.get(key) or identity
+            if stable_id not in seen:
+                seen.add(stable_id)
+                yield identity, prop, geometry
+
+
+def parcel_use(prop):
+    purposes = set((prop.get('gebruiksdoel') or '').split(','))
+    units = prop.get('aantal_verblijfsobjecten') or 0
+    if purposes - HOUSE_EXTRAS == {'woonfunctie'} and 1 <= units <= 2:
+        return 'residential'
+    if purposes & BUSINESS_USES and purposes <= BUSINESS_USES | {'overige gebruiksfunctie'}:
+        return 'business'
+    return None
+
+
+def match_frontage(parcel, building, roads, road_index, building_index, category):
+    maximum = 27 if category == 'residential' else 48
+    interior = building.representative_point()
+    origin = np.array(interior.coords[0])
+    options = []
+    for i in road_index.query(building, predicate='dwithin', distance=maximum):
+        road, line = roads[i]
+        if parcel.distance(line) > 14 or road['kind'] == 'secondary' and category == 'residential':
+            continue
+        roadside = nearest_points(line, interior)[0]
+        ray = LineString([interior, roadside])
+        face = building.boundary.intersection(ray)
+        if face.is_empty or building.covers(roadside):
+            continue
+        wall = nearest_points(face, roadside)[0]
+        approach = LineString([wall, roadside])
+        if approach.length < 1 or local_union(building_index, approach).intersection(approach).length > .35:
+            continue
+        frontage = parcel.intersection(approach)
+        if frontage.geom_type != 'LineString' or frontage.length < 1.4 or frontage.distance(wall) > .12:
+            continue
+        exit = nearest_points(frontage, roadside)[0]
+        if exit.distance(roadside) > min(14, (road.get('width') or 6) / 2 + 8):
+            continue
+        vector = np.array(roadside.coords[0]) - origin
+        direction = vector / np.linalg.norm(vector)
+        options.append((approach.length, road['id'], direction, exit, wall))
+    if not options:
+        return None, 'no-frontage'
+    options.sort(key=lambda value: value[:2])
+    distance, _, direction, exit, wall = options[0]
+    if any(np.dot(direction, other) < .55 for close, _, other, _, _ in options[1:]
+           if close < distance + max(2.5, distance * .22)):
+        return None, 'ambiguous-frontage'
+    return (origin, direction, *projection_bounds(building, origin, direction), exit, wall), None
+
+
+def map_parcels(directory, tiles, scene, area, frame, clearance, known_barriers, bag, covered_parcels):
+    xform = partial(transform, transformation=frame.scene_to_rd, interleaved=False)
+    roads = [(row, xform(LineString(DETAIL['BGT']['pairs'](row['pts'])))) for row in scene['roads']
+             if row['kind'] in FRONTAGE_ROADS and row['name'] and not (row['layer'] or row['bridge'] or row['tunnel'])
+             and (row['modes'][0] | row['modes'][1]) & 3 and len(row['pts']) >= 4]
+    road_index = STRtree([line for _, line in roads])
+    building_index = STRtree([footprint for _, _, footprint in bag])
+    grounds = sorted((item for collection in ('begroeidterreindeel', 'onbegroeidterreindeel')
+                      for item in surveyed_ground(tiled_shapes(directory, tiles, collection, 'lokaal_id'),
+                                                  collection, 'residential', area)), key=lambda item: item[:2])
+    ground_index = STRtree([geometry for _, _, geometry in grounds])
+    paved_index = STRtree([geometry for _, kind, geometry in grounds if kind == 'path'])
+    soft_index = STRtree([geometry for _, kind, geometry in grounds if kind != 'path'])
+    candidates, access, rows, skipped = {}, [], [], Counter()
+    for _, prop, parcel in tiled_shapes(directory, tiles, 'perceel', 'identificatie_lokaal_id'):
+        identity = prop['identificatie_lokaal_id']
+        if (identity in covered_parcels or prop.get('status_historie_waarde') != 'Geldig'
+                or not 38 < parcel.area < 12500 or not area.covers(parcel)):
+            continue
+        polygons = list(parts(parcel, 'Polygon'))
+        if len(polygons) != 1:
+            continue
+        parcel = polygons[0]
+        hits = [(i, parcel.intersection(bag[i][2]).area) for i in building_index.query(parcel, predicate='intersects')]
+        hits = sorted((hit for hit in hits if hit[1] >= 22), key=lambda hit: (-hit[1], bag[hit[0]][0]))
+        if not hits:
+            continue
+        i, overlap = hits[0]
+        building_id, category, building = bag[i]
+        residential = category == 'residential'
+        if (not category or overlap < building.area * .76 or
+                not 24 < building.area < (245 if residential else 9000) or
+                not (parcel.area < 920 if residential else parcel.area >= 180) or
+                len(hits) > 1 and hits[1][1] > overlap * .42):
+            skipped['mixed-shared-or-unresolved-building'] += 1
+            continue
+        frontage, reason = match_frontage(parcel, building, roads, road_index, building_index, category)
+        if reason:
+            skipped[reason] += 1
+            continue
+        origin, direction, rear, front, exit, wall = frontage
+        candidate = (identity, parcel, building_id, building, origin, direction, rear, front, exit, wall)
+        candidates[identity] = (category, candidate)
+        approach = LineString([wall, exit])
+        reserve = approach.buffer(.72 if residential else 4.2, cap_style='square')
+        access.append(reserve)
+        available = parcel.buffer(-.25).difference(local_union(clearance, parcel, 1).buffer(.19))
+        if available.is_empty:
+            continue
+        occupied = []
+        source_ids = [f'BRK:{identity}', f'BAG:{building_id}']
+        for g in sorted(ground_index.query(available, predicate='intersects')):
+            ground_id, kind, ground = grounds[g]
+            keep = ground.intersection(available).difference(union_all(occupied))
+            if keep.area < 2.3:
+                continue
+            occupied.append(keep)
+            # The existing mapped land cover already draws larger lawns. A detailed
+            # paving classification describes the surface rather than its intended use.
+            if (kind != 'lawn' or keep.area < 45) and (residential or keep.area < 350):
+                surface_record(rows, f'map:{identity}:bgt:{ground_id}', kind, keep, 'observed',
+                               [*source_ids, f'BGT:{ground_id}'], frame, 'map')
+        if residential:
+            garden_surfaces(rows, 'map', candidate, available, union_all(occupied), reserve, frame)
+
+    access_index = STRtree(access)
+    boundaries = 0
+    for _, prop, geometry in tiled_shapes(directory, tiles, 'kadastralegrens', 'identificatie_lokaal_id'):
+        identity = prop['identificatie_lokaal_id']
+        quality = prop.get('classificatie_kwaliteit_waarde')
+        if (prop.get('status_historie_waarde') != 'Geldig' or prop.get('type_grens_waarde') != 'Definitief'
+                or quality not in {'B', 'C', 'D', 'E'}):
+            continue
+        neighbours = [candidates[parcel] for side in ('links', 'rechts')
+                      if (parcel := prop.get(f'perceel_{side}_identificatie_lokaal_id')) in candidates]
+        if not neighbours:
+            continue
+        boundaries += 1
+        clipped = geometry.intersection(area)
+        if clipped.is_empty:
+            continue
+        cuts = []
+        for _, candidate in neighbours:
+            _, _, _, _, origin, direction, rear, front, _, _ = candidate
+            cuts.extend(rectangle(origin, direction, at - .045, at + .045, -140, 140)
+                        for at in (rear + .65, front - .12))
+        for i, line in enumerate(stable_lines(clipped.difference(union_all(cuts)), 1.5)):
+            styles = [choose_edge_style(line, candidate, category) for category, candidate in neighbours]
+            style = styles[0]
+            if not style or any(other != style for other in styles):
+                continue
+            if style == 'clippedHedge':
+                _, candidate = neighbours[0]
+                direction = candidate[5]
+                span = np.array(line.coords[-1]) - np.array(line.coords[0])
+                # Keep low front hedges across the frontage, leaving the side access open.
+                if abs(span @ direction) > np.linalg.norm(span) * .57:
+                    continue
+                line = candidate[1].buffer(-.36).boundary.intersection(line.buffer(.68, cap_style='flat'))
+            elif len(neighbours) == 1 and style == 'metalMesh':
+                _, candidate = neighbours[0]
+                # Require mapped soft ground on isolated business boundaries. A
+                # legal boundary through a forecourt is insufficient evidence.
+                if local_union(soft_index, line, .65).buffer(.35).intersection(line).length < line.length * .6:
+                    continue
+            spec = feature_style(style)
+            mask = union_all([local_union(index, line, 1.7)
+                              for index in (clearance, known_barriers, access_index, paved_index)])
+            keep = line.difference(mask.buffer(spec['width'] / 2 + .36))
+            for j, segment in enumerate(stable_lines(keep, 1.5)):
+                record = to_scene_record(segment, frame)
+                if record:
+                    rows.append({'id': f'parcel:map:brk:{identity}:{i}:{j}', 'pilot': 'map',
+                                 'sourceIds': [f'BRK:{identity}', *[f'BRK:{n[1][0]}' for n in neighbours]],
+                                 'boundaryQuality': quality, 'status': 'inferred', 'level': 0, 'collidable': False,
+                                 **spec, **record})
+    return rows, {'streetFacingParcels': dict(Counter(row[0] for row in candidates.values())),
+                  'consideredBoundaries': boundaries, 'skipped': dict(skipped),
+                  'featureCounts': dict(Counter(f"{row.get('surface', row['type'])}/{row['status']}" for row in rows))}
 
 
 def imagery_features(file, areas, frame, clearance, existing, audit):
@@ -625,7 +850,7 @@ def check_held_out(observations, rows, xform):
     return results
 
 
-def bake(directory, scene, frame, day, observations, pilots):
+def bake(directory, scene, frame, day, observations, pilots, tiles):
     xform = partial(transform, transformation=frame.scene_to_rd, interleaved=False)
     bounds = box(*scene['meta']['bounds'])
     area = xform(bounds.segmentize(125))
@@ -637,15 +862,18 @@ def bake(directory, scene, frame, day, observations, pilots):
     route_space.extend(xform(LineString(DETAIL['BGT']['pairs'](rail['pts'])).buffer(2.25))
                        for rail in scene['railways'] if len(rail['pts']) >= 4 and not rail.get('layer'))
     route_space.extend(xform(flat_polygon(row['ring'], row.get('holes', ()))) for row in scene['water'])
-    for surface in read_packed('ede-road-surfaces.json.gz')['surfaces']:
-        if surface['layer'] or surface['function'] in {'berm', 'verkeerseiland'}:
-            continue
-        route_space.extend(xform(flat_polygon(outer, holes)) for outer, *holes in surface['polygons'])
-
-    # Use BAG as additional obstacle evidence where it contains newer or unmapped walk-in buildings.
-    for pilot in pilots:
-        route_space.extend(geometry for _, prop, geometry in read_shapes(directory / f'{pilot}-pand.geojson')
-                           if valid_bag(prop))
+    for asset in ('ede-road-surfaces.json.gz', 'ede-corridor-paving.json.gz'):
+        for surface in read_packed(asset)['surfaces']:
+            if surface['layer'] or surface['function'] in {'berm', 'verkeerseiland'}:
+                continue
+            route_space.extend(xform(flat_polygon(outer, holes)) for outer, *holes in surface['polygons'])
+    for key in ('squares', 'parks'):
+        route_space.extend(xform(flat_polygon(land['ring'], land.get('holes', ())))
+                           for land in scene[key] if key == 'squares' or land['kind'] in {'playground', 'pitch', 'cemetery'})
+    bag = [(prop['identificatie'], parcel_use(prop), footprint)
+           for _, prop, geometry in tiled_shapes(directory, tiles, 'pand', 'identificatie') if valid_bag(prop)
+           for footprint in parts(geometry, 'Polygon') if area.intersects(footprint)]
+    route_space.extend(geometry for _, _, geometry in bag)
     osm = json.loads((directory / 'osm.json').read_bytes())
     access, barriers = access_geometry(osm, area)
     clearance = STRtree([geometry for geometry in route_space + access if not geometry.is_empty])
@@ -666,11 +894,11 @@ def bake(directory, scene, frame, day, observations, pilots):
     existing_barriers = STRtree([*existing_tree.geometries, *present])
     photo_surfaces = STRtree([xform(scene_shape(row)) for row in photo_rows if row['type'] == 'parcelSurface'])
     prior_hedges, prior_fences = [], []
-    pilot_stats = {}
+    pilot_stats, covered_parcels = {}, set()
     for name, (category, road) in pilots.items():
         pilot_stats[name] = {}
         additions = pilot_features(directory, name, category, road, frame, clearance, existing_barriers,
-                                   STRtree(prior_hedges), STRtree(prior_fences), photo_surfaces, pilot_stats[name])
+                                   STRtree(prior_hedges), STRtree(prior_fences), photo_surfaces, pilot_stats[name], covered_parcels)
         rows.extend(additions)
         for row in additions:
             if row['type'] == 'hedge':
@@ -679,6 +907,10 @@ def bake(directory, scene, frame, day, observations, pilots):
                 prior_fences.append(xform(scene_shape(row)))
         pilot_stats[name]['featureCounts'] = dict(Counter(f"{row.get('surface', row['type'])}/{row['status']}"
             for row in [*additions, *(row for row in photo_rows if row['pilot'] == name)]))
+    additions, map_stats = map_parcels(directory, tiles, scene, area, frame, clearance,
+                                      STRtree([*existing_barriers.geometries, *prior_hedges, *prior_fences]),
+                                      bag, covered_parcels)
+    rows.extend(additions)
     ids = {row['id'] for row in rows}
     if len(ids) != len(rows) or not all(f'parcel:bgt:{identity}' in ids for identity in replaces):
         raise ValueError('Parcel detail is not uniquely keyed or is missing a BGT replacement')
@@ -693,9 +925,48 @@ def bake(directory, scene, frame, day, observations, pilots):
         'heldOutAerialChecks': check_held_out(observations, rows, xform),
         'counts': dict(Counter(f"{row.get('surface', row['type'])}/{row['status']}" for row in rows)),
         'pilots': pilot_stats,
+        'map': {**map_stats, 'sceneBounds': scene['meta']['bounds'], 'snapshotTiles': len(tiles),
+                'outsideOriginalTown': sum(not box(*scene['meta']['baseBounds']).covers(scene_shape(row))
+                                           for row in rows)},
         'reviewCounts': dict(Counter(row['reason'] for row in review)), 'review': review,
     }
     return {'version': 1, 'date': day, 'features': rows, 'replaces': sorted(replaces)}, report
+
+
+def write_parcel_assets(output, tile_directory, asset):
+    cells, static = {}, []
+    size_metres = 70
+    for row in asset['features']:
+        if row.get('pilot') != 'map':
+            static.append(row)
+            continue
+        x0, z0, x1, z1 = scene_shape(row).bounds
+        cell = (int(((x0 + x1) / 2) // size_metres), int(((z0 + z1) / 2) // size_metres))
+        cells.setdefault(cell, []).append((row, (x0, z0, x1, z1)))
+
+    def tile_data(tile, entries):
+        rows, extents = zip(*entries)
+        west, north, east, south = zip(*extents)
+        bounds = [min(west), min(north), max(east), max(south)]
+        return {'id': tile, 'bounds': bounds, 'count': len(rows)}, [row for row in rows]
+
+    tile_directory.mkdir(parents=True, exist_ok=True)
+    previous = json.loads(gzip.decompress(output.read_bytes())).get('tiles', []) if output.exists() else []
+    index, size = [], 0
+    for (x, z), entries in sorted(cells.items()):
+        tile = f'{x}_{z}'
+        item, features = tile_data(tile, entries)
+        path = tile_directory / f'{tile}.json.gz'
+        write_json(path, {'version': 1, 'features': features})
+        index.append(item)
+        size += path.stat().st_size
+    active = {item['id'] for item in index}
+    for item in previous:
+        tile = item['id']
+        if tile not in active and tile.replace('_', '').replace('-', '').isdigit():
+            (tile_directory / f'{tile}.json.gz').unlink(missing_ok=True)
+    write_json(output, {**asset, 'features': static, 'tiles': index})
+    return size, len(index)
 
 
 def main():
@@ -706,11 +977,20 @@ def main():
     parser.add_argument('--fetch', action='store_true')
     parser.add_argument('--osm', type=Path, nargs='+', help='dated Gelderland and Utrecht OSM province extracts')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-parcel-detail.json.gz')
+    parser.add_argument('--tiles', type=Path, help='directory for streamed geometry, defaults to ede-parcel-tiles beside the output')
     parser.add_argument('--report', type=Path, default=ROOT / 'tools/data/ede-parcel-detail.review.json')
     parser.add_argument('--observations', type=Path, default=ROOT / 'tools/data/ede-parcel-observations.json')
     arguments = parser.parse_args()
     scene = load_scene()
     frame = Frame(scene['meta']['lonLatAffine'])
+    corridors = read_packed('ede-corridors-v1.json.gz')
+    for key in ('buildings', 'roads', 'railways', 'water', 'parks', 'squares', 'trees'):
+        scene[key].extend(corridors[key])
+    scene['activeGraph']['nodes'].extend(corridors['activeGraph']['nodes'])
+    scene['activeGraph']['links'].extend(corridors['activeGraph']['links'])
+    scene['meta']['baseBounds'] = scene['meta']['bounds']
+    scene['meta']['bounds'] = corridors['bounds']
+    tiles = dict(snapshot_tiles(scene, frame))
     roads = {row['id']: row for row in scene['roads']}
     pilots = {place: (category, transform(LineString(DETAIL['BGT']['pairs'](roads[identity]['pts'])),
                                           frame.scene_to_rd, interleaved=False))
@@ -718,17 +998,22 @@ def main():
     if arguments.fetch or arguments.osm:
         arguments.snapshot.mkdir(parents=True, exist_ok=True)
     if arguments.fetch:
-        fetch_layers(arguments.snapshot, pilots, frame, arguments.date)
+        pilot_tiles = {name: transform(road.buffer(58, cap_style='square'), frame.rd_to_scene,
+                                       interleaved=False).bounds for name, (_, road) in pilots.items()}
+        fetch_layers(arguments.snapshot, {**pilot_tiles, **tiles}.items(), frame, arguments.date)
         fetch_review_images(arguments.snapshot)
     extract_osm(arguments.snapshot, arguments.osm, frame.geographic_bounds(scene['meta']['bounds']))
-    asset, report = bake(arguments.snapshot, scene, frame, arguments.date, arguments.observations, pilots)
-    write_json(arguments.output, asset)
+    asset, report = bake(arguments.snapshot, scene, frame, arguments.date, arguments.observations, pilots, tiles)
+    tile_directory = arguments.tiles or arguments.output.parent / 'ede-parcel-tiles'
+    size, count = write_parcel_assets(arguments.output, tile_directory, asset)
     report['assetBytes'] = arguments.output.stat().st_size
+    report['streamedTileBytes'] = size
+    report['streamedTileCount'] = count
     report['imageryReviewed'] = json.loads(arguments.observations.read_bytes()).get('imagery', []) \
         if arguments.observations.exists() else []
     write_json(arguments.report, report)
-    print(f"{len(asset['features'])} placements, {report['assetBytes']} compressed bytes")
-    print(json.dumps({key: report[key] for key in ('counts', 'pilots', 'reviewCounts')}, indent=2))
+    print(f"{len(asset['features'])} placements, {report['assetBytes']} initial bytes and {size} streamed bytes")
+    print(json.dumps({key: report[key] for key in ('counts', 'pilots', 'map', 'reviewCounts')}, indent=2))
 
 
 if __name__ == '__main__':

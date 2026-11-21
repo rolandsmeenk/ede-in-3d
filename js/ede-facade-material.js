@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { attribute, cameraPosition, color, float, floor, fract, fwidth, length, mix, mx_noise_float,
+import { attribute, cameraPosition, color, float, floor, Fn, fract, fwidth, If, length, mix, mx_noise_float,
   normalGeometry, normalWorld, positionGeometry, positionView, positionWorld, smoothstep, step, texture,
   vec2, vec3, vec4, vertexColor } from 'three/tsl';
-import { bumpNormal, filteredPulse, WALL_KINDS } from './tsl-materials.js';
+import { bumpNormal, cityUniforms, filteredPulse, WALL_KINDS } from './tsl-materials.js';
 import { archRise, isCorridorFacade, openingTop } from './ede-facades.js';
 
 const PADDING = 6;
@@ -288,8 +288,27 @@ function neighbourhoodWindows(masonry, layout, u, v, visible, entrance = float(0
   const door = filteredPulse(x, 0.32, 0.68, fw).mul(filteredPulse(y, 0, 0.77, fh)).mul(entrance).mul(near);
   const walls = mix(base, color(0xbbb5a9), band.mul(0.68));
   const frames = mix(walls, color(0xcec8b7), opening);
-  return mix(mix(frames, color(0x354652), glass), color(0x42423c), door);
+  return { finish: mix(mix(frames, color(0x354652), glass), color(0x42423c), door), glass };
 }
+
+const windowEmission = Fn(([glass, storey, bay, key]) => {
+  const glow = vec3(0).toVar();
+  const levels = cityUniforms.uWindowLights;
+  If(levels.x.add(levels.y).add(levels.z).greaterThan(0), () => {
+    const use = floor(key);
+    const shop = use.equal(3).or(use.equal(4).and(storey.lessThan(1)));
+    const office = use.equal(2);
+    const homes = use.equal(5).select(levels.x.mul(0.55), levels.x);
+    const level = shop.select(levels.z, office.select(levels.y, homes));
+    const building = fract(key);
+    const room = fract(building.mul(8741.43).add(storey.mul(32.17)).add(bay.mul(15.61)).sin().mul(43758.5453));
+    const rank = mix(building, room, office.select(0.62, 0.36));
+    const lit = smoothstep(rank, rank.add(0.045), level).mul(step(1, use));
+    const warm = mix(color(0xffba72), color(0xffe4b8), room);
+    glow.assign(office.select(color(0xe3ecff), warm).mul(glass).mul(lit).mul(1.5));
+  });
+  return glow;
+});
 
 function metalCladding(u, y, code) {
   const panel = step(4.5, code).mul(float(1).sub(step(5.5, code)));
@@ -302,24 +321,31 @@ function metalCladding(u, y, code) {
   return float(1.01).add(shade).sub(seam.mul(0.29));
 }
 
-export function createEdeFacadeBoxMaterial({ layout, shed, motorway, cladding }) {
+export function createEdeFacadeBoxMaterial({ layout, motorway, cladding }) {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.91 });
   const box = attribute('box', 'vec4'), faces = attribute('faces', 'vec4');
   const appearance = attribute('facadeAppearance', 'vec4');
+  const wallLayout = layout ? vec4(...layout) : attribute('facadeLayout', 'vec4');
+  const shed = layout ? float(0) : attribute('facadeShed', 'float');
   const kind = mix(faces.z, faces.w, step(0, normalGeometry.z));
   const visible = step(0.5, normalGeometry.z.abs()).mul(step(kind, WALL_KINDS.rear));
   const pier = box.x.mul(0.2).min(0.38);
   const width = box.x.sub(pier.mul(2));
-  const bays = shed ? float(1) : floor(width.div(layout[0]).add(0.5)).max(1);
+  const bays = mix(floor(width.div(wallLayout.x).add(0.5)).max(1), 1, shed);
   const along = positionGeometry.x.add(0.5).mul(box.x).sub(pier);
   const u = along.div(width).mul(bays);
-  const nominalHeight = mix(layout[1], appearance.w, step(0.1, appearance.w));
+  const nominalHeight = mix(wallLayout.y, appearance.w, step(0.1, appearance.w));
   const storeys = floor(box.y.div(nominalHeight).add(0.4)).max(1);
   const v = positionGeometry.y.add(0.5).mul(storeys);
   const entrance = step(kind.sub(WALL_KINDS.entry).abs(), 0.1).mul(step(u, 1)).mul(step(v, 1));
   const grain = mx_noise_float(positionWorld.mul(0.7)).mul(0.1).add(0.95);
-  material.colorNode = neighbourhoodWindows(appearance.xyz.mul(grain), vec4(...layout), u, v,
-    visible.mul(step(0, along)).mul(step(along, width)), shed || layout[2] > 0 ? entrance : float(0), float(1e6), motorway);
+  const hasEntrance = shed.max(wallLayout.z.greaterThan(0).select(1, 0));
+  const windows = neighbourhoodWindows(appearance.xyz.mul(grain), wallLayout, u, v,
+    visible.mul(step(0, along)).mul(step(along, width)), entrance.mul(hasEntrance), float(1e6), motorway);
+  material.colorNode = windows.finish;
+  if (!layout || layout[2] > 0) {
+    material.emissiveNode = windowEmission(windows.glass, floor(v), floor(u.div(2)), attribute('windowKey', 'float'));
+  }
   if (cladding) {
     const lineRange = float(1).sub(smoothstep(100, 360, positionView.z.negate())).mul(visible);
     const finish = metalCladding(along, positionWorld.y, float(cladding));
@@ -334,21 +360,29 @@ export function createBagFacadeMaterial(atlas = null, surfaceTexture = null, use
   const grain = mx_noise_float(positionWorld.mul(0.7)).mul(0.1).add(0.95);
   const masonry = vertexColor().mul(grain);
   let procedural = masonry;
+  let proceduralGlow, measuredGlow;
   if (useBuildingProfiles) {
     const wall = step(normalWorld.y.abs(), 0.35);
     const along = positionWorld.x.mul(normalWorld.z.abs()).add(positionWorld.z.mul(normalWorld.x.abs()));
     const height = attribute('buildingHeight', 'float');
-    const u = fract(along.div(3.1)), v = fract(height.div(3.2));
+    const u = along.div(3.1), v = height.div(3.2);
     const above = step(2.6, height);
-    const win = smoothstep(0.18, 0.22, u).mul(smoothstep(0.82, 0.78, u)).mul(smoothstep(0.34, 0.38, v)).mul(smoothstep(0.82, 0.78, v));
-    const generic = masonry.mul(float(1).sub(win.mul(wall).mul(above).mul(0.55)));
+    const win = smoothstep(0.18, 0.22, fract(u)).mul(smoothstep(0.82, 0.78, fract(u)))
+      .mul(smoothstep(0.34, 0.38, fract(v))).mul(smoothstep(0.82, 0.78, fract(v))).mul(wall).mul(above);
+    const generic = masonry.mul(float(1).sub(win.mul(0.55)));
     const layout = attribute('edeFacadeLayout', 'vec4');
-    const bay = attribute('edeFacadeBay', 'vec2');
+    const bay = attribute('edeFacadeBay', 'vec3');
+    const hasLayout = step(0.1, layout.x);
+    const storey = height.div(mix(3.2, layout.y, hasLayout));
     const local = neighbourhoodWindows(masonry, layout, bay.x,
-      height.div(layout.y.max(0.1)), wall.mul(step(0.15, height)), float(0), bay.y);
-    procedural = mix(generic, local, step(0.1, layout.x));
+      storey, wall.mul(step(0.15, height)), float(0), bay.y);
+    procedural = mix(generic, local.finish, hasLayout);
+    proceduralGlow = windowEmission(mix(win, local.glass, hasLayout), floor(storey),
+      floor(mix(u, bay.x, hasLayout).div(2)), bay.z);
+    measuredGlow = glass => windowEmission(glass, floor(storey), float(0), bay.z);
   }
   material.colorNode = procedural;
+  material.emissiveNode = proceduralGlow ?? null;
   if (!atlas) return material;
 
   const atlasUv = attribute('facadeUv', 'vec3');
@@ -374,6 +408,7 @@ export function createBagFacadeMaterial(atlas = null, surfaceTexture = null, use
   const masks = texture(atlas.texture, atlasUv.xy).mul(masked.mul(near));
   const door = masks.g;
   const glass = masks.r.min(float(1).sub(door));
+  if (measuredGlow) material.emissiveNode = mix(proceduralGlow, measuredGlow(glass), assigned);
   const frame = masks.b.min(float(1).sub(glass.add(door)).max(0));
   const sill = masks.a.min(float(1).sub(glass.add(door).add(frame)).max(0));
   const bare = float(1).sub(glass.add(door).add(frame).add(sill)).max(0);

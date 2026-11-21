@@ -34,7 +34,7 @@ function keyboardHarness(nyc = {}, terrainHeightAt = () => 0, buildingPassageHea
       'three/webgpu': {},
       './city-config.js': config,
       './tsl-materials.js': {},
-      './cars.js': {},
+      './cars.js': { PARKED_CAR_LAMPS: -1 },
       './helicopter.js': {},
       './ede-bikes.js': {},
       './pedestrians.js': {},
@@ -341,8 +341,10 @@ test('player brake and reverse lamps follow braking and backward travel', () => 
     assert.equal(sim.car.carState.value.w, reverse, `reverse at speed ${speed}, input ${input}`);
     sim.controller.entities.person = {};
     sim.controller.setMode('person');
-    assert.equal(sim.car.carState.value.x, 0, 'leaving the car releases its brake lights');
+    assert.equal(sim.car.carState.value.x, -1, 'leaving the taxi switches off its lamps');
     assert.equal(sim.car.carState.value.w, 0, 'the parked car no longer shows reverse lights');
+    sim.controller.setMode('car');
+    assert.equal(sim.car.carState.value.x, 0, 'getting back in restores the driving light state');
   }
 });
 

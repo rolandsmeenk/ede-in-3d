@@ -13,7 +13,7 @@ const facade = loadModule(facadeSource.replace(/let facadeIndex;[\s\S]*?\nconst 
   .replaceAll('export async function', 'async function'));
 const { buildFacadeMaskAtlas, buildFacadeMaskAtlasIncrementally, projectFacadeUv } = loadModule(
   readFileSync(join(__dirname, '../js/ede-facade-material.js'), 'utf8'),
-  { imports: { 'three/webgpu': { DataTexture }, 'three/tsl': {}, './tsl-materials.js': {}, './ede-facades.js': facade },
+  { imports: { 'three/webgpu': { DataTexture }, 'three/tsl': { Fn: body => body }, './tsl-materials.js': {}, './ede-facades.js': facade },
     globals: { performance: { now: () => ++turns * 6 }, setTimeout } }
 );
 

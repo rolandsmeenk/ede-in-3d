@@ -13,7 +13,7 @@ The façade layer supplies 3,553 wall layouts across 575 BAG buildings and 2,167
 
 ## Custom rail-side exteriors
 
-All five sites appear in the Teleport menu. Fallback meshes are replaced by their OSM IDs and streamed building meshes by their BAG IDs. The original terrain stays in the Oude Kerk scene frame. Window sizes, trim and exterior fittings use fitted dimensions from the references.
+All five sites appear in map search. Fallback meshes are replaced by their OSM IDs and streamed building meshes by their BAG IDs. The original terrain stays in the Oude Kerk scene frame. Window sizes, trim and exterior fittings use fitted dimensions from the references.
 
 | Site | Replacement and fit |
 | --- | --- |

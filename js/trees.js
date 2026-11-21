@@ -956,7 +956,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
   const stats = {
     trees: 0, qualityLevel: 'legacy', visibleTrees: 0, visibleByLod: [0, 0, 0],
     visibleTriangles: 0, shadowBatches: 0, transitions: 0,
-    uploadBytes: 0, uploadedCells: 0, frameUploadBytes: 0, frameUploadedCells: 0
+    uploadBytes: 0, uploadedCells: 0, frameUploadBytes: 0, frameUploadedCells: 0, farBatches: 0
   };
 
   // Geometries: [species][variant][lod]
@@ -992,13 +992,13 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
 
   // Shared geometry types per species, variant and level.
   const types = [];
-  const makeType = (geo, name) => {
+  const makeType = (geo, name, farFamily) => {
     const { min, max } = geo.boundingBox;
     const height = Math.max(Math.abs(min.y), Math.abs(max.y));
     // The material adds wind after the instance transform: height-squared lean/rock, plus bob and flutter.
     const windPadding = Math.hypot(0.2, 0.06) * Math.hypot(0.86, 0.51) * (height / 11) ** 2 + 2;
     const type = {
-      geo, name, windPadding, meshes: [],
+      geo, name, farFamily, windPadding, meshes: [],
       inverseHeight: 1 / (max.y - min.y),
       inverseWidth: 1 / Math.max(max.x - min.x, max.z - min.z),
       lod: geo.userData.lod, triangles: geo.userData.triangles
@@ -1012,7 +1012,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     measuredMiddle: includeMeasuredMiddle
       ? [0, 1].map((v) => makeType(geos[s][v].measuredMiddle, `Trees_${sp.name}_v${v}_measured_lod1`))
       : [],
-    l2: [0, 1].map((v) => makeType(geos[s][v][2], `Trees_${sp.name}_v${v}_lod2`))
+    l2: [0, 1].map((v) => makeType(geos[s][v][2], `Trees_${sp.name}_v${v}_lod2`, Number(sp.name === 'conifer')))
   }));
   const cells = new Map();
   const meshes = [];
@@ -1071,7 +1071,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       cellGroup.name = `TreeCell_${label}`;
       cellGroup.visible = false;
       group.add(cellGroup);
-      cell = { group: cellGroup, label, trees: [], meshes: new Map() };
+      cell = { group: cellGroup, label, cellX, cellZ, trees: [], meshes: new Map(), farBatches: [] };
       cells.set(cellKey, cell);
     }
     cell.trees.push(i);
@@ -1152,30 +1152,91 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     return cell;
   });
 
-  const instanced = meshes.map((m, index) => {
+  function batchMesh(type, name, cap, batchMaterial = material) {
     const geo = new THREE.BufferGeometry();
-    for (const name of Object.keys(m.type.geo.attributes)) geo.setAttribute(name, m.type.geo.attributes[name]);
-    geo.setIndex(m.type.geo.index);
-    geo.boundingSphere = m.type.geo.boundingSphere;
-    geo.boundingBox = m.type.geo.boundingBox;
-    const cap = m.capacity;
+    for (const key of Object.keys(type.geo.attributes)) geo.setAttribute(key, type.geo.attributes[key]);
+    geo.setIndex(type.geo.index);
+    geo.boundingSphere = type.geo.boundingSphere;
+    geo.boundingBox = type.geo.boundingBox;
     // Static usage on purpose: three.js re-uploads a DynamicDrawUsage attribute in every render pass of every frame
     // (both shadow cascades + the scene pass, ~7 MB/frame here). rebuild() uploads just the instances in use, and only
     // when the levels change.
     const treeData = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
     geo.setAttribute('aTreeData', treeData);
-    const mesh = new THREE.InstancedMesh(geo, material, cap);
-    mesh.name = m.name;
-    mesh.userData.treeBatchIndex = index;
+    const mesh = new THREE.InstancedMesh(geo, batchMaterial, cap);
+    mesh.name = name;
     mesh.count = 0;
     mesh.visible = false;
-    mesh.castShadow = true;
     mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  const instanced = meshes.map((m, index) => {
+    const mesh = batchMesh(m.type, m.name, m.capacity);
+    mesh.userData.treeBatchIndex = index;
+    mesh.castShadow = true;
     m.cell.group.add(mesh);
     m.type.meshes.push(mesh);
     counts.push(0);
     return mesh;
   });
+
+  // Pool settled far crowns from each 2 × 2 block of visibility cells.
+  const pooledBatches = [], dirtyFarBatches = new Set();
+  let farGroup;
+  function initFarBatches() {
+    farGroup = new THREE.Group();
+    farGroup.name = 'FarTreeBatches';
+    farGroup.matrixAutoUpdate = farGroup.matrixWorldAutoUpdate = false;
+    const pending = new Map();
+    const proxies = [0, 1].map(family => types.find(type => type.farFamily === family && type.meshes.length));
+    for (const cell of cellList) {
+      if (cell.priority) continue;
+      const x = Math.floor(cell.cellX / 2), z = Math.floor(cell.cellZ / 2);
+      for (const mi of cell.meshIndices) {
+        const { type, capacity } = meshes[mi];
+        if (type.lod !== 2) continue;
+        const key = `${type.farFamily}_${x},${z}`;
+        if (!pending.has(key)) pending.set(key, { sources: [], capacity: 0, type: proxies[type.farFamily] });
+        const batch = pending.get(key);
+        batch.sources.push(mi);
+        batch.capacity += capacity;
+      }
+    }
+    for (const [key, batch] of pending) {
+      if (batch.sources.length < 2) continue;
+      batch.name = `Trees_pooled_lod2_${key}`;
+      batch.triangleDelta = 0;
+      pooledBatches.push(batch);
+      for (const mi of batch.sources) {
+        const cell = meshes[mi].cell;
+        if (!cell.farBatches.includes(batch)) cell.farBatches.push(batch);
+      }
+    }
+    group.add(farGroup);
+  }
+
+  function farBatchMesh({ type, name, capacity }) {
+    const mesh = batchMesh(type, name, capacity, adaptiveMaterial);
+    mesh.geometry.setAttribute('aTreeFade', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+    const reference = type.meshes[0];
+    if (reference.instanceMatrix.isStorageInstancedBufferAttribute) {
+      mesh.instanceMatrix = new THREE.StorageInstancedBufferAttribute(mesh.instanceMatrix.array, 16);
+    }
+    mesh.userData.sharesPipelineWith = reference.userData.sharesPipelineWith ?? reference;
+    mesh.matrixAutoUpdate = mesh.matrixWorldAutoUpdate = false;
+    farGroup.add(mesh);
+    return mesh;
+  }
+
+  function invalidateFarBatches(cell) {
+    for (const batch of cell.farBatches) {
+      if (dirtyFarBatches.has(batch)) continue;
+      if (batch.mesh) batch.mesh.visible = false;
+      for (const mi of batch.sources) instanced[mi].visible = instanced[mi].count > 0;
+      dirtyFarBatches.add(batch);
+    }
+  }
 
   // Repack only changed cells; each fixed-capacity mesh is shared by all its occupants at this level.
   const dirtyCells = new Set();
@@ -1194,6 +1255,62 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       // The bundled Three.js attribute cache marks these uploads current before a predicted cell is drawn.
       const type = attr.isStorageInstancedBufferAttribute ? 3 : 1;
       uploadContext.update(attr, type);
+    }
+  }
+
+  function repackFarBatches(uploadBudget) {
+    for (const batch of dirtyFarBatches) {
+      const { type } = batch;
+      const sources = batch.sources.filter(mi => {
+        const cell = meshes[mi].cell, source = instanced[mi];
+        return cell.group.visible && cell.fadeUntil === 0 && source.count > 0 && !source.castShadow;
+      });
+      if (sources.length < 2) {
+        dirtyFarBatches.delete(batch);
+        continue;
+      }
+      const count = sources.reduce((sum, mi) => sum + instanced[mi].count, 0);
+      const prior = batch.mesh;
+      const fadePending = !uploaded.has(prior?.geometry.attributes.aTreeFade);
+      const bytes = (uploaded.has(prior?.instanceMatrix) ? count : batch.capacity) *
+        (INSTANCE_BYTES - Float32Array.BYTES_PER_ELEMENT) +
+        (fadePending ? batch.capacity * Float32Array.BYTES_PER_ELEMENT : 0);
+      // Leave the fine batches visible if the compacted upload must wait.
+      if (stats.frameUploadBytes + bytes > uploadBudget) continue;
+      const mesh = batch.mesh ??= farBatchMesh(batch);
+      const { aTreeData, aTreeFade } = mesh.geometry.attributes;
+      let offset = 0, previousTriangles = 0;
+      for (const mi of sources) {
+        const { type: fromType } = meshes[mi];
+        const source = instanced[mi], n = source.count;
+        const dst = mesh.instanceMatrix.array;
+        dst.set(source.instanceMatrix.array.subarray(0, n * 16), offset * 16);
+        aTreeData.array.set(source.geometry.attributes.aTreeData.array.subarray(0, n * 4), offset * 4);
+        // Match the source width and height with the shared geometry and keep its base on the ground.
+        const width = type.inverseWidth / fromType.inverseWidth;
+        const height = type.inverseHeight / fromType.inverseHeight;
+        const baseCorrection = fromType.geo.boundingBox.min.y - type.geo.boundingBox.min.y * height;
+        for (let i = offset * 16; i < (offset + n) * 16; i += 16) {
+          dst[i] *= width;
+          dst[i + 2] *= width;
+          dst[i + 8] *= width;
+          dst[i + 10] *= width;
+          dst[i + 13] += baseCorrection * dst[i + 5];
+          dst[i + 5] *= height;
+        }
+        previousTriangles += n * fromType.triangles;
+        offset += n;
+        source.visible = false;
+      }
+      mesh.count = count;
+      mesh.computeBoundingSphere();
+      mesh.boundingSphere.radius += type.windPadding;
+      mesh.visible = true;
+      batch.triangleDelta = count * type.triangles - previousTriangles;
+      syncAttribute(mesh.instanceMatrix, count, false);
+      syncAttribute(aTreeData, count, false);
+      if (fadePending) syncAttribute(aTreeFade, count, false);
+      dirtyFarBatches.delete(batch);
     }
   }
 
@@ -1222,6 +1339,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     const adaptive = mode !== 'legacy';
     for (const cell of dirtyCells) {
       const indices = cell.meshIndices;
+      const hadFar = cell.lo[2] > 0;
       cell.lo.fill(0);
       cell.triangles = cell.instanceCount = cell.shadowBatches = 0;
       for (const mi of indices) counts[mi] = 0;
@@ -1249,17 +1367,12 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
         syncAttribute(mesh.instanceMatrix, n, inAdvance);
         syncAttribute(attrs.aTreeData, n, inAdvance);
         if (adaptive) syncAttribute(attrs.aTreeFade, n, inAdvance);
-        if (adaptive) {
-          // Conservative cell bounds remain valid when the active instances change or foliage sways.
-          mesh.boundingSphere ||= new THREE.Sphere();
-          mesh.boundingSphere.center.set(cell.cx, cell.cy, cell.cz);
-          mesh.boundingSphere.radius = cell.radius + 3 + meshes[mi].type.windPadding + cell.crownRadius;
-        } else {
-          mesh.computeBoundingSphere();
-          mesh.boundingSphere.radius += meshes[mi].type.windPadding;
-        }
+        // The view and shadow passes can cull each species and LOD independently.
+        mesh.computeBoundingSphere();
+        mesh.boundingSphere.radius += meshes[mi].type.windPadding;
       }
       cell.group.visible = (adaptive ? cell.drawable : true) && beforeBytes < stats.frameUploadBytes;
+      if (adaptive && (hadFar || cell.lo[2])) invalidateFarBatches(cell);
       if (beforeBytes < stats.frameUploadBytes) {
         stats.uploadedCells++;
         stats.frameUploadedCells++;
@@ -1277,6 +1390,14 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       for (let l = 0; l < 3; l++) visibleByLod[l] += cell.lo[l];
       triangles += cell.triangles;
       shadowBatches += cell.shadowBatches;
+    }
+    stats.farBatches = 0;
+    if (mode !== 'legacy') {
+      for (const batch of pooledBatches) {
+        if (!batch.mesh?.visible) continue;
+        triangles += batch.triangleDelta;
+        stats.farBatches++;
+      }
     }
     stats.visibleTrees = visibleByLod[0] + visibleByLod[1] + visibleByLod[2];
     stats.visibleTriangles = triangles;
@@ -1448,7 +1569,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     if (distance > edge + margin || (!priority[i] && keep[i] > density)) return 255;
     if (pixels > detail.near * (prior === 0 ? 0.87 : 1.08)) return 0;
     if (pixels > detail.mid * (prior <= 1 ? 0.88 : 1.08)) return 1;
-    if (distance > 520 && !priority[i] && canopyCovers?.(px[i], pz[i])) return 255;
+    if (!priority[i] && canopyCovers?.(px[i], pz[i])) return 255;
     return 2;
   }
 
@@ -1537,11 +1658,13 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       const near = viewDistance(cell, x, y, z, cosHalfAngle, looking);
       const far = lerp(cell.maxCutoffLow, cell.maxCutoffAloft, above) * profile.reach + (cell.priority ? 335 : 115);
       const drawable = near < far;
+      if (drawable !== cell.drawable && cell.lo[2]) invalidateFarBatches(cell);
       if (drawable && !cell.drawable) cell.revision = -1;
       cell.drawable = drawable;
       cell.group.visible = drawable && cell.instanceCount > 0;
       const shadows = drawable && near < profile.shadows + (cell.priority ? 45 : 0) + (cell.shadows ? 14 : -14);
       if (cell.shadows !== shadows || cell.shadowLevel !== level) {
+        if (cell.lo[2]) invalidateFarBatches(cell);
         cell.shadows = shadows;
         cell.shadowLevel = level;
         cell.shadowBatches = 0;
@@ -1606,8 +1729,9 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       }
       if (dirtyCells.size) rebuild();
     }
+    repackFarBatches(uploadBudget);
     measureVisible();
-    return stats.frameUploadedCells > 0;
+    return stats.frameUploadBytes > 0;
   }
 
   function setQuality(next) {
@@ -1621,8 +1745,13 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       for (const mesh of instanced) {
         mesh.geometry.setAttribute('aTreeFade', new THREE.InstancedBufferAttribute(new Float32Array(mesh.instanceMatrix.count), 1));
       }
+      initFarBatches();
     }
     if (adaptive !== (mode !== 'legacy')) {
+      farGroup.visible = adaptive;
+      dirtyFarBatches.clear();
+      for (const batch of pooledBatches) if (batch.mesh) batch.mesh.visible = false;
+      stats.farBatches = 0;
       lod.fill(255);
       fading.clear();
       fadingTrees = 0;
@@ -1669,6 +1798,12 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
   for (const type of types) {
     const representative = type.meshes.find((mesh) => mesh.visible) || type.meshes[0];
     for (const mesh of type.meshes) if (mesh !== representative) mesh.userData.sharesPipelineWith = representative;
+  }
+
+  for (const { mesh, type } of pooledBatches) {
+    if (!mesh) continue;
+    const reference = type.meshes[0];
+    mesh.userData.sharesPipelineWith = reference.userData.sharesPipelineWith ?? reference;
   }
 
   // Tree placements are world-space instance matrices; the field, cells and meshes keep identity transforms.

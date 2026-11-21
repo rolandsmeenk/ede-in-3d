@@ -28,6 +28,22 @@ export function decodeTerrain(buffer) {
 }
 
 const expansionDirectory = new URL('../assets/ede-terrain-tiles/', import.meta.url);
+const GINKEL_BOUNDS = [4000, 1000, 4500, 1250];
+
+async function loadGinkelDetail(load, tiles) {
+  if (!tiles['250_4000_1000'] || !tiles['250_4250_1000']) return null;
+  try {
+    const detail = await load(new URL('ginkel-detail.bin', expansionDirectory));
+    if (detail.step !== 1.25 || Math.abs(detail.napOrigin - 22.54) > 0.001
+        || [detail.minX, detail.minZ, detail.maxX, detail.maxZ].some((value, i) => value !== GINKEL_BOUNDS[i])) {
+      throw new Error('Invalid Ginkelse Heide terrain patch');
+    }
+    return detail;
+  } catch (error) {
+    console.warn('[AHN Ginkelse Heide] using the 5 m terrain grid:', error);
+    return null;
+  }
+}
 
 async function loadExpansion(load) {
   const response = await fetch(new URL('manifest.json', expansionDirectory));
@@ -54,11 +70,24 @@ async function loadExpansion(load) {
       && tile.children.every(child => check(child, tile.bounds)));
   };
   if (!manifest.roots.every(id => check(id))) throw new Error('Invalid terrain hierarchy');
-  const field = await load(new URL('collision.bin', expansionDirectory));
+  const [field, detail] = await Promise.all([
+    load(new URL('collision.bin', expansionDirectory)),
+    loadGinkelDetail(load, manifest.tiles),
+  ]);
   if (field.step !== 5 || Math.abs(field.napOrigin - manifest.napOrigin) > 0.001
       || field.minX > manifest.bounds[0] || field.minZ > manifest.bounds[1]
       || field.maxX < manifest.bounds[2] || field.maxZ < manifest.bounds[3]) throw new Error('Invalid terrain collision field');
-  return { manifest, field, directory: expansionDirectory };
+  if (detail) {
+    // Restore the unrounded coarse interpolation at every shared edge vertex.
+    for (let row = 0; row < detail.rows; row++) {
+      const z = detail.minZ + row * detail.step;
+      const full = row === 0 || row === detail.rows - 1;
+      for (let col = 0; col < detail.columns; col += full ? 1 : detail.columns - 1) {
+        detail.heights[row * detail.columns + col] = sampleTerrain(field, detail.minX + col * detail.step, z);
+      }
+    }
+  }
+  return { manifest, field, directory: expansionDirectory, detail };
 }
 
 export async function loadTerrain({ expanded = false } = {}) {
@@ -120,10 +149,16 @@ export function expansionSeamOffset(x, z) {
   return blend ? blend * (sampleTerrain(terrain, edgeX, edgeZ) - sampleTerrain(field, edgeX, edgeZ)) : 0;
 }
 
+export function getExpansionTerrainPatch(x, z) {
+  const detail = expansion?.detail;
+  if (detail && x >= detail.minX && x < detail.maxX && z >= detail.minZ && z < detail.maxZ) return detail;
+}
+
 export function terrainHeightAt(x, z) {
   const field = expansion?.field;
   if (field && (x < terrain.minX || x > terrain.maxX || z < terrain.minZ || z > terrain.maxZ)) {
-    return sampleTerrain(field, x, z) + expansionSeamOffset(x, z);
+    const detail = getExpansionTerrainPatch(x, z);
+    return detail ? sampleTerrain(detail, x, z) : sampleTerrain(field, x, z) + expansionSeamOffset(x, z);
   }
   return sampleTerrain(getTerrainPatch(x, z) ?? terrain, x, z);
 }

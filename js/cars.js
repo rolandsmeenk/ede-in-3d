@@ -1163,6 +1163,7 @@ function carStyleCode({ livery = 0, metallic = 0, trim = 0, wheel = 0 } = {}) {
 const _carMaterialCache = new Map();
 const _carWheelMaterialCache = new Map();
 let _carPlateTexture;
+const PARKED_CAR_LAMPS = -1;
 
 // Shared procedural alloy rim, spoke, brake-rotor & tyre rubber evaluation used by both `createLoftedCarMaterial`
 // (for highway cars & >90 m proxies) and `createCarWheelMaterial` (for <90 m 3D spinning wheels), keeping near/far
@@ -1339,7 +1340,7 @@ function carPlateTexture() {
  * Instanced traffic reads the per-instance `paintColor` (vec3) and `carState` (vec4: brake, left (+x) & right (-x)
  * turn signal, style/livery code from `carStyleCode` where 1 = Dutch police) attributes; with a fixed `fixedColorHex` (the
  * player's taxi, or fixed wheels) the state is the `material.userData.carState` uniform instead, with its fourth
- * component controlling reverse lights.
+ * component controlling reverse lights. A negative brake value marks a parked vehicle with all lamps off.
  * Every mask is built once and shared by the colour, roughness, metalness & emissive graphs (TSL turns nodes used
  * more than once into temporaries), so the fragment shader evaluates each SDF a single time.
  */
@@ -1869,7 +1870,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
   });
 
   // ---- Emissive (evaluated only on front/rear lamp zones, taxi sign, or braking rear window) -----------------------
-  const brake = state.x;
+  const brake = max(0, state.x);
   const blink = max(state.y.mul(step(0.0, p.x)), state.z.mul(step(p.x, 0.0)));
   const nightHeadlamp = smoothstep(0.60, 1.15, cityUniforms.uInteriorGlow);
 
@@ -1906,7 +1907,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
       });
       emit.assign(color(0xff0c16).mul(chmsl.mul(2.3)));
     });
-    return emit;
+    return emit.mul(step(0, state.x));
   });
 
   const mat = new THREE.MeshStandardNodeMaterial();
@@ -1924,6 +1925,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
 export {
   CAR_PARTS,
   BODY_SPECS,
+  PARKED_CAR_LAMPS,
   carLayout,
   carBodyHalfWidthAt,
   carTipZ,

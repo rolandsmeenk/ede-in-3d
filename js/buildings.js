@@ -56,6 +56,7 @@ import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js'
 import { EDE_BUILDING_BASES } from './ede-building-bases.js';
 import { edeFacadeAt, EDE_FACADE_STYLES, isEdeShed, EDE_SHED_HEIGHT } from './ede-neighbourhood-facades.js';
 import { createEdeFacadeBoxMaterial } from './ede-facade-material.js';
+import { windowLightKey } from './ede-window-lights.js';
 
 // Match the exposed end walls while their streamed BAG tile is unavailable.
 const muralWallSeats = new Map([
@@ -423,11 +424,8 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
       seed: 94.3
     }]
   ];
-  const neighbourhoodMaterials = new Map();
-  if (EDE_DATA) for (const [style, { layout }] of Object.entries(EDE_FACADE_STYLES)) {
-    neighbourhoodMaterials.set(style, facades.length);
-    facades.push([createEdeFacadeBoxMaterial, { layout, floorHeight: layout[1], shed: style === 'shed' }]);
-  }
+  const neighbourhoodMaterial = EDE_DATA ? facades.length : -1;
+  if (EDE_DATA) facades.push([createEdeFacadeBoxMaterial, {}]);
   const corridorMaterials = new Map();
   if (corridorFacades) for (const [profile, layout, cladding] of [
     ['brick', [2.68, 2.95, 0.47, 0.42], 0],
@@ -2096,8 +2094,9 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
       const tone = rand();
 
       const neighbourhood = edeFacadeAt(cx, cz, height, source.buildYear, source.kind);
+      const windowKey = shed ? 0 : windowLightKey(source, cx, cz);
       const facadeColour = new THREE.Color(neighbourhood.color);
-      const matIndex = neighbourhoodMaterials.get(shed ? 'shed' : neighbourhood.style);
+      const facadeLayout = shed ? EDE_FACADE_STYLES.shed.layout : neighbourhood.layout;
       const corridorWalls = corridorFacades?.[source.id];
       const detail = { id: source.id, name: source.name, cx, cz, ...bounds, district: districtAt(cx, cz), maxH: height,
         cornices: [], waterTowers: [], hvacUnits: [], fireEscapes: [], awnings: [], scaffoldSheds: [], yards: [],
@@ -2144,11 +2143,11 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
               wallBottom = Math.min(wallBottom, terrainHeightAt(a.x + dx * j / steps, a.z + dz * j / steps) + groundCorrection);
             }
           }
-          let wallMat = matIndex, wallColour = facadeColour, renderFace = face;
+          let wallMat = neighbourhoodMaterial, wallColour = facadeColour, renderFace = face;
           const corridor = !ringIndex && corridorWalls?.[i];
           // Confirm the surveyed start vertex so a later OSM footprint edit cannot shift all wall assignments.
           if (corridor && a.x === corridor[0] && a.z === corridor[1] && b.x === corridor[2] && b.z === corridor[3]) {
-            wallMat = corridorMaterials.get(corridor[4]) ?? matIndex;
+            wallMat = corridorMaterials.get(corridor[4]) ?? neighbourhoodMaterial;
             wallColour = new THREE.Color(corridor[5]);
             renderFace = WALL_KINDS.rear;
           }
@@ -2179,7 +2178,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
               if (renderExterior && bottom < renderTop) {
                 buckets[wallMat].push({ x: sx, y: (bottom + renderTop) / 2 + 0.02, z: sz, fallbackId: source.id, tile,
                   w: (to - from) * length + 0.06, h: renderTop - bottom, d: thickness,
-                  ry, tone, facadeColour: wallColour, facadeLevels: source.facadeLevels,
+                  ry, tone, facadeColour: wallColour, facadeLevels: source.facadeLevels, windowKey, facadeLayout, shed,
                   faces: [WALL_KINDS.blankStone, WALL_KINDS.blankStone, renderFace, renderFace] });
               }
               for (const [t0, t1] of cuts.length ? [[from, to]] : solid) {
@@ -2384,6 +2383,17 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
     let firstMesh;
     for (const cell of EDE_DATA ? edeSpatialGroups(items, item => item.tile ?? item) : [items]) {
       const inst = createFacadeBoxes(materials[matIdx], cell);
+      if (matIdx === neighbourhoodMaterial) {
+        // A cell shares the shader while each wall keeps its neighbourhood layout.
+        const layouts = new Float32Array(cell.length * 4);
+        const sheds = new Float32Array(cell.length);
+        cell.forEach(({ facadeLayout, shed }, i) => {
+          layouts.set(facadeLayout, i * 4);
+          sheds[i] = Number(shed);
+        });
+        inst.geometry.setAttribute('facadeLayout', new THREE.InstancedBufferAttribute(layouts, 4));
+        inst.geometry.setAttribute('facadeShed', new THREE.InstancedBufferAttribute(sheds, 1));
+      }
       if (cell[0].tile) inst.userData.buildingTile = cell[0].tile;
       inst.castShadow = true;
       inst.receiveShadow = true;

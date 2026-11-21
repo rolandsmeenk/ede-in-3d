@@ -13,6 +13,7 @@ import { applyBagFacadeChunks, loadEdeFacades, meshBagFacadeFeatures, readBagFac
 import { buildFacadeMaskAtlasIncrementally, createBagFacadeMaterial, createFacadeSurfaceTexture, projectFacadeUv } from './ede-facade-material.js';
 import { EDE_BUILDING_BASES } from './ede-building-bases.js';
 import { edeFacadeAt, isEdeShed } from './ede-neighbourhood-facades.js';
+import { windowLightKey } from './ede-window-lights.js';
 
 // 3D BAG (LoD 2.2) 3D Tiles: real building volumes with roof shapes for the Netherlands.
 // https://3dbag.nl — LoD 2.2 tile bounds are ECEF boxes and content is glTF.
@@ -485,7 +486,8 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
         }
         const year = years?.[seed] || footprint?.source?.buildYear;
         const style = edeFacadeAt(x, z, top - baseByBuilding.get(seed), year, footprint?.source?.kind);
-        if (style) facades.set(seed, { x, z, layout: style.layout, rgb: c.setHex(style.color).toArray(), planes: new Map() });
+        if (style) facades.set(seed, { x, z, layout: style.layout, windowKey: windowLightKey(footprint?.source, x, z),
+          rgb: c.setHex(style.color).toArray(), planes: new Map() });
         if (style?.roofColor) roofColors.set(seed, c.setHex(style.roofColor).toArray());
       }
       let kept;
@@ -519,7 +521,7 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
         }
       }
       if (meshBases) for (const [seed, { y }] of meshBases) groundByBuilding.set(seed, y);
-      const facadeLayouts = new Float32Array(count * 4), facadeBays = new Float32Array(count * 2);
+      const facadeLayouts = new Float32Array(count * 4), facadeBays = new Float32Array(count * 3);
       const planeByVertex = facades.size ? new Array(count) : [];
       const indices = kept ?? src.index?.array;
       const wallDirections = new Float32Array(planeByVertex.length * 2);
@@ -570,7 +572,8 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
             plane.max = Math.max(plane.max, along);
           }
           planeByVertex[i] = plane;
-          facadeBays[i * 2] = along;
+          facadeBays[i * 3] = along;
+          facadeBays[i * 3 + 2] = facade.windowKey;
         }
       }
       for (let i = 0; i < planeByVertex.length; i++) {
@@ -579,7 +582,7 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
         if (!plane) continue;
         const width = plane.max - plane.min;
         const bays = Math.max(1, Math.round(width / plane.spacing));
-        const index = i * 2;
+        const index = i * 3;
         facadeBays[index] = width >= 1.7 ? (facadeBays[index] - plane.min) * bays / width : 0;
         facadeBays[index + 1] = Math.min(plane.leftTop, plane.rightTop);
       }
@@ -590,7 +593,7 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
       g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       g.setAttribute('buildingHeight', new THREE.BufferAttribute(relativeHeights, 1));
       g.setAttribute('edeFacadeLayout', new THREE.BufferAttribute(facadeLayouts, 4));
-      g.setAttribute('edeFacadeBay', new THREE.BufferAttribute(facadeBays, 2));
+      g.setAttribute('edeFacadeBay', new THREE.BufferAttribute(facadeBays, 3));
       if (indices) {
         const IndexArray = count > 65535 ? Uint32Array : Uint16Array;
         g.setIndex(new THREE.BufferAttribute(IndexArray.from(indices), 1));
@@ -768,19 +771,20 @@ function addBagGeometry(group, geometries, material, detailedMaterial) {
       delete geometry.userData.facades;
       // Keep detailed façades within WebGPU's eight vertex buffer slots.
       const { edeFacadeLayout: layout, edeFacadeBay: bay } = geometry.attributes;
-      const interleaved = new THREE.InterleavedBuffer(new Float32Array(layout.count * 6), 6);
+      const interleaved = new THREE.InterleavedBuffer(new Float32Array(layout.count * 7), 7);
       const data = interleaved.array;
       for (let i = 0; i < layout.count; i++) {
-        const offset = i * 6;
+        const offset = i * 7;
         data[offset] = layout.getX(i);
         data[offset + 1] = layout.getY(i);
         data[offset + 2] = layout.getZ(i);
         data[offset + 3] = layout.getW(i);
         data[offset + 4] = bay.getX(i);
         data[offset + 5] = bay.getY(i);
+        data[offset + 6] = bay.getZ(i);
       }
       geometry.setAttribute('edeFacadeLayout', new THREE.InterleavedBufferAttribute(interleaved, 4, 0));
-      geometry.setAttribute('edeFacadeBay', new THREE.InterleavedBufferAttribute(interleaved, 2, 4));
+      geometry.setAttribute('edeFacadeBay', new THREE.InterleavedBufferAttribute(interleaved, 3, 4));
     }
     const mesh = new THREE.Mesh(geometry, detail ? detailedMaterial : material);
     mesh.castShadow = mesh.receiveShadow = true;

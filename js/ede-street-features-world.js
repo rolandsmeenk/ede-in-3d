@@ -3,7 +3,7 @@ import { texture } from 'three/tsl';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { createRoadSurfaceMaterial } from './tsl-materials.js';
-import { nearestEdeRoad } from './ede-geometry.js';
+import { nearestEdeRoad, overlapsEdeTravelPavement } from './ede-geometry.js';
 
 const CELL = 320;
 const ROAD_LIFT = 0.063;
@@ -522,8 +522,71 @@ function matrixGantryMount(sign, [nx, nz], gantries) {
   return { gantry, x: nearest.x + gantry.uz * offset, y, z: nearest.z - gantry.ux * offset };
 }
 
-function collectSigns(signs, atlas, quad, batch, gantries) {
-  const labels = new Map(), poles = new Map();
+const SIGN_POLE_CELL = 4;
+function indexSignPole(cells, x, z, layer, value) {
+  const key = `${layer}/${Math.floor(x / SIGN_POLE_CELL)}/${Math.floor(z / SIGN_POLE_CELL)}`;
+  if (!cells.has(key)) cells.set(key, []);
+  cells.get(key).push(value);
+}
+
+function* nearbySignPoles(cells, x, z, layer) {
+  const row = Math.floor(x / SIGN_POLE_CELL), col = Math.floor(z / SIGN_POLE_CELL);
+  for (let i = row - 1; i <= row + 1; i++) {
+    for (let j = col - 1; j <= col + 1; j++) yield* cells.get(`${layer}/${i}/${j}`) ?? [];
+  }
+}
+
+function uprightAt(support, y) {
+  const t = THREE.MathUtils.clamp((y - support.baseY) / (support.topY - support.baseY), 0, 1);
+  return {
+    x: THREE.MathUtils.lerp(support.x, support.topX ?? support.x, t),
+    z: THREE.MathUtils.lerp(support.z, support.topZ ?? support.z, t),
+  };
+}
+
+function pickSharedSignSupport(candidates, boards, ground) {
+  // Use the travelled approach to keep the board on its mapped side of the road.
+  const { sign } = boards[0];
+  const layer = layerOf(sign);
+  const road = wayOf(sign) && nearestEdeRoad(sign.x, sign.z, 18, wayOf(sign), layer);
+  const sideAt = road && ((x, z) => (z - road.z) * road.ux - (x - road.x) * road.uz);
+  let nearest, distance = 0.35;
+  for (const support of candidates) {
+    const lean = Math.hypot((support.topX ?? support.x) - support.x, (support.topZ ?? support.z) - support.z);
+    if (Math.hypot(sign.x - support.x, sign.z - support.z) > distance + lean ||
+        Math.abs(ground - support.baseY) > 0.6 || overlapsEdeTravelPavement(support.x, support.z, layer, support.radius)) continue;
+    const bottom = Math.max(ground + 2.2, support.baseY + 2.2, (support.reservedTop ?? -Infinity) + 0.06);
+    const layouts = [];
+    let next = bottom;
+    for (const item of boards) {
+      const { sign, official, plates } = item;
+      const [nx, nz] = signBearing(sign);
+      const height = official ? 0.66 : 0.3;
+      const y = next + height / 2 + plates.length * 0.245;
+      const pole = uprightAt(support, y);
+      const depth = support.radius + 0.055;
+      const width = official ? 0.88 : 1.35;
+      if (y + height / 2 + 0.08 > support.topY || Math.hypot(sign.x - pole.x, sign.z - pole.z) > 0.35 ||
+          (sideAt && sideAt(sign.x, sign.z) * sideAt(pole.x, pole.z) < 0) ||
+          [-width / 2, 0, width / 2].some(offset => overlapsEdeTravelPavement(
+            pole.x + nx * depth + nz * offset, pole.z + nz * depth - nx * offset, layer, 0.02))) break;
+      layouts.push({ item, forward: [nx, nz], y, height, pole, depth, width });
+      next = y + height / 2 + 0.055;
+    }
+    const d = layouts.length && Math.hypot(sign.x - layouts[0].pole.x, sign.z - layouts[0].pole.z);
+    if (layouts.length === boards.length && d <= distance) {
+      nearest = { support, layouts };
+      distance = d;
+    }
+  }
+  return nearest;
+}
+
+function collectSigns(signs, atlas, quad, batch, gantries, signSupports = []) {
+  const labels = new Map(), poles = new Map(), roadsideCells = new Map(), supportCells = new Map();
+  for (const support of signSupports) indexSignPole(supportCells, support.x, support.z, support.layer, support);
+  const used = new Set(), sharedSupports = [];
+  let stackedRoadsidePoles = 0;
   const addLabel = (label, blue = false) => {
     if (typeof label !== 'string' || !label.trim() || /onleesbaar/i.test(label)) return;
     const key = `${blue}/${label.trim()}`;
@@ -540,11 +603,23 @@ function collectSigns(signs, atlas, quad, batch, gantries) {
       const text = !region && addLabel(typeof extra === 'string' ? extra : extra.text ?? extra.label);
       if (region || text) plates.push({ region, text });
     }
-    const key = `${Math.round(sign.x * 5)}/${Math.round(sign.z * 5)}/${layerOf(sign)}/${sign.placement ?? 'ALONG'}`;
+    const layer = layerOf(sign);
+    let key = `${Math.round(sign.x * 5)}/${Math.round(sign.z * 5)}/${layer}/${sign.placement ?? 'ALONG'}`;
+    if (sign.placement !== 'ABOVE') {
+      let nearest, distance = 0.24;
+      for (const candidate of nearbySignPoles(roadsideCells, sign.x, sign.z, layer)) {
+        const d = Math.hypot(sign.x - candidate.x, sign.z - candidate.z);
+        if (d >= distance) continue;
+        nearest = candidate;
+        distance = d;
+      }
+      if (nearest) key = nearest.key;
+      else if (!poles.has(key)) indexSignPole(roadsideCells, sign.x, sign.z, layer, { x: sign.x, z: sign.z, key });
+    }
     if (!poles.has(key)) poles.set(key, []);
     poles.get(key).push({ sign, official, label, plates });
   }
-  if (!poles.size) return { count: 0, mounted: 0, withheld: 0 };
+  if (!poles.size) return { count: 0, mounted: 0, withheld: 0, stackedRoadsidePoles, sharedSupports };
   const labelsAtlas = labelAtlas(labels);
   const officialMaterials = atlas && signMaterials(atlas.map);
   const labelMaterials = labelsAtlas && signMaterials(labelsAtlas.map);
@@ -578,6 +653,16 @@ function collectSigns(signs, atlas, quad, batch, gantries) {
     quad(materials.back, sign, points(depth - 0.014).reverse(), [[u0, v1], [u1, v1], [u1, v0], [u0, v0]]);
   }
 
+  function drawBoard({ official, label, plates }, sign, forward, y, depth, width, height) {
+    if (official) board(sign, forward, y, official, atlas, officialMaterials, width, height, depth);
+    else board(sign, forward, y, labelsAtlas.frames.get(label), labelsAtlas, labelMaterials, width, height, depth);
+    for (const [i, { region, text }] of plates.entries()) {
+      const py = y - height / 2 - 0.135 - i * 0.245;
+      if (region) board(sign, forward, py, region, atlas, officialMaterials, 0.64, 0.22, depth);
+      else board(sign, forward, py, labelsAtlas.frames.get(text), labelsAtlas, labelMaterials, 0.7, 0.22, depth);
+    }
+  }
+
   let count = 0, mounted = 0, withheld = 0;
   for (const boards of poles.values()) {
     const { sign: post } = boards[0];
@@ -604,6 +689,31 @@ function collectSigns(signs, atlas, quad, batch, gantries) {
       }
     }
     const ground = surfaceHeight(post, post.x, post.z, 3.5);
+    if (!overhead) {
+      if (boards.length > 1) stackedRoadsidePoles++;
+      const candidates = [...nearbySignPoles(supportCells, post.x, post.z, layerOf(post))]
+        .filter(support => !used.has(support));
+      const match = pickSharedSignSupport(candidates, boards, ground);
+      if (match) {
+        const { support, layouts } = match;
+        used.add(support);
+        sharedSupports.push({ kind: support.kind, layer: support.layer, x: support.x, z: support.z,
+          signs: boards.map(({ sign }) => sign.id) });
+        for (const { item, pole, forward, y, depth, width, height } of layouts) {
+          const mount = { ...item.sign, ...pole };
+          drawBoard(item, mount, forward, y, depth, width, height);
+          const pile = batch(steel, mount);
+          for (const offset of [0, ...item.plates.map((_, i) => -height / 2 - 0.135 - i * 0.245)]) {
+            const { x, z } = uprightAt(support, y + offset);
+            const [nx, nz] = forward;
+            tubeBetween(pile, [x, y + offset, z],
+              [pole.x + nx * (depth - 0.014), y + offset, pole.z + nz * (depth - 0.014)], 0.6);
+          }
+          count++;
+        }
+        continue;
+      }
+    }
     const grade = overhead ? gradeWayAt(wayOf(post), post.x, post.z, 3.5) : null;
     const profile = grade?.span?.profile;
     const at = grade?.span?.at + grade?.along;
@@ -613,23 +723,20 @@ function collectSigns(signs, atlas, quad, batch, gantries) {
     const mount = portal ? roof - 0.73 - boards[0].plates.length * 0.245
       : overhead ? (Number.isFinite(clearance) ? Math.max(2.4, clearance + 0.1) : 5.2) : 1.8;
     const depth = portal ? 0.3 : 0.055;
-    const directions = new Map();
+    const directions = [];
     let top = 2.25;
-    for (const { sign, official, label, plates } of boards) {
+    for (const item of boards) {
+      const { sign, official, plates } = item;
       const forward = signBearing(sign);
-      const direction = Math.round(Math.atan2(...forward) * 6);
-      const deck = directions.get(direction) ?? mount;
+      // Opposite faces can sit back to back. Other neighbouring faces need separate heights.
+      const deck = directions.reduce((height, { facing, end }) =>
+        forward[0] * facing[0] + forward[1] * facing[1] > -0.96 ? Math.max(height, end + 0.055) : height, mount);
       const mainHeight = official ? 0.66 : 0.3;
       const mainY = ground + deck + mainHeight / 2 + plates.length * 0.245;
-      if (official) board(sign, forward, mainY, official, atlas, officialMaterials, 0.88, mainHeight, depth);
-      else board(sign, forward, mainY, labelsAtlas.frames.get(label), labelsAtlas, labelMaterials, 1.35, mainHeight, depth);
-      for (const [i, { region, text }] of plates.entries()) {
-        const py = mainY - mainHeight / 2 - 0.135 - i * 0.245;
-        if (region) board(sign, forward, py, region, atlas, officialMaterials, 0.64, 0.22, depth);
-        else board(sign, forward, py, labelsAtlas.frames.get(text), labelsAtlas, labelMaterials, 0.7, 0.22, depth);
-      }
+      drawBoard(item, overhead ? sign : { ...sign, x: post.x, z: post.z }, forward, mainY, depth,
+        official ? 0.88 : 1.35, mainHeight);
       const end = mainY - ground + mainHeight / 2;
-      directions.set(direction, end + 0.055);
+      directions.push({ facing: forward, end });
       top = Math.max(top, end - 0.035);
       count++;
     }
@@ -656,10 +763,10 @@ function collectSigns(signs, atlas, quad, batch, gantries) {
     tubeBetween(pile, [x, surfaceHeight(post, x, z, 3.5), z], [x, ground + top, z], overhead ? 3 : 1);
   }
   tube.dispose();
-  return { count, mounted, withheld };
+  return { count, mounted, withheld, stackedRoadsidePoles, sharedSupports };
 }
 
-export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces = [], gantries = []) {
+export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces = [], gantries = [], signSupports = []) {
   const signs = features.signs ?? [];
   let atlas;
   if (signs.some(sign => sign.faceKey)) {
@@ -686,7 +793,7 @@ export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces 
     }
   }
   const { marked, raisedSurfaces, zebras } = collectRoadSurfaces(features, quad, roadSurfaces);
-  const signsDrawn = collectSigns(signs, atlas, quad, batch, gantries);
+  const signsDrawn = collectSigns(signs, atlas, quad, batch, gantries, signSupports);
 
   for (const { material, positions, normals, uv } of batches.values()) {
     const geometry = new THREE.BufferGeometry();
@@ -705,6 +812,7 @@ export async function buildEdeStreetFeaturesWorld(scene, features, roadSurfaces 
     group.add(mesh);
   }
   group.userData = { signs: signsDrawn.count, matrixBoardsMounted: signsDrawn.mounted, matrixBoardsWithheld: signsDrawn.withheld,
+    stackedRoadsidePoles: signsDrawn.stackedRoadsidePoles, sharedSignMounts: signsDrawn.sharedSupports,
     bumps: raisedSurfaces.length, crossings: marked.size, zebras: zebras.size, batches: batches.size };
   scene.add(group);
   return { group };

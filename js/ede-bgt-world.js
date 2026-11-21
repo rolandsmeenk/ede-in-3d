@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { color, length, smoothstep, uv } from 'three/tsl';
+import { attribute, cameraPosition, cameraProjectionMatrix, cameraViewMatrix, color, fwidth, length, max, mix,
+  positionGeometry, screenSize, smoothstep, uniform, uv, varying, vec4 } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
 import { edeBounds, edePoints, edePolygonGeometry, EDE_RENDER_CELL } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
@@ -76,12 +77,65 @@ function splitRing(ring) {
   return points;
 }
 
+function mastStrokeMesh(strokes, cutoff, night) {
+  // All distant masts share one draw. Expand each beam's screen footprint,
+  // then integrate its physical width instead of snapping it to pixel centres.
+  const geometry = new THREE.InstancedBufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    0, -1, 0, 1, -1, 0, 0, 1, 0,
+    0, 1, 0, 1, -1, 0, 1, 1, 0,
+  ], 3));
+  geometry.setAttribute('mastStart', new THREE.InstancedBufferAttribute(new Float32Array(strokes.start), 3));
+  geometry.setAttribute('mastEnd', new THREE.InstancedBufferAttribute(new Float32Array(strokes.end), 4));
+  geometry.setAttribute('mastCentre', new THREE.InstancedBufferAttribute(new Float32Array(strokes.centre), 3));
+  geometry.instanceCount = strokes.start.length / 3;
+  geometry.boundingBox = strokes.bounds.expandByScalar(10);
+  geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
+
+  const mat = new THREE.MeshBasicNodeMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true,
+  });
+  const start = attribute('mastStart', 'vec3'), endAndRadius = attribute('mastEnd', 'vec4');
+  const end = endAndRadius.xyz, radius = endAndRadius.w;
+  const centre = attribute('mastCentre', 'vec3');
+  const line = end.sub(start);
+  const beamLength = length(line);
+  const axis = line.div(beamLength);
+  const across = axis.cross(cameraPosition.sub(start.add(end).mul(0.5)));
+  const right = across.div(max(length(across), 0.00001));
+  const endpoint = mix(start, end, positionGeometry.x);
+  const viewDepth = cameraViewMatrix.mul(vec4(endpoint, 1.0)).z.negate();
+  const focal = cameraProjectionMatrix.element(1).element(1).mul(screenSize.y).mul(0.5);
+  const pixel = max(viewDepth, 0.1).div(max(focal, 1));
+  const offset = positionGeometry.y.mul(radius.add(pixel));
+  const cap = positionGeometry.x.mul(2).sub(1).mul(pixel);
+  const distant = cameraPosition.distance(centre).greaterThanEqual(cutoff);
+  mat.positionNode = distant.select(endpoint.add(right.mul(offset)).add(axis.mul(cap)), centre);
+
+  const lateral = varying(offset);
+  const along = varying(positionGeometry.x.mul(beamLength).add(cap));
+  const footprint = max(fwidth(lateral), 0.00001);
+  const edge = footprint.mul(0.5).sub(lateral);
+  const alpha = edge.add(radius).div(footprint).clamp().sub(edge.sub(radius).div(footprint).clamp());
+  const capDistance = max(along.negate(), along.sub(beamLength));
+  const endCoverage = capDistance.div(max(fwidth(along), 0.00001)).negate().add(0.5).clamp();
+  mat.colorNode = color(0x7d8180).mul(mix(1, 0.36, night));
+  mat.opacityNode = alpha.mul(endCoverage);
+  mat.mrtNode = transparentEffectMRT;
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.name = 'Ede filtered mast lattice';
+  return mesh;
+}
+
 export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) {
   const { structures, counts, source } = await loadEdeBgt();
   const group = new THREE.Group();
   group.name = 'Ede BGT structures';
   const colliders = [], platforms = [], weatherCovers = [], batches = new Map(), materials = new Map();
   const turbineUpdates = [], turbineBeacons = [];
+  const mastDetails = [], mastCutoff = uniform(150), mastNight = uniform(0);
+  const mastStrokes = { start: [], end: [], centre: [], bounds: new THREE.Box3() };
+  const strokeEndpoint = new THREE.Vector3();
   const beaconMaterial = new THREE.SpriteNodeMaterial({
     transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
   });
@@ -112,15 +166,15 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     for (const coordinate of positions) output.push(coordinate);
   }
 
-  function collect(kind, geometry, x, z) {
+  function collect(kind, geometry, x, z, target) {
     const position = geometry.getAttribute('position');
     const index = geometry.getIndex();
-    const coordinates = [];
+    const coordinates = target ?? [];
     for (let i = 0; i < (index?.count ?? position.count); i++) {
       const j = index ? index.getX(i) : i;
       coordinates.push(position.getX(j), position.getY(j), position.getZ(j));
     }
-    append(kind, coordinates, x, z);
+    if (!target) append(kind, coordinates, x, z);
     geometry.dispose();
   }
 
@@ -136,7 +190,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     addCollider(outer, [], minY, maxY, 'column');
   }
 
-  function beam(kind, a, b, radius, topRadius = radius) {
+  function beam(kind, a, b, radius, topRadius = radius, target) {
     const p = new THREE.Vector3(...a), q = new THREE.Vector3(...b);
     const direction = q.clone().sub(p), length = direction.length();
     if (length < 0.02) return;
@@ -145,7 +199,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     const geometry = new THREE.CylinderGeometry(topRadius, radius, length, steel ? 4 : 12, 1, steel);
     geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, direction.normalize()));
     geometry.translate(midpoint.x, midpoint.y, midpoint.z);
-    collect(kind, geometry, midpoint.x, midpoint.z);
+    collect(kind, geometry, midpoint.x, midpoint.z, target);
   }
 
   function slab(kind, rings, surface, base, { solid = true, underside = false, side = kind, localHeight = false } = {}) {
@@ -194,6 +248,16 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     const ground = terrainHeightAt(x, z);
     // BGT records foot locations. Steelwork dimensions are inferred from their span.
     const height = clamp(19 + width * 1.7, 25, 45);
+    const centre = new THREE.Vector3(x, ground + height * 0.5, z);
+    const positions = [];
+    const lattice = (a, b, radius) => {
+      beam('steel', a, b, radius, radius, positions);
+      mastStrokes.start.push(...a);
+      mastStrokes.end.push(...b, radius);
+      mastStrokes.centre.push(centre.x, centre.y, centre.z);
+      mastStrokes.bounds.expandByPoint(strokeEndpoint.fromArray(a));
+      mastStrokes.bounds.expandByPoint(strokeEndpoint.fromArray(b));
+    };
     const cs = Math.cos(angle), sn = Math.sin(angle);
     const point = (u, y, v) => [x + u * cs - v * sn, ground + y, z + u * sn + v * cs];
     let lower;
@@ -209,22 +273,32 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
       } else {
         for (let i = 0; i < 4; i++) {
           const j = (i + 1) % 4;
-          beam('steel', lower[i], upper[i], 0.16);
-          beam('steel', upper[i], upper[j], 0.10);
-          beam('steel', lower[i], upper[j], 0.08);
-          beam('steel', lower[j], upper[i], 0.08);
+          lattice(lower[i], upper[i], 0.16);
+          lattice(upper[i], upper[j], 0.10);
+          lattice(lower[i], upper[j], 0.08);
+          lattice(lower[j], upper[i], 0.08);
         }
       }
       lower = upper;
     }
     for (const [level, factor] of [[0.72, 1.1], [0.87, 0.86], [0.97, 0.65]]) {
       const y = level * height, span = width * factor;
-      beam('steel', point(-span, y, 0), point(span, y, 0), 0.14);
+      lattice(point(-span, y, 0), point(span, y, 0), 0.14);
       for (const sign of [-1, 1]) {
-        beam('steel', point(0, Math.min(y + 3, height), 0), point(sign * span, y, 0), 0.1);
-        beam('steel', point(sign * span, y, 0), point(sign * span, y - 1.1, 0), 0.09);
+        lattice(point(0, Math.min(y + 3, height), 0), point(sign * span, y, 0), 0.1);
+        lattice(point(sign * span, y, 0), point(sign * span, y - 1.1, 0), 0.09);
       }
     }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geometry, materialFor('steel'));
+    mesh.name = 'Ede electricity mast';
+    mesh.castShadow = mesh.receiveShadow = true;
+    if (mastDetails.length) mesh.userData.sharesPipelineWith = mastDetails[0].mesh;
+    mastDetails.push({ mesh, centre });
+    group.add(mesh);
     for (const footprint of rings) {
       slab('footing', footprint, (px, pz) => terrainHeightAt(px, pz) + 0.14,
         (px, pz) => terrainHeightAt(px, pz) - 0.18, { solid: false });
@@ -386,11 +460,20 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     else firstMeshes.set(kind, mesh);
     group.add(mesh);
   }
+  if (mastDetails.length) group.add(mastStrokeMesh(mastStrokes, mastCutoff, mastNight));
   group.userData = { counts, source: source.url, date: source.date };
   scene.add(group);
   return {
     group, colliders, counts, platforms, weatherCovers, deckProfiles,
+    updateMastLod(camera, pixelHeight) {
+      // Switch when the 16 cm cross-braces project to about one pixel.
+      const focal = camera.projectionMatrix.elements[5] * pixelHeight * 0.5;
+      mastCutoff.value = clamp(0.16 * focal, 60, 350);
+      const limit = mastCutoff.value ** 2;
+      for (const { mesh, centre } of mastDetails) mesh.visible = camera.position.distanceToSquared(centre) < limit;
+    },
     updateWind(dt, reading, seconds, nightFactor) {
+      mastNight.value = nightFactor;
       for (const update of turbineUpdates) update(dt, reading);
       const flash = nightFactor > 0.2 && seconds % 1.6 < 0.42;
       for (const beacon of turbineBeacons) beacon.visible = flash;

@@ -8,6 +8,8 @@ The BGT Bord collection reported 69 active wayfinder locations in bounds and zer
 
 The atlas covers 5,958 NDW signs with 135 face variants. Face detail follows documented sign designs with locally rendered source values. The snapshot keeps 248 signs that NDW calls `onbekend`, 68 variable lane-information signs whose exact layouts are unavailable, and two A2 signs without a printed value. These 318 records have no atlas face. [Atlas artwork credits](../../assets/ede-street-sign-faces.LICENSE.md)
 
+NDW records distinguish roadside and overhead mounting, with optional external asset references. This Ede snapshot has no populated external references. BGT records boards and supports as separate features. The renderer groups co-located roadside boards on a shared post and can reuse a lamp post or gantry upright within 35 cm when its level, roadside clearance and mounting space agree. The November 2026 browser check found 219 boards on 190 lamp posts and three boards on three gantry uprights. These mounts are inferred from the mapped positions and modeled hardware. [NDW v5 schema](https://docs.ndw.nu/data-uitwisseling/interface-beschrijvingen/verkeersborden-api/v5/) · [BGT board](https://geonovum.github.io/IMGeo-objectenhandboek/bord) · [BGT pole](https://geonovum.github.io/IMGeo-objectenhandboek/paal)
+
 ## Refresh and rebuild
 
 Use Python 3.9 or later. The command reads the saved source data when run without `--fetch`.

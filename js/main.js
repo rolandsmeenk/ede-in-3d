@@ -9,20 +9,22 @@ import { buildLandmarks } from './landmarks.js';
 import { createEdeMurals } from './ede-murals.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
-import { buildStreetDetails } from './street-details.js';
+import { buildStreetDetails } from './street-details.js?v=20261121-signal-optics';
+import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-signal-optics';
 import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261120-acv-truck';
 import { loadEdeParking } from './ede-parking.js';
 import { buildRoadPaint } from './road-paint.js';
+import { overlapsEdeTravelPavement } from './ede-geometry.js';
 import { ThirdPersonControllerManager } from './controllers.js?v=20261120-dutch-bikes';
 import { EDE_BIKE_STYLES } from './ede-bikes.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
-import { LightingSystem } from './lighting.js?v=20261119-weather';
+import { LightingSystem } from './lighting.js?v=20261121-night-lighting';
 import { createLiveWeather, formatWeatherTime, weatherCondition } from './ede-weather.js';
 import { createWeatherPrecipitation } from './weather-precipitation.js';
 import { formatEdeTime } from './live-sky.js';
-import { NYCMapSystem } from './nyc-map.js';
+import { NYCMapSystem } from './nyc-map.js?v=20261121-area-teleports';
 import { createExpansionCulling, setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js?v=20261120-acv-truck';
 import { loadTerrain, terrainHeightAt } from './terrain.js';
@@ -43,13 +45,13 @@ import { createEdeLevelCrossings } from './ede-level-crossings.js';
 import { BICYCLE, FOOT } from './road-access.js';
 import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js';
 import { loadEdeStreetFeatures } from './ede-street-features.js';
-import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js?v=20261121-gantry-trusses';
+import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js?v=20261121-shared-sign-posts';
 import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
 import { loadEdeCorridorFallbacks } from './ede-facades.js';
-import { buildEdeDetail, loadEdeDetail } from './ede-detail.js?v=20261121-parcel-utility';
+import { bikeRackGround, buildEdeDetail, loadEdeDetail, streamParcelTiles } from './ede-detail.js?v=20261121-signal-optics';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
@@ -150,7 +152,7 @@ async function initApp() {
   await showLoadingStage('Loading Ede’s map and timetables…');
   const useUtilityDetails = enabled('detail') && enabled('utilityDetail');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult] = await Promise.allSettled([
     loadTerrain({ expanded: query.get('terrainTiles') !== 'off' }), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces(), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
@@ -161,6 +163,7 @@ async function initApp() {
     loadEdeCorridorFallbacks(),
     enabled('forestCanopy') ? loadForestCanopy() : null,
     useUtilityDetails ? import('./ede-utility-landmarks.js') : null,
+    loadEdeSignalHardware(),
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -202,7 +205,8 @@ async function initApp() {
   markInit('sports fields');
   await loadExpansionGroundColors();
   const terrainTiles = createTerrainTiles(scene);
-  const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity, replacedPitches, forestCanopyResult.value);
+  const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity,
+    replacedPitches, terrainTiles ? forestCanopyResult.value : null);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
   const gradeWorld = buildEdeGradeWorld(scene);
@@ -248,8 +252,12 @@ async function initApp() {
   try {
     if (detailResult.status === 'rejected') throw detailResult.reason;
     if (detailData?.features.length) {
-      importedDetail = buildEdeDetail(scene, detailData.features, {
+      const replaced = landmarks.replacements.parcelSources;
+      const features = detailData.features.filter(feature =>
+        feature.source !== 'parcel' || !feature.sourceIds?.some(id => replaced.has(id)));
+      importedDetail = buildEdeDetail(scene, features, {
         deckProfiles: bgtWorld?.deckProfiles, mappedLamps, nbdTexture: detailData.nbdTexture,
+        signalSupportIds: new Set(signalHardwareResult.value?.supports.map(support => support.existingId).filter(Boolean)),
       });
       importedDetail.stats.surveyedMarkings = detailData.markings.length;
       document.getElementById('ede-parcel-credit')?.toggleAttribute('hidden', !importedDetail.stats.parcel);
@@ -259,6 +267,8 @@ async function initApp() {
   } catch (error) {
     console.warn('[detail] street and motorway detail unavailable:', error);
   }
+  const parcelTiles = enabled('parcelTiles')
+    ? streamParcelTiles(scene, detailData?.parcelTiles, importedDetail?.resources, renderer.backend.isWebGPUBackend) : null;
   // Exclude generic buildings only after their local replacement meshes are ready.
   const replacements = landmarks.replacements;
   const detailReplacements = importedDetail?.group.userData.replacements;
@@ -294,8 +304,10 @@ async function initApp() {
   await showLoadingStage('Placing trees, streetlights and street furniture...');
   const forestCanopy = terrainTiles && createForestCanopy(scene, forestCanopyResult.value, treeSeasonsEnabled);
   if (forestCanopy) forestCanopy.group.visible = graphics.vegetation;
+  if (signalHardwareResult.status === 'rejected') console.warn('[signals] using generated roadside placements:', signalHardwareResult.reason);
   const streetDetails = buildStreetDetails(scene, allColliders, mappedLamps, importedDetail?.gantryLampMounts,
-    { quality: treeQuality, season: treeSeasonsEnabled, canopyCovers: forestCanopy?.covers });
+    { quality: treeQuality, season: treeSeasonsEnabled, canopyCovers: forestCanopy?.covers },
+    signalHardwareResult.value, importedDetail?.gantries);
   const { treeField } = streetDetails;
   treeField.group.visible = graphics.vegetation;
   if (busSchedule) buildEdeBusStops(scene, busSchedule.variants);
@@ -325,7 +337,8 @@ async function initApp() {
     ...allColliders.filter(c => c.obb && !c.kind && (c.minY ?? 0) < 2).map(c => ({ ...c, pedestrianOnly: true }))
   ], streetDetails.signalIntersections, busSchedule, roadTraffic,
     parkingResult.status==='fulfilled' ? parkingResult.value : undefined,
-    {enabled:trafficPilot,streetFeatures,railStop,profile:profiling,laneFits:laneFitResult.value});
+    {enabled:trafficPilot,streetFeatures,railStop,profile:profiling,laneFits:laneFitResult.value,
+      bikeParking: enabled('bikeParking') && detailData?.features, bikeRackGround});
   if (parkingResult.status==='rejected') console.warn('[parking] inventory unavailable:', parkingResult.reason);
   watchEdeTraffic(roadTraffic);
   markInit('traffic');
@@ -338,7 +351,8 @@ async function initApp() {
   await showLoadingStage('Adding road markings...');
   if (streetFeatures) {
     try {
-      await buildEdeStreetFeaturesWorld(scene, streetFeatures, roadSurfaceResult.value?.surfaces, importedDetail?.gantries);
+      await buildEdeStreetFeaturesWorld(scene, streetFeatures, roadSurfaceResult.value?.surfaces, importedDetail?.gantries,
+        [...streetDetails.signSupports, ...(importedDetail?.signSupports ?? [])]);
     } catch (error) {
       console.warn('[street features] unable to build the feature layer:', error);
     }
@@ -350,7 +364,7 @@ async function initApp() {
       const grade = fitted || gradeWayAt(edge?.wayId, x, z, 1.2);
       // Free-standing surveyed strips and the broad asphalt polygons sample the AHN grid at different intervals.
       return grade ? grade.y + 0.055 : terrainHeightAt(x, z) + (edge?.type === 'marking' ? 0.09 : 0.065);
-    }, { surveyed: detailData?.markings, preserveGBuffer: graphics.ssr });
+    }, { surveyed: detailData?.markings, preserveGBuffer: graphics.ssr, pavementAt: overlapsEdeTravelPavement });
   markInit('roadPaint');
 
   // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Helicopter) & Multi-Camera System
@@ -404,6 +418,7 @@ async function initApp() {
     savePlayerState();
     if (!event.persisted) {
       bagBuildings?.userData.dispose?.();
+      parcelTiles?.dispose();
       audioSystem.dispose();
     }
   });
@@ -1065,6 +1080,7 @@ async function initApp() {
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
     cameraSystem.update(dt, elapsed);
     terrainTiles?.update(cameraSystem.camera, renderer.domElement.height);
+    bgtWorld?.updateMastLod(cameraSystem.camera, renderer.domElement.height);
     profiler?.stage('Player, camera and terrain');
     if (trafficUpdates) {
       trafficClock += dt;
@@ -1105,6 +1121,8 @@ async function initApp() {
     }
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
+    if (warmedUp) parcelTiles?.update(cameraSystem.camera.position, now);
+    if (parcelTiles) profiler?.stage('Parcel tiles');
     const weatherEffects = liveWeather.update(dt);
     const windReading = liveWeather.windReading;
     const windDt = fixedStep ? dt : THREE.MathUtils.clamp(rawDt, 0, 0.25);
@@ -1187,7 +1205,7 @@ async function initApp() {
             canopyCells: loadedTrees?.canopyDensity?.size ?? 0,
           },
           get treeSeason() { return treeSeasonsEnabled ? getTreeSeason() : 'off'; },
-          get weather() { return liveWeather.state; }, streetFeatures, importedDetail, murals: murals.statistics,
+          get weather() { return liveWeather.state; }, streetFeatures, importedDetail, parcelTiles: parcelTiles?.stats, murals: murals.statistics,
           teleport: teleportToLandmark,
           teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },
           mode(m) { selectMode(m); },

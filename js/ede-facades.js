@@ -329,13 +329,7 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     [name, new Float32Array(originalCount * stride)]));
   const matched = [];
   let recesses = 0;
-  const add = (point, norm, rgb, height, uv, style, relief = [0, 0]) => {
-    const id = originalCount + added.buildingHeight.length;
-    added.position.push(...point); added.normal.push(...norm); added.color.push(...rgb);
-    added.buildingHeight.push(height); added.facadeUv.push(...uv);
-    added.facadeStyle.push(...style); added.facadeRelief.push(...relief);
-    return id;
-  };
+  const addedWindowKeys = [];
   function fan(vertices) {
     for (let i = 1; i + 1 < vertices.length; i++) extraIndex.push(vertices[0], vertices[i], vertices[i + 1]);
   }
@@ -343,6 +337,15 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     yield;
     const { wall, nx, nz, tx, tz } = frame;
     const first = triangles[0].ids[0];
+    const windowKey = edeFacadeBay?.itemSize === 3 ? edeFacadeBay.getZ(first) : 0;
+    const add = (point, norm, rgb, height, uv, style, relief = [0, 0]) => {
+      const id = originalCount + added.buildingHeight.length;
+      added.position.push(...point); added.normal.push(...norm); added.color.push(...rgb);
+      added.buildingHeight.push(height); added.facadeUv.push(...uv);
+      added.facadeStyle.push(...style); added.facadeRelief.push(...relief);
+      addedWindowKeys.push(windowKey);
+      return id;
+    };
     const base = buildingHeight.getX(first) - triangles[0].verts[0][1];
     const useProceduralColor = wall.status !== 'observed' && !isCorridorFacade(wall) && edeFacadeLayout?.getX(first) > 0;
     const eaves = edeFacadeBay?.getY(first);
@@ -468,12 +471,15 @@ function* applyBagFacadeChunks(geometry, featureIds, targets, ground, atlas, pro
     combined.set(values, originalCount * stride);
     geometry.setAttribute(name, new BufferAttribute(combined, stride));
   }
-  // Added vertices sample the atlas. Their procedural attributes can be zero.
+  // New vertices sample the atlas and retain the building's lighting schedule.
   if (finalCount > originalCount) for (const name of ['edeFacadeLayout', 'edeFacadeBay']) {
     const attribute = geometry.attributes[name];
     if (!attribute) continue;
     const padded = new Float32Array(finalCount * attribute.itemSize);
     padded.set(attribute.array);
+    if (name === 'edeFacadeBay' && attribute.itemSize === 3) {
+      for (let i = 0; i < addedWindowKeys.length; i++) padded[(originalCount + i) * 3 + 2] = addedWindowKeys[i];
+    }
     geometry.setAttribute(name, new BufferAttribute(padded, attribute.itemSize));
   }
   const Index = finalCount > 65535 ? Uint32Array : Uint16Array;

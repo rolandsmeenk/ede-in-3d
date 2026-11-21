@@ -219,6 +219,47 @@ test('generated lane dividers follow an accepted curved lane band', async () => 
   assert.ok(strips.some(row => row[2] > 1.4 && row[5] > 1.4));
 });
 
+test('generated paint traverses the mapped bend in either direction without moving the traffic edge', () => {
+  const laneDefinition = {
+    lanes: [{ offset: -1.8, width: 3.6 }, { offset: 1.8, width: 3.6 }],
+    centers: [], markings: true, bikes: []
+  };
+  const paintPath = [{ x: 0, z: 0 }, { x: 50, z: 12 }, { x: 100, z: 0 }];
+  for (const direction of [0, 1]) {
+    const sign = direction ? -1 : 1, x = direction * 100;
+    const edge = { from: { id: 0, shape: true }, to: { id: 1, shape: true }, x0: x, z0: 0, sx: x, sz: 0,
+      dx: sign, dz: 0, rx: 0, rz: sign, len: 100, span: 100, half: 4, laneDefinition, wayId: 'bend', direction, paintPath };
+    const strips = [];
+    const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };
+    buildRoadPaint(new Scene(), { paintEdges: [edge] }, builder);
+    assert.deepEqual(strips.map(row => [row[0], row[2], row[3], row[5]]),
+      [[x, 0, 50, 12], [50, 12, 100 - x, 0]]);
+    assert.ok(Math.abs(strips[1][10] - Math.hypot(50, 12)) < 1e-9);
+    assert.equal(edge.len, 100);
+  }
+});
+
+test('off-pavement intervals are clipped without restarting their dash pattern', () => {
+  const laneDefinition = {
+    lanes: [{ offset: -1.8, width: 3.6 }, { offset: 1.8, width: 3.6 }],
+    centers: [], markings: true, bikes: []
+  };
+  const edge = { from: { id: 0, shape: true }, to: { id: 1, shape: true }, x0: 0, z0: 0, sx: 0, sz: 0,
+    dx: 1, dz: 0, rx: 0, rz: 1, len: 20, span: 20, half: 4, laneDefinition, wayId: 'test' };
+  const strips = [];
+  const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };
+  buildRoadPaint(new Scene(), { paintEdges: [edge] }, builder, undefined,
+    { pavementAt: x => x <= 6.5 || x >= 12.5 });
+  assert.equal(strips.length, 2);
+  const [first, last] = strips;
+  assert.equal(first[0], 0.9);
+  assert.ok(first[3] <= 6.5 && first[3] > 6.375);
+  assert.ok(last[0] >= 12.5 && last[0] < 12.625);
+  assert.equal(last[3], 19.1);
+  assert.equal(first[10], 0);
+  assert.ok(Math.abs(last[10] - (last[0] - first[0])) < 1e-9);
+});
+
 test('surveyed motorway paint replaces only the overlapping divider on its own way', () => {
   const strips = [];
   const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };

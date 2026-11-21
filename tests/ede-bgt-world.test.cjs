@@ -70,3 +70,41 @@ test('a rail-only deck with sparse rail hits stays above its cut approaches', ()
   const road = makeDeckProfile(feature, (x, z, kind) => kind === 'road-deck' ? 27.1 : rail(x, z, kind));
   assert.ok(Math.abs(road(0, 7) - 26.96) < 1e-9);
 });
+
+test('electricity masts keep near steel and share a single filtered distance batch', async () => {
+  const { loadModule } = require('./helpers/module.cjs');
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const tsl = await import('../vendor/three/build/three.tsl.js');
+  const filename = join(__dirname, '../js/ede-bgt-world.js');
+  const source = readFileSync(filename, 'utf8')
+    .replaceAll('import.meta.url', JSON.stringify('file://' + filename))
+    .replaceAll('export async function', 'async function') + '\nexport { buildEdeBgtWorld };';
+  const structures = asset.structures.filter(item => item.kind === 'pylon').slice(0, 2)
+    .map(({ ids, tower }, index) => ({ kind: 'pylon', ids, tower: [index * 400, 0, ...tower.slice(2)], polygons: [] }));
+  const fetch = async () => ({ ok: true, json: async () => ({ version: 1, structures, source: {} }) });
+  const { buildEdeBgtWorld } = loadModule(source, { filename, globals: { URL, fetch }, imports: {
+    'three/webgpu': three, 'three/tsl': tsl, './tsl-materials.js': {},
+    './ede-geometry.js': { edeBounds: () => ({}) }, './terrain.js': { terrainHeightAt: () => 0 },
+    './ede-windmill.js': {},
+  } });
+  const model = await buildEdeBgtWorld(new three.Scene());
+  const masts = model.group.children.filter(child => child.name === 'Ede electricity mast');
+  assert.equal(masts.length, 2);
+  assert.ok(masts.every(mesh => mesh.castShadow && mesh.geometry.attributes.position.count > 2000));
+  assert.equal(model.colliders.length, 8);
+  const filtered = model.group.children.filter(child => child.name === 'Ede filtered mast lattice');
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].geometry.instanceCount, 2 * 95);
+  assert.ok(filtered[0].material.transparent && !filtered[0].material.depthWrite);
+  assert.ok(!filtered[0].castShadow);
+
+  const camera = new three.PerspectiveCamera(60);
+  camera.position.set(50, 16, 0);
+  model.updateMastLod(camera, 900);
+  assert.deepEqual(Array.from(masts, mesh => mesh.visible), [true, false]);
+  camera.position.set(185, 16, 0);
+  model.updateMastLod(camera, 900);
+  assert.ok(masts.every(mesh => !mesh.visible));
+  model.updateMastLod(camera, 1800);
+  assert.ok(masts.every(mesh => mesh.visible));
+});

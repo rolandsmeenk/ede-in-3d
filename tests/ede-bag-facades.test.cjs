@@ -71,6 +71,7 @@ test('two openings share a wall batch and each exposes its own modeled depth, ja
   geometry.setAttribute('normal', new T.Float32BufferAttribute([0,0,1, 0,0,1, 0,0,1, 0,0,1], 3));
   geometry.setAttribute('buildingHeight', new T.Float32BufferAttribute([0, 0, 6, 6], 1));
   geometry.setAttribute('color', new T.Float32BufferAttribute(new Float32Array(12).fill(0.4), 3));
+  geometry.setAttribute('edeFacadeBay', new T.Float32BufferAttribute([0,6,2.25, 3,6,2.25, 3,6,2.25, 0,6,2.25], 3));
   geometry.setIndex([0, 1, 2, 0, 2, 3]);
   const features = new T.Float32BufferAttribute([0, 0, 0, 0], 1);
   const atlas = {
@@ -80,8 +81,10 @@ test('two openings share a wall batch and each exposes its own modeled depth, ja
     (_wall, _rect, x, y) => [x / 8, y / 6, 1], () => null);
   assert.equal(measured.recesses, 2);
   assert.deepEqual(measured.matched, [wall]);
-  const { facadeUv, facadeRelief, facadeStyle, position } = geometry.attributes;
+  const { facadeUv, facadeRelief, facadeStyle, edeFacadeBay, position } = geometry.attributes;
   assert.equal(facadeStyle.count, position.count);
+  assert.equal(edeFacadeBay.count, position.count);
+  assert.ok(Array.from({ length: position.count }, (_, i) => edeFacadeBay.getZ(i)).every(key => key === 2.25));
   const depths = Array.from(facadeRelief.array);
   assert.ok(depths.some(depth => Math.abs(depth + 0.28) < 0.0001));
   assert.ok(depths.some(depth => Math.abs(depth + 0.12) < 0.0001));

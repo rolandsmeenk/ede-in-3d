@@ -12,6 +12,7 @@ const MAX_WALL_DISTANCE = 25, MIN_WALL_LENGTH = 3, SIGN_Y = 3.4, MIN_SPACING = 2
 const CUSTOM_STOREFRONTS = new Set([
   'Lammert van de Bospoort', 'Het Pomphuis', "Dixie's", 'Da Aldo', 'Bistro Twaalf 14',
   'De Koffiekamer', 'Pannenkoekenhuis De Langenberg', 'Villa Brutus',
+  'Toes herenmode', 'Kapsalon Re-Style',
 ]);
 
 // Chain palettes are the fallback when a branch has no photographed sign.

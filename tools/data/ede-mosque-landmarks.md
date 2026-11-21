@@ -1,6 +1,6 @@
 # Mosques in Ede
 
-The four mosque exteriors are available offline. They appear by name in map search and have framed approaches in the Teleport menu. The game replaces the matching OSM and BAG building records while keeping nearby buildings and paths. Model positions use the Oude Kerk scene frame, relative to 22.54 m NAP. [Coordinate system](ede-gis-unification.md) · [PDOK aerial imagery](https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0) · [AHN ground and surface models](https://www.pdok.nl/ogc-webservices/-/article/actueel-hoogtebestand-nederland-ahn)
+The four mosque exteriors are available offline. They appear by name in map search. Clicking a pin uses the framed approach. The game replaces the matching OSM and BAG building records while keeping nearby buildings and paths. Model positions use the Oude Kerk scene frame, relative to 22.54 m NAP. [Coordinate system](ede-gis-unification.md) · [PDOK aerial imagery](https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0) · [AHN ground and surface models](https://www.pdok.nl/ogc-webservices/-/article/actueel-hoogtebestand-nederland-ahn)
 
 | Site | Model and evidence |
 | --- | --- |

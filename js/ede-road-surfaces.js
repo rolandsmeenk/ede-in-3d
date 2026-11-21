@@ -9,7 +9,7 @@ const osmMaterials = {
 let mapped = { surfaces: [], covered: {} };
 let gradeSurfaces = new Map();
 let groundSurfaces = new Map();
-let groundTrafficPolygons;
+let trafficPolygons;
 
 export function osmRoadMaterial(road) {
   return Object.hasOwn(osmMaterials, road.surface) ? osmMaterials[road.surface] : undefined;
@@ -41,11 +41,11 @@ function contains(ring, x, z) {
 
 const TRAFFIC_CELL = 32;
 
-export function isEdeTrafficPavement(x, z) {
-  if (!groundTrafficPolygons) {
-    groundTrafficPolygons = new Map();
+export function isEdeTrafficPavement(x, z, layer = 0) {
+  if (!trafficPolygons) {
+    trafficPolygons = new Map();
     for (const surface of mapped.surfaces) {
-      if (surface.layer || !/^(rijbaan |fietspad$|ov-baan$|inrit$|parkeervlak$|verbindingsweg$|verkeersdrempel$|woonerf$|overweg$)/.test(surface.function)) continue;
+      if (!/^(rijbaan |fietspad$|ov-baan$|inrit$|parkeervlak$|verbindingsweg$|verkeersdrempel$|woonerf$|overweg$)/.test(surface.function)) continue;
       for (const polygon of surface.polygons) {
         const outer = polygon[0];
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -55,15 +55,15 @@ export function isEdeTrafficPavement(x, z) {
         }
         for (let ix = Math.floor(minX / TRAFFIC_CELL); ix <= Math.floor(maxX / TRAFFIC_CELL); ix++) {
           for (let iz = Math.floor(minZ / TRAFFIC_CELL); iz <= Math.floor(maxZ / TRAFFIC_CELL); iz++) {
-            const key = `${ix}/${iz}`;
-            if (!groundTrafficPolygons.has(key)) groundTrafficPolygons.set(key, []);
-            groundTrafficPolygons.get(key).push(polygon);
+            const key = `${surface.layer ?? 0}/${ix}/${iz}`;
+            if (!trafficPolygons.has(key)) trafficPolygons.set(key, []);
+            trafficPolygons.get(key).push(polygon);
           }
         }
       }
     }
   }
-  const polygons = groundTrafficPolygons.get(`${Math.floor(x / TRAFFIC_CELL)}/${Math.floor(z / TRAFFIC_CELL)}`);
+  const polygons = trafficPolygons.get(`${layer}/${Math.floor(x / TRAFFIC_CELL)}/${Math.floor(z / TRAFFIC_CELL)}`);
   return polygons?.some(([outer, ...holes]) =>
     contains(outer, x, z) && !holes.some(hole => contains(hole, x, z))) ?? false;
 }
@@ -123,6 +123,6 @@ export async function loadEdeRoadSurfaces() {
   gradeSurfaces = grade;
   groundSurfaces = ground;
   mapped = asset;
-  groundTrafficPolygons = undefined;
+  trafficPolygons = undefined;
   return asset;
 }

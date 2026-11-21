@@ -13,13 +13,61 @@ const linear = Float32Array.from({ length: 256 }, (_, i) => THREE.ColorManagemen
   new THREE.Color().setScalar(i / 255), THREE.SRGBColorSpace, THREE.LinearSRGBColorSpace
 ).r);
 
-function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
+// An overview can be coarser than its baked root. Bound its edge error
+// against the 5 m field at both sets of interpolation knots.
+function overviewEdgeError(sample, start, end, step) {
+  const intervals = OVERVIEW_SIDE - 1;
+  const samples = Array.from({ length: OVERVIEW_SIDE }, (_, i) => sample(start + (end - start) * i / intervals));
+  let error = 0;
+  for (let at = start; at <= end; at += step) {
+    const pos = (at - start) * intervals / (end - start);
+    const i = Math.min(intervals - 1, Math.floor(pos));
+    const height = samples[i] + (samples[i + 1] - samples[i]) * (pos - i);
+    error = Math.max(error, Math.abs(sample(at) - height));
+  }
+  return error;
+}
+
+export function sizeTerrainSkirts(nodes, roots, field) {
+  const rootSet = new Set(roots);
+  const lines = new Map();
+  for (const node of nodes) {
+    const [west, north, east, south] = node.bounds;
+    const borders = [
+      [true, north, west, east], [false, east, north, south],
+      [true, south, west, east], [false, west, north, south],
+    ];
+    node.skirts = [3, 3, 3, 3];
+    for (const [edge, [horizontal, fixed, start, end]] of borders.entries()) {
+      const key = horizontal ? `z/${fixed}` : `x/${fixed}`;
+      if (!lines.has(key)) lines.set(key, [[], []]);
+      const error = rootSet.has(node) ? Math.max(node.error, overviewEdgeError(
+        at => horizontal ? sampleTerrain(field, at, fixed) : sampleTerrain(field, fixed, at),
+        start, end, field.step
+      )) : node.error;
+      lines.get(key)[edge < 2 ? 0 : 1].push({ node, edge, start, end, error });
+    }
+  }
+  for (const [oneSide, otherSide] of lines.values()) {
+    for (const a of oneSide) for (const b of otherSide) {
+      if (Math.max(a.start, b.start) >= Math.min(a.end, b.end)) continue;
+      // Either neighbour can be the higher one. Include the seam adjustment and quantization.
+      const depth = a.error + b.error + 3;
+      a.node.skirts[a.edge] = Math.max(a.node.skirts[a.edge], depth);
+      b.node.skirts[b.edge] = Math.max(b.node.skirts[b.edge], depth);
+    }
+  }
+}
+
+export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
   if (bytes.byteLength !== side * side * 5) throw new Error('Invalid AHN terrain tile size');
   const view = new DataView(bytes);
   const [minX, minZ, maxX, maxZ] = tile.bounds;
+  const bakeLinear = side === SIDE;
+  const detail = bakeLinear ? tile.detail : null;
+  if (detail) side = (maxX - minX) / detail.step + 1;
   const step = (maxX - minX) / (side - 1);
   const positions = [], colors = [], indices = [];
-  const bakeLinear = side === SIDE;
   const decodeColor = value => bakeLinear ? Math.round(linear[value] * 255) : value;
   function vertex(x, y, z, r, g, b) {
     const index = positions.length / 3;
@@ -27,8 +75,25 @@ function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
     colors.push(r, g, b, 255);
     return index;
   }
-  for (let z = 0, i = 0; z < side; z++) {
-    for (let x = 0; x < side; x++, i += 5) {
+  if (detail) {
+    // Match the existing aerial palette and triangle interpolation at tile edges.
+    const ratio = (SIDE - 1) / (side - 1);
+    const start = (minZ - detail.minZ) / step * detail.columns + (minX - detail.minX) / step;
+    const colorAt = (index, band) => decodeColor(view.getUint8(index * 5 + band));
+    for (let z = 0; z < side; z++) for (let x = 0; x < side; x++) {
+      const cx = Math.min(SIDE - 2, Math.floor(x * ratio)), cz = Math.min(SIDE - 2, Math.floor(z * ratio));
+      const u = x * ratio - cx, v = z * ratio - cz;
+      const index = cz * SIDE + cx;
+      const color = band => {
+        const b = colorAt(index + 1, band), c = colorAt(index + SIDE, band);
+        const fromLower = u + v <= 1;
+        const a = colorAt(fromLower ? index : index + SIDE + 1, band);
+        return Math.round(fromLower ? a + (b - a) * u + (c - a) * v : a + (c - a) * (1 - u) + (b - a) * (1 - v));
+      };
+      vertex(minX + x * step, detail.heights[start + z * detail.columns + x], minZ + z * step, color(2), color(3), color(4));
+    }
+  } else {
+    for (let z = 0, i = 0; z < side; z++) for (let x = 0; x < side; x++, i += 5) {
       const worldX = minX + x * step, worldZ = minZ + z * step;
       const elevation = (view.getInt16(i, true) - Math.round(field.napOrigin * 100)) / 100;
       vertex(worldX, elevation + expansionSeamOffset(worldX, worldZ),
@@ -36,6 +101,9 @@ function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
         decodeColor(view.getUint8(i + 3)), decodeColor(view.getUint8(i + 4)));
     }
   }
+
+  const pointAt = i => [positions[i * 3], positions[i * 3 + 1] + 0.025, positions[i * 3 + 2],
+    colors[i * 4], colors[i * 4 + 1], colors[i * 4 + 2]];
 
   // The retained town rectangle owns its original grid and surveyed grades.
   const insideLegacy = (x, z) => x > legacy.minX && x < legacy.maxX && z > legacy.minZ && z < legacy.maxZ;
@@ -65,8 +133,7 @@ function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
       indices.push(a, b, c);
       return;
     }
-    const points = [a, b, c].map(i => [positions[i * 3], positions[i * 3 + 1] + 0.025,
-      positions[i * 3 + 2], colors[i * 4], colors[i * 4 + 1], colors[i * 4 + 2]]);
+    const points = [a, b, c].map(pointAt);
     const outsideLegacy = planes.some(([axis, edge, sign]) => points.every(p => (p[axis] - edge) * sign <= 0));
     if (outsideLegacy) {
       indices.push(a, b, c);
@@ -90,27 +157,47 @@ function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
     triangle(a + 1, a + side, a + side + 1);
   }
 
-  // A vertical edge covers T-junctions between independently refined tiles.
-  // Size it to the coarse neighbour's possible vertical approximation error.
-  const skirt = tile.skirt ?? Math.max(2, tile.error + 3);
+  // Skirt faces point toward the lower neighbour. Separate vertices keep
+  // their normals out of the top surface shading.
   const perimeter = [
     Array.from({ length: side }, (_, i) => i),
     Array.from({ length: side }, (_, i) => i * side + side - 1),
     Array.from({ length: side }, (_, i) => side * side - 1 - i),
     Array.from({ length: side }, (_, i) => (side - 1 - i) * side),
   ];
-  for (const edge of perimeter) for (let i = 1; i < side; i++) {
-    const a = edge[i - 1], b = edge[i];
-    const lower = j => {
-      const at = j * 3, rgb = j * 4;
-      return vertex(positions[at], positions[at + 1] + 0.025 - skirt, positions[at + 2],
-        colors[rgb], colors[rgb + 1], colors[rgb + 2]);
-    };
-    const x = (positions[a * 3] + positions[b * 3]) / 2;
-    const z = (positions[a * 3 + 2] + positions[b * 3 + 2]) / 2;
-    if (trim && insideLegacy(x, z)) continue;
-    const downA = lower(a), downB = lower(b);
-    indices.push(b, a, downA, b, downA, downB);
+  for (const [edgeIndex, edge] of perimeter.entries()) {
+    const depth = tile.skirts[edgeIndex], axis = edgeIndex % 2 === 0 ? 0 : 2;
+    const fixed = pointAt(edge[0])[2 - axis];
+    const [start, end] = axis === 0 ? [legacy.minX, legacy.maxX] : [legacy.minZ, legacy.maxZ];
+    const clipToTown = axis === 0 ? fixed > legacy.minZ && fixed < legacy.maxZ
+      : fixed > legacy.minX && fixed < legacy.maxX;
+    let lastPoint, lastPair;
+    const addPair = ([x, y, z, r, g, b]) =>
+      [vertex(x, y, z, r, g, b), vertex(x, y - depth, z, r, g, b)];
+    function addSkirt(a, b) {
+      if (a[axis] === b[axis]) return;
+      const [topA, downA] = a[axis] === lastPoint ? lastPair : addPair(a);
+      const [topB, downB] = addPair(b);
+      indices.push(topA, topB, downA, downA, topB, downB);
+      lastPoint = b[axis];
+      lastPair = [topB, downB];
+    }
+    for (let i = 1; i < side; i++) {
+      const a = pointAt(edge[i - 1]), b = pointAt(edge[i]);
+      if (!clipToTown || Math.max(a[axis], b[axis]) <= start || Math.min(a[axis], b[axis]) >= end) {
+        addSkirt(a, b);
+        continue;
+      }
+      const clipEdge = (a, b, limit) => {
+        const t = (limit - a[axis]) / (b[axis] - a[axis]);
+        const point = a.map((value, j) => value + t * (b[j] - value));
+        point[axis] = limit;
+        point[1] = sampleTerrain(legacy, point[0], point[2]);
+        return point;
+      };
+      if (a[axis] < start || a[axis] > end) addSkirt(a, clipEdge(a, b, a[axis] < start ? start : end));
+      if (b[axis] < start || b[axis] > end) addSkirt(clipEdge(b, a, b[axis] < start ? start : end), b);
+    }
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -131,10 +218,19 @@ function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
 export function createTerrainTiles(scene) {
   const data = getExpansionTerrain();
   if (!data) return null;
-  const { manifest, field, directory } = data;
+  const { manifest, field, directory, detail } = data;
   const legacy = getTerrain();
   const nodes = new Map(Object.entries(manifest.tiles).map(([id, tile]) => [id, { ...tile, id }]));
+  if (detail) {
+    for (const tile of nodes.values()) {
+      const [w, n, e, s] = tile.bounds;
+      if (e - w === 250 && w >= detail.minX && n >= detail.minZ && e <= detail.maxX && s <= detail.maxZ) {
+        tile.detail = detail;
+      }
+    }
+  }
   const roots = manifest.roots.map(id => nodes.get(id));
+  sizeTerrainSkirts(nodes.values(), roots, field);
   const group = new THREE.Group();
   group.name = 'EdeTerrainQuadtree';
   scene.add(group);
@@ -145,7 +241,7 @@ export function createTerrainTiles(scene) {
   const box = new THREE.Box3();
   const lastCamera = new THREE.Vector3();
   const stats = { residentBytes: 0, peakResidentBytes: 0, visible: 0, loading: 0,
-    collisionBytes: field.heights.byteLength };
+    collisionBytes: field.heights.byteLength + (detail?.heights.byteLength ?? 0) };
   const resident = new Set(), shown = new Set(), ready = [];
   let pending = 0, stamp = 0;
   function queue(node, now) {

@@ -40,6 +40,28 @@ class ParcelBakeTest(unittest.TestCase):
             line = LineString(feature['points'])
             self.assertEqual(line.buffer(feature['width'] / 2).intersection(access).area, 0)
 
+    def test_frontage_rejects_a_corner_with_two_equally_plausible_approaches(self):
+        parcel, building = box(0, 0, 20, 20), box(6, 6, 14, 14)
+        roads = [
+            ({'kind': 'residential', 'id': 'w1'}, LineString([(-2, -3), (22, -3)])),
+            ({'kind': 'residential', 'id': 'w2'}, LineString([(-3, -2), (-3, 22)])),
+        ]
+        match = PARCELS['match_frontage']
+        buildings = STRtree([building])
+        self.assertIsNotNone(match(parcel, building, roads[:1], STRtree([roads[0][1]]),
+                                   buildings, 'residential')[0])
+        self.assertEqual(match(parcel, building, roads, STRtree([line for _, line in roads]),
+                               buildings, 'residential'), (None, 'ambiguous-frontage'))
+        self.assertEqual(match(parcel, building, roads[:1], STRtree([roads[0][1]]),
+                               STRtree([building, box(5, 1, 15, 4)]), 'residential'), (None, 'no-frontage'))
+
+    def test_private_parcel_categories_leave_shared_and_mixed_use_out(self):
+        classify = PARCELS['parcel_use']
+        self.assertEqual(classify({'gebruiksdoel': 'woonfunctie', 'aantal_verblijfsobjecten': 1}), 'residential')
+        self.assertEqual(classify({'gebruiksdoel': 'industriefunctie,kantoorfunctie'}), 'business')
+        self.assertIsNone(classify({'gebruiksdoel': 'woonfunctie', 'aantal_verblijfsobjecten': 12}))
+        self.assertIsNone(classify({'gebruiksdoel': 'woonfunctie,winkelfunctie', 'aantal_verblijfsobjecten': 2}))
+
     def test_packed_asset_has_provenance_and_inference_stays_decorative(self):
         with gzip.open(ROOT / 'assets/ede-parcel-detail.json.gz') as file:
             asset = json.load(file)
@@ -51,7 +73,23 @@ class ParcelBakeTest(unittest.TestCase):
             self.assertTrue(row['sourceIds'])
             if row['status'] == 'inferred':
                 self.assertFalse(row.get('collidable'))
-                self.assertIn(row['pilot'], PARCELS['PILOTS'])
+                self.assertIn(row['pilot'], {*PARCELS['PILOTS'], 'map'})
+
+    def test_streamed_tile_preserves_bounds_counts_and_decorative_status(self):
+        with gzip.open(ROOT / 'assets/ede-parcel-detail.json.gz') as file:
+            index = json.load(file)
+        tiles = index['tiles']
+        self.assertEqual(len(tiles), len({tile['id'] for tile in tiles}))
+        self.assertTrue(any(tile['bounds'][0] < -5412.3 for tile in tiles))
+        larger = max(tiles, key=lambda tile: tile['count'])
+        with gzip.open(ROOT / 'assets/ede-parcel-tiles' / f"{larger['id']}.json.gz") as file:
+            rows = json.load(file)['features']
+        self.assertEqual(larger['count'], len(rows))
+        bounds = box(*larger['bounds'])
+        for row in rows:
+            self.assertEqual(row['pilot'], 'map')
+            self.assertFalse(row.get('collidable'))
+            self.assertTrue(bounds.covers(PARCELS['scene_shape'](row)))
 
 
 if __name__ == '__main__':

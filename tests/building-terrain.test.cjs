@@ -64,6 +64,7 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}
       './ede-grade.js': { buildingPassageCuts: () => [], ...grade },
       './ede-building-bases.js': { EDE_BUILDING_BASES: [] },
       './ede-neighbourhood-facades.js': { edeFacadeAt: facadeStyle, isEdeShed },
+      './ede-window-lights.js': { windowLightKey: () => 1.25 },
       './ede-landmark-sites.js': { landmarkBagExclusions: () => new Map(), landmarkBuildingCuts: () => [], ...landmarks },
       './ede-facades.js': { readBagBuildYears: async () => [], ...facadeStubs },
       './ede-facade-material.js': facadeStubs,
@@ -108,8 +109,11 @@ test('BAG gables use their eaves as the top of the window area', async () => {
   const [geometry] = bakeTile({ scene }, new T.Matrix4());
   const bay = geometry.attributes.edeFacadeBay;
   assert.equal(bay.count, 5);
-  assert.deepEqual(Array.from(bay.array).filter((_, i) => i % 2 === 0), [0, 2, 2, 1, 0]);
-  for (let i = 0; i < bay.count; i++) assert.ok(Math.abs(bay.getY(i) - 5.6) < 1e-5);
+  assert.deepEqual(Array.from({ length: bay.count }, (_, i) => bay.getX(i)), [0, 2, 2, 1, 0]);
+  for (let i = 0; i < bay.count; i++) {
+    assert.ok(Math.abs(bay.getY(i) - 5.6) < 1e-5);
+    assert.equal(bay.getZ(i), 1.25);
+  }
 });
 
 test('sheds outside neighbourhood styles replace matching BAG meshes and keep adjacent houses', async () => {

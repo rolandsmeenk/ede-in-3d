@@ -5,7 +5,7 @@ const { pathToFileURL } = require('node:url');
 const test = require('node:test');
 const { loadModule } = require('./helpers/module.cjs');
 
-async function loadWorld() {
+async function loadWorld(overlapsEdeTravelPavement = () => false) {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const { texture } = await import('../vendor/three/build/three.tsl.js');
   const filename = join(__dirname, '../js/ede-street-features-world.js');
@@ -18,7 +18,7 @@ async function loadWorld() {
     './ede-grade.js': { gradeProfileAt: () => null, gradeWayAt: id => id === 'grade' ? { y: 8 } : null },
     './terrain.js': { terrainHeightAt: () => 2 },
     './tsl-materials.js': { createRoadSurfaceMaterial: () => new THREE.MeshStandardNodeMaterial() },
-    './ede-geometry.js': { nearestEdeRoad: () => null }
+    './ede-geometry.js': { nearestEdeRoad: () => null, overlapsEdeTravelPavement }
   } });
   return { THREE, ...world };
 }
@@ -181,5 +181,38 @@ test('a gantry can span the sunken lanes of its own motorway at Exit 24', async 
     const facing = [Math.sin(bearing), -Math.cos(bearing)];
     assert.equal(matrixGantryMount(sign, facing, [gantry])?.gantry, gantry);
     assert.equal(matrixGantryMount({ ...sign, roadName: 'Rijksweg A30' }, facing, [gantry]), null);
+  }
+});
+
+test('nearby roadside signs share a lamp above its street-name board', async () => {
+  const { THREE, collectSigns } = await loadWorld();
+  const common = { kind: 'traffic', faceKey: 'B1', bearing: 0, placement: 'ALONG', z: 0 };
+  const signs = [{ ...common, id: 'one', x: 0.12 }, { ...common, id: 'two', x: 0.26, bearing: 90 }];
+  const atlas = { width: 80, height: 80, frames: { B1: [0, 0, 80, 80] }, map: new THREE.Texture() };
+  const lamp = { kind: 'lamp', x: 0.2, z: 0, layer: 0, baseY: 2, topY: 10, radius: 0.11, reservedTop: 4.665 };
+  const otherDeck = { ...lamp, x: 0.12, layer: 1 };
+  const geometry = { positions: [], normals: [] }, faces = [];
+  const stats = collectSigns(signs, atlas, (_material, _feature, points) => faces.push(points), () => geometry, [], [otherDeck, lamp]);
+  assert.equal(stats.count, 2);
+  assert.equal(stats.stackedRoadsidePoles, 1);
+  assert.equal(stats.sharedSupports.length, 1);
+  assert.equal(stats.sharedSupports[0].layer, 0);
+  assert.equal(stats.sharedSupports[0].signs.join('/'), 'one/two');
+  assert.ok(faces.flat().every(([, y]) => y > lamp.reservedTop));
+  assert.ok(Math.min(...faces[2].map(([, y]) => y)) > Math.max(...faces[0].map(([, y]) => y)));
+  assert.ok(Math.min(...geometry.positions.filter((_, i) => i % 3 === 1)) > 4, 'only brackets should be drawn');
+});
+
+test('co-located boards use a clear gantry leg and keep an independent pole when it would overhang the road', async () => {
+  const sign = { id: 'gantry-sign', faceKey: 'D2', x: 0.25, z: 0, bearing: 0, placement: 'ALONG' };
+  const support = { kind: 'gantry', x: -0.15, z: 0, layer: 0, baseY: 2, topY: 8, topX: 0.85, radius: 0.20 };
+  for (const blocked of [false, true]) {
+    const { THREE, collectSigns } = await loadWorld((x, z) => blocked && z < -0.1);
+    const atlas = { width: 64, height: 64, frames: { D2: [0, 0, 64, 64] }, map: new THREE.Texture() };
+    const pile = { positions: [], normals: [] };
+    const stats = collectSigns([sign], atlas, () => {}, () => pile, [], [support]);
+    assert.equal(stats.count, 1);
+    assert.equal(stats.sharedSupports.length, blocked ? 0 : 1);
+    if (blocked) assert.equal(Math.min(...pile.positions.filter((_, i) => i % 3 === 1)), 2);
   }
 });

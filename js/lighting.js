@@ -22,6 +22,7 @@ import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 import { cityUniforms } from './tsl-materials.js';
 import { directSunFactor, edeSun, livePresetBlend } from './live-sky.js';
+import { liveWindowLights, PRESET_WINDOW_LIGHTS } from './ede-window-lights.js';
 
 // Atmospheric sky, environment lighting, sunlight and time-of-day presets.
 
@@ -253,6 +254,7 @@ class LightingSystem {
     if (!this.pmremGenerator) return;
     // Bake physical SkyMesh (without solar disc) into scene.environment for realistic canyon IBL.
     // Reuses a single RenderTarget so texture identity never changes.
+    const showDisc = this.sky.showSunDisc.value;
     this.sky.showSunDisc.value = 0;
     this.envScene.add(this.sky);
     this.envRenderTarget = this.pmremGenerator.fromScene(this.envScene, 0, 0.1, 100, {
@@ -261,7 +263,7 @@ class LightingSystem {
     this.scene.environment = this.envRenderTarget.texture;
     this.bakedCloudCoverage = this.sky.cloudCoverage.value;
     this.bakedCloudDensity = this.sky.cloudDensity.value;
-    this.sky.showSunDisc.value = 1;
+    this.sky.showSunDisc.value = showDisc;
     this.scene.add(this.sky);
   }
 
@@ -271,21 +273,33 @@ class LightingSystem {
       return;
     }
     this.live = false;
+    cityUniforms.uWindowLights.value.set(...PRESET_WINDOW_LIGHTS[p.id]);
     this.applyValues(p);
   }
 
   applyLive(date) {
     const { elevation, direction } = edeSun(date);
+    cityUniforms.uWindowLights.value.set(...liveWindowLights(date, elevation));
     const blend = livePresetBlend(elevation);
     const { from, to, weight } = blend;
     const a = TIME_PRESETS[from];
     const b = TIME_PRESETS[to];
-    const p = { id: weight < 0.5 ? from : to, sunDir: new THREE.Vector3(...direction) };
+    this.live = true;
+    if (from === 'midnight' && weight === 0) {
+      if (this.basePreset !== a) this.applyValues(a);
+      return blend;
+    }
+    const skySunDir = new THREE.Vector3(...direction);
+    const p = { id: weight < 0.5 ? from : to, skySunDir, sunDir: skySunDir,
+      showSunDisc: THREE.MathUtils.smoothstep(elevation, 0, 0.5) };
     for (const key of NUMBER_KEYS) p[key] = THREE.MathUtils.lerp(a[key], b[key], weight);
     for (const key of COLOR_KEYS) p[key] = lerpHex(a[key], b[key], weight);
-    // Retain night fill and window glow without lighting the ground from below.
+    // Fade sunlight at the horizon, then bring in the Night preset's cool fill through twilight.
     p.sunIntensity *= directSunFactor(elevation);
-    this.live = true;
+    if (from === 'midnight') {
+      p.sunDir = a.sunDir;
+      p.sunIntensity = a.sunIntensity * (1 - weight);
+    }
     this.applyValues(p);
     return blend;
   }
@@ -307,14 +321,15 @@ class LightingSystem {
     this.sky.rayleigh.value = p.rayleigh;
     this.sky.mieCoefficient.value = p.mieCoefficient;
     this.sky.mieDirectionalG.value = p.mieDirectionalG;
-    this.sky.sunPosition.value.copy(p.sunDir);
+    this.sky.sunPosition.value.copy(p.skySunDir ?? p.sunDir);
+    this.sky.showSunDisc.value = p.showSunDisc ?? 1;
     this.uSkyExposure.value = p.skyExposure;
     this.uNightFactor.value = p.nightFactor;
 
     cityUniforms.uSunColor.value.setHex(p.sunColor);
     cityUniforms.uSkyTopColor.value.setHex(p.skyTop);
     cityUniforms.uSkyHorizonColor.value.setHex(p.skyHorizon);
-    cityUniforms.uSkySunDir.value.copy(p.sunDir);
+    cityUniforms.uSkySunDir.value.copy(this.sky.sunPosition.value);
     cityUniforms.uInteriorGlow.value = p.interiorGlow;
     cityUniforms.uCanyonBounce.value = p.canyonBounce;
 

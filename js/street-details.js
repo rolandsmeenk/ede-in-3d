@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, float, color, positionGeometry, uniform, mod, fract, step, smoothstep, mix } from 'three/tsl';
+import { Fn, float, color, attribute, positionGeometry, uniform, mod, fract, step, smoothstep, mix } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   AVENUES,
@@ -19,10 +19,12 @@ import { cityUniforms, createTreeGrateMaterial, createGodRayMaterial } from './t
 import { createTreeField } from './trees.js';
 import { pavedPlazaRects, centralParkClearings, parkTreeSites, sidewalkBlocks, parkLampSites, edeStreetSites } from './city-grid.js';
 import { bryantParkLawn } from './landmarks.js';
-import { edeRoadSegments, nearestEdeRoad } from './ede-geometry.js';
-import { nearbyRailHeightAt } from './ede-grade.js';
+import { edeRoadSegments, nearestEdeRoad, overlapsEdeTravelPavement } from './ede-geometry.js';
+import { gradeWayAt, nearbyRailHeightAt } from './ede-grade.js';
 import { isEdeTrafficPavement } from './ede-road-surfaces.js';
 import { terrainHeightAt } from './terrain.js';
+import { fitEdeRoadsideSignalY, fitEdeSignalPole, fitEdeSignalSpan } from './ede-signal-hardware.js?v=20261121-signal-optics';
+import { createEdeSignalHeadGeometries, createEdeArrowLenses, createEdeAuxiliarySignalHousing, EDE_SIGNAL_BACKPLATES } from './ede-signal-models.js?v=20261121-signal-optics';
 import { selectStreetNameSigns, selectStreetNamePoles, addStreetNameSignBoards } from './ede-street-name-signs.js';
 
 // Instanced street furniture, traffic signals, trees and nearby light pools.
@@ -55,7 +57,7 @@ function createStreetSignBladeTexture(label) {
 }
 
 // Use the same signal clock and phase boundaries as the traffic simulation.
-function createTrafficSignalLensMaterial(isAvenueHead, clock) {
+function createTrafficSignalLensMaterial(isAvenueHead, clock, stencilled = false, auxiliaryPhases) {
   const { cycle, avenueAmber, avenueRed, streetAmber } = SIGNAL_TIMING;
   const mat = new THREE.MeshBasicNodeMaterial();
   mat.colorNode = Fn(() => {
@@ -78,6 +80,11 @@ function createTrafficSignalLensMaterial(isAvenueHead, clock) {
       ? step(avenueRed, t)
       : float(1.0).sub(step(avenueRed, t));
 
+    if (auxiliaryPhases) {
+      const states = { red: redActive, amber: amberActive, green: greenActive };
+      const active = auxiliaryPhases.reduce((value, phase) => value.add(states[phase]), float(0));
+      return mix(color(0x14181e), color(0x18ff68).mul(1.35), active.mul(attribute('signalMask')));
+    }
     const activeMask = isTopRed.mul(redActive)
       .add(isMidAmber.mul(amberActive))
       .add(isBottomGreen.mul(greenActive));
@@ -87,7 +94,7 @@ function createTrafficSignalLensMaterial(isAvenueHead, clock) {
       color(0xff2424),
       isTopRed
     );
-    return mix(color(0x14181e), lensHue.mul(1.35), activeMask);
+    return mix(color(0x14181e), lensHue.mul(1.35), stencilled ? activeMask.mul(attribute('signalMask')) : activeMask);
   })();
   return mat;
 }
@@ -128,7 +135,7 @@ function pedestrianFigure(walking) {
   ]);
 }
 
-function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLampMounts, treeOptions) {
+function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLampMounts, treeOptions, signalHardware, gantries = []) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeStreetDetails' : 'ManhattanStreetDetails';
 
@@ -145,9 +152,9 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
 
   // Shared materials
   const poleMetalMat = new THREE.MeshStandardNodeMaterial({
-    color: 0x3b4046,
+    color: EDE_DATA ? 0xbfc3c5 : 0x3b4046,
     roughness: 0.45,
-    metalness: 0.78
+    metalness: EDE_DATA ? 0.52 : 0.78
   });
   const signalHousingMat = new THREE.MeshStandardNodeMaterial({
     color: EDE_DATA ? 0x222627 : 0xe6a817,
@@ -168,29 +175,20 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     roughness: 0.32
   });
 
-  const HEAD_W = EDE_DATA ? 0.29 : 0.4;
-  const HEAD_H = EDE_DATA ? 0.83 : 1.12;
-  const HEAD_D = EDE_DATA ? 0.22 : 0.28;
-  const LENS_R = EDE_DATA ? 0.10 : 0.145;
-  const spacing = EDE_DATA ? 0.25 : 0.36;
-  const visorDepth = EDE_DATA ? 0.16 : 0.24;
-  const LENS_Y = [spacing, 0, -spacing];
+  const HEAD_W = 0.4, HEAD_H = 1.12, HEAD_D = 0.28, LENS_R = 0.145;
+  const LENS_Y = [0.36, 0, -0.36];
   const bothFaces = (geo) => [geo, geo.clone().rotateY(Math.PI)];
   const visor = (r, y, face, depth) => bothFaces(
     new THREE.CylinderGeometry(r, r, depth, 14, 1, true, Math.PI / 2, Math.PI)
       .rotateX(Math.PI / 2).translate(0, y, face + depth / 2));
-  const signalHousingGeo = mergeGeometries([
+  const edeHead = EDE_DATA ? createEdeSignalHeadGeometries() : null;
+  const signalHousingGeo = edeHead?.backplate ?? mergeGeometries([
     new THREE.BoxGeometry(HEAD_W, HEAD_H, HEAD_D),
-    EDE_DATA ? new THREE.BoxGeometry(0.47, 1.02, 0.035)
-      : new THREE.BoxGeometry(0.07, 0.2, 0.07).translate(0, HEAD_H / 2 + 0.1, 0),
-    ...LENS_Y.flatMap(y => visor(LENS_R + 0.023, y, HEAD_D / 2, visorDepth))
+    new THREE.BoxGeometry(0.07, 0.2, 0.07).translate(0, HEAD_H / 2 + 0.1, 0),
+    ...LENS_Y.flatMap(y => visor(LENS_R + 0.023, y, HEAD_D / 2, 0.24))
   ]);
-  const signalLensGeo = mergeGeometries(LENS_Y.flatMap(y =>
+  const signalLensGeo = edeHead?.lenses ?? mergeGeometries(LENS_Y.flatMap(y =>
     bothFaces(new THREE.CircleGeometry(LENS_R, 18).translate(0, y, HEAD_D / 2 + 0.004))));
-  const signalBorderGeo = EDE_DATA ? mergeGeometries([
-    ...[-0.51, 0.51].map(y => new THREE.BoxGeometry(0.49, 0.016, 0.042).translate(0, y, 0)),
-    ...[-0.237, 0.237].map(x => new THREE.BoxGeometry(0.016, 1.005, 0.042).translate(x, 0, 0)),
-  ]) : null;
   const walkHousingGeo = EDE_DATA ? mergeGeometries([
     new THREE.BoxGeometry(0.24, 0.475, 0.18),
     ...[-0.118, 0.118].flatMap(y => visor(0.096, y, 0.09, 0.10))
@@ -215,14 +213,15 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
   // =========================================================================
   const poleMatrices = [];
   const armMatrices = [];
-  const signalHousingMatrices = [];
-  const dutchMastMatrices = [];
+  const signalHousingMatrices = [], largeSignalMatrices = [], slimSignalMatrices = [], signalSupportMatrices = [];
+  const signalBeamMatrices = [], dutchMastMatrices = [];
   const callButtonMatrices = [];
   const aveLensMatrices = [];
   const streetLensMatrices = [];
+  const stencils = new Map(), auxiliaryHousings = [];
   const streetBladeMatrices = [];
   const walkBoxMatrices = [];
-  const audioSignals = [];
+  const audioSignals = [], signSupports = [];
   const signalIntersections = [];
   const lampHeadMatrices = [];
   const pedPostMatrices = [];
@@ -569,7 +568,13 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
         const block = blockAt(x, z);
         if (block && !block.sidewalk && !block.id?.toString().startsWith('sidewalk') && block.source && !block.park) continue;
       }
-      if (poleHeight > 0) setMatrix(poleMatrices, lampX, poleBase + poleHeight / 2, lampZ, poleRadius, poleHeight, poleRadius);
+      let signSupport;
+      if (poleHeight > 0) {
+        setMatrix(poleMatrices, lampX, poleBase + poleHeight / 2, lampZ, poleRadius, poleHeight, poleRadius);
+        signSupport = { x: lampX, z: lampZ, baseY: poleBase, topY: headY - 0.25,
+          layer: s.layer ?? 0, radius: poleRadius, kind: 'lamp' };
+        signSupports.push(signSupport);
+      }
       const armCount = s.doubleArm ? 2 : 1;
       for (let arm = 0; arm < armCount; arm++) {
         const ax = arm === 0 ? nx : -nx, az = arm === 0 ? nz : -nz;
@@ -581,12 +586,13 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       }
       addPole(lampX, lampZ, poleRadius, s.layer);
       if (name && !mount && poleHeight >= 2.9) {
-        signCandidates.push({ name, distance, sampled: i % 4 === 0, x: lampX, y: poleBase + 2.55, z: lampZ, ux, uz });
+        signCandidates.push({ name, distance, sampled: i % 4 === 0, x: lampX, y: poleBase + 2.55, z: lampZ, ux, uz, signSupport });
       }
     }
     const boardWidth = name => Math.min(1.45, Math.max(0.72, 0.24 + name.length * 0.051));
     const mountedSigns = selectStreetNameSigns(signCandidates);
-    for (const { name, x, y, z, ux, uz } of mountedSigns) {
+    for (const { name, x, y, z, ux, uz, signSupport } of mountedSigns) {
+      signSupport.reservedTop = y + 0.115;
       const width = boardWidth(name);
       const end = poleRadius + 0.04;
       const offset = end + width / 2;
@@ -607,7 +613,64 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       addPole(x, z, 2 * radius, 0);
       edeNameBoards.push({ name, x, y: ground + height + 0.10, z, ux, uz, width: boardWidth(name) });
     }
-    const signalKeys = new Set();
+    const hardwareStats = { roadside: 0, overhead: 0, gantries: 0, cantilevers: 0, reusedSupports: 0, fallback: 0,
+      slim: 0, movedPosts: 0, withheldPosts: 0, movedSupports: 0, withheldSupports: 0 };
+    group.userData.signalHardware = hardwareStats;
+    const recordedGantries = new Map(gantries.map(gantry => [gantry.id, gantry]));
+    const supports = new Set(), signalPosts = new Map(), fittedSpans = new Map();
+    const signalKeys = new Set(), surveyedKeys = new Set();
+    const sites = [];
+    const fitGround = (road, x, z) => gradeWayAt(road.road.id, x, z, 2.5)?.y ?? terrainHeightAt(x, z);
+    const clearPost = (x, z, layer, radius) =>
+      !overlapsEdeTravelPavement(x, z, layer, radius) && (layer !== 0 || !waterAt(x, z));
+    const placePost = (point, outward, layer, limit, additionalClear = () => true, preferBackplate = false) => {
+      const clear = (x, z, radius = 0.14) => {
+        if (!clearPost(x, z, layer, radius) || !additionalClear(x, z)) return false;
+        const block = blockAt(x, z, false);
+        return layer !== 0 || !block || block.park || block.sidewalk;
+      };
+      const backed = preferBackplate && fitEdeSignalPole(point, outward, (x, z) => clear(x, z, 0.9), limit);
+      const placement = backed || fitEdeSignalPole(point, outward, clear, limit);
+      if (!placement) hardwareStats.withheldPosts++;
+      else if (placement !== point) hardwareStats.movedPosts++;
+      return placement;
+    };
+    // The mapped road mesh sits 65 mm above the height profile.
+    const pavementLift = 0.065;
+    edeHead.housing.computeBoundingBox();
+    const slimHalf = -edeHead.housing.boundingBox.min.y;
+    const plateHalf = EDE_SIGNAL_BACKPLATES[200].height / 2;
+    const roadsideHeight = (road, x, z, backplate, observedY) => {
+      const along = THREE.MathUtils.clamp((x - road.a.x) * road.ux + (z - road.a.z) * road.uz, 0, road.len);
+      const roadY = fitGround(road, road.a.x + along * road.ux, road.a.z + along * road.uz) + pavementLift;
+      return fitEdeRoadsideSignalY(roadY, backplate ? plateHalf : slimHalf, observedY);
+    };
+    function stencilledLens(x, y, z, yaw, scale, isAvenue, direction, phases) {
+      const key = `${direction}/${isAvenue}/${phases?.join(',') ?? ''}`;
+      if (!stencils.has(key)) stencils.set(key, { direction, isAvenue, phases, matrices: [] });
+      setMatrix(stencils.get(key).matrices, x, y, z, scale, scale, scale, yaw);
+    }
+    const headMatrix = (x, y, z, yaw, scale, isAvenue, backplate = true, optics) => {
+      if (!backplate) hardwareStats.slim++;
+      const housings = !backplate ? slimSignalMatrices : scale === 1.5 ? largeSignalMatrices : signalHousingMatrices;
+      setMatrix(housings, x, y, z, scale, scale, scale, yaw);
+      if (optics?.arrow) stencilledLens(x, y, z, yaw, scale, isAvenue, optics.arrow);
+      else setMatrix(isAvenue ? aveLensMatrices : streetLensMatrices, x, y, z, scale, scale, scale, yaw);
+      const extra = optics?.greenArrow;
+      if (extra) {
+        const offset = (extra.side === 'right' ? 1 : -1) * 0.36 * scale;
+        const ax = x + offset * Math.cos(yaw), az = z - offset * Math.sin(yaw), ay = y - 0.25 * scale;
+        beam([x, z], [ax, az], ay, 0.05 * scale, 0.05 * scale);
+        setMatrix(auxiliaryHousings, ax, ay, az, scale, scale, scale, yaw);
+        stencilledLens(ax, ay, az, yaw, scale, isAvenue, extra.direction, [...new Set(extra.phases)].sort());
+      }
+    };
+    const beam = (a, b, y, width, depth, matrices = signalSupportMatrices) => {
+      const dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz);
+      if (length < 0.06) return;
+      setMatrix(matrices, (a[0] + b[0]) / 2, y, (a[1] + b[1]) / 2,
+        length + width * 0.5, width, depth, Math.atan2(-dz, dx));
+    };
     for (const signal of EDE_DATA.signals || []) {
       const road = nearestEdeRoad(signal.x, signal.z, 28);
       if (!road) continue;
@@ -615,23 +678,142 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       const side = ((signal.x - road.x) * nx + (signal.z - road.z) * nz) < 0 ? -1 : 1;
       const x = road.x + nx * side * (road.width / 2 + 0.7), z = road.z + nz * side * (road.width / 2 + 0.7);
       const key = `${Math.round(x / 7)}/${Math.round(z / 7)}`;
+      const survey = [];
+      for (const head of signalHardware?.byAnchor.get(`${signal.x}/${signal.z}`) ?? []) {
+        const [hx, hz] = head.point;
+        const headRoad = nearestEdeRoad(hx, hz, 14, head.wayId, head.level) ?? road;
+        if (head.mount === 'roadside') {
+          const original = head.pole ?? head.point;
+          const side = Math.sign(-(original[0] - headRoad.x) * headRoad.uz + (original[1] - headRoad.z) * headRoad.ux) || 1;
+          const pole = placePost(original, [-headRoad.uz * side, headRoad.ux * side], head.level, 0.75);
+          if (!pole) continue;
+          const base = fitGround(headRoad, ...pole);
+          const position = [hx + pole[0] - original[0], hz + pole[1] - original[1]];
+          const [x, z] = position;
+          const backplate = head.backplate !== false && clearPost(x, z, head.level, 0.9);
+          const observedY = head.y == null ? undefined : head.y + base - fitGround(headRoad, ...original);
+          const hy = roadsideHeight(headRoad, x, z, backplate, observedY);
+          if (hy - base >= 1.7 && hy - base <= 4.7) survey.push({ head, hy, pole, base, position, backplate });
+          continue;
+        }
+        const support = signalHardware.supports[head.support];
+        const existing = recordedGantries.get(support.existingId);
+        if (!fittedSpans.has(support)) {
+          const points = existing ? [[existing.x, existing.z],
+            [existing.x + existing.ux * existing.length, existing.z + existing.uz * existing.length]] : fitEdeSignalSpan(support.points, support.kind === 'cantilever',
+            (x, z) => clearPost(x, z, support.level, 0.19));
+          fittedSpans.set(support, points);
+          if (!points) hardwareStats.withheldSupports++;
+          else if (existing ? existing.adjusted : points.some((point, i) => point !== support.points[i])) hardwareStats.movedSupports++;
+        }
+        const points = fittedSpans.get(support);
+        if (!points) continue;
+        const [a, b] = points;
+        const dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz);
+        if (length < 1.5) continue;
+        const t = THREE.MathUtils.clamp(((hx - a[0]) * dx + (hz - a[1]) * dz) / (length * length), 0, 1);
+        const mount = [a[0] + t * dx, a[1] + t * dz];
+        const beamY = existing?.beam ?? support.beamY ?? fitGround(headRoad, ...a) + support.height;
+        const roadY = fitGround(headRoad, hx, hz);
+        let hy = head.y ?? roadY + head.height;
+        const scale = hy - roadY >= 5.81 ? 1.5 : 1;
+        const backplate = head.backplate !== false;
+        const halfHeight = backplate ? EDE_SIGNAL_BACKPLATES[scale === 1.5 ? 300 : 200].height / 2 : slimHalf * scale;
+        const minimumY = roadY + pavementLift + 5 + halfHeight;
+        if (support.headAlignment === 'beamCenter') hy = beamY;
+        if (minimumY - hy > 0.55 || Math.hypot(hx - mount[0], hz - mount[1]) > 1.7) continue;
+        hy = Math.max(hy, minimumY);
+        if (Math.abs(beamY - hy) > 1.8) continue;
+        survey.push({ head, hy, support, points, existing, mount, beamY, scale, headRoad, backplate });
+      }
+      if (survey.length) surveyedKeys.add(key);
+      sites.push({ road, nx, nz, side, x, z, key, survey });
+    }
+
+    for (const { road, nx, nz, side, x, z, key, survey } of sites) {
+      const yaw = Math.atan2(road.ux, road.uz), isAvenue = Math.abs(road.uz) >= Math.abs(road.ux);
+      for (const placement of survey) {
+        const { head, hy, support, points, existing, mount, beamY, pole, base, scale = 1, headRoad,
+          position = head.point, backplate } = placement;
+        const [hx, hz] = position;
+        headMatrix(hx, hy, hz, head.heading, scale, isAvenue, backplate, head);
+        hardwareStats[head.mount]++;
+        if (support) {
+          if (!supports.has(support)) {
+            supports.add(support);
+            if (existing) hardwareStats.reusedSupports++;
+            else {
+              hardwareStats[support.kind === 'gantry' ? 'gantries' : 'cantilevers']++;
+              beam(...points, beamY, 0.25, 0.25, signalBeamMatrices);
+              for (const [px, pz] of points.slice(0, support.kind === 'gantry' ? 2 : 1)) {
+                const ground = fitGround(headRoad, px, pz);
+                const height = beamY - ground;
+                if (height <= 0) continue;
+                setMatrix(signalSupportMatrices, px, ground + height / 2, pz, 0.24, height, 0.24);
+                addPole(px, pz, 0.24, support.level);
+                signSupports.push({ x: px, z: pz, baseY: ground, topY: beamY,
+                  layer: support.level, radius: 0.17, kind: 'gantry' });
+              }
+            }
+          }
+          // Keep the head at the surveyed offset from the support and bridge the gap with a hanger.
+          const top = Math.max(hy, beamY);
+          const bottom = Math.min(hy, beamY);
+          const gap = top - bottom;
+          if (gap > 0.06) setMatrix(signalSupportMatrices, hx, (top + bottom) / 2, hz, 0.073, gap + 0.08, 0.073);
+          beam([hx, hz], mount, beamY, 0.073, 0.073);
+        } else {
+          const [px, pz] = pole;
+          const poleKey = `${head.level}/${px}/${pz}`;
+          const offset = Math.hypot(hx - px, hz - pz);
+          const top = hy - (offset > 0.12 ? 0.04 : 0.35);
+          if (offset > 0.12) beam(pole, position, top, 0.069, 0.069);
+          if (!signalPosts.has(poleKey) || signalPosts.get(poleKey).top < top) {
+            signalPosts.set(poleKey, { px, pz, base, top, layer: head.level });
+          }
+        }
+      }
       if (signalKeys.has(key)) continue;
       signalKeys.add(key);
-      const yaw = Math.atan2(road.ux, road.uz), isAvenue = Math.abs(road.uz) >= Math.abs(road.ux);
-      const ground = terrainHeightAt(x, z);
-      const motorY = ground + 2.77;
-      setMatrix(dutchMastMatrices, x, ground + 1.21, z, 0.063, 2.42, 0.063);
-      setMatrix(signalHousingMatrices, x, motorY, z, 1, 1, 1, yaw);
-      setMatrix(isAvenue ? aveLensMatrices : streetLensMatrices, x, motorY, z, 1, 1, 1, yaw);
+      const layer = road.road.layer ?? 0;
+      const outward = [nx * side, nz * side];
+      const clearOfSurvey = (px, pz) => {
+        for (const post of signalPosts.values()) {
+          if (post.layer === layer && Math.hypot(px - post.px, pz - post.pz) < 0.3) return false;
+        }
+        return true;
+      };
+      let motor;
+      if (!surveyedKeys.has(key)) {
+        motor = placePost([x, z], outward, layer, 3.5, clearOfSurvey, true);
+        if (motor) {
+          const [mx, mz] = motor;
+          const ground = fitGround(road, mx, mz);
+          const facesAgainstWay = road.road.oneway ? !road.road.reverse : side > 0;
+          const backplate = clearPost(mx, mz, layer, 0.9);
+          const y = roadsideHeight(road, mx, mz, backplate);
+          const height = y - ground - 0.35;
+          headMatrix(mx, y, mz, yaw + (facesAgainstWay ? Math.PI : 0), 1, isAvenue, backplate);
+          setMatrix(dutchMastMatrices, mx, ground + height / 2, mz, 0.063, height, 0.063);
+          hardwareStats.fallback++;
+        }
+      }
 
-      const px = x - road.ux * 0.78, pz = z - road.uz * 0.78;
-      const pedestrianGround = terrainHeightAt(px, pz);
+      const pedestrian = placePost([x - road.ux * 0.78, z - road.uz * 0.78], outward, layer, 3.5,
+        (px, pz) => clearOfSurvey(px, pz) && (!motor || Math.hypot(px - motor[0], pz - motor[1]) >= 0.3));
+      if (!pedestrian) continue;
+      const [px, pz] = pedestrian;
+      const pedestrianGround = fitGround(road, px, pz);
       const pedestrianY = pedestrianGround + 2.44;
       setMatrix(dutchMastMatrices, px, pedestrianGround + 1.12, pz, 0.055, 2.24, 0.055);
       setMatrix(walkBoxMatrices, px, pedestrianY, pz, 1, 1, 1, yaw + Math.PI / 2);
       setMatrix(callButtonMatrices, px + nx * side * 0.065, pedestrianGround + 1.08, pz + nz * side * 0.065,
         0.085, 0.15, 0.075, yaw + Math.PI / 2);
       audioSignals.push({ x: px, y: pedestrianY, z: pz, isAvenue });
+    }
+    for (const { px, pz, base, top, layer } of signalPosts.values()) {
+      setMatrix(dutchMastMatrices, px, (base + top) / 2, pz, 0.063, top - base, 0.063);
+      addPole(px, pz, 0.126, layer);
     }
   }
 
@@ -656,17 +838,36 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     if (poles) poles.name = 'EdeLampPoles';
     if (arms) arms.name = 'EdeLampArmsAndSignBrackets';
   }
-  const motorSignals = addMatrixArrayInstanced(signalHousingGeo, signalHousingMat, signalHousingMatrices);
-  if (motorSignals && EDE_DATA) {
-    motorSignals.name = 'EdeMotorSignals';
+  if (EDE_DATA) {
+    const headMaterial = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.12 });
+    const backed = addMatrixArrayInstanced(signalHousingGeo, headMaterial, signalHousingMatrices);
+    if (backed) backed.name = 'EdeMotorSignals';
+    const large = addMatrixArrayInstanced(edeHead.largeBackplate, headMaterial, largeSignalMatrices);
+    if (large) large.name = 'EdeLargeMotorSignals';
+    const slim = addMatrixArrayInstanced(edeHead.housing, headMaterial, slimSignalMatrices);
+    if (slim) slim.name = 'EdeSlimMotorSignals';
+    if (auxiliaryHousings.length) addMatrixArrayInstanced(createEdeAuxiliarySignalHousing(), headMaterial, auxiliaryHousings);
+    for (const { direction, isAvenue, phases, matrices } of stencils.values()) {
+      const lenses = createEdeArrowLenses(direction, !!phases);
+      const material = createTrafficSignalLensMaterial(isAvenue, signalClock, true, phases);
+      const mesh = addMatrixArrayInstanced(lenses, material, matrices, false);
+      mesh.name = phases ? 'EdeAuxiliaryGreenArrow' : `EdeSignalArrow-${direction}`;
+    }
+    const galvanized = new THREE.MeshStandardNodeMaterial({ color: 0x8c9195, roughness: 0.52, metalness: 0.45 });
+    const supports = addMatrixArrayInstanced(unitBox, galvanized, signalSupportMatrices);
+    if (supports) supports.name = 'EdeSignalSupports';
+    const tube = unitCyl.clone().rotateZ(Math.PI / 2).scale(1, 0.5, 0.5);
+    const beams = addMatrixArrayInstanced(tube, galvanized, signalBeamMatrices);
+    if (beams) beams.name = 'EdeSignalBeams';
     const stripe = step(0.5, fract(positionGeometry.y.add(0.5).mul(4)));
     const striped = new THREE.MeshStandardNodeMaterial({ roughness: 0.72 });
     striped.colorNode = mix(color(0x202327), color(0xe0e0db), stripe);
-    addMatrixArrayInstanced(unitCyl, striped, dutchMastMatrices).name = 'EdeStripedSignalMasts';
-    const white = new THREE.MeshStandardNodeMaterial({ color: 0xe6e6dc, roughness: 0.75 });
-    addMatrixArrayInstanced(signalBorderGeo, white, signalHousingMatrices);
+    const masts = addMatrixArrayInstanced(unitCyl, striped, dutchMastMatrices);
+    if (masts) masts.name = 'EdeStripedSignalMasts';
     const button = new THREE.MeshStandardNodeMaterial({ color: 0xe1b83a, roughness: 0.72 });
     addMatrixArrayInstanced(unitBox, button, callButtonMatrices, false);
+  } else {
+    addMatrixArrayInstanced(signalHousingGeo, signalHousingMat, signalHousingMatrices);
   }
   addMatrixArrayInstanced(signalLensGeo, aveSignalLensMat, aveLensMatrices, false);
   addMatrixArrayInstanced(signalLensGeo, streetSignalLensMat, streetLensMatrices, false);
@@ -1130,7 +1331,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
   }
 
   scene.add(group);
-  return { group, footprints, signalClock, signalIntersections, audioSignals, treeField, update };
+  return { group, footprints, signalClock, signalIntersections, audioSignals, treeField, signSupports, update };
 }
 
 export { buildStreetDetails };

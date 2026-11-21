@@ -188,6 +188,21 @@ def canopy_grid(crowns, bounds, terrain_bounds, step, corridors):
     return coverage, vertices.astype('<i2')
 
 
+def add_neighbor_masks(cells, directory):
+    # A tile can seal real forest edges without waiting for neighbouring tiles to load.
+    masks = {key: (directory / f'{key}.bin').read_bytes()[:CELLS**2] for key in cells}
+    empty = bytes(CELLS**2)
+    for cell in cells.values():
+        x, z, _, _ = cell['bounds']
+        size = cell['step'] * CELLS
+        north, east, south, west = [
+            masks.get(f'{size}_{x + dx}_{z + dz}', empty)
+            for dx, dz in ((0, -size), (size, 0), (0, size), (-size, 0))
+        ]
+        rows = (north[-CELLS:], east[::CELLS], south[:CELLS], west[CELLS - 1::CELLS])
+        cell['neighborMask'] = [sum((value != 0) << index for index, value in enumerate(row)) for row in rows]
+
+
 def write_canopy(directory, bounds, grids, stats):
     min_x, min_z, _, _ = bounds
     cells = {}
@@ -215,6 +230,7 @@ def write_canopy(directory, bounds, grids, stats):
             key = previous['id']
             if key not in cells and re.fullmatch(r'(500|1000)_-?\d+_-?\d+', key):
                 (directory / f'{key}.bin').unlink(missing_ok=True)
+    add_neighbor_masks(cells, directory)
     manifest = dict(version=1, napOrigin=SCENE_NAP_ORIGIN, cells=list(cells.values()),
                     source=dict(canopyYear=CANOPY_YEAR, canopy=CANOPY, surface=WCS, **stats))
     manifest_path.write_text(json.dumps(manifest, separators=(',', ':')) + '\n')

@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, cameraPosition, float, interleavedGradientNoise, mix, positionWorld,
   screenCoordinate, smoothstep, uniform } from 'three/tsl';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
+import { terrainHeightAt } from './terrain.js';
 import { treeSeasonNodes } from './tree-seasons.js';
 
 const DIRECTORY = new URL('../assets/ede-forest-canopy/', import.meta.url);
@@ -10,6 +11,9 @@ const MAX_LOADS = 4;
 const RESIDENT_LIMIT = 80;
 const SWITCH_DISTANCE = 1200;
 const FAR_LIMIT = 6500;
+const FADE_START = 380, FADE_END = 580;
+const FULL_EDGE = 2 ** CELLS - 1;
+const BEVEL = 0.42;
 
 async function request(file) {
   const response = await fetch(new URL(file, DIRECTORY));
@@ -20,10 +24,12 @@ async function request(file) {
 export async function loadForestCanopy() {
   try {
     const { version, cells } = await request('manifest.json').then(response => response.json());
-    if (version !== 1 || !Array.isArray(cells) || !cells.every(({ id, bounds, step }) =>
+    if (version !== 1 || !Array.isArray(cells) || !cells.every(({ id, bounds, step, neighborMask }) =>
       typeof id === 'string' && /^[-_a-zA-Z0-9]+$/.test(id) && [10, 20].includes(step) &&
       bounds?.length === 4 && bounds.every(Number.isFinite) &&
-      bounds[2] - bounds[0] === step * CELLS && bounds[3] - bounds[1] === step * CELLS)) {
+      bounds[2] - bounds[0] === step * CELLS && bounds[3] - bounds[1] === step * CELLS &&
+      (neighborMask === undefined || Array.isArray(neighborMask) && neighborMask.length === 4 &&
+        neighborMask.every(bits => Number.isSafeInteger(bits) && bits >= 0 && bits <= FULL_EDGE)))) {
       throw new Error('Invalid Ede canopy manifest');
     }
     return cells;
@@ -33,14 +39,14 @@ export async function loadForestCanopy() {
   }
 }
 
-function canopyGeometry(buffer, { bounds, step: size }) {
+export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FULL_EDGE, FULL_EDGE, FULL_EDGE, FULL_EDGE] }) {
   const side = CELLS + 1;
   const offset = CELLS * CELLS;
   if (buffer.byteLength !== offset + side * side * 2) throw new Error('Invalid canopy cell size');
   const mask = new Uint8Array(buffer, 0, offset);
   const height = new DataView(buffer, offset);
-  const positions = new Float32Array(side * side * 3);
-  const shades = new Float32Array(side * side);
+  const positions = new Array(side * side * 3);
+  const shades = new Array(side * side);
   const indices = [];
   for (let z = 0; z < side; z++) for (let x = 0; x < side; x++) {
     const i = z * side + x;
@@ -48,18 +54,83 @@ function canopyGeometry(buffer, { bounds, step: size }) {
     positions[i * 3] = worldX;
     positions[i * 3 + 1] = height.getInt16(i * 2, true) / 100 - SCENE_NAP_ORIGIN;
     positions[i * 3 + 2] = worldZ;
-    shades[i] = 0.8 + 0.2 * Math.sin(worldX * 0.32) * Math.sin(worldZ * 0.23);
-    if (x < CELLS && z < CELLS && mask[z * CELLS + x]) {
-      indices.push(i, i + side, i + 1, i + 1, i + side, i + side + 1);
+    const shade = Math.sin(worldX * 0.743 + worldZ * 0.513) * 43758.5453;
+    shades[i] = 0.70 + 0.30 * (shade - Math.floor(shade));
+  }
+  // Keep the sides of connected crowns in the same mesh, using the surveyed
+  // neighbouring mask to leave the interior of a forest open across tile seams.
+  const sides = new Map();
+  function sideVertices(i) {
+    let pair = sides.get(i);
+    if (!pair) {
+      const x = positions[i * 3], top = positions[i * 3 + 1], z = positions[i * 3 + 2];
+      const base = Math.min(top - 0.08, terrainHeightAt(x, z) + 0.2);
+      pair = [positions.length / 3, positions.length / 3 + 1];
+      positions.push(x, top, z, x, base, z);
+      shades.push(shades[i] * 0.82, shades[i] * 0.36);
+      sides.set(i, pair);
+    }
+    return pair;
+  }
+  function wall(a, b) {
+    const [topA, lowA] = sideVertices(a), [topB, lowB] = sideVertices(b);
+    indices.push(topA, topB, lowA, lowA, topB, lowB);
+  }
+  const cuts = new Uint8Array(CELLS * CELLS);
+  const coveredOnNeighbor = (edge, index) => Math.floor(neighborMask[edge] / 2 ** index) % 2;
+  function bevel(corner, toward) {
+    const index = positions.length / 3;
+    for (let axis = 0; axis < 3; axis++) {
+      const start = positions[corner * 3 + axis], end = positions[toward * 3 + axis];
+      positions.push(start + (end - start) * BEVEL);
+    }
+    shades.push(shades[corner] + (shades[toward] - shades[corner]) * BEVEL);
+    return index;
+  }
+  for (let z = 0; z < CELLS; z++) for (let x = 0; x < CELLS; x++) {
+    const cell = z * CELLS + x;
+    if (!mask[cell]) continue;
+    const north = z > 0 ? mask[cell - CELLS] : coveredOnNeighbor(0, x);
+    const east = x + 1 < CELLS ? mask[cell + 1] : coveredOnNeighbor(1, z);
+    const south = z + 1 < CELLS ? mask[cell + CELLS] : coveredOnNeighbor(2, x);
+    const west = x > 0 ? mask[cell - 1] : coveredOnNeighbor(3, z);
+    const a = z * side + x, b = a + 1, c = a + side, d = c + 1;
+    if (north && east && south && west) {
+      indices.push(a, c, b, b, c, d);
+      continue;
+    }
+    const corners = [a, b, d, c];
+    const neighbors = [north, east, south, west];
+    const connected = neighbors.some(Boolean);
+    const ring = [];
+    const starts = [], ends = [];
+    for (let i = 0; i < 4; i++) {
+      const previous = (i + 3) % 4, next = (i + 1) % 4;
+      if (neighbors[previous] || neighbors[i]) {
+        starts[i] = ends[i] = corners[i];
+        ring.push(corners[i]);
+        continue;
+      }
+      cuts[cell] |= 1 << i;
+      starts[i] = bevel(corners[i], corners[previous]);
+      ends[i] = bevel(corners[i], corners[next]);
+      ring.push(starts[i], ends[i]);
+      if (connected) wall(starts[i], ends[i]);
+    }
+    for (let i = 1; i < ring.length - 1; i++) indices.push(ring[0], ring[i + 1], ring[i]);
+    if (connected) {
+      for (let i = 0; i < 4; i++) {
+        if (!neighbors[i]) wall(ends[i], starts[(i + 1) % 4]);
+      }
     }
   }
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('crownShade', new THREE.BufferAttribute(shades, 1));
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('crownShade', new THREE.Float32BufferAttribute(shades, 1));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  return { geometry, mask };
+  return { geometry, mask, cuts };
 }
 
 export function createForestCanopy(scene, source, seasonal) {
@@ -68,13 +139,13 @@ export function createForestCanopy(scene, source, seasonal) {
   group.name = 'EdeForestCanopies';
   scene.add(group);
   const tint = seasonal ? treeSeasonNodes(float(0)) : null;
-  const holdNear = uniform(0);
+  const holdNear = uniform(0), aerialOffset = uniform(0);
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 1, alphaTest: 0.5 });
   material.name = 'Distant woodland canopy';
   const base = float(attribute('crownShade', 'float')).mul(new THREE.Color(0x3b5525));
   material.colorNode = tint ? base.mul(mix(1, tint.rgb, 0.55)).mul(mix(0.48, 1, tint.a)) : base;
-  const distance = positionWorld.xz.distance(cameraPosition.xz);
-  const visibility = mix(smoothstep(380, 580, distance), 1, holdNear);
+  const distance = positionWorld.xz.distance(cameraPosition.xz).add(aerialOffset);
+  const visibility = mix(smoothstep(FADE_START, FADE_END, distance), 1, holdNear);
   material.opacityNode = float(interleavedGradientNoise(screenCoordinate.xy).lessThan(visibility));
 
   const cells = new Map(source.map(cell => [cell.id, { ...cell }]));
@@ -94,6 +165,7 @@ export function createForestCanopy(scene, source, seasonal) {
   const frustum = new THREE.Frustum(), viewProjection = new THREE.Matrix4(), box = new THREE.Box3();
   const stats = { visible: 0, loading: 0, resident: 0, residentBytes: 0, peakResidentBytes: 0, revision: 0 };
   let pending = 0, tick = 0, nextUpdate = 0;
+  let viewX = 0, viewZ = 0, fullCanopyRadiusSq = FADE_END ** 2;
   function enqueue(cell) {
     if (cell.mesh || cell.loading || cell.retry > performance.now() || pending >= MAX_LOADS) return;
     cell.loading = true;
@@ -108,12 +180,20 @@ export function createForestCanopy(scene, source, seasonal) {
   }
 
   function covers(x, z) {
+    if (!group.visible || (x - viewX) ** 2 + (z - viewZ) ** 2 < fullCanopyRadiusSq) return false;
     for (const size of [10, 20]) {
       if (!anchors.has(size)) continue;
       const cell = active[size].get(key(x, z, size));
       if (!cell) continue;
-      const col = Math.floor((x - cell.bounds[0]) / size), row = Math.floor((z - cell.bounds[1]) / size);
-      return cell.mask[row * CELLS + col] > 0;
+      const u = (x - cell.bounds[0]) / size, v = (z - cell.bounds[1]) / size;
+      const col = Math.floor(u), row = Math.floor(v);
+      const index = row * CELLS + col, cornerCuts = cell.cuts[index];
+      if (!cell.mask[index]) return false;
+      const dx = u - col, dz = v - row;
+      return (!(cornerCuts & 1) || dx + dz >= BEVEL) &&
+        (!(cornerCuts & 2) || 1 - dx + dz >= BEVEL) &&
+        (!(cornerCuts & 4) || 2 - dx - dz >= BEVEL) &&
+        (!(cornerCuts & 8) || dx + 1 - dz >= BEVEL);
     }
     return false;
   }
@@ -123,11 +203,12 @@ export function createForestCanopy(scene, source, seasonal) {
     if (job) {
       const { cell, buffer } = job;
       try {
-        const { geometry, mask } = canopyGeometry(buffer, cell);
+        const { geometry, mask, cuts } = canopyGeometry(buffer, cell);
         cell.mesh = new THREE.Mesh(geometry, material);
         cell.mesh.visible = false;
         cell.mask = mask;
-        cell.bytes = mask.byteLength + geometry.index.array.byteLength + Object.values(geometry.attributes)
+        cell.cuts = cuts;
+        cell.bytes = mask.byteLength + cuts.byteLength + geometry.index.array.byteLength + Object.values(geometry.attributes)
           .reduce((sum, attr) => sum + attr.array.byteLength, 0);
         group.add(cell.mesh);
         resident.add(cell);
@@ -141,7 +222,11 @@ export function createForestCanopy(scene, source, seasonal) {
         cell.loading = false;
       }
     }
-    const { x, z } = camera.position;
+    const { x, y, z } = camera.position;
+    viewX = x;
+    viewZ = z;
+    aerialOffset.value = Math.min(FADE_END, Math.max(0, (y - terrainHeightAt(x, z) - 40) * 4));
+    fullCanopyRadiusSq = (FADE_END - aerialOffset.value) ** 2;
     holdNear.value = treeField.coveragePending?.(x, z) ? 1 : 0;
     const now = performance.now();
     if (now < nextUpdate && !job) return;
@@ -200,7 +285,7 @@ export function createForestCanopy(scene, source, seasonal) {
         if (resident.size <= RESIDENT_LIMIT) break;
         group.remove(cell.mesh);
         cell.mesh.geometry.dispose();
-        cell.mesh = cell.mask = null;
+        cell.mesh = cell.mask = cell.cuts = null;
         resident.delete(cell);
         stats.residentBytes -= cell.bytes;
       }

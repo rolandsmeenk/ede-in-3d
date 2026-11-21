@@ -104,12 +104,46 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
   return { strip3D, build };
 }
 
-function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { surveyed = [], preserveGBuffer } = {}) {
+// Traffic edges keep their archived station ranges. Use their mapped shape to place paint between the stop lines.
+function mappedPaintPath(edge) {
+  if (!edge.paintPath || edge.bridge || edge.underpass || edge.layer) return;
+  const source = edge.direction ? edge.paintPath.toReversed() : edge.paintPath;
+  const first = source[0], last = source.at(-1);
+  const length = Math.hypot(last.x - first.x, last.z - first.z);
+  if (!length || !source.some(({ x, z }) =>
+    Math.abs((x - first.x) * (last.z - first.z) - (z - first.z) * (last.x - first.x)) > length * 0.75)) return;
+  const points = [{ x: edge.x0, z: edge.z0 }, ...source.slice(1, -1),
+    { x: edge.x0 + edge.dx * edge.span, z: edge.z0 + edge.dz * edge.span }];
+  const sections = [];
+  let distance = 0;
+  for (const point of points) {
+    const previous = sections.at(-1);
+    if (previous) {
+      const span = Math.hypot(point.x - previous.x, point.z - previous.z);
+      if (span < 0.03) continue;
+      previous.nx = (previous.z - point.z) / span;
+      previous.nz = (point.x - previous.x) / span;
+      distance += span;
+    }
+    sections.push({ ...point, distance });
+  }
+  if (sections.length < 2) return;
+  const setback = (edge.sx - edge.x0) * edge.dx + (edge.sz - edge.z0) * edge.dz;
+  return sections.map((point, i) => {
+    const before = sections[Math.max(0, i - 1)], after = i + 1 === sections.length ? before : point;
+    const miter = Math.max(0.6, 1 + before.nx * after.nx + before.nz * after.nz);
+    return { x: point.x, z: point.z, station: point.distance / distance * edge.span - setback,
+      nx: (before.nx + after.nx) / miter, nz: (before.nz + after.nz) / miter };
+  });
+}
+
+function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { surveyed = [], preserveGBuffer, pavementAt } = {}) {
   const builder = sharedBuilder || createRoadPaintChunkBuilder('RoadMarkings', { heightAt, preserveGBuffer });
   const lines = [];
   const bends = new Map();
   const surveyByWay = new Map();
   const fittedRoads = new Map();
+  const mappedRoads = new Map();
 
   // Flat strip w wide from a to b, with a dash pattern (period, duty cycle) running along it
   function strip(ax, az, bx, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1, edge) {
@@ -133,12 +167,42 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
 
   function drawUnsurveyed(line) {
     const { ends: [[x, z], [x1, z1]], len, w, col, period, duty, phase, flow, e } = line;
+    if (len < 0.05) return;
+    const dx = (x1 - x) / len, dz = (z1 - z) / len;
+    const point = s => [x + dx * s, z + dz * s];
+    const onPavement = s => pavementAt(...point(s), e.layer ?? 0, w / 2);
+    const draw = (a, b) => {
+      const paint = (lo, hi) => strip(...point(lo), ...point(hi), w, col, period, duty, phase + lo * flow, flow, e);
+      if (!pavementAt || !e.wayId || e.layer || e.bridge || e.underpass) {
+        paint(a, b);
+        return;
+      }
+      // Keep the dash phase when a generated marking leaves and re-enters the pavement.
+      const steps = Math.max(1, Math.ceil((b - a) / 2));
+      let previous = a, inside = onPavement(a), start = a;
+      for (let i = 1; i <= steps; i++) {
+        const s = a + (b - a) * i / steps;
+        const next = onPavement(s);
+        if (next !== inside) {
+          let lo = previous, hi = s;
+          for (let j = 0; j < 4; j++) {
+            const middle = (lo + hi) / 2;
+            if (onPavement(middle) === inside) lo = middle;
+            else hi = middle;
+          }
+          if (inside) paint(start, lo);
+          else start = hi;
+        }
+        previous = s;
+        inside = next;
+      }
+      if (inside) paint(start, b);
+    };
     const survey = e.laneDefinition?.fast && surveyByWay.get(e.wayId);
-    if (!survey?.length || len < 0.05) {
-      strip(x, z, x1, z1, w, col, period, duty, phase, flow, e);
+    if (!survey?.length) {
+      draw(0, len);
       return;
     }
-    const dx = (x1 - x) / len, dz = (z1 - z) / len;
     const project = ([px, pz]) => (px - x) * dx + (pz - z) * dz;
     const offset = ([px, pz]) => (px - x) * dz - (pz - z) * dx;
     const covered = [];
@@ -149,7 +213,6 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
       if (hi - lo > 0.05) covered.push([lo, hi]);
     }
     let cursor = 0;
-    const draw = (a, b) => strip(x + dx * a, z + dz * a, x + dx * b, z + dz * b, w, col, period, duty, phase + a * flow, flow, e);
     for (const [lo, hi] of covered.sort((a, b) => a[0] - b[0])) {
       if (lo > cursor) draw(cursor, lo);
       cursor = Math.max(cursor, hi);
@@ -161,7 +224,16 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
   const straightAt = (e, s, o) => [e.sx + e.dx * s + e.rx * o, e.sz + e.dz * s + e.rz * o];
   function at(e, s, o) {
     const rows = fittedRoads.get(e);
-    if (!rows) return straightAt(e, s, o);
+    if (!rows) {
+      const path = mappedRoads.get(e);
+      if (!path) return straightAt(e, s, o);
+      const right = path.findIndex(point => point.station >= s);
+      const i = right < 0 ? path.length - 1 : Math.max(1, right);
+      const a = path[i - 1], b = path[i];
+      const t = (s - a.station) / (b.station - a.station);
+      return [a.x + (b.x - a.x) * t + (a.nx + (b.nx - a.nx) * t) * o,
+        a.z + (b.z - a.z) * t + (a.nz + (b.nz - a.nz) * t) * o];
+    }
     let right = rows.findIndex(row => row.offset >= o);
     if (right < 0) right = rows.length;
     const sample = ({ edge, lane, width, offset }) => {
@@ -239,6 +311,11 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
           ...rows(forward, 1), ...(opposing ? rows(opposing, -1) : []),
         ].sort((a, b) => a.offset - b.offset));
       }
+    }
+    for (const edge of back ? [e, back] : [e]) {
+      if (fittedRoads.has(edge)) continue;
+      const path = mappedPaintPath(edge);
+      if (path) mappedRoads.set(edge, path);
     }
     const firstLine = lines.length;
     const definition = e.laneDefinition;
@@ -322,7 +399,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
 
   // At a simple bend, corresponding offset lines meet at a bounded miter, without an intersection-sized gap.
   for (const roadsAtBend of bends.values()) {
-    if (roadsAtBend.length !== 2 || roadsAtBend.some(entry => fittedRoads.has(entry.e))) continue;
+    if (roadsAtBend.length !== 2 || roadsAtBend.some(({ e }) => fittedRoads.has(e) || mappedRoads.has(e))) continue;
     const [a, b] = roadsAtBend;
     const sign = a.end === b.end ? -1 : 1;
     if ((a.e.dx * b.e.dx + a.e.dz * b.e.dz) * sign < 0.5) continue;
@@ -384,14 +461,18 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
         next.phase = ((next.phase % next.period) + next.period) % next.period;
         stack.push(next);
       }
-      if (fittedRoads.has(line.e)) {
+      const mapped = mappedRoads.get(line.e);
+      if (fittedRoads.has(line.e) || mapped) {
         const { e, o, startAt, endAt } = line;
         const fitStart = e.laneDefinition?.fast || e.from.shape ? startAt : 0.9;
         const fitEnd = e.laneDefinition?.fast || e.to.shape ? endAt : e.len - 0.9;
         const pieces = Math.max(1, Math.ceil((fitEnd - fitStart) / 4));
+        const stops = mapped
+          ? [...mapped.map(point => point.station).filter(s => s > fitStart && s < fitEnd), fitEnd]
+          : Array.from({ length: pieces }, (_, i) => fitStart + (fitEnd - fitStart) * (i + 1) / pieces);
         let a = at(e, fitStart, o), phase = line.phase;
-        for (let i = 1; i <= pieces; i++) {
-          const b = at(e, fitStart + (fitEnd - fitStart) * i / pieces, o);
+        for (const s of stops) {
+          const b = at(e, s, o);
           const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
           drawUnsurveyed({ ...line, ends: [a, b], len, phase });
           a = b;
