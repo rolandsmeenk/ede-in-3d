@@ -9,12 +9,13 @@ const asset = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '..', '
 test('the corrected shoreline is shared by map layers, park geometry and movement', async () => {
   const { EDE_DATA, pointInPoly, roadCrossesWater, toPts, waterAt, waterAtExact } = await import('../js/city-config.js');
   const { GEO } = await import('../js/nyc-geodata.js');
+  const { FRANKENENG_DOWNSTREAM } = await import('../js/ede-water-levels.js');
   const { water, land } = asset('ede-shorelines.json.gz');
   const original = asset('ede-map-v1.json.gz');
-  const activeWater = water.filter(({ id }) => id !== 'water171');
+  const activeWater = [...water.filter(({ id }) => id !== 'water171'), FRANKENENG_DOWNSTREAM];
   assert.deepEqual(EDE_DATA.water.slice(0, activeWater.length), activeWater);
   assert.equal(EDE_DATA.meta.counts.water, EDE_DATA.water.length);
-  assert.ok(EDE_DATA.water.slice(activeWater.length).every(feature => feature.id.startsWith('corridor-water')));
+  assert.ok(EDE_DATA.water.slice(activeWater.length).every(feature => /^(?:corridor|north)-water/.test(feature.id)));
   assert.equal(waterAtExact(-3458, 783), false);
   assert.equal(waterAt(-3458, 783), false);
   assert.equal(GEO.centralPark.water, EDE_DATA.water);
@@ -30,7 +31,7 @@ test('the corrected shoreline is shared by map layers, park geometry and movemen
   assert.ok(water.some(feature => feature.holes.length));
 
   const parks = EDE_DATA.parks.map(({ ring, holes }) => [toPts(ring), ...holes.map(toPts)]);
-  for (const [x, z] of [[-1726.18, 715.90], [-1438.15, 639.20], [-3032.76, 675.16], [389.51, -564.67]]) {
+  for (const [x, z] of [[-1726.18, 715.90], [-1438.15, 639.20], [-3032.76, 675.16], [389.51, -564.67], [-3781, 2385]]) {
     assert.equal(waterAtExact(x, z), true);
     assert.equal(waterAt(x, z), true);
     assert.equal(parks.some(([outline, ...holes]) =>

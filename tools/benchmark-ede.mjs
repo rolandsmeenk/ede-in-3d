@@ -36,7 +36,12 @@ const newLandmarks = suite === 'expansion-landmarks' ? (await Promise.all([
   import('../js/ede-reemst-landmark-survey.js').then(mod => mod.EDE_REEMST_LANDMARKS),
   import('../js/ede-west-expansion-surveys.js').then(mod => mod.EDE_WEST_EXPANSION_LANDMARKS),
   import('../js/ede-zonneoord-surveys.js').then(mod => mod.EDE_ZONNEOORD_LANDMARKS),
-])).flat() : null;
+])).flat() : suite === 'lunteren-landmarks'
+  ? (await Promise.all([
+    import('../js/ede-lunteren-survey.js').then(mod => mod.EDE_LUNTEREN_LANDMARKS),
+    import('../js/ede-lunteren-school-sites.js').then(mod => mod.EDE_LUNTEREN_SCHOOL_LANDMARKS),
+    import('../js/ede-lunteren-church-sites.js').then(mod => mod.LUNTEREN_CHURCH_SITES),
+  ])).flat() : null;
 const shots = newLandmarks ? newLandmarks.flatMap(site => {
   const { id, name, x, z, height, focusHeight, approach } = site;
   const dx = approach.x - x, dz = approach.z - z;
@@ -47,9 +52,22 @@ const shots = newLandmarks ? newLandmarks.flatMap(site => {
   return [
     { name: name + ' approach', arrival: id, travel: ['person'] },
     { name: name + ' elevated', from: origin, to: [origin[0] - dz * 0.15, altitude, origin[2] + dx * 0.15],
-      look: [x, focusHeight, z] },
+      look: [x, focusHeight ?? Math.min(12, height / 2), z] },
   ];
-}) : expansionOnly ? [
+}) : suite === 'lunteren' ? [
+  { name: 'Lunteren centre', arrival: 'lunteren-centrum', travel: ['person'] },
+  { name: 'Station Lunteren', arrival: 'station-lunteren', travel: ['person'] },
+  { name: 'Goudsberg woodland approach', arrival: 'goudsberg', travel: ['person'] },
+  { name: 'De Valouwe trailhead', arrival: 'de-valouwe', travel: ['person'] },
+  { name: 'Wekeromse Zand trailhead', arrival: 'wekeromse-zand', travel: ['person'] },
+  { name: 'Stationsstraat drive', travel: ['car', -3343.7, -4314.3, 1.75] },
+  { name: 'Edeseweg cycle', travel: ['cyclist', 2099.2, -5751.8, -0.206] },
+  { name: 'A30 Lunteren drive', travel: ['car', -4937.1, -3647.1, -2.757] },
+  { name: 'Lunteren to Goudsberg helicopter', from: [-3280, 65, -4310], to: [-1757, 38, -6218],
+    look: [-3235, 1, -4450], lookTo: [-1734, 1, -6112] },
+  { name: 'Lunteren to Wekeromse Zand jump', from: [-3480, 4, -4265], to: [1482, 52, -5740],
+    look: [1720, 1, -5830], jump: true },
+] : expansionOnly ? [
   { name: 'Doesburgermolen approach', arrival: 'doesburgermolen', travel: ['person'] },
   { name: 'Veenendaal-De Klomp rail and forecourt', arrival: 'veenendaal-de-klomp',
     from: [-5280, 24, 384], to: [-6600, 15, 10], look: [-6150, 1, 180], lookTo: [-6682, 3, 6] },
@@ -392,7 +410,7 @@ async function run(search, cache, trial) {
     if (!startupOnly && (cache === 'warm' || expansionOnly)) {
       for (const shot of shots) {
         samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
-        if (screenshots && ['facades', 'trees', 'municipal', 'expansion', 'parcels', 'parcel-map', 'expansion-landmarks'].includes(suite)) {
+        if (screenshots && ['facades', 'trees', 'municipal', 'expansion', 'parcels', 'parcel-map', 'expansion-landmarks', 'lunteren', 'lunteren-landmarks'].includes(suite)) {
           const label = shot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const { data } = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
           const variant = suite === 'trees'

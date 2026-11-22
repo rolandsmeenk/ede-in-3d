@@ -220,7 +220,8 @@ function populationContext() {
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
     nearEdges: [], nearSignals: [], fittedA: {}, activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
-    carSpawns: [], vanSpawns: [], refuseSpawns: [], bikeSpawns: [], footSpawns: [], roadTraffic: { isClosed: () => false, demand: () => 1, profile: 1 },
+    carSpawns: [], vanSpawns: [], refuseSpawns: [], bikeSpawns: [], mountainBikeSpawns: [], footSpawns: [],
+    nearMountainBikes: [], roadTraffic: { isClosed: () => false, demand: () => 1, profile: 1 },
     pickByArea: entries => entries[0]?.segment,
     place: (v, e, lane, s) => Object.assign(v, { edge: e, lane, s })
   };
@@ -346,7 +347,7 @@ test('long roads are available near their ends and spawn only in the local secti
   const edge = straightEdge(100, 2000);
   Object.assign(context, {
     queryLocal: indexLocalRoads([edge, straightEdge(2000)], []), nearX: Infinity, nearZ: Infinity, nextDemandCheck: 0,
-    carTarget: 0, bikeTarget: 0, pedTarget: 0, NUM_CARS: 112, NUM_BIKES: 96,
+    carTarget: 0, bikeTarget: 0, mountainBikeTarget: 0, pedTarget: 0, NUM_CARS: 112, NUM_BIKES: 96, MAX_MOUNTAIN_BIKES: 5,
     nearLength: (...args) => localSegmentLength(0, 0, 350, ...args)
   });
   trafficFunction('refreshNear', context)();

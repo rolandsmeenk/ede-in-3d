@@ -426,6 +426,7 @@ test('surveyed landmarks exclude only their surveyed buildings across both build
   const landmarks = await import('../js/ede-landmark-sites.js');
   const { ESTATE_SURVEY } = await import('../js/ede-estate-survey.js');
   const { NIZO_SURVEY, GELDERSE_VALLEI_SURVEY } = await import('../js/ede-research-survey.js');
+  const { INDUSTRIAL_SKYLINE_SHELLS } = await import('../js/ede-industrial-skyline-survey.js');
   const { KUIL_SHELLS, PALLAS_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS } = await import('../js/ede-next-survey.js');
   const { REEHORST, BUITENZORG, JOHANNUS } = await import('../js/ede-venue-survey.js');
   const { PUBLIC_LANDMARK_SURVEYS } = await import('../js/ede-public-survey.js');
@@ -444,7 +445,7 @@ test('surveyed landmarks exclude only their surveyed buildings across both build
   const osm = new Set(EDE_DATA.buildings.map(building => building.id));
   const newSites = [
     ['hoekelum', ['castle', 'coach'].map(key => ESTATE_SURVEY[key])],
-    ['nizo', NIZO_SURVEY], ['ziekenhuis', GELDERSE_VALLEI_SURVEY],
+    ['nizo', [...NIZO_SURVEY, ...INDUSTRIAL_SKYLINE_SHELLS['nizo-north']]], ['ziekenhuis', GELDERSE_VALLEI_SURVEY],
     ['openluchttheater', KUIL_SHELLS],
     ['reehorst', [REEHORST]], ['buitenzorg', [BUITENZORG]], ['johannus-orgelbouw', [JOHANNUS]],
     ['technova', TECHNOVA_SHELLS],

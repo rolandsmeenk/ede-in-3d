@@ -42,8 +42,8 @@ test('a scheduled RS34 closes Telefoonweg for road users until the last carriage
     ...timetable, dates: [date], calendars: [[0]], trips: [{ ...trip, calendar: 0 }]
   }, tracks);
   const crossings = build(traffic);
-  assert.equal(crossings.crossings.length, 14);
-  assert.equal(crossings.group.children.length, 34);
+  assert.equal(crossings.crossings.length, 29);
+  assert.equal(crossings.group.children.length, 64);
   const state = crossings.crossings.find(state => state.id === 'telefoonweg-level-crossing');
   const { controls: point } = grade.sites.find(site => site.id === state.id);
   const rail = tracks.paths.find(path => path.id === 'rs34-south');
@@ -115,4 +115,31 @@ test('Dwarsweg stays closed when a second train approaches from the opposite dir
   }
   for (let at = 8; at <= 15; at++) crossings.update(1, at);
   assert.equal(state.phase, 'open');
+});
+
+test('the Lunteren station foot crossing protects both surveyed platform tracks', async () => {
+  const { tracks, build } = await setup();
+  const { EDE_NORTH_RAIL } = await import('../js/ede-north-rail-data.js');
+  const site = EDE_NORTH_RAIL.sites.find(site => site.id === 'north-level-crossing-357');
+  const progress = new Map();
+  const crossings = build({ progress, upcoming: () => [], forecast: train => train.distance });
+  const state = crossings.crossings.find(state => state.id === site.id);
+  const control = site.controls;
+  const dx = Math.sin(control.heading), dz = Math.cos(control.heading);
+  const y = site.crossings[0].y;
+  const query = { x: control.x - dx * 14, z: control.z - dz * 14, y, dx, dz, wayId: control.roadWayIds[0] };
+  for (const [index, id] of ['rs34-south', 'rs34-north'].entries()) {
+    const path = tracks.paths.find(path => path.id === id);
+    const contact = site.crossings.find(point =>
+      Number.isFinite(path.project(point.x, point.z, point.railWayId).error));
+    const distance = path.project(contact.x, contact.z, contact.railWayId).distance;
+    progress.set(id, { plan: { path, trip: { operator: 'RRReis' } }, distance });
+    crossings.update(0.1, index * 20);
+    assert.equal(state.phase, 'closed');
+    assert.ok(Number.isFinite(crossings.stopDistance({ ...query, mode: 'foot' })));
+    assert.equal(crossings.stopDistance({ ...query, mode: 'motor' }), Infinity);
+    progress.clear();
+    crossings.update(5, index * 20 + 5);
+    assert.equal(state.phase, 'open');
+  }
 });

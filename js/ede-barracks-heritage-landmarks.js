@@ -3,6 +3,7 @@ import { CivicBatch } from './ede-civic-landmarks.js';
 import { createSurveyLandmark, surveyLabel, surveyPanel, surveyWindow } from './ede-survey-landmark.js';
 import { BARRACKS_HERITAGE_SURVEY } from './ede-barracks-heritage-survey.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
+import { createMemorialPlaque } from './ede-memorial-plaque.js';
 
 const { barracks, enka } = BARRACKS_HERITAGE_SURVEY;
 const cream = 0xd1bf97, barracksGlass = 0x324347, brownBrick = 0x745047;
@@ -147,6 +148,27 @@ function finishEnka({ group, labels, colliders }) {
   const scene = new CivicBatch();
   const yaw = -0.32;
   const ground = (x, z) => getTerrain() ? terrainHeightAt(x, z) : enka.ground;
+  // The open pier just beyond the first window on the surveyed long east wall.
+  const [east, north] = [[410.51, 2351.41], [418, 2329.28]];
+  const fraction = 1 / 7;
+  const plaqueX = east[0] + (north[0] - east[0]) * fraction + 0.07;
+  const plaqueZ = east[1] + (north[1] - east[1]) * fraction + 0.024;
+  const workers = [
+    '27-12   M. KROON   1944', '20-3   D.V. GESTEL   1945', '5-2   G.V. DREVEN   1943',
+    '17-9   M.V. MANEN   1944', '13-10   G.G. DERKSEN   1944', '22-12   G.J. VROEGOP   1944',
+    '27-12   H. ARENDSEN   1944', '10-2   L. VEENBRINK   1945', '23-2   J.J.W. VERWEIJ   1945',
+    '27-12   W. SNETSELAAR   1944', '16-9   W. ZITTERSTEIJN   1944', 'J. RIPPE',
+  ];
+  group.add(createMemorialPlaque({
+    name: 'ENKA-monument', x: plaqueX, y: ground(plaqueX, plaqueZ) + 0.87, z: plaqueZ, heading: 1.245,
+    width: 0.77, height: 1.38, base: '#d6d3c1', ink: '#363a36',
+    outline: [[0.44,0], [0.55,0], [0.81,0.35], [0.94,0.37], [1,0.96], [0.71,0.97],
+      [0.71,1], [0.21,1], [0.21,0.97], [0,0.96], [0.06,0.37], [0.19,0.35]],
+    lines: [
+      ...['AAN', 'HEN', 'DIE', 'VIELEN', '1940–1945'].map((line, i) => [line, 0.14 + i * 0.047, 0.035]),
+      ...workers.map((line, i) => [line, 0.43 + i * 0.046, 0.027]),
+    ],
+  }));
   const solarRows = [
     [411.05, 4.69, 2337.00, 3, 9], [407.50, 3.77, 2326.48, 1, 5],
     [401.97, 3.77, 2337.73, 1, 5], [399.95, 4.68, 2354.31, 3, 4], [410.92, 3.78, 2356.95, 3, 3],
@@ -219,7 +241,7 @@ export const BARRACKS_HERITAGE_FACTORIES = {
   bergansiuskazerne: (_footprints, site) => createSurveyLandmark(site, [barracks], decorateBarracks, finishBarracks),
   'enka-ehbo': (_footprints, site) => {
     const group = createSurveyLandmark(site, [enka], decorateEnka, finishEnka);
-    const sign = group.children.find(mesh => mesh.material.map?.isCanvasTexture);
+    const sign = group.children.find(mesh => mesh.name !== 'ENKA-monument' && mesh.material.map?.isCanvasTexture);
     if (sign) sign.material.alphaTest = 0.45;
     return group;
   },

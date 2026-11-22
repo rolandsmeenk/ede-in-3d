@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { LANDMARK_SITES, projectLonLat } from './city-config.js';
+import { LANDMARK_SITES, EDE_DATA, projectLonLat } from './city-config.js';
 import { createChicaSculpture, createChicoSculpture, createShermanMonument } from './street-props.js';
 import { terrainHeightAt } from './terrain.js';
 import { EDE_MODELED_LANDMARKS, modeledLandmarkFootprints } from './ede-landmark-sites.js';
@@ -19,7 +19,7 @@ import { createCheCampus } from './ede-campus-landmark.js';
 import { createNieuweKerk, createNoorderkerk, createSintAntoniuskerk, createBeatrixkerk, createAdditionalChurch } from './ede-church-landmarks.js';
 import { CHURCH_STYLES } from './ede-church-styles.js';
 import { createLukkien } from './ede-lukkien.js';
-import { createHoekelum, createGasfabriek } from './ede-estate-landmarks.js';
+import { createHoekelum, createTheehuisHoekelum, createGasfabriek } from './ede-estate-landmarks.js';
 import { createNizoLandmark, createGelderseValleiLandmark } from './ede-research-landmarks.js';
 import { createReehorst, createBuitenzorg, createJohannus } from './ede-venue-landmarks.js';
 import { createEderKuil, createPallasAthene, createTechnova, createTesqua } from './ede-next-landmarks.js';
@@ -36,6 +36,7 @@ import { createWorkGarden } from './ede-work-garden.js';
 import { buildEdeFuelStations } from './ede-fuel-stations.js';
 import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
 import { PUBLIC_LANDMARK_FACTORIES } from './ede-public-landmarks.js';
+import { createMarnixCollege } from './ede-marnix-landmark.js';
 import { SCHOOL_LANDMARK_FACTORIES } from './ede-school-landmarks.js';
 import { SPORT_LANDMARK_FACTORIES } from './ede-sport-landmarks.js';
 import { AMSTERDAMSEWEG_LANDMARK_FACTORIES } from './ede-amsterdamseweg-landmarks.js';
@@ -49,6 +50,22 @@ import { REEMST_LANDMARK_FACTORIES } from './ede-reemst-landmarks.js';
 import { WEST_EXPANSION_LANDMARK_FACTORIES } from './ede-west-expansion-landmarks.js';
 import { GINKEL_LANDMARK_FACTORIES } from './ede-ginkel-landmarks.js';
 import { ZONNEOORD_LANDMARK_FACTORIES } from './ede-zonneoord-landmarks.js';
+import { LUNTEREN_LANDMARK_FACTORIES } from './ede-lunteren-landmarks.js';
+import { createWesthoffhuis } from './ede-westhoffhuis.js';
+import { createLunterenFireStation } from './ede-lunteren-fire.js';
+import { createKulturhus } from './ede-kulturhus.js';
+import { LUNTEREN_SCHOOL_LANDMARK_FACTORIES } from './ede-lunteren-school-models.js';
+import { LUNTEREN_CHURCH_STYLES } from './ede-lunteren-church-models.js';
+import { EDE_NORTH_LOOKOUT_FACTORIES } from './ede-north-lookouts.js';
+import { EDE_LUNTEREN_ART_LANDMARK_FACTORIES } from './ede-lunteren-art.js';
+import { EDE_SKYLINE_LANDMARK_FACTORIES } from './ede-skyline-landmarks.js';
+import { EDE_CENTRE_SKYLINE_LANDMARK_FACTORIES } from './ede-centre-skyline-landmarks.js';
+import { EDE_VILLAGE_SKYLINE_LANDMARK_FACTORIES } from './ede-village-skyline-landmarks.js';
+import { EDE_MAST_FACTORIES } from './ede-mast-models.js';
+import { EDE_INDUSTRIAL_SKYLINE_LANDMARK_FACTORIES } from './ede-industrial-skyline-landmarks.js';
+import { EDE_PAASBERG_MEMORIAL_FACTORIES } from './ede-paasberg-memorials.js';
+import { EDE_TOWN_MEMORIAL_FACTORIES } from './ede-town-memorials.js';
+import { EDE_OUTER_MEMORIAL_FACTORIES } from './ede-outer-memorials.js';
 import { createPomphuis } from './ede-pomphuis.js';
 import { createVillaBrutusTerraces } from './ede-villa-brutus.js';
 import { createUluCamii } from './ede-ulu-camii.js';
@@ -99,7 +116,7 @@ export const LANDMARK_EXCLUSIONS = [
 export function buildLandmarks(scene, { historicUtilities } = {}) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
-  const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [];
+  const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [], forecourtLights = [];
   const landmarkLods = [], treeClearance = [];
   const replacements = { bag: new Set(), osm: new Set(), parcelSources: new Set() };
   scene.add(group);
@@ -160,6 +177,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     'sint-antoniuskerk': createSintAntoniuskerk,
     beatrixkerk: createBeatrixkerk,
     hoekelum: createHoekelum,
+    'theehuis-hoekelum': createTheehuisHoekelum,
     nizo: createNizoLandmark,
     ziekenhuis: createGelderseValleiLandmark,
     openluchttheater: createEderKuil,
@@ -200,6 +218,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     'akulaan-h2-h4': createAkulaanApartments,
     parkveste: createParkveste,
     ...PUBLIC_LANDMARK_FACTORIES,
+    'marnix-college': createMarnixCollege,
     ...SCHOOL_LANDMARK_FACTORIES,
     ...SPORT_LANDMARK_FACTORIES,
     ...AMSTERDAMSEWEG_LANDMARK_FACTORIES,
@@ -214,6 +233,21 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     ...WEST_EXPANSION_LANDMARK_FACTORIES,
     ...GINKEL_LANDMARK_FACTORIES,
     ...ZONNEOORD_LANDMARK_FACTORIES,
+    ...LUNTEREN_LANDMARK_FACTORIES,
+    westhoffhuis: createWesthoffhuis,
+    'brandweerkazerne-lunteren': createLunterenFireStation,
+    'kulturhus-wekerom': createKulturhus,
+    ...LUNTEREN_SCHOOL_LANDMARK_FACTORIES,
+    ...EDE_NORTH_LOOKOUT_FACTORIES,
+    ...EDE_LUNTEREN_ART_LANDMARK_FACTORIES,
+    ...EDE_SKYLINE_LANDMARK_FACTORIES,
+    ...EDE_CENTRE_SKYLINE_LANDMARK_FACTORIES,
+    ...EDE_VILLAGE_SKYLINE_LANDMARK_FACTORIES,
+    ...EDE_INDUSTRIAL_SKYLINE_LANDMARK_FACTORIES,
+    ...EDE_MAST_FACTORIES,
+    ...EDE_PAASBERG_MEMORIAL_FACTORIES,
+    ...EDE_TOWN_MEMORIAL_FACTORIES,
+    ...EDE_OUTER_MEMORIAL_FACTORIES,
   };
   function registerDetail(detail) {
     const range = detail.userData.nearDetail;
@@ -229,7 +263,8 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   }
   for (const site of EDE_MODELED_LANDMARKS) {
     const footprints = modeledLandmarkFootprints(site);
-    const model = site.churchSurvey ? createAdditionalChurch(site, site.churchSurvey, CHURCH_STYLES[site.id])
+    const model = site.churchSurvey
+      ? createAdditionalChurch(site, site.churchSurvey, LUNTEREN_CHURCH_STYLES[site.id] ?? CHURCH_STYLES[site.id])
       : models[site.id](footprints, site);
     model.name = site.name;
     platforms.push(...(model.userData.platforms ?? []));
@@ -263,10 +298,12 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   const flags = createAkoesticumFlags();
   group.add(flags);
   flags.traverse(registerDetail);
-  for (const model of buildEdeFuelStations()) {
+  const fuelSites = EDE_FUEL_SITES.filter(site => !site.north || EDE_DATA.meta.north);
+  for (const model of buildEdeFuelStations(fuelSites, { live: true })) {
     group.add(model);
     colliders.push(...model.userData.colliders);
     weatherCovers.push(...model.userData.weatherCovers);
+    forecourtLights.push(...model.userData.forecourtLights);
     model.traverse(detail => {
       if (detail.userData.nearDetail) nearDetails.push({ detail, bounds: new THREE.Box3().setFromObject(detail) });
     });
@@ -277,6 +314,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   }
   const station = createEdeStationLandmark();
   group.add(station);
+  station.traverse(registerDetail);
   colliders.push(...station.userData.colliders);
   const last = new THREE.Vector3(Infinity, Infinity, Infinity);
   function update(position) {
@@ -296,5 +334,5 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   function updateWind(dt, reading) {
     for (const update of windUpdates) update(dt, reading);
   }
-  return { group, colliders, platforms, helipads, weatherCovers, treeClearance, replacements, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
+  return { group, colliders, platforms, helipads, weatherCovers, forecourtLights, treeClearance, replacements, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
 }

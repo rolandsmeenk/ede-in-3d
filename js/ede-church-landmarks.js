@@ -833,6 +833,7 @@ function frontage([ax, az], [bx, bz]) {
 }
 
 function point(wall, u, nap, depth = 0) {
+  if (wall.roofClock) depth -= (nap - wall.roofClock[0]) * wall.roofClock[1];
   return [wall.x + wall.ux * u + wall.nx * depth, nap - SCENE_NAP_ORIGIN,
     wall.z + wall.uz * u + wall.nz * depth];
 }
@@ -872,14 +873,14 @@ function bar(batch, wall, a, b, width, color, depth) {
   panel(batch, wall, [[x + nx, y + ny], [u + nx, v + ny], [u - nx, v - ny], [x - nx, y - ny]], color, depth);
 }
 
-function windowBand(batch, wall, u, width, lo, hi, { columns = 2, rows = 3, tint = GLASS, trim = STEEL, border = FRAME } = {}) {
-  rect(batch, wall, u, width + 0.14, lo - 0.06, hi + 0.065, border, 0.04);
+function windowBand(batch, wall, u, width, lo, hi, { columns = 2, rows = 3, tint = GLASS, trim = STEEL, border = FRAME, depth = 0.04 } = {}) {
+  rect(batch, wall, u, width + 0.14, lo - 0.06, hi + 0.065, border, depth);
   const cell = width / columns, rise = (hi - lo) / rows;
   for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) {
     rect(batch, wall, u - width / 2 + (i + 0.5) * cell, cell - 0.036,
-      lo + j * rise + 0.018, lo + (j + 1) * rise - 0.018, tint[(i + j * 2) % tint.length], 0.065, 1);
+      lo + j * rise + 0.018, lo + (j + 1) * rise - 0.018, tint[(i + j * 2) % tint.length], depth + 0.025, 1);
   }
-  rect(batch, wall, u, width + 0.24, lo - 0.115, lo - 0.035, trim, 0.12);
+  rect(batch, wall, u, width + 0.24, lo - 0.115, lo - 0.035, trim, depth + 0.08);
 }
 
 function door(batch, wall, u, width, lo, hi, { stone = STONE, wood = WOOD, rounded = true } = {}) {
@@ -951,7 +952,8 @@ function church(name, survey, style, details) {
   const batch = new CivicBatch(), masonry = [];
   const ridgePoint = ([x, nap, z]) => style.copperRidge && nap > 39 && Math.hypot(x + 573.0, z - 1045.9) < 3.4;
   const points = survey.points.map(([x, nap, z]) => {
-    const y = (ridgePoint([x, nap, z]) ? 39.18 : nap) - SCENE_NAP_ORIGIN;
+    const height = ridgePoint([x, nap, z]) ? 39.18 : nap;
+    const y = Math.min(height, style.shellTop ?? Infinity) - SCENE_NAP_ORIGIN;
     return [x, Math.abs(nap - survey.base) <= 0.035 ? Math.min(y, terrainHeightAt(x, z) - 0.06) : y, z];
   });
   const trim = [];
@@ -961,7 +963,7 @@ function church(name, survey, style, details) {
     const ridge = rings[0].some(i => ridgePoint(survey.points[i]));
     const start = batch.vertices.length / 3;
     batch.polygon(faces, ridge ? 0x416861 : roof ? (style.roofTints?.[i] ?? style.roof) : style.wall);
-    if (roof || ridge) continue;
+    if (roof || ridge || style.masonry === false) continue;
     const normal = polygonNormal(face);
     for (let i = start; i < batch.vertices.length / 3; i++) masonry[i] = 1;
     if (style.friezes && Math.abs(normal.y) < 0.2) trim.push([face, normal]);
@@ -1203,7 +1205,7 @@ function surveyWalls(survey, minWidth = 1.9) {
       return [];
     }));
     const cap = Math.min(shoulder(-width * 0.45), shoulder(width * 0.45));
-    return [{ ...wall, faceIndex, bottom, top, cap, topAt: shoulder }];
+    return [{ ...wall, faceIndex, outline, bottom, top, cap, topAt: shoulder }];
   });
 }
 
@@ -1398,8 +1400,24 @@ function createEmmausChurch(site, survey, style) {
   return group;
 }
 
+const churchExteriorTools = {
+  arch, bar, churchClock, cross, door, panel, point, rect, spindle, steps, windowBand,
+};
+
 export function createAdditionalChurch(site, survey, style) {
   if (site.id === 'emmaus') return createEmmausChurch(site, survey, style);
+  if (style.facade) {
+    const walls = new Map(surveyWalls(survey, 0.95).map(wall => [wall.faceIndex, wall]));
+    const group = church(site.name, survey, style, batch =>
+      style.silhouette?.(batch, walls, churchExteriorTools));
+    group.userData.colliders[0].maxY = group.children[0].geometry.boundingBox.max.y;
+    const details = new CivicBatch();
+    style.facade(details, walls, churchExteriorTools);
+    const exterior = makeGroup(`${site.name} exterior detail`, details, []);
+    exterior.userData.nearDetail = 175;
+    group.add(exterior);
+    return group;
+  }
   const group = church(site.name, survey, style, batch => {
     const walls = surveyWalls(survey);
     const approach = site.approach ?? { x: site.x, z: site.z - 20 };

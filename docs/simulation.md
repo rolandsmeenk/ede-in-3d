@@ -20,6 +20,16 @@ uv run --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-window-
 
 The live server caches the national NDW DATEX II v3 and OVapi GTFS-Realtime feeds and serves only matches within the Ede map. NDW readings change demand and cruising speed on their matched direction. Posted or applicable temporary limits cap speed. Valid closures block new entry. The camera-local simulation uses Amsterdam time-of-day demand and the timetable when live data expires. See the [traffic data notes](../tools/data/ede-traffic-sources.md) for coverage, fallbacks, and the frame-time measurements.
 
+## Fuel price estimates
+
+Roadside signs show simulated fuel prices rounded to the nearest euro cent. The game combines the latest published Dutch average with regional adjustments. [Fuel price data sources and calculations](../tools/data/ede-fuel-prices.sources.md)
+
+## Frankeneng water levels
+
+The upstream reach and a short stretch of the downstream ditch at the Frankeneng weir follow gauges `WS000610` and `WS000611`. The browser checks the waterschap every five minutes while the game is visible, starting after the first playable frame. The feed dates the layer as a whole. A failed request, a layer publication older than 45 minutes, or an unusable value restores the affected reach to its bundled level of 6.65 m NAP upstream or 6.25 m NAP downstream. [Waterschap surface-water map](https://storymaps.arcgis.com/stories/bff91946a94c4b7bb22a340c0dc262f0) · [Gauge feature service](https://services1.arcgis.com/ug8NBKcLHVNmdmdt/arcgis/rest/services/1ee052d2-43ba-4c3c-8e80-40bcea8c6405/FeatureServer/0)
+
+The upstream surface uses the existing shoreline. The downstream outline takes the part of active BGT waterdeel `15747567-3938-5819-9832-219e997593e6` within 25 m of its gauge, simplified to 20 cm. The two surfaces stay inside those outlines and use fixed bank faces fitted to the local AHN terrain. The covered link at the weir stays below ground. [BGT waterdeel](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/waterdeel/items/15747567-3938-5819-9832-219e997593e6) · [PDOK weir KST-1106](https://api.pdok.nl/hwh/waterschappen-kunstwerken-imwa/ogc/v2/collections/stuw/items/64bf15fa-ee25-59ee-9c2d-15d510ae0261)
+
 ## Live Weather
 
 Turn on **Live Weather** in the toolbar to use current model estimates for Oude Kerk. The weather card shows the source and model update time in Europe/Amsterdam. You can use Live Weather with any preset or Live Time. Turning it off restores the selected lighting mode’s weather settings.
@@ -55,6 +65,12 @@ The match report lists gaps by variant, including coordinates and affected board
 
 The November 2026 snapshot contains 81 variants, 64 of which enter the playable map. Of the 125 marked GTFS boarding locations, 121 have a reliable driving-lane match. See the [junction and route audit](../tools/data/ede-junction-route-audit.md) for checks at the station forecourt, Oosttunnel and Stadspoort.
 
+## Mountain bikers
+
+Helmeted mountain bikers follow the signed Ede, Kinderroute Ede, Lunteren and Otterlo loops. They use the corresponding local forest paths and cycle facilities, ride in the signed direction, and reuse the cyclist crossing checks and camera-local pool. The number of riders depends on nearby trail length and time of day, with a cap of five mountain bikers within the existing 96-bike pool. Trail gaps and shared motor roads without a cycle facility break the simulated route.
+
+The offline data stores directed OpenStreetMap way IDs. The rebuild checks those ways against the bundled map and bicycle access. Run `node tools/build-ede-mtb-routes.mjs` to refresh them. [Trail operator](https://mtbzuidveluwe.nl/routes/) · [OpenStreetMap attribution](https://www.openstreetmap.org/copyright)
+
 ## Parking simulation
 
 Parking uses 18,193 fitted spaces in 1,562 areas, in the same horizontal and vertical datum as the street scene. The bake merges mapped bays and estimates row capacity from BGT surfaces, WKD roadside coverage, and OpenStreetMap data. The [parking inventory notes](../tools/data/ede-parking-sources.md) document sources, fit counts, restrictions, clearances, and the rebuild command.
@@ -77,7 +93,9 @@ The simulation targets an estimated 8% fatbike share for secondary-school and vo
 
 ## Passenger trains
 
-NS services follow the Utrecht–Arnhem main line through Ede-Wageningen. RRReis RS34 follows the Valleilijn through Ede Centrum and reverses at Ede-Wageningen. The trains use the same mapped rails, turnouts and elevation profiles as the track renderer. Berth centers are estimated from the mapped platforms. The simulator keeps up to eight nearby trains in a reusable pool and shows the closest train’s number, data status and track when known.
+NS services follow the Utrecht–Arnhem main line through Ede-Wageningen. RRReis RS34 follows the Valleilijn through Lunteren and Ede Centrum and reverses at Ede-Wageningen. The trains use the same mapped rails, turnouts and elevation profiles as the track renderer. Berth centers are estimated from the mapped platforms. The simulator keeps up to eight nearby trains in a reusable pool and shows the closest train’s number, data status and track when known.
+
+At Lunteren, timetable trains use platform 1 toward Ede-Wageningen and platform 2 toward Amersfoort. The passing loop holds opposing trains before they enter a shared single-track section. The north extension adds 14 ProRail public level crossings and the separately mapped Boslaan footway crossing. Platform and access geometry uses the ProRail Transfer survey. [Northern rail sources and height fitting](../tools/data/ede-north-rail.sources.md)
 
 The server publishes local services at `/api/ede-trains`. NS position reports come from NDOV’s key-free stream. To enable that stream, install `pyzmq` in the server’s Python environment or start with `uv run --with pyzmq python tools/serve-ede.py`. The default GPS prediction window is 32 seconds and can be changed with `data-train-prediction-seconds` in `index.html`. The browser advances each train along the matched track and brakes for the next confirmed stop. After the window, a matched service continues on a timetable estimate aligned with the last predicted position. An unmatched service retires when its prediction expires. [NDOV real-time feeds](https://govi.nu/realtime.html)
 

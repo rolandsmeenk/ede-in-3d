@@ -265,7 +265,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   group.name = 'EdeImportedDetail';
   const batches = new Map(), stopIds = new Set(), gantryLampMounts = new Map(), colliders = [];
   const gantries = [], signSupports = [], portalPanels = new Map(), directionalPanels = [];
-  const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, parcel: 0, utility: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
+  const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, parcel: 0, utility: 0, osm: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
   const replacements = { bag: new Set(), osm: new Set() };
   group.userData.stats = stats;
   group.userData.replacements = replacements;

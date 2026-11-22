@@ -7,6 +7,7 @@ export const EDE_BIKE_STYLES = [
   { id: 'ebike', label: 'City e-bike', color: 0x3b6691, radius: 0.355, tireWidth: 0.047 },
   { id: 'fatbike', label: 'Fatbike', color: 0x955939, radius: 0.318, tireWidth: 0.104 }
 ];
+export const EDE_MOUNTAIN_BIKE_STYLE = { id: 'mountainbike', color: 0x597650, radius: 0.37, tireWidth: 0.061 };
 
 // Keep the rider's contact points and wheelbase aligned for the player and instanced traffic.
 export const EDE_BIKE_FIT = {
@@ -22,6 +23,7 @@ export function buildEdeBike(style, detailed = false) {
   const { axle, seat, head, grip, bracket } = EDE_BIKE_FIT;
   const { id, color, radius, tireWidth } = style;
   const fat = id === 'fatbike';
+  const mountain = id === 'mountainbike';
   const frontHub = [0, radius, axle], rearHub = [0, radius, -axle];
   const body = [], fork = [], wheel = [];
   const steps = detailed ? 36 : 20;
@@ -54,7 +56,7 @@ export function buildEdeBike(style, detailed = false) {
     add(parts, geometry.rotateX(Math.PI / 2).scale(width / (2 * height), 1, 1).rotateX(angle).translate(...center), rgb);
   };
 
-  const section = fat ? 0.044 : 0.022;
+  const section = fat ? 0.044 : mountain ? 0.029 : 0.022;
   add(wheel, new THREE.TorusGeometry(radius - section, section, round, steps)
     .rotateY(Math.PI / 2).scale(tireWidth / (2 * section), 1, 1), rubber);
   const rimRadius = radius - section * 1.65;
@@ -74,7 +76,8 @@ export function buildEdeBike(style, detailed = false) {
     tube(body, bracket, rearDropout, tubeRadius * 0.74, color);
     tube(body, saddlePost, rearDropout, tubeRadius * 0.68, color);
     curve(fork, [[side * 0.022, head[1], head[2]], [side * (tireWidth / 2 + 0.019), 0.65, 0.47],
-      [side * (tireWidth / 2 + 0.019), radius, axle]], fat ? 0.022 : 0.014, fat ? trim : color);
+      [side * (tireWidth / 2 + 0.019), radius, axle]], fat || mountain ? 0.022 : 0.014, fat || mountain ? trim : color);
+    if (mountain) tube(fork, [side * 0.046, 0.60, 0.50], [side * 0.046, 0.75, 0.466], 0.015, alloy);
   }
 
   if (fat) {
@@ -83,6 +86,12 @@ export function buildEdeBike(style, detailed = false) {
     tube(body, [0, 0.87, -0.49], rearHub, 0.021, color);
     box(body, [0, 0.60, 0.15], [0.117, 0.133, 0.47], trim, -0.58);
     profile(body, [0, 0.94, -0.21], 0.68, 0.175, 0.040, rubber);
+  } else if (mountain) {
+    tube(body, saddlePost, head, 0.025, color);
+    tube(body, bracket, head, 0.032, color);
+    tube(body, saddlePost, [0, 0.95, seat[2]], 0.014, alloy);
+    profile(body, [0, 0.949, seat[2]], 0.25, 0.138, 0.028, rubber);
+    profile(body, [0.062, 0.37, -0.34], 0.51, 0.082, 0.053, trim);
   } else {
     const lowerRail = [[0, 0.75, -0.24], [0, 0.50, -0.06], [0, 0.54, 0.18], head];
     curve(body, lowerRail, id === 'ebike' ? 0.034 : 0.022, color);
@@ -122,8 +131,10 @@ export function buildEdeBike(style, detailed = false) {
       .rotateZ(start).rotateY(-Math.PI / 2).scale((tireWidth + 0.014) / (width * 2), 1, 1);
     add(parts, geometry.translate(0, radius, z), fat ? trim : color);
   };
-  fender(body, -axle, 0.11, Math.PI + 0.36);
-  fender(fork, axle, 0.92, Math.PI - 0.64);
+  if (!mountain) {
+    fender(body, -axle, 0.11, Math.PI + 0.36);
+    fender(fork, axle, 0.92, Math.PI - 0.64);
+  }
   tube(fork, head, [0, 1.01, head[2]], 0.017, alloy);
   curve(fork, [[-0.25, grip[1], grip[2]], [-0.14, 1.011, 0.45], [0, 1.008, 0.47],
     [0.14, 1.011, 0.45], [0.25, grip[1], grip[2]]], fat ? 0.018 : 0.012, alloy);
@@ -134,6 +145,12 @@ export function buildEdeBike(style, detailed = false) {
   const lampRadius = fat ? 0.050 : 0.024;
   const bridgeWidth = tireWidth / 2 + 0.018;
   tube(fork, [-bridgeWidth, 0.68, 0.466], [bridgeWidth, 0.68, 0.466], 0.011, trim);
+  if (mountain) {
+    add(body, new THREE.SphereGeometry(0.128, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.54)
+      .scale(1, 0.86, 1.22).translate(0, 1.613, 0.086), 0xe0ddc7);
+    box(body, [0, 1.633, 0.218], [0.155, 0.023, 0.09], trim, 0.12);
+    return { body: mergeGeometries(body), fork: mergeGeometries(fork), wheel: mergeGeometries(wheel), lamp };
+  }
   tube(fork, [0, 0.68, 0.466], [0, lamp[1], lamp[2] - 0.019], 0.010, trim);
   add(fork, new THREE.CylinderGeometry(lampRadius, lampRadius, 0.073, round)
     .rotateX(Math.PI / 2).translate(...lamp), trim);

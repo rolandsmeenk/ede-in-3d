@@ -2,12 +2,25 @@ import { BICYCLE, FOOT, MOTOR } from './road-access.js';
 import { EDE_SHOPS } from './ede-shops.js';
 import { edeBikeFacilities } from './ede-road-lanes.js';
 import { EDE_TURN_RESTRICTIONS } from './ede-turn-restrictions.js';
+import { EDE_MTB_ROUTES } from './ede-mtb-routes.js';
 
 const CELL = 64;
 const CONNECTOR_LIMIT = 24;
 
 const cellKey = (x, z) => x * 100000 + z;
 const endPoint = (track, end) => [track.ax + track.ux * track.len * end, track.az + track.uz * track.len * end];
+export const EDE_MTB_WAYS = new Map();
+const mountainBikeTurns = new Set();
+for (const route of EDE_MTB_ROUTES) {
+  for (let i = 0; i < route.length; i++) {
+    const way = route[i];
+    if (!way) continue;
+    const id = `w${Math.abs(way)}`;
+    EDE_MTB_WAYS.set(id, (EDE_MTB_WAYS.get(id) || 0) | (way > 0 ? 1 : 2));
+    const next = route[(i + 1) % route.length];
+    if (next) mountainBikeTurns.add(`${way}/${next}`);
+  }
+}
 
 function trackBetween([ax, az], [bx, bz], properties) {
   const len = Math.hypot(bx - ax, bz - az);
@@ -157,7 +170,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
     a.links[ea].push([...extra, { track: b, dir: eb ? -1 : 1 }]);
   }
 
-  function build(mode) {
+  function build(mode, mountain = false) {
     const modeName = mode === FOOT ? 'foot' : 'bike';
     const tracks = [], ports = new Map(), mappedPorts = [];
     const addPort = (node, track, end) => {
@@ -210,15 +223,26 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
 
     for (const [a, b, , , , , inner, roadIndex, footOffsets] of links) {
       const road = data.roads[roadIndex], [forward, reverse] = road.modes;
+      const signed = mountain && EDE_MTB_WAYS.get(road.id);
+      if (mountain && !signed) continue;
       if ((road.bridge || road.tunnel && road.tunnelType !== 'building_passage') && !profiles.has(road.id)) continue;
       const footProfile = mode === FOOT && separateFootways.get(road.id);
       const width = road.bgtWidth ?? road.bgt?.width ?? road.width;
-      const surfaces = mode === FOOT && (footProfile || (forward | reverse) & FOOT)
+      let surfaces = mode === FOOT && (footProfile || (forward | reverse) & FOOT)
         ? (footProfile ? [0] : footOffsets).map(offset => ({
           offset, width: footProfile?.width ?? (offset ? 2 : width), kind: offset ? 'sidewalk' : road.kind,
           allowed: [!!footProfile || !!(forward & FOOT), !!footProfile || !!(reverse & FOOT)]
         }))
         : mode === BICYCLE ? edeBikeFacilities(road).filter(lane => lane.kind !== 'advisory') : [];
+      if (mountain) {
+        const direction = [Boolean(signed & 1), Boolean(signed & 2)];
+        if (/^(path|track)$/.test(road.kind) || !((forward | reverse) & MOTOR)) {
+          surfaces = [{ offset: 0, width, allowed: direction, kind: 'trail' }];
+        } else {
+          surfaces = surfaces.map(lane => ({ ...lane, allowed: direction.map((yes, i) => yes && lane.allowed[i]) }))
+            .filter(lane => lane.allowed.some(Boolean));
+        }
+      }
       const points = [nodes[a * 2], nodes[a * 2 + 1], ...inner, nodes[b * 2], nodes[b * 2 + 1]];
       for (const { offset, width, allowed, kind } of surfaces) {
         const shape = [];
@@ -229,7 +253,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
           const len = Math.hypot(dx, dz) || 1;
           shape.push(footProfile ? footPoint(x, z, footProfile.points) : [x - dz * offset / len, z + dx * offset / len]);
         }
-        const properties = { wayId: road.id, layer: road.layer, structure: road.bridge || road.tunnel,
+        const properties = { wayId: road.id, layer: road.layer, structure: road.bridge || road.tunnel, mountain,
           sidewalk: kind === 'sidewalk', exclusive: kind !== 'lane', width, allowed, kind, offset,
           populationWidth: Math.min(width, 5),
           socialPlace: mode === FOOT && (kind === 'pedestrian' || kind === 'sidewalk') ? road.id + '/' + offset : null };
@@ -237,6 +261,13 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
         for (let i = 1; i < shape.length; i++) {
           const t = trackBetween(shape[i - 1], shape[i], properties);
           if (!t) continue;
+          if (mountain && data.meta?.bounds && [shape[i - 1], shape[i]].some(([x, z]) => {
+            const [west, north, east, south] = data.meta.bounds;
+            return x < west || x > east || z < north || z > south;
+          })) {
+            previous = null;
+            continue;
+          }
           const hits = motorCrossings(t);
           const startControl = i === 1 && controls[a];
           const endControl = i === shape.length - 1 && controls[b];
@@ -265,6 +296,11 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
     function connectPorts(a, ea, b, eb, node) {
       const shared = node !== undefined;
       if (a === b) return;
+      if (mountain && a.wayId !== b.wayId) {
+        const from = (ea ? 1 : -1) * Number(a.wayId.slice(1));
+        const to = (eb ? -1 : 1) * Number(b.wayId.slice(1));
+        if (!mountainBikeTurns.has(`${from}/${to}`)) return;
+      }
       const aProfiles = profiles.get(a.wayId)?.filter(profile => profile.modes.includes(modeName));
       const bProfiles = profiles.get(b.wayId)?.filter(profile => profile.modes.includes(modeName));
       if (a.layer !== b.layer) {
@@ -292,7 +328,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
       if (gap < 0.05) return connect(a, ea, b, eb);
       const t = trackBetween([x, z], [bx, bz], { wayId: a.wayId, layer: a.layer, sidewalk: a.sidewalk && b.sidewalk,
         exclusive: a.exclusive && b.exclusive, width: Math.min(a.width, b.width), allowed: [true, true], noSpawn: true,
-        kind: 'connector', populationWidth: 0 });
+        kind: 'connector', populationWidth: 0, mountain });
       if (motorCrossings(t).length) return;
       if (mode === FOOT && !clear(t)) return;
       connect(a, ea, b, eb, [{ track: t, dir: 1 }]);
@@ -329,7 +365,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
     }
 
     // A short shared road is useful only when it joins two dedicated facilities at mapped endpoints.
-    if (mode === BICYCLE) for (const [from, to, , , , , inner, roadIndex] of links) {
+    if (mode === BICYCLE && !mountain) for (const [from, to, , , , , inner, roadIndex] of links) {
       const road = data.roads[roadIndex];
       if (road.cycle || road.bridge || road.tunnel || !ports.has(from) || !ports.has(to) ||
         !/^(residential|living_street|service|unclassified|tertiary_link|secondary_link|primary_link)$/.test(road.kind)) continue;
@@ -466,5 +502,5 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
       return Math.hypot(x - track.ax - track.ux * s, z - track.az - track.uz * s) < track.width / 2 + clearance;
     });
   }
-  return { bikes: build(BICYCLE), foot, destinations, motorAt };
+  return { bikes: build(BICYCLE), mountainBikes: build(BICYCLE, true), foot, destinations, motorAt };
 }

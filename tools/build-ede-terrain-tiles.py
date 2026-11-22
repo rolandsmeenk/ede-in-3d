@@ -20,7 +20,7 @@ from ede_raster import require_rd_raster
 from ede_scene import SCENE_NAP_ORIGIN
 
 ROOT = Path(__file__).resolve().parents[1]
-COVERAGE = (5.565, 52.012, 5.805, 52.080)
+COVERAGE = ROOT / 'tools/data/ede-outer-coverage.json'
 WCS = 'https://service.pdok.nl/rws/ahn/wcs/v1_0'
 WMS = 'https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0'
 SOURCE_SIZE = 2000
@@ -174,7 +174,7 @@ def scene_grid(frame, bounds, sources, source_bounds, legacy):
     return np.rint(heights).astype('<i2'), colors
 
 
-def write_tiles(directory, bounds, heights, colors, legacy_bounds):
+def write_tiles(directory, bounds, heights, colors, legacy_bounds, retained=None):
     west, south, east, north = bounds
     tiles, roots = {}, []
     dtype = np.dtype([('height', '<i2'), ('rgb', 'u1', (3,))])
@@ -219,10 +219,19 @@ def write_tiles(directory, bounds, heights, colors, legacy_bounds):
     for x in range(west // ROOT_SIZE * ROOT_SIZE, east, ROOT_SIZE):
         for z in range(south // ROOT_SIZE * ROOT_SIZE, north, ROOT_SIZE):
             emit(x, z, ROOT_SIZE, root=True)
+    overview_pixels = colors[::GROUND_STEP // STEP, ::GROUND_STEP // STEP]
+    if retained is not None:
+        previous, prior_heights, prior_colors = retained
+        tiles = {**previous['tiles'], **tiles}
+        roots = [*previous['roots'], *roots]
+        north = previous['bounds'][3]
+        bounds = [west, south, east, north]
+        heights = np.concatenate((heights[:-1], prior_heights))
+        overview_pixels = np.concatenate((overview_pixels[:-1], prior_colors))
     rows, columns = heights.shape
     (directory / 'collision.bin').write_bytes(
         AHN_HEADER.pack(b'AHN1', columns, rows, west, south, STEP, SCENE_NAP_ORIGIN) + heights.tobytes())
-    overview = Image.fromarray(colors[::GROUND_STEP // STEP, ::GROUND_STEP // STEP])
+    overview = Image.fromarray(overview_pixels)
     overview.save(directory / 'ground.jpg', quality=88, optimize=True, subsampling=0)
     ground = dict(minX=west, minZ=south, step=GROUND_STEP, width=overview.width, height=overview.height)
     manifest = dict(version=1, napOrigin=SCENE_NAP_ORIGIN, bounds=bounds, roots=roots, tiles=tiles, ground=ground)
@@ -230,27 +239,72 @@ def write_tiles(directory, bounds, heights, colors, legacy_bounds):
     print(f'Wrote {len(tiles)} terrain tiles in {len(roots)} roots', flush=True)
 
 
+def retained_terrain(directory, bounds):
+    previous = json.loads((directory / 'manifest.json').read_text())
+    west, edge, east, south = previous['bounds']
+    if previous['version'] != 1 or (west, east, south) != (bounds[0], bounds[2], bounds[3]) or bounds[1] >= edge:
+        raise ValueError('Expected a strictly northward extension of the existing terrain')
+    raw = (directory / 'collision.bin').read_bytes()
+    magic, columns, rows, x, z, step, nap = AHN_HEADER.unpack_from(raw)
+    if (magic, x, z, step) != (b'AHN1', west, edge, STEP) or abs(nap - SCENE_NAP_ORIGIN) > 1e-5:
+        raise ValueError('Retained collision grid has a different frame')
+    if (columns, rows) != ((east - west) // STEP + 1, (south - edge) // STEP + 1):
+        raise ValueError('Retained collision grid does not match its manifest')
+    heights = np.frombuffer(raw, dtype='<i2', offset=AHN_HEADER.size).reshape(rows, columns)
+    with Image.open(directory / 'ground.jpg') as image:
+        overview = np.array(image.convert('RGB'))
+    if overview.shape != ((south - edge) // GROUND_STEP + 1, (east - west) // GROUND_STEP + 1, 3):
+        raise ValueError('Retained colour grid does not match its manifest')
+    return previous, heights, overview
+
+
+def join_retained_edge(directory, retained, heights, colors):
+    prior, prior_heights, _ = retained
+    west, edge, east, _ = prior['bounds']
+    edge_colors = np.empty((heights.shape[1], 3), dtype=np.uint8)
+    for x in range(west, east, LEAF):
+        start = (x - west) // STEP
+        raw = np.frombuffer((directory / f'{LEAF}_{x}_{edge}.bin').read_bytes(), dtype=np.uint8)
+        edge_colors[start:start + CELLS + 1] = raw.reshape(CELLS + 1, CELLS + 1, 5)[0, :, 2:]
+    elevation_difference = prior_heights[0].astype(np.float32) - heights[-1]
+    color_difference = edge_colors.astype(np.float32) - colors[-1]
+    span = min(TRANSITION // STEP + 1, heights.shape[0])
+    t = np.linspace(0, 1, TRANSITION // STEP + 1)[-span:]
+    weight = (t * t * (3 - 2 * t))[:, np.newaxis]
+    heights[-span:] = np.rint(heights[-span:] + weight * elevation_difference)
+    colors[-span:] = np.rint(np.clip(colors[-span:] + weight[:, :, np.newaxis] * color_difference, 0, 255))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('cache', type=Path, help='Local directory for downloaded source tiles')
     parser.add_argument('--offline', action='store_true', help='Require cached source files')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-terrain-tiles')
+    parser.add_argument('--retain-existing', action='store_true',
+                        help='Append a northward strip to the existing output and reuse its tile payloads')
     args = parser.parse_args()
     args.cache.mkdir(parents=True, exist_ok=True)
     args.output.mkdir(parents=True, exist_ok=True)
     frame = Frame(load_scene()['meta']['lonLatAffine'])
     legacy = legacy_grid()
-    lon0, lat0, lon1, lat1 = COVERAGE
+    lat0, lon0, lat1, lon1 = json.loads(COVERAGE.read_text())['geographicBounds']
     scene = [frame.lon_lat_to_scene(lon, lat) for lon in (lon0, lon1) for lat in (lat0, lat1)]
     x0, z0, x1, z1 = legacy[0]
     bounds = aligned_bounds([*scene, (x0, z0), (x1, z1)], LEAF)
+    # Complete the northern root so the edge does not create a row of extra overview batches.
+    bounds = (bounds[0], bounds[1] // ROOT_SIZE * ROOT_SIZE, *bounds[2:])
+    retained = retained_terrain(args.output, bounds) if args.retain_existing else None
+    if retained is not None:
+        bounds = (*bounds[:3], retained[0]['bounds'][1])
     a, b, c, d = bounds
     edge = [(x, z) for x in (a, c) for z in (b, d)]
     rd_bounds = aligned_bounds([frame.scene_to_rd(x, z) for x, z in edge], SOURCE_SIZE, STEP)
     print(f'Scene coverage {bounds}, PDOK cache bounds {rd_bounds}', flush=True)
     sources = join_source_tiles(args.cache, rd_bounds, args.offline)
     heights, colors = scene_grid(frame, bounds, sources, rd_bounds, legacy)
-    write_tiles(args.output, bounds, heights, colors, legacy[0])
+    if retained is not None:
+        join_retained_edge(args.output, retained, heights, colors)
+    write_tiles(args.output, bounds, heights, colors, legacy[0], retained)
 
 
 if __name__ == '__main__':

@@ -8,15 +8,23 @@ const read = name => readFileSync(join(__dirname, '../js', name), 'utf8');
 
 test('detailed fuel stations share their sign atlas and leave vehicle clearance beneath surveyed roofs', async () => {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
-  const { attribute, mix } = await import('../vendor/three/build/three.tsl.js');
+  const { attribute, color, mix, smoothstep, uniform } = await import('../vendor/three/build/three.tsl.js');
+  const fuelPrices = await import('../js/ede-fuel-prices.js');
+  const collision = loadModule(read('building-collision.js'));
   const { CivicBatch } = loadModule(read('ede-civic-landmarks.js'), { imports: {
     'three/webgpu': THREE, 'three/tsl': { attribute, mix },
     './ede-geodata.js': {}, './terrain.js': {}, './aerial-colors.js': {},
     './bag3d.js': {}, './ede-grade.js': {}, './ede-facades.js': {}, './ede-facade-material.js': {},
     './ede-wind-props.js': {},
   } });
-  let canvasCount = 0;
-  const canvas = { getContext: () => ({ fillRect() {}, fillText() {} }) };
+  const canvases = [];
+  let updatePrices;
+  const createCanvas = () => {
+    const labels = [];
+    const canvas = { labels, getContext: () => ({ fillRect() {}, fillText(text) { labels.push(text); } }) };
+    canvases.push(canvas);
+    return canvas;
+  };
   const sites = [
     { id: 'test-covered', name: 'Tango test', brand: 'Tango', x: 12, z: 20, heading: Math.PI / 2,
       width: 14, length: 8, bays: 2, canopyRing: [[-7,-4],[7,-4],[6,4],[-7,4]],
@@ -27,9 +35,12 @@ test('detailed fuel stations share their sign atlas and leave vehicle clearance 
   ];
   const { buildEdeFuelStations } = loadModule(read('ede-fuel-stations.js'), { imports: {
     'three/webgpu': THREE, './ede-civic-landmarks.js': { CivicBatch },
+    'three/tsl': { attribute, color, mix, smoothstep }, './building-collision.js': collision,
     './ede-fuel-sites.js': { EDE_FUEL_SITES: sites }, './terrain.js': { terrainHeightAt: () => 8 },
-  }, globals: { document: { createElement: () => { canvasCount++; return canvas; } } } });
-  const [covered, open] = buildEdeFuelStations();
+    './ede-fuel-prices.js': { ...fuelPrices, watchFuelBaseline(update) { updatePrices = update; } },
+    './tsl-materials.js': { cityUniforms: { uInteriorGlow: uniform(0) } },
+  }, globals: { document: { createElement: createCanvas } } });
+  const [covered, open] = buildEdeFuelStations(sites, { live: true });
   const colliders = covered.userData.colliders;
   const canopy = colliders.find(row => row.kind === 'fuel-canopy');
   assert.equal(canopy.minY, 12.68);
@@ -41,13 +52,27 @@ test('detailed fuel stations share their sign atlas and leave vehicle clearance 
   assert.equal(covered.userData.weatherCovers.length, 1);
   assert.equal(open.userData.weatherCovers.length, 0);
   assert.equal(open.userData.colliders.length, 2);
-  assert.equal(canvasCount, 1);
-  assert.equal(canvas.width * canvas.height * 4, 256 * 1024);
+  assert.equal(covered.userData.forecourtLights.length, 5);
+  for (const light of covered.userData.forecourtLights.filter(light => light.dist === 12)) {
+    assert.ok(light.y < canopy.minY);
+    assert.ok(collision.polygonContains(canopy.polygon, light.x, light.z));
+  }
+  assert.equal(open.userData.forecourtLights.length, 1);
+  assert.equal(canvases.length, 2);
+  assert.equal(canvases[0].width * canvases[0].height * 4, 256 * 1024);
+  const rates = covered.getObjectByName('Estimated fuel prices');
+  assert.equal(rates.geometry.getAttribute('position').count, 12);
+  assert.deepEqual(canvases[1].labels, ['€/L', 'E10', '2,15', 'B7', '2,29']);
+  const version = rates.material.map.version;
+  updatePrices({ day: '20261123', e10: 2.175, diesel: 2.19, lpg: 1.08 });
+  assert.deepEqual(canvases[1].labels.slice(5), ['€/L', 'E10', '2,18', 'B7', '2,19']);
+  assert.ok(rates.material.map.version > version);
   const signs = group => group.children.find(mesh => mesh.name === 'Station wordmarks');
   assert.equal(signs(covered).material, signs(open).material);
   assert.notEqual(signs(covered).geometry.attributes.uv.getX(0), signs(open).geometry.attributes.uv.getX(0));
   for (const group of [covered, open]) {
     assert.ok(group.children.find(mesh => mesh.name === 'Pump hoses and fittings').userData.nearDetail);
+    assert.ok(group.getObjectByName('Canopy lamps and lit shop windows').material.emissiveNode);
     assert.ok(group.children.every(mesh => mesh.geometry.attributes.position.array.every(Number.isFinite)));
   }
 });
@@ -61,8 +86,10 @@ test('fuel station replacements preserve the warehouse and exclude only verified
 
   const [west, north, east, south] = EDE_DATA.meta.bounds;
   assert.equal(new Set(EDE_FUEL_SITES.map(site => site.id)).size, EDE_FUEL_SITES.length);
+  assert.deepEqual(EDE_FUEL_SITES.filter(site => site.north).map(site => site.name), ['Esso De Stroet', 'Esso De Tol', 'Esso Spelt']);
   for (const site of EDE_FUEL_SITES) {
     assert.ok(site.x >= west && site.x <= east && site.z >= north && site.z <= south, site.name);
+    assert.ok(site.pylon.every(Number.isFinite) && Number.isFinite(site.pylonHeading));
     if (!site.shop?.bagId) continue;
     const { x, z, bagId } = site.shop;
     const exclusions = landmarkBagExclusions({ min: { x: x - 2, z: z - 2 }, max: { x: x + 2, z: z + 2 } });
@@ -75,4 +102,20 @@ test('fuel station replacements preserve the warehouse and exclude only verified
   assert.equal(polygonContains(polygon, -3439.5, 2276), true);
   const { x, z } = EDE_FUEL_SITES.find(site => site.name === 'Shell TruckDiesel Ede');
   assert.equal(polygonContains(polygon, x, z), false);
+});
+
+test('fuel estimates use the newest valid daily national row and the right station profile', async () => {
+  const { parseFuelBaseline, estimateFuelPrice } = await import('../js/ede-fuel-prices.js');
+  const sample = { Euro95_1: 2.15, Diesel_2: 2.29, LPG_3: 1.03 };
+  const baseline = parseFuelBaseline({ value: [
+    { ...sample, Periods: '20261117', Euro95_1: null },
+    { ...sample, Periods: '20261116' },
+    { ...sample, Periods: '20261115', Euro95_1: 2.14 },
+    { ...sample, Periods: '20261123' },
+  ] }, '20261122');
+  assert.deepEqual(baseline, { day: '20261116', e10: 2.15, diesel: 2.29, lpg: 1.03 });
+  assert.equal(estimateFuelPrice(baseline, 'discount', 'e10').toFixed(3), '2.100');
+  assert.equal(estimateFuelPrice(baseline, 'lunteren', 'diesel').toFixed(3), '2.240');
+  assert.equal(estimateFuelPrice(baseline, 'local', 'lpg'), 1.03);
+  assert.equal(estimateFuelPrice(baseline, 'local', 'cng'), null);
 });

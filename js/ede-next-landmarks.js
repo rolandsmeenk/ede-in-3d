@@ -4,6 +4,7 @@ import { edePolygonGeometry, edeStrip, drapeEdeSurface } from './ede-geometry.js
 import { terrainHeightAt } from './terrain.js';
 import { pointInPoly } from './city-config.js';
 import { KUIL_SHELLS, PALLAS_SHELLS, TECHNOVA_SHELLS, TESQUA_SHELLS } from './ede-next-survey.js';
+import { createMemorialPlaque } from './ede-memorial-plaque.js';
 
 const steel = 0x515c60, blueGlass = 0x536e72, pale = 0xd0d0bf;
 const up = new THREE.Vector3(0, 1, 0);
@@ -337,5 +338,59 @@ export function createEderKuil() {
     beam(details, [x + side * 11.4, y - 0.2,z + 5.9], tip, 0.085, 0xadb7b1);
     for (const dx of [3,7,10]) beam(details, tip, arch(side * dx, 4.5), 0.022, steel);
   }
-  return finish(batch, details, colliders);
+
+  const memorialX = 459, memorialZ = 656.7, heading = -0.94;
+  const base = terrainHeightAt(memorialX, memorialZ);
+  const width = 1.05, depth = 0.34, height = 1.39;
+  const cs = Math.cos(heading), sn = Math.sin(heading);
+  const brick = (w, h, d, across, up, outward, color) => batch.solid(new THREE.BoxGeometry(w, h, d)
+    .rotateY(heading).translate(memorialX + across * cs + outward * sn, base + up,
+      memorialZ - across * sn + outward * cs), color);
+  brick(width, height + 0.2, depth, 0, (height - 0.2) / 2, 0, 0x9b8d7d);
+  const bricks = [0x766158, 0x68554f, 0x7e665c];
+  for (let row = 0; row < 13; row++) {
+    const y = row * 0.095 + 0.046;
+    const narrow = y > 0.64;
+    for (const side of [-1, 1]) {
+      brick(narrow ? 0.137 : 0.51, 0.081, 0.352, side * (narrow ? 0.45 : 0.258), y, 0, bricks[(row + side + 3) % 3]);
+    }
+  }
+  for (let i = 0; i < 14; i++) {
+    const across = (i - 6.5) * 0.075;
+    brick(0.067, 0.136, 0.37, across, 1.322, 0, bricks[(i * 2) % 3]);
+  }
+  const hx = width / 2, hz = depth / 2;
+  const ex = Math.abs(cs) * hx + Math.abs(sn) * hz, ez = Math.abs(sn) * hx + Math.abs(cs) * hz;
+  colliders.push({ minX: memorialX - ex, maxX: memorialX + ex, minZ: memorialZ - ez, maxZ: memorialZ + ez,
+    minY: base - 0.2, maxY: base + height, obb: { cx: memorialX, cz: memorialZ, hx, hz, cs, sn } });
+  const group = finish(batch, details, colliders);
+  group.add(createMemorialPlaque({
+    name: 'Monument in het Openluchttheater', x: memorialX + sn * 0.179, y: base + 0.74,
+    z: memorialZ + cs * 0.179, heading,
+    width: 0.75, height: 0.50, base: '#262728', ink: '#d2b875',
+    lines: ['DAMAGE TO THIS THEATRE', 'BY THE GERMANS', 'WAS REPAIRED BY', 'SOLDIERS OF HEADQUARTERS',
+      '7 CANADIAN INFANTRY BRIGADE', 'AUGUST 1945'].map((line, i) => [line, 0.29 + i * 0.116, 0.092]),
+    decorations(ctx, w, h) {
+      ctx.strokeStyle = '#d2b875';
+      ctx.lineWidth = w * 0.008;
+      ctx.beginPath();
+      for (const side of [-1, 1]) {
+        ctx.moveTo(w * (0.5 - side * 0.026), h * 0.087);
+        ctx.lineTo(w * (0.5 + side * 0.03), h * 0.195);
+      }
+      ctx.stroke();
+      for (const u of [0.095, 0.905]) {
+        ctx.beginPath();
+        [[0,-1], [0.17,-0.44], [0.56,-0.57], [0.46,-0.14], [0.96,-0.27], [0.67,0.28],
+          [0.30,0.41], [0,0.88], [-0.30,0.41], [-0.67,0.28], [-0.96,-0.27], [-0.46,-0.14],
+          [-0.56,-0.57], [-0.17,-0.44]].forEach(([x, y], i) => {
+          const point = [w * (u + x * 0.031), h * (0.84 + y * 0.053)];
+          if (i) ctx.lineTo(...point);
+          else ctx.moveTo(...point);
+        });
+        ctx.fill();
+      }
+    },
+  }));
+  return group;
 }

@@ -1,10 +1,11 @@
 import { Color, Vector4 } from 'three/webgpu';
-import { floor, uniformArray } from 'three/tsl';
+import { floor, uniform, uniformArray } from 'three/tsl';
 
 export const TREE_SEASONS = Object.freeze({
   today: { label: 'Today', day: null },
   spring: { label: 'Spring', day: 117 },
   summer: { label: 'Summer', day: 195 },
+  'heather-bloom': { label: 'Heather bloom', day: 239 },
   autumn: { label: 'Autumn', day: 298 },
   winter: { label: 'Winter', day: 14 }
 });
@@ -41,6 +42,10 @@ const smoothStep = (a, b, day) => {
   return t * t * (3 - 2 * t);
 };
 
+// Typical local Calluna season. The shoulders fade in and out around mid-August to mid-September.
+export const heatherBloom = uniform(0);
+export const heatherBloomAt = day => smoothStep(223, 237, day) * (1 - smoothStep(245, 259, day));
+
 export function treePhenology(group, day) {
   const profile = phenology[group];
   if (profile === null) return { leaves: 1, spring: 0, turned: 0 };
@@ -69,6 +74,7 @@ export function setTreeSeason(id, now = new Date()) {
   const day = TREE_SEASONS[mode].day ?? amsterdamDayOfYear(now);
   if (day === selectedDay) return day;
   selectedDay = day;
+  heatherBloom.value = heatherBloomAt(day);
   for (let i = 0; i < palette.length; i++) {
     const { leaves, spring, turned } = treePhenology(i, day);
     const autumn = autumnTints[i];

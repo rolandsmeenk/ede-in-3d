@@ -23,7 +23,7 @@ async function request(file) {
 
 export async function loadForestCanopy() {
   try {
-    const { version, cells } = await request('manifest.json').then(response => response.json());
+    const { version, cells, northernTreeSamples = [] } = await request('manifest.json').then(response => response.json());
     if (version !== 1 || !Array.isArray(cells) || !cells.every(({ id, bounds, step, neighborMask }) =>
       typeof id === 'string' && /^[-_a-zA-Z0-9]+$/.test(id) && [10, 20].includes(step) &&
       bounds?.length === 4 && bounds.every(Number.isFinite) &&
@@ -32,7 +32,9 @@ export async function loadForestCanopy() {
         neighborMask.every(bits => Number.isSafeInteger(bits) && bits >= 0 && bits <= FULL_EDGE)))) {
       throw new Error('Invalid Ede canopy manifest');
     }
-    return cells;
+    const samples = Array.isArray(northernTreeSamples) && northernTreeSamples.every(sample =>
+      Array.isArray(sample) && sample.length === 3 && sample.every(Number.isFinite));
+    return { cells, northernTreeSamples: samples ? northernTreeSamples : [] };
   } catch (error) {
     console.warn('[forest canopy] using individual trees:', error);
     return null;

@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { gradeDeckAt, nearbyRailHeightAt } from './ede-grade.js';
+import { getEdeGrade, gradeDeckAt, gradeSections, nearbyRailHeightAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
+import { createMemorialPlaque } from './ede-memorial-plaque.js';
 
 const TIMBER = 0xc89356;
 const STEEL = 0x40464a;
@@ -259,8 +260,45 @@ export function createEdeStationLandmark() {
     color: 0x6d8b99, roughness: 0.43, side: THREE.DoubleSide, transparent: true, opacity: 0.62, depthWrite: false,
   })));
   if (typeof document !== 'undefined') group.add(stationSign());
+  const memorial = stationMemorial();
+  if (memorial) group.add(memorial);
   group.userData.colliders = colliders;
   return group;
+}
+
+function stationMemorial() {
+  const passage = getEdeGrade().sites.find(site => site.id === 'oosttunnel-lower')?.profiles[0];
+  if (!passage) return null;
+  // The 2025 photograph shows the plaque on the west side of the passenger tunnel.
+  const distance = passage.covered[0] + 4;
+  const wall = gradeSections(passage).find(({ a, b, covered }) => covered && a.distance <= distance && b.distance > distance);
+  if (!wall) return null;
+  const { a, b } = wall;
+  const fraction = (distance - a.distance) / (b.distance - a.distance);
+  const plaqueWall = point([a.left.x, a.left.z], a.y).lerp(point([b.left.x, b.left.z], b.y), fraction);
+  const normal = new THREE.Vector3(a.x - a.left.x, 0, a.z - a.left.z).normalize();
+  plaqueWall.addScaledVector(normal, 0.028);
+  return createMemorialPlaque({
+    name: 'Plaquette in het NS-station Ede-Wageningen', x: plaqueWall.x, z: plaqueWall.z,
+    y: plaqueWall.y + 1.31, heading: Math.atan2(normal.x, normal.z),
+    width: 0.54, height: 0.44, base: '#836849', ink: '#33291e', border: '#af9264', metalness: 0.52,
+    lines: [
+      ['TER GEDACHTENIS', 0.15, 0.095], ['AAN HEN DIE VIELEN', 0.26, 0.095], ['1940–1945', 0.37, 0.095],
+      ...['L. BRAAFHART', 'A.A. GAASBEEK', 'A. MERLIJN', 'J. ROZENBOOM'].map((line, i) => [line, 0.52 + i * 0.071, 0.062]),
+    ],
+    decorations(ctx, w, h) {
+      ctx.strokeStyle = '#c5a575';
+      ctx.lineWidth = w * 0.005;
+      ctx.beginPath();
+      ctx.ellipse(w * 0.5, h * 0.88, w * 0.012, h * 0.018, 0, 0, Math.PI * 2);
+      for (const side of [-1, 1]) for (let row = 0; row < 3; row++) {
+        ctx.moveTo(w * (0.5 + side * 0.014), h * (0.88 + row * 0.007));
+        ctx.quadraticCurveTo(w * (0.5 + side * 0.036), h * (0.849 + row * 0.014),
+          w * (0.5 + side * (0.115 - row * 0.018)), h * (0.86 + row * 0.011));
+      }
+      ctx.stroke();
+    },
+  });
 }
 
 function stationSign() {

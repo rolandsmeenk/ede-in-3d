@@ -2,6 +2,7 @@ import { EDE_DATA } from './ede-geodata.js';
 import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
 import { OTHER_CHURCH_SHELLS } from './ede-other-church-shells.js';
 import { EDE_PUBLIC_LANDMARKS } from './ede-public-survey.js';
+import { MARNIX_COLLEGE_SITE } from './ede-marnix-survey.js';
 import { EDE_SCHOOL_LANDMARKS } from './ede-school-survey.js';
 import { EDE_SPORT_LANDMARKS } from './ede-sport-landmark-survey.js';
 import { EDE_AMSTERDAMSEWEG_LANDMARKS } from './ede-amsterdamseweg-survey.js';
@@ -32,6 +33,22 @@ import { EDE_REEMST_LANDMARKS } from './ede-reemst-landmark-survey.js';
 import { EDE_WEST_EXPANSION_LANDMARKS } from './ede-west-expansion-surveys.js';
 import { EDE_GINKEL_LANDMARKS } from './ede-ginkel-landmark-surveys.js';
 import { EDE_ZONNEOORD_LANDMARKS } from './ede-zonneoord-surveys.js';
+import { EDE_LUNTEREN_LANDMARKS } from './ede-lunteren-survey.js';
+import { EDE_WESTHOFFHUIS_LANDMARK } from './ede-westhoffhuis-survey.js';
+import { EDE_LUNTEREN_FIRE_SITE } from './ede-lunteren-fire-sites.js';
+import { KULTURHUS_SITE } from './ede-kulturhus-survey.js';
+import { EDE_LUNTEREN_SCHOOL_LANDMARKS } from './ede-lunteren-school-sites.js';
+import { LUNTEREN_CHURCH_SITES } from './ede-lunteren-church-sites.js';
+import { EDE_NORTH_LOOKOUTS } from './ede-north-lookout-sites.js';
+import { EDE_LUNTEREN_ART_LANDMARKS } from './ede-lunteren-art-sites.js';
+import { EDE_SKYLINE_LANDMARKS } from './ede-skyline-survey.js';
+import { EDE_CENTRE_SKYLINE_LANDMARKS } from './ede-centre-skyline-survey.js';
+import { EDE_VILLAGE_SKYLINE_LANDMARKS } from './ede-village-skyline-survey.js';
+import { EDE_MAST_SITES } from './ede-mast-sites.js';
+import { EDE_INDUSTRIAL_SKYLINE_LANDMARKS, NIZO_NORTH_SITE } from './ede-industrial-skyline-survey.js';
+import { EDE_PAASBERG_MEMORIALS } from './ede-paasberg-memorial-sites.js';
+import { EDE_TOWN_MEMORIALS } from './ede-town-memorial-sites.js';
+import { EDE_OUTER_MEMORIALS } from './ede-outer-memorial-sites.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -110,10 +127,19 @@ export const EDE_MODELED_LANDMARKS = [
   { id: 'hoekelum', name: 'Kasteel Hoekelum', district: 'Bennekom', road: 'Edeseweg',
     osmId: 'w271473106', annexOsmIds: ['w271473117'], bagIds: ['0228100000039432', '0228100000005600'],
     x: 355.2, z: 3393, height: 18, worldSpace: true, approach: { x: 330, z: 3432 } },
+  { id: 'theehuis-hoekelum', name: 'Theehuis Hoekelum', district: 'Ede-Zuid', road: 'Edeseweg',
+    osmId: 'w271471077', annexOsmIds: ['w271471384'], bagIds: ['0228100000027123', '0228100000062934'],
+    x: 44.4, z: 3293.6, height: 6.3, focusHeight: 2.7, worldSpace: true, mapScenic: true,
+    approach: { x: 60.1, z: 3303.2 },
+    surveyFootprints: [
+      [[40.47, 3282], [34.88, 3286.88], [42.65, 3295.89], [43.79, 3294.85],
+        [46.03, 3295.92], [47.96, 3294.20], [47.18, 3291.75], [48.15, 3290.87]],
+      [[38.25, 3271.61], [35.40, 3274.14], [39.72, 3279.15], [42.60, 3276.63]],
+    ].map(ring => ({ outer: ring.map(([x, z]) => ({ x, z })), holes: [] })) },
   { id: 'nizo', name: 'NIZO Food Research', district: 'Kernhem', road: 'Kernhemseweg',
-    osmId: 'w271586838', annexOsmIds: ['w271586774', 'w271588010', 'w271588469', 'w271586695'],
-    bagIds: ['0228100000013349', '0228100000031240', '0228100000033892', '0228100000036731', '0228100000070061'],
-    x: -630, z: -682, height: 22, worldSpace: true, approach: { x: -638, z: -630 } },
+    osmId: 'w271586838', annexOsmIds: ['w271586774', 'w271588010', 'w271588469', 'w271586695', NIZO_NORTH_SITE.osmId],
+    bagIds: ['0228100000013349', '0228100000031240', '0228100000033892', '0228100000036731', '0228100000070061', ...NIZO_NORTH_SITE.bagIds],
+    x: -630, z: -682, height: NIZO_NORTH_SITE.height, worldSpace: true, approach: { x: -638, z: -630 } },
   { id: 'ziekenhuis', name: 'Ziekenhuis Gelderse Vallei', district: 'Maandereng', road: 'Willy Brandtlaan',
     osmId: 'r13089665', bagIds: ['0228100000006511'], x: -1799, z: 2612, height: 27, worldSpace: true,
     approach: { x: -1680, z: 2619 } },
@@ -189,6 +215,7 @@ export const EDE_MODELED_LANDMARKS = [
     osmId: 'w684424226', bagIds: ['0228100000082617'], x: -187, z: 2009, height: 20.27, worldSpace: true },
 
   ...EDE_PUBLIC_LANDMARKS,
+  MARNIX_COLLEGE_SITE,
   ...EDE_SCHOOL_LANDMARKS,
   ...EDE_SPORT_LANDMARKS,
   ...EDE_AMSTERDAMSEWEG_LANDMARKS,
@@ -218,6 +245,24 @@ export const EDE_MODELED_LANDMARKS = [
   ...EDE_WEST_EXPANSION_LANDMARKS,
   ...EDE_GINKEL_LANDMARKS,
   ...EDE_ZONNEOORD_LANDMARKS,
+  ...EDE_SKYLINE_LANDMARKS,
+  ...EDE_CENTRE_SKYLINE_LANDMARKS,
+  ...EDE_INDUSTRIAL_SKYLINE_LANDMARKS,
+  ...EDE_MAST_SITES.filter(site => !site.north || EDE_DATA.meta.north),
+  ...EDE_PAASBERG_MEMORIALS,
+  ...EDE_TOWN_MEMORIALS,
+  ...EDE_OUTER_MEMORIALS.filter(site => !site.north || EDE_DATA.meta.north),
+  ...(EDE_DATA.meta.north ? [
+    ...EDE_VILLAGE_SKYLINE_LANDMARKS,
+    ...EDE_LUNTEREN_LANDMARKS,
+    EDE_WESTHOFFHUIS_LANDMARK,
+    EDE_LUNTEREN_FIRE_SITE,
+    KULTURHUS_SITE,
+    ...EDE_LUNTEREN_SCHOOL_LANDMARKS,
+    ...LUNTEREN_CHURCH_SITES,
+    ...EDE_NORTH_LOOKOUTS,
+    ...EDE_LUNTEREN_ART_LANDMARKS,
+  ] : []),
 
   ...Object.entries(OTHER_CHURCH_SHELLS).map(([id, churchSurvey]) => {
     const { name, osm, bag, center: [x, z], road, district, approach, height } = churchSurvey;

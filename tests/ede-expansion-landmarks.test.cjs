@@ -74,9 +74,11 @@ test('Ginkel and restaurant landmarks build finite meshes in the surveyed frame'
     }
     if (site.id === 'vensters-op-het-verleden') {
       assert.equal(bounds.max.y, 6);
-      const ray = new three.Raycaster(
-        new three.Vector3(site.x, 5.4, site.z + 5), new three.Vector3(0, 0, -1));
-      assert.equal(ray.intersectObject(model).length, 0, 'the steel frames leave the sky visible');
+      const cutouts = model.getObjectByName('Vensters steel openwork');
+      assert.equal(cutouts.geometry.index.count, 5 * 6, 'one textured quad per window');
+      assert.equal(cutouts.material.side, three.DoubleSide, 'the artwork is visible on both sides');
+      assert.ok(cutouts.material.alphaTest > 0, 'the alpha mask leaves openings in the steel');
+      assert.ok(model.userData.colliders.some(collider => collider.obb), 'the memorial retains its solid footprint');
     }
     if (site.id === 'huzarenmonument') {
       assert.ok(model.userData.colliders.some(collider => collider.obb), 'the brick plinth has a solid footprint');

@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, mix } from 'three/tsl';
 import { sampleGroundColor } from './aerial-colors.js';
-import { cityUniforms } from './tsl-materials.js';
+import { cityUniforms, heathBloomColor } from './tsl-materials.js';
 import { expansionSeamOffset, getExpansionTerrain, getTerrain, sampleTerrain } from './terrain.js';
 
 const SIDE = 51;
@@ -215,7 +215,7 @@ export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
   return geometry;
 }
 
-export function createTerrainTiles(scene) {
+export function createTerrainTiles(scene, heath) {
   const data = getExpansionTerrain();
   if (!data) return null;
   const { manifest, field, directory, detail } = data;
@@ -235,7 +235,7 @@ export function createTerrainTiles(scene) {
   group.name = 'EdeTerrainQuadtree';
   scene.add(group);
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.93 });
-  material.colorNode = attribute('color', 'vec4').rgb.mul(mix(1, 0.78, cityUniforms.uRoadWetness));
+  material.colorNode = heathBloomColor(attribute('color', 'vec4').rgb, heath).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
   material.name = 'PDOK terrain tiles';
   const cameraMatrix = new THREE.Matrix4(), frustum = new THREE.Frustum();
   const box = new THREE.Box3();

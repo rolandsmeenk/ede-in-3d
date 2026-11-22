@@ -1,6 +1,6 @@
 import { localClock } from './ede-transit-time.js';
 import {
-  connectTrainTurnarounds, createEdeTrainSchedule, planTimeAt, timetablePosition, trainKey, trainPathFor, trainPlan
+  connectTrainTurnarounds, createEdeTrainSchedule, planTimeAt, reserveTrainBlocks, timetablePosition, trainKey, trainPathFor, trainPlan
 } from './ede-train-schedule.js';
 
 export const TRAIN_STATUS = Object.freeze({ gps: 'GPS', live: 'estimated from live updates', timetable: 'timetable' });
@@ -25,6 +25,8 @@ export function trainCarOffset(model, i) {
   return ((model.cars - 1) / 2 - i) * (model.length + CAR_GAP);
 }
 
+const rs34HalfLength = trainCarOffset(TRAIN_CONSISTS.rs34, 0) + TRAIN_CONSISTS.rs34.length / 2;
+const occupiesBlock = (block, distance) => distance + rs34HalfLength >= block.from && distance - rs34HalfLength <= block.to;
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
   Number.isFinite(Date.parse(value)) && new Date(value).toISOString().startsWith(value);
@@ -190,6 +192,7 @@ export function createEdeTrainTraffic(timetable, tracks, { predictionSeconds = 3
         due.push({ ...plan, status: live ? TRAIN_STATUS.live : TRAIN_STATUS.timetable, updateAt: update?.timestamp });
       }
     }
+    reserveTrainBlocks(due, rs34HalfLength);
     connectTrainTurnarounds(due);
     for (const fix of fixes.values()) {
       if (at < fix.expiry) {
@@ -214,6 +217,14 @@ export function createEdeTrainTraffic(timetable, tracks, { predictionSeconds = 3
     advancedAt = at;
     if (reset) progress.clear();
     const seen = new Set();
+    // A real-time update can change a reservation while a consist is still on
+    // the section. Its actual position keeps the opposing entrance protected.
+    const occupied = new Map();
+    for (const [key, train] of progress) {
+      for (const block of train.plan.path.blocks ?? []) {
+        if (occupiesBlock(block, train.distance)) occupied.set(block.id, key);
+      }
+    }
     for (let plan of plans) {
       let target = position(plan, at);
       if (!target) continue;
@@ -235,9 +246,26 @@ export function createEdeTrainTraffic(timetable, tracks, { predictionSeconds = 3
       if (train.plan?.key !== plan.key) progress.delete(train.plan?.key);
       train.plan = plan;
       train.target = target;
-      const wanted = clamp(target.speed + (target.distance - train.distance) / 2.5, 0, MAX_SPEED);
+      const blocks = plan.path.blocks ?? [];
+      const blocked = blocks.find(block => train.distance - rs34HalfLength <= block.to &&
+        occupied.has(block.id) && occupied.get(block.id) !== plan.key);
+      train.blockLimit = blocked ? blocked.from - rs34HalfLength - 1 : Infinity;
+      if (train.distance > train.blockLimit && !progress.has(plan.key)) {
+        // The plan may begin on the far side of the map. Wait off-map if a
+        // delayed train still owns the entrance.
+        if (train.blockLimit < 0) continue;
+        train.distance = train.blockLimit;
+        train.speed = 0;
+      }
+      const wanted = clamp(target.speed + (target.distance - train.distance) / 2.5, 0,
+        Math.min(MAX_SPEED, Math.sqrt(2 * BRAKING * Math.max(0, train.blockLimit - train.distance))));
       train.speed = clamp(wanted, Math.max(0, train.speed - dt), train.speed + 0.58 * dt);
-      if (train.distance < target.limit) train.distance = Math.min(target.limit, train.distance + train.speed * dt);
+      const limit = Math.min(target.limit, train.blockLimit);
+      if (train.distance < limit) train.distance = Math.min(limit, train.distance + train.speed * dt);
+      if (train.distance >= train.blockLimit) train.speed = 0;
+      for (const block of blocks) {
+        if (occupiesBlock(block, train.distance)) occupied.set(block.id, plan.key);
+      }
       progress.set(plan.key, train);
       seen.add(plan.key);
     }
@@ -250,7 +278,8 @@ export function createEdeTrainTraffic(timetable, tracks, { predictionSeconds = 3
     if (!target) return train.distance;
     // Carry the current smoothing offset into the prediction so it follows the rendered train.
     const predicted = target.distance + (at + seconds - end) * target.speed;
-    return Math.max(train.distance, Math.min(target.limit, predicted + train.distance - train.target.distance));
+    return Math.max(train.distance, Math.min(target.limit, train.blockLimit ?? Infinity,
+      predicted + train.distance - train.target.distance));
   }
 
   function* upcoming(at, seconds) {

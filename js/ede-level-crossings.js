@@ -94,7 +94,7 @@ export function createEdeLevelCrossings(scene, trainSystem) {
     const state = { id: site.id, phase: 'open', arm: 0, flash: -1, warningAt: null, releaseAt: -Infinity, equipment: [] };
     const controls = Array.isArray(site.controls) ? site.controls : [site.controls];
     for (const control of controls) {
-      if (control?.type !== 'AHOB') continue;
+      if (!['AHOB', 'AHOB-MINI', 'AOB'].includes(control?.type)) continue;
       const { x, z, heading, width, roadWayIds, trackSpan } = control;
       const profiles = site.profiles.filter(profile => profile.wayIds.some(id => roadWayIds.includes(id)));
       const modes = new Set(profiles.flatMap(profile => profile.modes));

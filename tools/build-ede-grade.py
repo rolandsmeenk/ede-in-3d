@@ -22,8 +22,8 @@ STATION_PLAN = 'https://www.prorail.nl/siteassets/homepage/projecten/ede-spoorzo
 
 
 class Terrain:
-    def __init__(self):
-        data = (ROOT / 'assets/ede-ahn.bin').read_bytes()
+    def __init__(self, path=ROOT / 'assets/ede-ahn.bin'):
+        data = path.read_bytes()
         magic, self.columns, self.rows, self.x, self.z, self.step, self.nap = struct.unpack_from('<4sIIffff', data)
         if magic != b'AHN1':
             raise ValueError('Unrecognized terrain datum')

@@ -1,7 +1,11 @@
 import * as THREE from 'three/webgpu';
+import { attribute, color, mix, smoothstep } from 'three/tsl';
+import { polygonContains } from './building-collision.js';
 import { CivicBatch } from './ede-civic-landmarks.js';
 import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
+import { BUNDLED_FUEL_BASELINE, estimateFuelPrice, watchFuelBaseline } from './ede-fuel-prices.js';
 import { terrainHeightAt } from './terrain.js';
+import { cityUniforms } from './tsl-materials.js';
 
 // Approximate brand colours and readable wordmarks shared by all locations.
 const LIVERIES = {
@@ -81,6 +85,65 @@ function signMesh(labels, atlas, style) {
   return new THREE.Mesh(geometry, atlas.material);
 }
 
+const FUEL_LABELS = { e10: 'E10', diesel: 'B7', lpg: 'LPG', cng: 'CNG' };
+const FUEL_PRICE_FORMAT = new Intl.NumberFormat('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function priceAtlas(sites, live) {
+  if (typeof document === 'undefined' || !sites.length) return null;
+  const columns = 5, width = 200, height = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = columns * width;
+  canvas.height = Math.ceil(sites.length / columns) * height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  const material = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
+  const rects = new Map();
+
+  function draw(baseline) {
+    for (const [i, site] of sites.entries()) {
+      const x = i % columns * width, y = Math.floor(i / columns) * height;
+      const fuels = site.fuels ?? ['e10', 'diesel'];
+      ctx.fillStyle = '#171c22';
+      ctx.fillRect(x, y, width, height);
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 17px sans-serif';
+      ctx.fillStyle = '#e7e9eb';
+      ctx.fillText(fuels.includes('cng') ? '€/kg' : '€/L', x + width / 2, y + 24);
+      const rowHeight = 196 / fuels.length;
+      for (const [j, fuel] of fuels.entries()) {
+        const row = y + 46 + j * rowHeight;
+        const price = estimateFuelPrice(baseline, site.priceProfile, fuel);
+        ctx.fillStyle = '#34404a';
+        ctx.fillRect(x + 10, row, width - 20, 2);
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.fillStyle = '#f3f2ee';
+        ctx.fillText(FUEL_LABELS[fuel], x + 12, row + rowHeight / 2);
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 46px monospace';
+        ctx.fillStyle = '#ff7354';
+        // Normalize the source's mill precision before rounding half cents for display.
+        const display = price === null ? '—' : FUEL_PRICE_FORMAT.format(Math.round(price * 1000) / 1000);
+        ctx.fillText(display, x + width - 12, row + rowHeight / 2);
+      }
+    }
+    texture.needsUpdate = true;
+  }
+
+  for (const [i, { id }] of sites.entries()) {
+    const x = i % columns * width, y = Math.floor(i / columns) * height;
+    rects.set(JSON.stringify(id), [(x + 2) / canvas.width, (x + width - 2) / canvas.width,
+      1 - (y + height - 2) / canvas.height, 1 - (y + 2) / canvas.height]);
+  }
+  draw(BUNDLED_FUEL_BASELINE);
+  if (live) watchFuelBaseline(draw);
+  return { material, rects };
+}
+
 function frame({ x, z, heading = 0 }) {
   const cs = Math.cos(heading), sn = Math.sin(heading);
   return {
@@ -110,7 +173,7 @@ function labelFaces(labels, point, w, d, bottom, height, x = 0, z = 0) {
   }
 }
 
-function shopExterior(site, style, shopStyle, shell, detail, labels, colliders) {
+function shopExterior(site, style, shopStyle, shell, detail, illuminated, labels, colliders, lights) {
   const { width: w, length: d, height = 3.7 } = site;
   const { box, collider, bottom, point } = frame(site);
   const y = bottom(0, 0), front = d / 2;
@@ -129,7 +192,7 @@ function shopExterior(site, style, shopStyle, shell, detail, labels, colliders) 
     const lo = y + (entrance ? 0.02 : 0.27);
     box(shell, px, lo, front + 0.024, span - 0.09, glassHeight, 0.059, DARK);
     const loGlass = lo + 0.06, face = front + 0.056;
-    shell.quad(point(px - span / 2 + 0.10, loGlass, face), point(px + span / 2 - 0.10, loGlass, face),
+    illuminated.quad(point(px - span / 2 + 0.10, loGlass, face), point(px + span / 2 - 0.10, loGlass, face),
       point(px + span / 2 - 0.10, loGlass + glassHeight - 0.12, face),
       point(px - span / 2 + 0.10, loGlass + glassHeight - 0.12, face), GLASS, 1);
     box(detail, px, loGlass, front + 0.052, 0.045, glassHeight - 0.12, 0.03, METAL);
@@ -141,13 +204,17 @@ function shopExterior(site, style, shopStyle, shell, detail, labels, colliders) 
     point(signWidth / 2, y + height - 0.8, front + 0.069),
     point(signWidth / 2, y + height - 0.39, front + 0.069),
     point(-signWidth / 2, y + height - 0.39, front + 0.069)] });
+  const [x, ly, z] = point(0, y + height - 0.96, front + 0.22);
+  const [tx, , tz] = point(0, y, front + 1.5);
+  box(illuminated, 0, ly, front + 0.16, 0.86, 0.055, 0.18, LAMP);
+  lights.push({ x, y: ly - 0.06, z, tx, tz, color: 0xffe0ae, dist: 8, intensity: 34 });
   colliders.push(collider(0, 0, w, d, skirt, y + height, 'fuel-shop'));
 }
 
-function drawStation(site, style, shopStyle, atlas) {
-  const structure = new CivicBatch(), detail = new CivicBatch();
+function drawStation(site, style, shopStyle, atlas, priceDisplay) {
+  const structure = new CivicBatch(), detail = new CivicBatch(), illuminated = new CivicBatch();
   const { box, point, bottom, collider } = frame(site);
-  const labels = [], colliders = [], weatherCovers = [];
+  const labels = [], priceFaces = [], colliders = [], weatherCovers = [], lights = [];
   const { width: w, length: d } = site;
   const alongX = site.pumpAxis ? site.pumpAxis === 'x' : w >= d;
   const main = alongX ? w : d, across = alongX ? d : w;
@@ -206,11 +273,23 @@ function drawStation(site, style, shopStyle, atlas) {
       box(detail, sx, base, sz, 0.43, 0.6, 0.43, STEEL);
       colliders.push(collider(sx, sz, 0.43, 0.43, base, ceiling, 'fuel-support'));
       for (const sign of [-1, 1]) {
-        const lx = x + (alongX ? 0 : sign * Math.min(2.5, across / 4));
-        const lz = z + (alongX ? sign * Math.min(2.5, across / 4) : 0);
-        box(detail, lx, ceiling - 0.045, lz, 1.05, 0.045, 0.27, LAMP);
+        const offset = sign * Math.min(2, across / 4);
+        const lx = x + (alongX ? 0 : offset), lz = z + (alongX ? offset : 0);
+        const [wx, , wz] = point(lx, ceiling, lz);
+        if (!polygonContains(polygon, wx, wz)) continue;
+        box(illuminated, lx, ceiling - 0.055, lz, alongX ? 1.05 : 0.32, 0.055, alongX ? 0.32 : 1.05, LAMP);
+        lights.push({ x: wx, y: ceiling - 0.13, z: wz, tx: wx, tz: wz, color: 0xfff4df, dist: 12, intensity: 62 });
       }
     }
+  } else if (positions.length) {
+    const [x, z] = positions[0];
+    const lx = x - (alongX ? 0.93 : 0), lz = z - (alongX ? 0 : 0.93);
+    const base = bottom(lx, lz);
+    box(structure, lx, base, lz, 0.12, 3.02, 0.12, STEEL);
+    box(illuminated, lx, base + 2.98, lz, 0.34, 0.07, 0.24, LAMP);
+    const [wx, y, wz] = point(lx, base + 2.95, lz);
+    const [tx, , tz] = point(x, base, z);
+    lights.push({ x: wx, y, z: wz, tx, tz, color: 0xfff4df, dist: 9, intensity: 40 });
   }
 
   for (const [x, z] of positions) {
@@ -244,32 +323,48 @@ function drawStation(site, style, shopStyle, atlas) {
     if (!roof) labelFaces(labels, point, alongX ? 0.66 : 0.54, alongX ? 0.59 : 0.71, y + 1.34, 0.17, x, z);
   }
 
-  if (site.shop) shopExterior(site.shop, style, shopStyle, structure, detail, labels, colliders);
+  if (site.shop) shopExterior(site.shop, style, shopStyle, structure, detail, illuminated, labels, colliders, lights);
 
   if (site.pylon) {
     const [x, z] = site.pylon;
     const pylon = frame({ x, z, heading: site.pylonHeading ?? site.heading });
     const y = pylon.bottom(0, 0);
-    pylon.box(structure, 0, y - 0.12, 0, 0.75, 5.92, 0.36, STEEL);
-    pylon.box(structure, 0, y + 3.22, 0, 1.48, 2.58, 0.29, DARK);
+    pylon.box(structure, 0, y - 0.12, 0, 0.75, 3.18, 0.36, STEEL);
+    pylon.box(structure, 0, y + 3.02, 0, 1.53, 2.78, 0.29, DARK);
     pylon.box(structure, 0, y + 5.12, 0, 1.53, 0.68, 0.31, style.primary);
     pylon.box(structure, 0, y + 4.97, 0, 1.53, 0.15, 0.31, style.accent);
     labelFaces(labels, pylon.point, 1.48, 0.31, y + 5.19, 0.59);
+    labelFaces(priceFaces, pylon.point, 1.44, 0.29, y + 3.12, 1.79);
     colliders.push(pylon.collider(0, 0, 0.75, 0.36, y - 0.12, y + 5.8, 'fuel-pylon'));
   }
 
   const group = new THREE.Group();
   group.name = site.name;
   group.userData.colliders = colliders;
+  group.userData.forecourtLights = lights;
   group.userData.weatherCovers = weatherCovers;
   group.userData.fuelSite = { id: site.id, pumps: positions.length, canopy: roof };
   const mainMesh = structure.mesh();
   mainMesh.name = 'Station shells and pumps';
   group.add(mainMesh);
+  if (illuminated.vertices.length) {
+    const mesh = illuminated.mesh();
+    mesh.material.emissiveNode = mix(color(0xfff4df).mul(2.1), color(0xffd298).mul(0.68), attribute('civicGloss', 'float'))
+      .mul(smoothstep(0.42, 1.1, cityUniforms.uInteriorGlow));
+    mesh.name = 'Canopy lamps and lit shop windows';
+    mesh.castShadow = false;
+    group.add(mesh);
+  }
   const labelMesh = signMesh(labels, atlas, style);
   if (labelMesh) {
     labelMesh.name = 'Station wordmarks';
     group.add(labelMesh);
+  }
+  const rates = signMesh(priceFaces, priceDisplay, site.id);
+  if (rates) {
+    rates.name = 'Estimated fuel prices';
+    rates.userData.nearDetail = true;
+    group.add(rates);
   }
   if (detail.vertices.length) {
     const mesh = detail.mesh();
@@ -281,10 +376,11 @@ function drawStation(site, style, shopStyle, atlas) {
   return group;
 }
 
-export function buildEdeFuelStations(sites = EDE_FUEL_SITES) {
+export function buildEdeFuelStations(sites = EDE_FUEL_SITES, { live = false } = {}) {
   const styles = sites.map(stationStyle);
   const shopStyles = sites.map((site, i) => site.shop?.wordmark
     ? { ...styles[i], label: site.shop.wordmark } : styles[i]);
   const atlas = signAtlas([...styles, ...shopStyles]);
-  return sites.map((site, i) => drawStation(site, styles[i], shopStyles[i], atlas));
+  const rates = priceAtlas(sites.filter(site => site.pylon), live);
+  return sites.map((site, i) => drawStation(site, styles[i], shopStyles[i], atlas, rates));
 }

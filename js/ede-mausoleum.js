@@ -2,9 +2,22 @@ import * as THREE from 'three/webgpu';
 import { attribute, mix, texture, uv, vertexColor } from 'three/tsl';
 import { CivicBatch, makeGroup } from './ede-civic-landmarks.js';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
+import { memorialLettering } from './ede-paasberg-memorials.js';
 import { terrainHeightAt } from './terrain.js';
 
 const brick = 0x8b6653, sandstone = 0xab9776, bronze = 0x635147;
+
+// The plates were re-engraved in 2018. Columns are counted from the coat of arms.
+// https://commons.wikimedia.org/wiki/File:Mausoleum_Ede_foto_5.jpg
+// https://www.ede.nl/in-de-gemeente-ede/gezichten-van-verzetsstrijders
+const verifiedPlates = [
+  [0, 1, ['PIETER L. MERLIJN', 'LEX', '31 DEC. 1920', '12 MRT. 1945']],
+  [0, 0, ['PIET SMIT', 'PIET MOL', '15 MEI 1921', '8 MRT. 1945']],
+  [1, 1, ['ARIËN THOMASSEN', '16 NOV. 1886', 'GIJSBERT THOMASSEN', '18 MEI 1924']],
+  [1, 0, ['HENDRIK DORRESTIJN']],
+  [2, 1, ['CHRISTIAAN HOLLEBRANDS']],
+  [2, 0, ['AART VAN STEENBERGEN', 'ELBERTUS VAN STEENBERGEN']],
+];
 
 function risingFigure(batch, base) {
   const oval = (a, b, cross, depth) => {
@@ -41,6 +54,7 @@ function inscription() {
   canvas.width = 2048;
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
   ctx.fillStyle = '#b29d7d';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#6d5237';
@@ -85,7 +99,7 @@ export function createMausoleum(_footprints, site) {
   box(fixtures, 6.10, 2.46, 0.02, 2.90, 0.14, 2.16, sandstone);
   box(fixtures, -0.46, 1.39, 1.009, 10.99, 1.62, 0.09, 0xb19a75);
 
-  const stone = [0xb6b3a7, 0xc2baaa, 0xbdb8aa, 0xadafa9];
+  const stone = [0xa09074, 0xb2a07e, 0xaa9778, 0x9c8e75];
   for (let col = 0; col < 20; col++) for (let row = 0; row < 2; row++) {
     box(fixtures, -5.61 + col * 0.543, 0.98 + 0.51 * row, 1.064,
       0.49, 0.44, 0.043, stone[(col + row * 3) % stone.length]);
@@ -123,5 +137,19 @@ export function createMausoleum(_footprints, site) {
   group.add(fixtures.mesh());
   const letters = inscription();
   if (letters) group.add(letters);
+  const plaqueText = memorialLettering([
+    ...verifiedPlates.map(([col, row, lines]) => ({
+      x: -5.61 + col * 0.543, y: 0.98 + 0.51 * row, z: 1.088,
+      w: 0.455, h: Math.min(0.37, 0.09 * lines.length), lines, color: '#dbc480',
+    })),
+    { x: -6.81, y: 1.19, z: 1.071, w: 0.58, h: 0.25, color: '#725f43',
+      lines: ['1940 – 1945', 'DE DANKBARE', 'BEVOLKING', 'VAN EDE'] },
+    { x: 6.08, y: 1.31, z: 1.108, w: 1.19, h: 0.57, color: '#51483c',
+      lines: ['IS DIT GESCHIED IN UWE DAGEN,', 'OF OOK IN DE DAGEN UWER VADEREN?',
+        'VERTELT UWEN KINDEREN DAARVAN,', 'EN LAAT HET UWE KINDEREN HUNNEN',
+        'KINDEREN VERTELLEN, EN DERZELVER', 'KINDEREN AAN EEN VOLGEND GESLACHT.',
+        'JOËL I, VERS 2 EN 3'] },
+  ]);
+  if (plaqueText) group.add(plaqueText);
   return group;
 }

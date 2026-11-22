@@ -26,10 +26,10 @@ BOUNDS = [
 ]
 
 
-def fetch(module, directory, day):
+def fetch(module, directory, day, bounds):
     directory.mkdir(parents=True, exist_ok=True)
     rows = {key: {} for key in module['COLLECTIONS']}
-    jobs = [(name, area, day) for area in BOUNDS for name in rows]
+    jobs = [(name, area, day) for area in bounds for name in rows]
     with ThreadPoolExecutor(max_workers=6) as pool:
         for name, features in pool.map(lambda params: module['BGT']['fetch_tile'](*params), jobs):
             for feature in features:
@@ -46,14 +46,19 @@ def main():
     parser.add_argument('snapshot', type=Path)
     parser.add_argument('--date', type=date.fromisoformat, required=True)
     parser.add_argument('--fetch', action='store_true')
-    parser.add_argument('--map', type=Path, default=ROOT / 'assets/ede-corridors-v1.json.gz')
-    parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-corridor-paving.json.gz')
+    parser.add_argument('--north', action='store_true')
+    parser.add_argument('--map', type=Path)
+    parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     module = runpy.run_path(str(ROOT / 'tools/build-ede-bgt-roads.py'))
+    coverage = json.loads((ROOT / 'tools/data/ede-outer-coverage.json').read_text())
+    mapping = args.map or ROOT / 'assets' / ('ede-north-v1.json.gz' if args.north else 'ede-corridors-v1.json.gz')
+    output = args.output or ROOT / 'assets' / ('ede-north-paving.json.gz' if args.north else 'ede-corridor-paving.json.gz')
+    bounds = coverage['northDetail']['pavingBounds'] if args.north else BOUNDS
     if args.fetch:
-        fetch(module, args.snapshot, args.date)
+        fetch(module, args.snapshot, args.date, bounds)
     base = load_scene_metadata()
-    with gzip.open(args.map, 'rt') as file:
+    with gzip.open(mapping, 'rt') as file:
         data = json.load(file)
     area = box(*data['bounds']).difference(box(*base['bounds']))
     scene = {'meta': base, 'roads': data['roads']}
@@ -62,7 +67,7 @@ def main():
               'collections': collections}
     tags = {row['id']: row['surface'] for row in data['roads'] if row.get('surface')}
     result = module['build_surfaces'](scene, index, surfaces, tags, source, args.date)
-    args.output.write_bytes(gzip.compress(json.dumps(result, separators=(',', ':'), ensure_ascii=False,
+    output.write_bytes(gzip.compress(json.dumps(result, separators=(',', ':'), ensure_ascii=False,
                                                      allow_nan=False).encode(), mtime=0))
     print(f"Corridor paving: {len(result['surfaces'])} BGT surfaces, {len(result['covered'])} covered OSM ways.")
 

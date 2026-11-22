@@ -43,7 +43,8 @@ export function createEdeMurals(scene, { enabled = true, isFallbackVisible = () 
   let entries = [];
 
   function needsFallback(entry) {
-    return Boolean(entry.atlas.f && isFallbackVisible(entry.site.fallbackBuilding));
+    // The modeled Groot Derxsgoed east wall follows the mapped footprint plane.
+    return Boolean(entry.atlas.f && (entry.site.id === 'groot-derxsgoed' || isFallbackVisible(entry.site.fallbackBuilding)));
   }
 
   function release(texture, resource) {

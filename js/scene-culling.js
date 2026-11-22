@@ -376,6 +376,7 @@ export function createExpansionCulling(roots, bounds, getGroundHeight) {
     ['RoadMarkings', 580],
     ['EdeStreetFeatures', 550],
     ['EdeImportedDetail', 620],
+    ['Ede Water Works', 550],
   ]);
   const batches = [];
   let initialized = false;

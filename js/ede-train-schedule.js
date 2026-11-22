@@ -252,3 +252,34 @@ export function connectTrainTurnarounds(plans) {
     outgoing.start = handoff;
   }
 }
+
+// Allocate a shared section from the leading cab’s entry through rear clearance.
+export function reserveTrainBlocks(plans, halfLength) {
+  const waiting = plans.filter(plan => plan.path.blocks?.length).map(plan => ({ plan, next: 0 }));
+  const releases = new Map();
+  const entryTime = (plan, block) => planTimeAt(plan.anchors, block.from - halfLength);
+  while (waiting.length) {
+    waiting.sort((a, b) => entryTime(a.plan, a.plan.path.blocks[a.next]) -
+      entryTime(b.plan, b.plan.path.blocks[b.next]) || a.plan.key.localeCompare(b.plan.key));
+    const job = waiting.shift();
+    const { plan } = job;
+    const block = plan.path.blocks[job.next++];
+    const ready = entryTime(plan, block);
+    const release = releases.get(block.id) ?? -Infinity;
+    if (ready < release) {
+      // The preceding public stop is the safe hold point. For southbound
+      // trains entering the map this may be Barneveld Zuid, beyond the map.
+      const hold = plan.anchors.findLastIndex(anchor => anchor.distance <= block.from - halfLength);
+      const delay = release - ready;
+      plan.anchors = plan.anchors.map((anchor, i) => i < hold ? anchor : {
+        ...anchor,
+        arrival: i === hold ? anchor.arrival : anchor.arrival + delay,
+        departure: anchor.departure + delay,
+      });
+      if (!plan.terminalDeparture) plan.start = planTimeAt(plan.anchors, 0);
+      plan.end += delay;
+    }
+    releases.set(block.id, planTimeAt(plan.anchors, block.to + halfLength, true) + 4);
+    if (job.next < plan.path.blocks.length) waiting.push(job);
+  }
+}

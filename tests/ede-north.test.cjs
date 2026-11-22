@@ -1,0 +1,84 @@
+const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const test = require('node:test');
+const { gunzipSync } = require('node:zlib');
+
+const packed = file => JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets', file))));
+
+test('Lunteren extends north without reindexing Ede and the first expansion', async () => {
+  const { EDE_DATA: map } = await import('../js/ede-geodata.js');
+  const base = packed('ede-map-v1.json.gz');
+  const corridors = packed('ede-corridors-v1.json.gz');
+  const north = packed('ede-north-v1.json.gz');
+  assert.ok(map.meta.north);
+  assert.deepEqual(map.meta.geographicBounds, [52.012, 5.565, 52.115, 5.805]);
+  assert.deepEqual(map.meta.baseBounds, base.meta.bounds);
+  for (const key of ['roads', 'buildings']) {
+    const originalIds = [...base[key], ...corridors[key]].map(row => row.id);
+    assert.deepEqual(map[key].slice(0, originalIds.length).map(row => row.id), originalIds);
+    assert.equal(new Set(map[key].map(row => row.id)).size, map[key].length);
+  }
+  for (const key of ['roadGraph', 'activeGraph']) {
+    for (const field of ['nodes', 'links', 'names']) {
+      const prefix = [...base[key][field], ...corridors[key][field]];
+      assert.deepEqual(map[key][field].slice(0, prefix.length), prefix, key + '.' + field);
+    }
+    const { nodes, names } = map[key];
+    for (const [a, b, name, , , , , road] of north[key].links) {
+      assert.ok(a >= 0 && a * 2 < nodes.length);
+      assert.ok(b >= 0 && b * 2 < nodes.length);
+      assert.ok(name >= 0 && name < names.length);
+      assert.ok(road >= north.base.roads && road < map.roads.length);
+    }
+  }
+});
+
+test('Lunteren approaches connect to Ede using mapped directions and reserve access', async () => {
+  const { EDE_DATA: map, projectLonLat, TELEPORT_LOCATIONS: arrivals } = await import('../js/city-config.js');
+  const { CAR, FOOT, BICYCLE, MOTOR } = await import('../js/road-access.js');
+  const roads = new Map(map.roads.map(road => [road.id, road]));
+  assert.deepEqual(roads.get('w912165168').modes, [0, 0]);
+  assert.ok(roads.get('w68678293').modes.every(m => (m & FOOT) && !(m & (BICYCLE | MOTOR))));
+  assert.ok(roads.get('w223211383').modes.every(m => (m & FOOT) && (m & BICYCLE) && !(m & MOTOR)));
+  assert.ok(map.northStreetDetail.some(f => f.id === 'w1530443258' && f.level === 0 && f.collidable));
+
+  function verifyRoutes(graph, mode, start, destinations) {
+    const edges = new Map();
+    for (const [a, b, , , , , , index] of graph.links) {
+      for (const [from, to, direction] of [[a, b, 0], [b, a, 1]]) {
+        if (!(map.roads[index].modes[direction] & mode)) continue;
+        if (!edges.has(from)) edges.set(from, []);
+        edges.get(from).push(to);
+      }
+    }
+    const distance = (node, { x, z }) => Math.hypot(graph.nodes[node * 2] - x, graph.nodes[node * 2 + 1] - z);
+    for (const [from, to] of destinations.flatMap(point => [[start, point], [point, start]])) {
+      const origin = [...edges.keys()].reduce((a, b) => distance(a, from) < distance(b, from) ? a : b);
+      assert.ok(distance(origin, from) < 60, JSON.stringify(from));
+      const reached = new Set([origin]);
+      for (const node of reached) for (const neighbor of edges.get(node) ?? []) reached.add(neighbor);
+      assert.ok([...reached].some(node => distance(node, to) < 60), JSON.stringify(to));
+    }
+  }
+  const ede = projectLonLat(5.65, 52.06);
+  verifyRoutes(map.roadGraph, CAR, ede, [arrivals['lunteren-centrum'], arrivals['kulturhus-wekerom']]);
+  verifyRoutes(map.activeGraph, FOOT, arrivals['lunteren-centrum'], [
+    arrivals['station-lunteren'], arrivals.goudsberg, arrivals['wekeromse-zand'], arrivals['de-valouwe'],
+    arrivals['kulturhus-wekerom'],
+  ]);
+  verifyRoutes(map.activeGraph, BICYCLE, ede, [arrivals['lunteren-centrum']]);
+});
+
+test('measured crowns supply grounded tree sizes near northern woodland arrivals', async () => {
+  const trees = JSON.parse(readFileSync(join(__dirname, '../assets/ede-forest-canopy/manifest.json'))).northernTreeSamples;
+  const { TELEPORT_LOCATIONS: arrivals, ISLAND_BOUNDS: bounds } = await import('../js/city-config.js');
+  for (const [x, z, height] of trees) {
+    assert.ok(x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z < -3780);
+    assert.ok(height >= 4 && height <= 40);
+  }
+  for (const id of ['de-koepel', 'goudsberg', 'hessenhut', 'de-valouwe']) {
+    const { focus } = arrivals[id];
+    assert.ok(trees.filter(([x, z]) => Math.hypot(x - focus.x, z - focus.z) < 120).length >= 12, id);
+  }
+});

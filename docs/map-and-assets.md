@@ -14,6 +14,7 @@ Most map layers are built offline and bundled with the game. Nearby 3DBAG tiles 
 | Buildings and façades | LoD 2.2 building shapes, offline façade measurements and neighbourhood profiles | [3DBAG](https://docs.3dbag.nl/en/) · [Façade evidence credits](../assets/ede-facades.SOURCES.md) · [CBS neighbourhood boundaries](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025) |
 | Street art | Wall assignments, real-reference paint decals and two approved painted reconstructions | [Mural sources and wall assignments](../tools/data/ede-murals.md) |
 | Streets and greenery | Surveyed road surfaces, bridges, platforms, shorelines, street furniture, lamps and trees | [PDOK BGT](https://www.pdok.nl/introductie/-/article/basisregistratie-grootschalige-topografie-bgt-) · [Municipal tree inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) |
+| Water works | Culvert mouths, fixed and adjustable weirs, and surveyed bank protection | [Waterschappen Kunstwerken IMWA](https://www.pdok.nl/ogc-apis/-/article/waterschappen-kunstwerken-imwa) · [Waterschappen Oppervlaktewateren IMWA](https://www.pdok.nl/ogc-apis/-/article/waterschappen-oppervlaktewateren-imwa) |
 | Motorways and traffic rules | Road sections, lane counts, infrastructure, access restrictions, signs, speed bumps and crossings | [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer) · [NWB and WEGGEG](../tools/data/ede-motorway-lanes.sources.md) · [NDW and WKD](../tools/data/ede-traffic-sources.md) · [NBd direction signs](https://downloads.rijkswaterstaatdata.nl/bewegwijzering/) |
 | Rail and buses | Rail alignment checks, local timetables, boarding points and live service updates | [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer) · [OVapi](https://gtfs.ovapi.nl/nl/) · [NDOV](https://govi.nu/realtime.html) · [RRReis Ede](https://www.rrreis.nl/reisinformatie/haltes-dienstverlening/dienstregeling-bus/regio-ede) |
 | Live conditions | Road speeds and closures, authorised garage occupancy feeds and local weather | [NDW live traffic](https://opendata.ndw.nu/) · [Nationaal Parkeer Register](https://www.nationaalparkeerregister.nl/downloads/certificaten-en-aanvraagformulieren) · [Open-Meteo](https://open-meteo.com/en/docs) |
@@ -72,7 +73,7 @@ The five-site Chrome WebGPU check used fixed 1280 × 720 views, summer at midday
 
 The [Kernhem](../tools/build-ede-kernhem-neighborhood-survey.py), [P. Bos](../tools/build-ede-p-bos-survey.py) and [Rembrandtlaan](../tools/build-ede-rembrandtlaan-survey.py) survey bakes take a local cache directory. Add `--fetch` to populate a new cache.
 
-The 17 fuel station sites share a parametric model with canopy outlines, brand-coloured trim, a shared wordmark texture, pump islands and optional shops. The local inventory covers 15 OpenStreetMap entries and two additional sites confirmed by the operator and PDOK imagery. It includes the separate Shell and Greenpoint forecourts on Bonnetstraat and the uncovered CNG dispenser on Radonstraat. The A30 service areas lie north of the playable bounds. Pump counts and vertical clearances use estimates where a survey is unavailable. Canopies shelter the forecourt and the model leaves clearance between pumps. [Station inventory and source links](../js/ede-fuel-sites.js)
+The 20 fuel stations share a parametric model with fitted canopies, pump islands, brand signs, roadside price pylons and shops where mapped. The inventory includes Esso De Stroet, De Tol and Spelt in Lunteren, the separate Shell and Greenpoint forecourts on Bonnetstraat, and the uncovered CNG dispenser on Radonstraat. Pylon positions use visible footings from aerial imagery or are fitted to the forecourt edge with both faces readable from the road. Pump layouts, clearances and some pylon positions are estimates. [Station inventory](../js/ede-fuel-sites.js) · [HAVÉ stations](https://havebrandstoffen.nl/tanken-sparen/) · [PDOK imagery](https://www.pdok.nl/-/hoge-resolutie-luchtfoto-2026-nu-beschikbaar-bij-pdok)
 
 Stadspoort and Pathé Ede have custom exteriors based on surveyed building shapes and public exterior references. Find the shopping-centre entrance, cinema, Riedel silos and Kappa Docie on the map. Stadspoort’s upper walking passage and the lower roads and paths use their fitted grade profiles.
 
@@ -86,13 +87,33 @@ node tools/build-ede-murals.mjs
 
 Map search includes De Keetmolen, De Peppel, CHE and Van der Knaaphal, and Lukkien. The marked Lukkien rooftop deck supports landing in Fly mode. See the [survey sources and in-game checks](../tools/data/ede-landmark-batch.md).
 
+Explore the memorials around the Paasberg, downtown Ede and the surrounding villages from map search. The Oude Kerk, Ede-Wageningen station, ENKA and De Eder Kuil also carry their commemorative plaques. [Memorial inventory, sources and fitted placements](../tools/data/ede-memorials.sources.md)
+
 Search the map for the surveyed churches, including Bethelkerk, Evangelisch-Lutherse Kerk, Goede Herderkerk, Petrakerk, and the former Ericakerk. Their exteriors use surveyed footprints and photo-informed trim. [Church exterior references](../tools/data/ede-other-churches.md) · [Shell rebuild](../tools/data/ede-other-churches.sources.md)
 
 The next ten locations include Kasteel Hoekelum, NIZO, Ziekenhuis Gelderse Vallei, De Eder Kuil, De ReeHorst, Buitenzorg, Johannus, Technova, De Gasfabriek and Tesqua. Hoekelum has a walkable moat bridge and the Eder Kuil has revised amphitheatre grading. [Sources, offline refresh and verification](../tools/data/ede-next-landmarks.md)
 
 Eight searchable Stationsweg sites add thirteen surveyed exteriors, including the By Honck villa group, the old police station, the miller’s house and the former Edesche Courant and MULO. [Stationsweg survey and exterior references](../tools/data/ede-stationsweg-landmarks.md)
 
+The skyline models cover Veldzicht at Mariëndaal, Langenhorst, the Valkestein towers, nearby Veldhuizen flats, and the Ede-Zuid high-rise group. De Veluwse Proeftuin includes planted balconies and the lower companion block. E.J. Bos Diervoeding adds the two surveyed industrial shells and rooftop equipment in north Ederveen. The residential models use shared geometry, individual façade colours and camera-distance culling for balcony and window detail. Balcony dimensions and planting layouts are fitted estimates. [Ede high-rise study](https://www.ede.nl/fileadmin/ede.nl/Pdf-en/Contourennotitie_Ontwikkelkader_Ede-Stad.pdf) · [De Veluwse Proeftuin architect](https://www.mix-architectuur.nl/werk/ede-wfc-de-veluwse-proeftuin/) · [E.J. Bos permit](https://repository.officiele-overheidspublicaties.nl/externebijlagen/exb-2022-35164/1/bijlage/exb-2022-35164.pdf) · [Skyline survey and rebuild notes](../tools/data/ede-skyline.sources.md)
+
+De Griek, De Halte · Gelria, De Kleefsehof and De Witte Hinde have surveyed shells with modeled facades. The western skyline includes Peti Protein and both the former Victoria Vesta offices and the park-side Victoria Veste tower. NIZO includes its northern block. Search the map for each site. [Central Ede survey](../tools/data/ede-centre-skyline.sources.md) · [Industrial and Victoria survey](../tools/data/ede-industrial-skyline.sources.md)
+
+Wekerom adds the completed De Maalderij apartment complex and the Hervormde Kerk with its separate clock tower. In Otterlo, the Oude Kerk uses its surveyed medieval shell and an AHN-based spire. [De Maalderij construction photos](https://www.dbl-lunteren.nl/projecten/32-appartementen-supermarkt-met-winkelunits-en-een-parkeergarage/) · [Hervormde Kerk Wekerom](https://hervormdwekerom.nl/informatie/gebouwen-beheer/kerk/) · [Oude Kerk Otterlo, Rijksmonument 14486](https://kennis.cultureelerfgoed.nl/index.php/Monumenten/14486)
+
+Four freestanding telecom masts add silhouettes at Stevinlaan, Meulunterseweg, Roekel and Otterlo-Noord. Locations and heights use mapped points, AHN and 2025 aerial imagery. The Stevinlaan mast uses an estimated 35.5 m overall height from the registered antenna height and aerial reference. The Meulunterseweg lattice uses a simplified silhouette beyond 340 m. [Stevinlaan antenna location](https://emfkaart.nl/de/antenna-locations/ALO-NL-026326) · [OpenStreetMap sites](https://www.openstreetmap.org/node/10289776863) · [Roekel](https://www.openstreetmap.org/node/599619409) · [Otterlo-Noord](https://www.openstreetmap.org/node/599536148) · [PDOK aerial imagery](https://www.pdok.nl/introductie/-/article/luchtfoto-rgb) · [AHN](https://www.ahn.nl/dataroom)
+
 The public-building, school and sports landmarks keep their surveyed roof and wall geometry. Verified entrances and glazing use local geometry and shared materials. Search the map for De Doelen, the Breelaan stations, Het Kernhuis, the Kenniscampus and ENKA schools, and the sports clubhouses. [Civic exterior sources](../tools/data/ede-public-landmarks.md) · [School exterior sources](../tools/data/ede-school-landmarks.md) · [Sports venue sources](../tools/data/ede-sport-landmarks.md)
+
+Search **Map** for **Westhoffhuis**, **Marnix College**, **Brandweerkazerne Lunteren**, or **Kulturhus Wekerom**. Westhoffhuis includes the Cultura entrance and public steps. Marnix follows the current main building at Prins Bernhardlaan 30. The fire station includes the photographed red garage door and silver panels. [Westhoffhuis survey](../tools/data/ede-westhoffhuis.sources.md) · [Marnix survey](../tools/data/ede-marnix-landmark.md) · [Fire station survey](../tools/data/ede-lunteren-fire.md)
+
+Kulturhus uses BAG `0228100000075900` and OSM `w267687077`. The exterior follows the 3DBAG LoD 2.2 shell, the 2026 PDOK aerial, and two ActiVast frontage photographs reviewed on 22 November 2026. The entrance, brick palette, and window bands are photo fits. The Dorpsplein import adds 113 OSM building footprints and 101 BGT paving surfaces. The map arrival sits on the surveyed brick footpath and the surrounding streets use their existing routing connections. [3DBAG building](https://api.3dbag.nl/collections/pand/items/NL.IMBAG.Pand.0228100000075900) · [ActiVast exterior photos](https://activast.nl/objecten/dorpsplein-1/) · [Kulturhus Wekerom](https://kulturhuswekerom.nl/)
+
+```sh
+uv run --with 'shapely>=2.1' --with 'pyproj==3.8.0' python tools/build-ede-kulturhus.py /tmp/ede-kulturhus --fetch
+node tools/build-ede-geodata.mjs /tmp/ede-north/osm-north.json --north
+uv run --with 'shapely>=2.1' --with 'pyproj==3.8.0' python tools/build-ede-corridor-paving.py /tmp/ede-north-paving --north --fetch --date 2026-11-22
+```
 
 Six Akoesticum flagpoles follow the row visible in the 2026 PDOK aerial at the Frisokazerne forecourt. The venue's photos establish the alternating purple and green banners. The mast heights and cloth dimensions are fitted from those photographs. The cloth responds to the existing wind and is culled at the landmark detail distance. [Venue photos](https://akoesticum.org/contact/) · [PDOK RGB imagery](https://app.pdok.nl/viewer/)
 
@@ -112,9 +133,9 @@ Rebuild the aerial palettes after refreshing the map so their records follow the
 Rebuild the bus routes after changing the road graph.
 See the [traffic data notes](../tools/data/ede-traffic-sources.md) for the WKD input and the access review.
 
-The roughly 7.4 × 5.4 km base extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the full 16.4 × 7.6 km landscape. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain. [Coordinate conversion and verification](../tools/data/ede-gis-unification.md)
+The roughly 7.4 × 5.4 km base extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the full 16.4 × 11.5 km landscape. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain. [Coordinate conversion and verification](../tools/data/ede-gis-unification.md)
 
-The Ginkelse Heide map pins frame the surveyed sheepfolds, Karin Colen’s open steel **Vensters op het Verleden** at its relocated site, and the **Huzarenmonument** by the Juffrouw Tok terrace. The steel cutouts and stone inscription are modeled details. [Sheepfold register](https://monumentenregister.cultureelerfgoed.nl/monumenten/14450) · [Vensters op het Verleden](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/4954/ede-vensters-op-het-verleden) · [Huzarenmonument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1303/ede-huzarenmonument)
+The Ginkelse Heide map pins frame the surveyed sheepfolds, Karin Colen’s open steel **Vensters op het Verleden** at its relocated site, and the **Huzarenmonument** by the Juffrouw Tok terrace. Vensters retains its 3D steel frames and concrete bases. A transparent texture based on the original design and a 2026 photograph by Rob Groendijk supplies the cutouts. The Huzarenmonument includes a modeled stone inscription. [Karin Colen’s designs and photographs](https://www.karincolen.nl/vensters) · [Sheepfold register](https://monumentenregister.cultureelerfgoed.nl/monumenten/14450) · [Vensters op het Verleden](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/4954/ede-vensters-op-het-verleden) · [Huzarenmonument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1303/ede-huzarenmonument)
 
 **Planken Wambuis**, **Boerderij Mossel** and **Juffrouw Tok** have individual exterior finishes, entrances, glazing and terraces on their surveyed building shells. Mossel has the black timber tearoom alongside the older farmhouse. The facades use modeled detail and shared materials. [Planken Wambuis terrace](https://ruiterzonwering.nl/projecten/project-planken-wambuis/) · [Mossel tearoom](https://boerderij-mossel.nl/theeschenkerij/) · [Herberg Zuid-Ginkel](https://www.atlasvanede.nl/toen-en-nu/historische-plekken/historische-gebouwen/herberg-zuid-ginkel)
 
@@ -122,7 +143,7 @@ The Ginkelse Heide map pins frame the surveyed sheepfolds, Karin Colen’s open 
 
 ## Rebuild the outer routes and terrain
 
-The expansion covers 5.565°–5.805° E and 52.012°–52.080° N. It adds detail along selected routes and at the arrivals near Doesburgermolen, Veenendaal-De Klomp, Ginkelse Heide, Boerderij Mossel and Planken Wambuis. The full map pins frame each custom exterior. The Ginkel arrivals include both historic sheepfolds, Juffrouw Tok and the Airborne Monument. [Schaapskudden and their locations](https://edeseschaapskudden.nl/schaapskudden/) · [Juffrouw Tok](https://www.juffrouwtok.nl/restaurants/ede) · [Airborne Monument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1310/ede-airborne-monument)
+The first expansion covers 5.565°–5.805° E and 52.012°–52.080° N. It adds detail along selected routes and at the arrivals near Doesburgermolen, Veenendaal-De Klomp, Ginkelse Heide, Boerderij Mossel and Planken Wambuis. The full map pins frame each custom exterior. The Ginkel arrivals include both historic sheepfolds, Juffrouw Tok and the Airborne Monument. [Schaapskudden and their locations](https://edeseschaapskudden.nl/schaapskudden/) · [Juffrouw Tok](https://www.juffrouwtok.nl/restaurants/ede) · [Airborne Monument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1310/ede-airborne-monument)
 
 The core retains its 12 m ground and surveyed local patches. The outer quadtree samples the AHN ground model on a 5 m grid and keeps its coarser parents visible while finer tiles load. The meshes carry PDOK aerial colours and use the existing RD New conversion and 22.54 m NAP datum. Soft building tiles own complete buildings, including footprints that extend across a tile edge. The canopy uses the 2022 crown coverage slice because the 2024 slice returned empty in Ede. Measured AHN crown heights shape the canopy tops. Their beveled edges descend to the terrain. The canopy manifest records neighboring crown coverage so woodland continues across tile edges. The transition to individual trees moves closer to the camera as it climbs. BGT woodland polygons contribute to the land-cover palette. [AHN ground and surface models](https://www.ahn.nl/dataroom) · [Canopy sources and terms](../tools/data/ede-tree-inventory.md)
 
@@ -317,6 +338,22 @@ uv run --offline --python 3.12 --with 'shapely>=2.1' --with pyproj --with raster
 
 Run `build-ede-shorelines.py --audit --osm` to check the original OSM water polygons and `--audit` to check the shipped shorelines. Reuse the original snapshot date for an offline refresh.
 
+### Refresh water works
+
+The 22 November 2026 snapshot covers the expanded map. The bake matches registered culvert mouths and weirs to nearby waterways, fits NAP elevations to the existing AHN grid, and checks clearance from travel surfaces. Weir orientation follows the mapped channel. Bank-protection lines retain their registered type and material where known, follow the fitted bank top, and trim overlaps with existing walls. A longer culvert can leave one visible mouth in the game while its surveyed link remains underground. [PDOK Kunstwerken](https://www.pdok.nl/ogc-apis/-/article/waterschappen-kunstwerken-imwa) · [PDOK Oppervlaktewateren](https://www.pdok.nl/ogc-apis/-/article/waterschappen-oppervlaktewateren-imwa)
+
+The offline asset contains 76 exposed mouths from 66 of 1,494 culvert records, 39 of 170 weirs, and 663 sections from 465 of 789 bank-protection records. The bank sections total 47.8 km. The bake removed one coincident culvert mouth and supersedes 45 BGT shoreline strips. Most omitted mouths were buried by the game terrain or lacked visible channels. Culvert sill positions and weir crests sometimes need local height fits. Bank depths and generic headwall geometry are estimates.
+
+The Frankeneng gate is fitted to the upper bank of KST-1106, about 1.1 m from its registered point. The 6.04 m NAP sill and 2.41 m overflow width come from the registered record. The gate leaf position and trim are modeled estimates. Both live water levels still come from the pilot gauges. [KST-1106 survey](https://api.pdok.nl/hwh/waterschappen-kunstwerken-imwa/ogc/v2/collections/stuw/items/64bf15fa-ee25-59ee-9c2d-15d510ae0261) · [Frankeneng water levels](simulation.md#frankeneng-water-levels)
+
+```sh
+uv run --with 'shapely>=2.1' --with 'pyproj==3.8.0' python tools/build-ede-water-works.py /tmp/ede-water-works --fetch --date 2026-11-22
+```
+
+Omit `--fetch` to reproduce the bake from the dated RD New cache. The command prints source counts and placement results. Use `?perf=1&waterWorks=off` for a baseline with the original BGT bank strips.
+
+The 94,438-byte asset builds into 100 spatial batches. In a paired 1280 × 800 Chrome WebGPU check at Frankeneng with traffic drawing and shadows disabled, median frame time was 16.7 ms and p95 was 33.4 ms in both runs. The layer added 10 draw calls and 5,428 triangles in that view. The water-works build took 41 ms. The visual check covered the Frankeneng gate and banks and the KDU-62176 culvert beside Dwarsweg.
+
 Rijkswaterstaat’s Geografische Areaalregistratie supplies A12 and A30 infrastructure in RD New and metres NAP. The bake matches features to directed carriageways, NWB sections and fitted elevations. Surveyed paint replaces coincident procedural paint on the matching way. The lane graph supplies simulation lanes and access. [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
 
 ```sh
@@ -503,6 +540,77 @@ The checked-in lamp asset joins the active PDOK BGT inventory to compatible 1GIS
 - Offline façade measurements use Mapillary imagery under CC BY-SA 4.0. [Evidence credits](../assets/ede-facades.SOURCES.md)
 - Lamp-post locations are from [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html) (CC0).
 - Civil structures and road surface evidence use [PDOK BGT](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) (CC0). Rail alignment and crossing controls were checked against [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer).
+- The adapted water-works asset `assets/ede-water-works.json.gz` uses Waterschap Vallei en Veluwe data published by Het Waterschapshuis via PDOK. The clipped, matched and terrain-fitted asset is distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). [Kunstwerken metadata](https://data.overheid.nl/dataset/81623-waterschappen-kunstwerken-imwa) · [Oppervlaktewateren metadata](https://data.overheid.nl/dataset/54318-waterschappen-oppervlaktewateren-imwa)
 - Directional access and selected clearance limits use the [Rijkswaterstaat WKD](https://docs.ndw.nu/en/handleidingen/wkd/).
 - Tree locations are from [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1?f=html&lang=nl) (CC0). Tree attributes are from the [municipal Ede inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) (public domain).
 - Bus timetables and stops come from the [OVapi Dutch GTFS feed](https://gtfs.ovapi.nl/nl/) (CC0 1.0, shapes ODbL 1.0). Line identities and station platforms were cross-checked against the [RRReis Ede overview](https://www.rrreis.nl/reisinformatie/haltes-dienstverlening/dienstregeling-bus/regio-ede).
+
+
+## Lunteren and the northern landscape
+
+The northern boundary extends to 52.115° N. Use **Teleport → Lunteren** for Dorpsstraat and the map for Station Lunteren, Goudsberg, Middelpunt van Nederland, Wekeromse Zand and De Valouwe. Streets and buildings cover the built-up village. Detail follows the mapped road and walking corridors through the surrounding landscape.
+
+The 22 November 2026 OSM snapshot adds 6,581 building footprints, 4,204 road and path ways, and six railway ways. The overlay preserves the Ede and first-expansion road and building indices and both routing graph prefixes. The 5 m terrain quadtree and woodland canopy extend north using the same Oude Kerk scene frame. At close range, measured KEA crown coverage and AHN heights guide estimated stem positions around the northern arrivals. Of 11,348 candidates, 9,296 remain after checks against paths, tracks, water, buildings and existing trees. Ede’s 12 m runtime grid and the previous outer terrain meshes are retained. BGT supplies 1,382 paving surfaces around central Lunteren, its station, and Dorpsplein in Wekerom. [OpenStreetMap](https://www.openstreetmap.org/copyright) · [BGT](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [AHN](https://www.ahn.nl/dataroom)
+
+The routes stay outside the temporary Goudsberg works fence. Walking trails in the fenced east of Wekeromse Zand retain pedestrian access and signed perimeter cycle routes remain usable. De Valouwe’s map arrival is on the permissive entrance track and a mapped blocked path closes in both directions. [Quarry closure](https://www.ede.nl/in-de-gemeente-ede/zandafgraving-goudsberg) · [Wekeromse Zand access](https://www.glk.nl/gebied/wekeromse-zand) · [De Valouwe walking route](https://www.geografischwandelen.nl/nat-ede/natuurgebieden-in-de-gemeente-ede/de-valouwe/ommetje-valouwe-west)
+
+The first ten custom sites are Station Lunteren, Uitkijktoren De Koepel, Oude Kerk Lunteren, Molen De Hoop, Museum Lunteren, De Hessenhut, the IJzertijdboerderij with its spieker, Pinetum De Dennenhorst, De Wormshoef and D’Eekhorst. The Middelpunt has three grass-topped steel sectors, a compacted courtyard, three boulders and a circular bench around its lime tree. Eight models use surveyed 3DBAG shells. The Hessenhut, farm and stone use mapped or aerially fitted footprints and reference photographs. The game uses shared materials, geometry and lower-detail silhouettes. [Landmark sources and fit notes](../tools/data/ede-lunteren-landmarks.sources.md)
+
+The newer models cover five school buildings and five additional churches. Search the map for De Bron, De Wegwijzer, either CNS De Triangel site, CBS Nederwoud, Bethelkerk, Maranathakerk, Protestantse Gemeente Lunteren Oranjestraat, Het Witte Kerkje or the Molukse Evangelische Kerk. Ruitenbeekschool and De Valk are beyond the playable northern boundary. [School surveys and rebuild](../tools/data/ede-lunteren-schools.sources.md) · [Church surveys and rebuild](../tools/data/ede-lunteren-churches.md)
+
+Search the map for **Uitkijktoren De Bult** and **Uitkijktoren Celtic Fields**. Both have walkable stairs and decks. De Bult follows its mapped 28-step approach, and the Celtic Fields platform uses dimensions fitted from aerial and ground photos. [De Bult](https://www.bezoek-ede.nl/locaties/1939613607/uitkijktoren-wekerom) · [Celtic Fields ground photo](https://panoramax.xyz/#focus=pic&pic=5d64e2c7-e709-4a2f-9103-b376a053fd27)
+
+The Lunteren art route includes Di tengah ombak, Lunters Vrouwtje, the Goudsberg arrow and viewer, De Bron at the station, and the waterline leading to De Meander. The memorials include the liberation bench and anniversary tile, the Kerkhoflaan boulder and De Keuenklep. Two Tegelroute panels sit at Nieuwe Erf. [Public art and memorial sources](../tools/data/ede-lunteren-art.sources.md)
+
+Start with a fresh cache for a new source date. Add `--offline` to the OSM, terrain and canopy commands to reuse downloaded data. The commands below refresh the complete outer terrain and canopy from their source data. To reproduce this release’s north-only additions, seed their output directories with the previous outer expansion and add `--retain-existing` to both bakes. That preserves the published terrain and canopy south of the new strip.
+
+```sh
+python3 -B tools/fetch-ede-north-osm.py /tmp/ede-north
+node tools/build-ede-geodata.mjs /tmp/ede-north/osm-north.json --north
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' \
+  python -B tools/build-ede-corridor-paving.py /tmp/ede-north/paving --north --date 2026-11-22 --fetch
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with pillow --with scipy \
+  python -B tools/build-ede-terrain-tiles.py /tmp/ede-outer-raster
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with scipy --with shapely \
+  python -B tools/build-ede-forest-canopy.py /tmp/ede-outer-raster --osm-source /tmp/ede-north/osm-north.json
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio \
+  python -B tools/build-ede-north-rail.py /tmp/ede-north/rail --osm /tmp/ede-north/osm-north.json --date 2026-11-22 --fetch
+uv run --python 3.12 --with pyproj==3.8.0 \
+  python -B tools/build-ede-lunteren-survey.py /tmp/ede-north/bag --fetch --check
+```
+
+
+### Northern expansion verification
+
+Chrome WebGPU Fast at 1280 × 720 used fixed camera paths, lighting and clock, with traffic enabled. Three cold and three warm starts were compared against the previous map. The frame-time rows report the median of the three warm-run p95 values.
+
+| Check | Before | Expanded |
+| --- | ---: | ---: |
+| Cold start to first playable frame | 15.15 s | 18.08 s |
+| Warm start to first playable frame | 15.38 s | 17.63 s |
+| Cold transfer to first playable frame | 45.38 MB | 52.99 MB |
+| Cold peak browser JS heap and backing storage | 3.82 GB | 4.63 GB |
+| Ede-Wageningen p95 | 16.8 ms | 16.8 ms |
+| Kuiperplein p95 | 16.8 ms | 16.7 ms |
+| Kolkakkerweg p95 | 33.3 ms | 33.3 ms |
+| Helicopter p95 | 16.7 ms | 16.8 ms |
+| Camera jump p95 | 33.3 ms | 33.4 ms |
+
+The median frame time was 16.7 ms on the existing routes. The camera jump stayed near the 30 fps target and its average draw calls rose from 1,573 to 1,682. The larger collision field accounts for 5.36 MB of the additional cold transfer. City-grid construction was the largest startup cost at about 6.9 s in the first cold run.
+
+Three warm passes through Lunteren, Goudsberg, De Valouwe and Wekeromse Zand measured 16.7–16.8 ms p95, including driving on Stationsstraat and the A30, cycling along Edeseweg, a helicopter pass and a camera jump. The woodland detail uses the existing camera-local tree batches. The game stopped RS34 at the exact platform 2 and platform 1 berths in the scheduled northbound and southbound dwell windows. A walking check covered 14 m on the Goudsberg approach. [Station Lunteren screenshot](../assets/screenshots/lunteren-station.webp) · [Goudsberg approach screenshot](../assets/screenshots/goudsberg.webp)
+
+The civic model pass checked the rebuilt Middelpunt, five school sites and five additional churches from their walking approaches and from above. These 22 views measured 16.7–16.8 ms p95 in one warm Chrome WebGPU Fast run. The player walked through each of the Middelpunt’s three entrances. [Middelpunt screenshot](../assets/screenshots/middelpunt-van-nederland.webp)
+
+Platform elevations, the south fence alignment at the Goudsberg works and small landmark details are fitted estimates. Unmarked rural trails use an inferred natural surface.
+
+Run the northern routes and landmark views with the local Chrome benchmark. The landmark suite captures every approach and elevated view when a screenshot directory is provided.
+
+```sh
+EDE_BENCH_SCENARIOS=lunteren EDE_BENCH_TRAFFIC=active EDE_BENCH_VIEWPORT=1280x720 \
+  EDE_BENCH_CACHE=warm EDE_BENCH_SCREENSHOTS=/tmp/lunteren-views \
+  node tools/benchmark-ede.mjs /tmp/lunteren-benchmark.json http://127.0.0.1:8000 9297 'perf=1&quality=fast'
+EDE_BENCH_SCENARIOS=lunteren-landmarks EDE_BENCH_TRAFFIC=active EDE_BENCH_VIEWPORT=1280x720 \
+  EDE_BENCH_CACHE=warm EDE_BENCH_RUNS=1 EDE_BENCH_SCREENSHOTS=/tmp/lunteren-views \
+  node tools/benchmark-ede.mjs /tmp/lunteren-landmarks.json http://127.0.0.1:8000 9297 'perf=1&quality=fast'
+```

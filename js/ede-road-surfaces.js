@@ -101,14 +101,19 @@ async function readSurfaces(name, optional = false) {
   return asset;
 }
 
-export async function loadEdeRoadSurfaces() {
-  const [asset, corridor] = await Promise.all([
+export async function loadEdeRoadSurfaces({ north = false } = {}) {
+  const [asset, ...extensions] = await Promise.all([
     readSurfaces('ede-road-surfaces.json.gz'),
     readSurfaces('ede-corridor-paving.json.gz', true),
+    north ? readSurfaces('ede-north-paving.json.gz', true).catch(error => {
+      console.warn('[Ede north paving] using mapped road centerlines:', error);
+      return null;
+    }) : null,
   ]);
-  if (corridor) {
-    asset.surfaces = asset.surfaces.concat(corridor.surfaces);
-    Object.assign(asset.covered, corridor.covered);
+  for (const extension of extensions) {
+    if (!extension) continue;
+    asset.surfaces = asset.surfaces.concat(extension.surfaces);
+    Object.assign(asset.covered, extension.covered);
   }
   const grade = new Map(), ground = new Map();
   for (const surface of asset.surfaces) {

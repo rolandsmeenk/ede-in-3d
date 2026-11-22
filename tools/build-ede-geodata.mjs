@@ -1,6 +1,6 @@
 // Generate the packed Ede map from tools/data/osm_ede.json (Overpass, query q_ede.overpassql).
 // Frame: 1 unit = 1 m, x = east, z = south, origin at the Oude Kerk (true north up, no grid rotation).
-// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.json.gz] [wkd-geojson-directory] [--corridors]
+// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.json.gz] [wkd-geojson-directory] [--corridors|--north]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,14 +9,17 @@ import { projectLonLatInto } from '../js/ede-scene-coordinates.js';
 import { CAR, VAN, BUS, BICYCLE, FOOT, MOTOR } from '../js/road-access.js';
 import { cycleFacilities, readWkd, roadAccess } from './ede-road-access.mjs';
 import { buildRoadTags, writeRoadTags } from './build-ede-road-tags.mjs';
+import { GOUDSBERG_FENCE, createNorthAccess } from './ede-north-access.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
-const args = process.argv.slice(2).filter(argument => argument !== '--corridors');
-const corridors = process.argv.includes('--corridors');
+const switches = new Set(['--corridors', '--north']);
+const args = process.argv.slice(2).filter(argument => !switches.has(argument));
+const north = process.argv.includes('--north');
+const corridors = north || process.argv.includes('--corridors');
 const INPUT = args[0] || path.join(DIR, 'data', 'osm_ede.json');
 const MAP_ASSET = path.join(DIR, '..', 'assets', 'ede-map-v1.json.gz');
 const OUT = args[1] ? path.resolve(args[1]) : corridors
-  ? path.join(DIR, '..', 'assets', 'ede-corridors-v1.json.gz') : MAP_ASSET;
+  ? path.join(DIR, '..', 'assets', north ? 'ede-north-v1.json.gz' : 'ede-corridors-v1.json.gz') : MAP_ASSET;
 if (corridors && OUT === MAP_ASSET) throw new Error('Corridors must use a separate overlay path');
 if (!OUT.endsWith('.json.gz')) throw new Error('Expected a .json.gz map output path');
 const osm = JSON.parse(fs.readFileSync(INPUT, 'utf8'));
@@ -27,7 +30,21 @@ const log = (...a) => console.log('[ede-geodata]', ...a);
 // Keep graph geometry and saved scenes on the coefficients of the checked-in map.
 const base = JSON.parse(gunzipSync(fs.readFileSync(MAP_ASSET)));
 const { lonLatAffine } = base.meta;
-const geographicBounds = corridors ? [52.012, 5.565, 52.080, 5.805] : base.meta.geographicBounds;
+const coverage = JSON.parse(fs.readFileSync(path.join(DIR, 'data', 'ede-outer-coverage.json'), 'utf8'));
+const [south, west, , east] = coverage.geographicBounds;
+const geographicBounds = north ? coverage.geographicBounds : corridors
+  ? [south, west, coverage.previousNorth, east] : base.meta.geographicBounds;
+if (north) {
+  // Keep every graph and geometry index from the first expansion as the prefix.
+  const previous = JSON.parse(gunzipSync(fs.readFileSync(path.join(DIR, '..', 'assets', 'ede-corridors-v1.json.gz'))));
+  for (const key of ['roads', 'railways', 'buildings', 'water', 'parks', 'squares', 'trees', 'signals']) {
+    base[key].push(...previous[key]);
+  }
+  for (const key of ['roadGraph', 'activeGraph']) {
+    for (const field of ['nodes', 'links', 'names']) base[key][field].push(...previous[key][field]);
+  }
+  base.meta.bounds = previous.bounds;
+}
 const r1 = (v) => Math.round(v * 10) / 10;
 const toWorld = (lon, lat) => {
   const { x, z } = projectLonLatInto(lonLatAffine, lon, lat, {});
@@ -167,8 +184,9 @@ function crossingControl(t) {
   return null;
 }
 const trees = [];
+const northAccess = north ? createNorthAccess(osm) : null;
 for (const e of osm.elements) {
-  const t = e.tags || {};
+  const t = northAccess?.(e) ?? e.tags ?? {};
   if (e.type === 'node') {
     const [x, z] = toWorld(e.lon, e.lat);
     if (t.natural === 'tree') trees.push({ x: r1(x), z: r1(z), h: r1(num(t.height) ?? 8) });
@@ -287,7 +305,7 @@ for (const e of osm.elements) {
   const t = e.tags || {};
   if (e.type === 'node') continue;
   const isWater = t.natural === 'water' || /^(riverbank|dock)$/.test(t.waterway || '');
-  const isPark = t.natural === 'wood' || corridors && t.natural === 'heath' || /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green|forest)$/.test(t.landuse || '');
+  const isPark = t.natural === 'wood' || north && /^(sand|bare_rock|scrub|grassland)$/.test(t.natural || '') || corridors && t.natural === 'heath' || /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green|forest)$/.test(t.landuse || '');
   const isSquare = t.place === 'square' || (t.highway === 'pedestrian' && t.area === 'yes');
   if (!isWater && !isPark && !isSquare) continue;
   if (isSquare && ['no', 'private', 'customers', 'permit'].includes(t.foot ?? t.access)) continue;
@@ -352,33 +370,41 @@ const data = {
 const roadTags = buildRoadTags(osm, roads, bgt).fields;
 function corridorOverlay() {
   const [minX, minZ, maxX, maxZ] = base.meta.bounds;
-  const outside = (x, z) => x < minX || x > maxX || z < minZ || z > maxZ;
+  const outside = north ? (_, z) => z < minZ : (x, z) => x < minX || x > maxX || z < minZ || z > maxZ;
   const shapeOutside = points => points.some((x, i) => i % 2 === 0 && outside(x, points[i + 1]));
+  const [left, top, right, bottom] = data.meta.bounds;
+  const inRange = (x, z) => x >= left && x <= right && z >= top && z <= bottom;
+  const within = points => {
+    const { x0, x1, z0, z1 } = bbox(Array.from({ length: points.length / 2 }, (_, i) => points.slice(i * 2, i * 2 + 2)));
+    return x0 <= right && x1 >= left && z0 <= bottom && z1 >= top;
+  };
   const additions = (key, geometry) => {
     const knownIds = new Set(base[key].map(row => row.id));
-    return data[key].filter(row => !knownIds.has(row.id) && shapeOutside(row[geometry]));
+    return data[key].filter(row => !knownIds.has(row.id) && shapeOutside(row[geometry]) && (!north || within(row[geometry])));
   };
   // Keep local detail around the five arrivals and the routes connecting them.
-  const arrivals = [[5.6488339, 52.0620776], [5.5738443, 52.0460819], [5.7351475, 52.03733],
-    [5.7616257, 52.0623555], [5.78636, 52.030766]].map(point => toWorld(...point));
-  const paths = [
+  const arrivals = (north ? coverage.northDetail.arrivals : [[5.6488339, 52.0620776], [5.5738443, 52.0460819], [5.7351475, 52.03733],
+    [5.7616257, 52.0623555], [5.78636, 52.030766]]).map(point => toWorld(...point));
+  const paths = (north ? coverage.northDetail.routes : [
     [[5.649, 52.046], [5.648, 52.055], [5.6488339, 52.0620776]],
     [[5.674, 52.0274], [5.626, 52.0337], [5.597, 52.04], [5.5738443, 52.0460819]],
     [[5.697, 52.054], [5.719, 52.043], [5.7351475, 52.03733], [5.755, 52.034], [5.78636, 52.030766]],
     [[5.7351475, 52.03733], [5.753, 52.049], [5.7616257, 52.0623555], [5.776, 52.054], [5.78636, 52.030766]]
-  ].map(route => route.map(point => toWorld(...point)));
+  ]).map(route => route.map(point => toWorld(...point)));
+  const zones = north ? [coverage.northDetail.village, ...(coverage.northDetail.additionalZones ?? [])]
+    .map(([west, south, east, north]) => [...toWorld(west, north), ...toWorld(east, south)]) : [];
   const segments = paths.flatMap(path => path.slice(1).map(([x, z], i) => {
     const [ax, az] = path[i];
     const dx = x - ax, dz = z - az;
     return { ax, az, dx, dz, size: dx * dx + dz * dz };
   }));
-  const detailed = (x, z) => arrivals.some(([ax, az]) => Math.hypot(x - ax, z - az) <= 500)
+  const detailed = (x, z) => zones.some(([x0, z0, x1, z1]) => x >= x0 && x <= x1 && z >= z0 && z <= z1)
+    || arrivals.some(([ax, az]) => Math.hypot(x - ax, z - az) <= 500)
     || segments.some(({ ax, az, dx, dz, size }) => {
       const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / size));
       return Math.hypot(x - ax - t * dx, z - az - t * dz) <= 150;
     });
   const newRoads = additions('roads', 'pts');
-  const [left, top, right, bottom] = data.meta.bounds;
   function trimRail({ pts, ...rail }) {
     const clipped = [];
     for (let i = 2; i < pts.length; i += 2) {
@@ -398,6 +424,24 @@ function corridorOverlay() {
       clipped.push(r1(ax + exit * dx), r1(az + exit * dz));
     }
     return { ...rail, pts: clipped };
+  }
+  const railExtensions = [];
+  if (north) {
+    const northRails = new Map(data.railways.map(way => [way.id, way]));
+    for (const previous of base.railways) {
+      const source = northRails.get(previous.id);
+      if (!source || !shapeOutside(source.pts)) continue;
+      const head = previous.pts.slice(0, 2), tail = previous.pts.slice(-2);
+      const first = source.pts.findIndex((x, i) => i % 2 === 0 && x === head[0] && source.pts[i + 1] === head[1]);
+      const last = source.pts.findIndex((x, i) => i % 2 === 0 && x === tail[0] && source.pts[i + 1] === tail[1]);
+      const earlier = first > 0 && source.pts[1] < head[1] && head[1] < minZ + 210;
+      const later = last >= 0 && last < source.pts.length - 2 && source.pts.at(-1) < tail[1] && tail[1] < minZ + 210;
+      if (!earlier && !later) continue;
+      railExtensions.push(trimRail({
+        ...previous, pts: [...(earlier ? source.pts.slice(0, first) : []),
+          ...previous.pts, ...(later ? source.pts.slice(last + 2) : [])],
+      }));
+    }
   }
   const indices = new Map(newRoads.map((road, index) => [road.id, base.roads.length + index]));
 
@@ -445,22 +489,30 @@ function corridorOverlay() {
     return { nodes, names, links, ...(source.controls && { controls }) };
   }
 
+  const closure = north && osm.elements.find(row => row.type === 'way' && row.id === GOUDSBERG_FENCE);
+  const northernDetail = closure?.geometry?.length ? [{
+    id: `w${closure.id}`, source: 'osm', type: 'fence', level: 0, collidable: true,
+    points: geomPts(closure.geometry).map(point => point.map(r1)),
+  }] : [];
   return {
     version: 1,
     base: { bounds: base.meta.bounds, roads: base.roads.length, buildings: base.buildings.length,
       roadNodes: base.roadGraph.nodes.length, activeNodes: base.activeGraph.nodes.length },
     bounds: data.meta.bounds,
     geographicBounds,
-    detail: { arrivals, routes: paths },
+    detail: { arrivals, routes: paths, ...(north && { zones }) },
+    ...(north && { north: true, railExtensions, streetDetail: northernDetail, source: { osmTimestamp: osm.osm3s?.timestamp_osm_base } }),
     buildings: additions('buildings', 'ring').filter(({ ring }) =>
       ring.some((x, i) => i % 2 === 0 && detailed(x, ring[i + 1]))),
     roads: newRoads.map(road => ({ ...road, ...roadTags[road.id] })),
     railways: additions('railways', 'pts').map(trimRail).filter(rail => rail.pts.length >= 4),
-    water: water.filter(({ ring }) => ring.every((x, i) => i % 2 || outside(x, ring[i + 1]))).map((row, index) => ({ ...row, id: `corridor-water${index}` })),
+    water: water.filter(({ ring }) => (!north || within(ring)) &&
+      ring.every((x, i) => i % 2 || outside(x, ring[i + 1])))
+      .map((row, index) => ({ ...row, id: `${north ? 'north' : 'corridor'}-water${index}` })),
     parks: additions('parks', 'ring'),
     squares: additions('squares', 'ring'),
-    trees: trees.filter(({ x, z }) => outside(x, z) && detailed(x, z)),
-    signals: signals.filter(({ x, z }) => outside(x, z)),
+    trees: trees.filter(({ x, z }) => outside(x, z) && detailed(x, z) && (!north || inRange(x, z))),
+    signals: signals.filter(({ x, z }) => outside(x, z) && (!north || inRange(x, z))),
     roadGraph: graphExtension('roadGraph'),
     activeGraph: graphExtension('activeGraph'),
   };

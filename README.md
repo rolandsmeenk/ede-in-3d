@@ -1,6 +1,6 @@
 # Ede in 3D
 
-Explore Ede, the Netherlands, in a 3D browser game built around its real streets, landscapes and landmarks. Wander from Oude Kerk to Marktplein, cycle out to Huis Kernhem, or fly a helicopter over the ENKA factory.
+Explore Ede, the Netherlands, in a 3D browser game built around its real streets, landscapes and landmarks. Wander from Oude Kerk to Marktplein, cycle out to Huis Kernhem, watch the Valleilijn trains at Lunteren, or fly a helicopter over the ENKA factory.
 
 **[Play Ede in 3D](https://rolandsmeenk.github.io/ede-in-3d/)**
 
@@ -9,16 +9,16 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 ## Find your way around Ede
 
 - **Walk the town centre.** Explore the shops and squares around Grotestraat, see Cultura and Raadhuis Ede, and look for street art at Astrant and the Van Eekelenflat.
-- **Cycle or drive across town.** Follow mapped cycle routes, pass buses on local streets, and watch the trains at Ede-Wageningen and Ede Centrum.
-- **Jump to a major area or find a landmark.** Use **Teleport** for areas such as Centrum, ENKA and Ginkelse Heide. Open **Map** and search for an individual landmark, such as De Eder Kuil, Groot Zonneoord or De Valenberg, then click its pin to teleport.
+- **Cycle or drive across town.** Follow mapped cycle routes, pass buses on local streets, and watch the trains at Ede-Wageningen, Ede Centrum and Lunteren.
+- **Jump to a major area or find a landmark.** Use **Teleport** for areas such as Centrum, ENKA, Ginkelse Heide and Lunteren. Open **Map** and search for an individual landmark, such as De Eder Kuil, Groot Zonneoord or De Valenberg, then click its pin to teleport.
 
 ## Ede by the numbers
 
 | Feature | Count or coverage |
 | --- | ---: |
-| Map extent | 16.4 × 7.6 km |
-| Teleport menu areas | 13 |
-| Custom landmark models | 164 |
+| Map extent | 16.4 × 11.5 km |
+| Teleport menu areas | 14 |
+| Custom landmark models | 252 |
 | Building footprints in the base map | 44,844 |
 | Street litter bins | 555 |
 | Waste collection sites | 395 |
@@ -29,12 +29,12 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 | Mapped traffic-light locations | 251 |
 | Lamp posts | 15,241 |
 | Mapped tree records in the default inventory | 70,124 |
-| Trees placed in the default map | 146,746 |
-| Mapped roads and paths | 1,879 km |
-| Mapped railway tracks | 40 km |
+| Trees placed in the default map | 185,045 |
+| Mapped roads and paths | 2,583 km |
+| Mapped railway tracks | 45 km |
 | Modeled parking spaces | 18,193 |
 
-Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 160 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. The placed tree total includes procedural woodland and counts trees after clearance checks. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
+Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 248 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. The placed tree total includes procedural woodland and estimated stems from the northern canopy survey. It counts trees after clearance checks. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
 
 ## Screenshots
 
@@ -49,6 +49,8 @@ Counts come from the bundled map, placement assets and landmark registry. The la
 | Noorderkerk | Astrant mural | NIZO Food Research |
 | --- | --- | --- |
 | ![Noorderkerk with its centered stained-glass window beneath a symmetrical gable and its brick tower extending to ground level](assets/screenshots/noorderkerk.webp) | ![Studio Giftig’s Muzikanten mural across Kuiperplein](assets/screenshots/astrant-mural.webp) | ![Brick and glass frontage at NIZO Food Research](assets/screenshots/nizo.webp) |
+
+[Browse the landmark screenshot gallery](docs/landmarks.md).
 
 [See the in-game prop gallery](docs/map-and-assets.md#in-game-prop-gallery) for road signs, traffic lights, sports grounds, fuel stations, bins, and transformer houses.
 

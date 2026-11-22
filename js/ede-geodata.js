@@ -1,14 +1,16 @@
 // Ede map in local metres around Oude Kerk. © OpenStreetMap contributors (ODbL).
 import { EDE_ROAD_TAGS } from './ede-road-tags.js';
 import { EDE_FUEL_FALLBACK_FOOTPRINTS } from './ede-fuel-sites.js';
+import { FRANKENENG_DOWNSTREAM } from './ede-water-levels.js';
 
 const mapUrl = new URL('../assets/ede-map-v1.json.gz', import.meta.url);
 const shorelineUrl = new URL('../assets/ede-shorelines.json.gz', import.meta.url);
 const yearsUrl = new URL('../assets/ede-building-years.json.gz', import.meta.url);
+const northUrl = new URL('../assets/ede-north-v1.json.gz', import.meta.url);
 const corridorsUrl = new URL('../assets/ede-corridors-v1.json.gz', import.meta.url);
 const windowUsesUrl = new URL('../assets/ede-window-uses.json.gz', import.meta.url);
 
-async function readMapAsset(url, optional = false) {
+export async function readMapAsset(url, optional = false) {
   let bytes;
   if (url.protocol === 'file:') {
     const { readFile } = await import('node:fs/promises');
@@ -55,6 +57,11 @@ function applyShorelines(data, shoreline) {
   data.parks = replace('parks');
   data.squares = replace('squares');
   data.water = shoreline.water;
+  const grass = data.parks.find(({ id }) => id === 'w853986890');
+  if (grass && shoreline.water.some(({ id }) => id === 'water91')) {
+    data.water = [...shoreline.water, FRANKENENG_DOWNSTREAM];
+    grass.holes = [...(grass.holes ?? []), FRANKENENG_DOWNSTREAM.ring];
+  }
   for (const group of ['water', ...groups]) data.meta.counts[group] = data[group].length;
 }
 
@@ -83,6 +90,22 @@ function applyCorridors(data, corridors) {
       || !data.meta.bounds.every((bound, index) => bound === original.bounds?.[index])) {
     throw new Error('Ede corridor asset does not match the OSM map');
   }
+  const { meta } = data;
+  const extensions = new Map((corridors.railExtensions ?? []).map(row => [row.id, row]));
+  if (corridors.north && (!(corridors.bounds?.[1] < meta.bounds[1]) ||
+      [0, 2, 3].some(i => corridors.bounds[i] !== meta.bounds[i]) ||
+      !arrays.every(key => Array.isArray(corridors[key])) ||
+      !['arrivals', 'routes', 'zones'].every(key => Array.isArray(corridors.detail?.[key])) ||
+      !['roadGraph', 'activeGraph'].every(key =>
+        ['nodes', 'links', 'names'].every(field => Array.isArray(corridors[key]?.[field]))) ||
+      [...extensions.keys()].some(id => !data.railways.some(row => row.id === id)))) {
+    throw new Error('Invalid northern map extension');
+  }
+  if (extensions.size) data.railways = data.railways.map(way => extensions.get(way.id) ?? way);
+  if (corridors.north) {
+    data.northStreetDetail = corridors.streetDetail ?? [];
+    data.northTrees = corridors.trees;
+  }
   const baseParkCount = data.parks.length;
   for (const key of arrays) {
     data[key] = data[key].concat(corridors[key]);
@@ -93,19 +116,24 @@ function applyCorridors(data, corridors) {
     if (corridors[key].controls) Object.assign(data[key].controls, corridors[key].controls);
   }
   Object.assign(data.meta, {
-    baseBounds: data.meta.bounds,
-    baseBuildingCount: original.buildings,
-    baseRoadCount: original.roads,
-    baseRoadNodeCount: original.roadNodes / 2,
-    baseParkCount,
+    baseBounds: meta.baseBounds ?? meta.bounds,
+    baseBuildingCount: meta.baseBuildingCount ?? original.buildings,
+    baseRoadCount: meta.baseRoadCount ?? original.roads,
+    baseRoadNodeCount: meta.baseRoadNodeCount ?? original.roadNodes / 2,
+    baseParkCount: meta.baseParkCount ?? baseParkCount,
     bounds: corridors.bounds,
     geographicBounds: corridors.geographicBounds,
-    corridorDetail: corridors.detail,
+    corridorDetail: corridors.north ? {
+      arrivals: [...meta.corridorDetail.arrivals, ...corridors.detail.arrivals],
+      routes: [...meta.corridorDetail.routes, ...corridors.detail.routes],
+      zones: corridors.detail.zones,
+    } : corridors.detail,
+    ...(corridors.north && { north: true, northStart: original.bounds[1] }),
   });
 }
 
 async function loadMap() {
-  const [data, shoreline, years, corridors, windowUses] = await Promise.all([
+  const [data, shoreline, years, corridors, windowUses, north] = await Promise.all([
     readMapAsset(mapUrl),
     readMapAsset(shorelineUrl, true).catch(error => {
       console.warn('[Ede shorelines] using OSM geometry:', error);
@@ -121,6 +149,10 @@ async function loadMap() {
     }),
     readMapAsset(windowUsesUrl, true).catch(error => {
       console.warn('[Ede building uses] using OSM tags:', error);
+      return null;
+    }),
+    readMapAsset(northUrl, true).catch(error => {
+      console.warn('[Ede north] using the existing extent:', error);
       return null;
     }),
   ]);
@@ -146,6 +178,13 @@ async function loadMap() {
   }
   for (const road of data.roads) Object.assign(road, EDE_ROAD_TAGS[road.id]);
   if (corridors) applyCorridors(data, corridors);
+  if (north?.north === true && corridors) {
+    try {
+      applyCorridors(data, north);
+    } catch (error) {
+      console.warn('[Ede north] using the existing extent:', error);
+    }
+  }
   if (windowUses?.version === 1) {
     const uses = new Map();
     for (const use of ['unlit', 'home', 'office', 'shop', 'mixed']) {

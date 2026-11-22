@@ -51,6 +51,33 @@ test('expansion collision uses measured 5 m terrain and retains the original tow
   assert.equal(terrain.terrainHeightAt(8090, 3337), terrain.sampleTerrain(town, 8090, 3337));
 });
 
+test('the northern expansion covers the planned sites and shares the original terrain seam', async () => {
+  const { geographicBounds, northDetail } = require('../tools/data/ede-outer-coverage.json');
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const { projectLonLatInto } = await import('../js/ede-scene-coordinates.js');
+  const { decodeTerrain, sampleTerrain } = await import('../js/terrain.js');
+  const manifest = json('ede-terrain-tiles/manifest.json');
+  const field = decodeTerrain(Uint8Array.from(terrainFile('collision.bin')).buffer);
+  const project = ([lon, lat]) => projectLonLatInto(EDE_DATA.meta.lonLatAffine, lon, lat, {});
+  const [south, west, north, east] = geographicBounds;
+  for (const [lon, lat] of [[west, north], [east, north], [west, south], [east, south], ...northDetail.arrivals]) {
+    const { x, z } = project([lon, lat]);
+    assert.ok(x >= field.minX && x <= field.maxX && z >= field.minZ && z <= field.maxZ, `${lon},${lat}`);
+    assert.ok(Number.isFinite(sampleTerrain(field, x, z)));
+  }
+  const station = project(northDetail.arrivals[0]);
+  const summit = project(northDetail.arrivals[1]);
+  assert.ok(sampleTerrain(field, summit.x, summit.z) - sampleTerrain(field, station.x, station.z) > 20,
+    'Goudsberg rises above the station');
+  for (let x = field.minX; x < field.maxX; x += 250) {
+    const northId = `250_${x}_-4250`;
+    const southId = `250_${x}_-4000`;
+    assert.ok(manifest.tiles[northId] && manifest.tiles[southId]);
+    assert.deepEqual(terrainFile(`${northId}.bin`).subarray(50 * 51 * 5),
+      terrainFile(`${southId}.bin`).subarray(0, 51 * 5), `seam at ${x}`);
+  }
+});
+
 test('terrain hierarchy covers the expansion and stores the collision vertices at every level', () => {
   const manifest = json('ede-terrain-tiles/manifest.json');
   const collision = terrainFile('collision.bin');

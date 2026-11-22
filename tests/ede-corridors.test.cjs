@@ -37,7 +37,7 @@ test('rural paths connect the mill and eastern destinations using their mapped a
     connected(ginkel, [mossel, planken]);
   }
 
-  const mosselseweg = roads.filter(road => road.name === 'Mosselseweg');
+  const mosselseweg = roads.filter(road => road.name === 'Mosselseweg' && road.kind === 'track');
   assert.ok(mosselseweg.length > 0);
   assert.ok(mosselseweg.every(road => !((road.modes[0] | road.modes[1]) & MOTOR)));
 });

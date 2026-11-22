@@ -13,14 +13,18 @@ import {
   createParkPavingMaterial
 } from './tsl-materials.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
-import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
+import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, edeWaterBanks, edeWaterCut, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
+import { FRANKENENG_GAUGES, resolveFrankenengLevels } from './ede-water-levels.js';
+import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { getRailCorridors, gradeCuts, gradeWayAt, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
 import { edeTreeSite } from './ede-tree-data.js';
 import { REEMST_TREES } from './ede-reemst-landmark-survey.js';
+import { LUNTEREN_STRUCTURES } from './ede-lunteren-survey.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
 import { addAsphaltLanes } from './ede-asphalt-lanes.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
+import { EDE_MTB_WAYS } from './ede-active-travel.js';
 
 // Four BGT stems fall inside the surveyed WVEde return. Place them on its south verge.
 const WVEDE_TREE_POSITIONS = new Map([
@@ -29,6 +33,9 @@ const WVEDE_TREE_POSITIONS = new Map([
   ['-2018.6/1365', [-2018.28, 1367.49]],
   ['-2013.2/1363.6', [-2013.03, 1367.01]],
 ]);
+
+// The fitted Hessenhut stairs and deck replace these surfaces. Their routes still use OSM.
+const HESSENHUT_SURFACES = new Set(['w571480170', 'w571480171', 'w572392681', 'w571480172']);
 
 // Live construction data consumed by the building and street-detail builders after buildCityGrid().
 let centralParkClearings;
@@ -56,11 +63,11 @@ function setAerialSurfaceColors(geometry, segment, asphalt, sampleGround = true)
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4, true));
 }
 
-function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches, forestCells) {
+function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches, forestCells, northernTreeSamples = [], heath) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
-  const { baseBounds, baseRoadCount, baseParkCount, corridorDetail } = EDE_DATA.meta;
+  const { baseBounds, baseRoadCount, baseParkCount, corridorDetail, northStart } = EDE_DATA.meta;
   const baseRoads = baseRoadCount === undefined ? null :
     new Set(EDE_DATA.roads.slice(0, baseRoadCount).map(road => road.id));
   const detailCells = new Set();
@@ -81,6 +88,11 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     }
   };
   for (const [x, z] of corridorDetail?.arrivals ?? []) markDetail(x, z, x, z, 500);
+  for (const [left, top, right, bottom] of corridorDetail?.zones ?? []) {
+    for (let x = Math.floor(left / detailStep); x <= Math.floor(right / detailStep); x++) {
+      for (let z = Math.floor(top / detailStep); z <= Math.floor(bottom / detailStep); z++) detailCells.add(detailKey(x, z));
+    }
+  }
   for (const route of corridorDetail?.routes ?? []) for (let i = 1; i < route.length; i++) {
     markDetail(...route[i - 1], ...route[i], 150);
   }
@@ -89,11 +101,11 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const roadMat = createRoadSurfaceMaterial(aerial, false, true);
   roadMat.name = 'Ede asphalt';
   const sidewalkMat = createSidewalkMaterial(aerial ? 0.4 : 0);
-  const terrainMat = terrain && landCover ? createEdeGroundMaterial(aerial, landCover)
+  const terrainMat = terrain && (landCover || heath) ? createEdeGroundMaterial(aerial, landCover, heath)
     : aerial && terrain ? createSidewalkMaterial(0.85) : sidewalkMat;
   const curbMat = createCurbMaterial();
   const waterMat = createWaterMaterial();
-  const lawnMat = createParkLawnMaterial(false, aerial, landCover);
+  const lawnMat = createParkLawnMaterial(false, aerial, landCover, heath);
   const pavingMat = createParkPavingMaterial(aerial);
   const mappedPavingMat = createEdePavingMaterial(aerial);
   const aerialMaterials = new Set([roadMat, terrainMat, sidewalkMat, lawnMat, pavingMat, mappedPavingMat]);
@@ -130,9 +142,29 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   centralParkClearings = null; edeStreetSites = [];
 
   const water = (EDE_DATA.water || []).filter(w => w.ring?.length >= 6);
+  const frankenengMeshes = new Map();
+  let waterLevels = [];
   if (terrain) {
-    for (const geometry of edeTerrainGeometries(-0.025)) collect(geometry, terrainMat);
+    const waterCuts = [];
+    if (FRANKENENG_GAUGES.every(({ waterId }) => water.some(({ id }) => id === waterId))) {
+      waterLevels = resolveFrankenengLevels();
+      for (const [i, level] of waterLevels.entries()) {
+        const feature = water.find(({ id }) => id === level.waterId);
+        const ring = edePoints(feature.ring), holes = feature.holes.map(edePoints);
+        const geometry = edePolygonGeometry(ring, holes);
+        const mesh = new THREE.Mesh(geometry, waterMat);
+        mesh.name = `Frankeneng water · ${level.code}`;
+        mesh.position.y = level.y;
+        mesh.userData.keepInAerial = true;
+        group.add(mesh);
+        frankenengMeshes.set(level.waterId, mesh);
+        waterCuts.push(...edeWaterCut(geometry));
+        collect(edeWaterBanks([ring, ...holes], FRANKENENG_GAUGES[i].minNap - SCENE_NAP_ORIGIN - 0.05), terrainMat);
+      }
+    }
+    for (const geometry of edeTerrainGeometries(-0.025, waterCuts)) collect(geometry, terrainMat);
     for (const feature of water) {
+      if (frankenengMeshes.has(feature.id)) continue;
       collect(polygon(edePoints(feature.ring), (feature.holes || []).map(edePoints), 0.005), waterMat);
     }
   } else {
@@ -165,8 +197,11 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints);
     const paved = ['square', 'pedestrian', 'plaza'].includes(park.kind);
     const geometry = polygon(ring, holes, paved ? 0.05 : 0.045);
-    if (paved) setPavingStyle(geometry, 2);
-    collect(geometry, paved ? pavingMat : lawnMat);
+    if (park.id === 'w572342371') collectPaving(geometry, 'sand', 0);
+    else {
+      if (paved) setPavingStyle(geometry, 2);
+      collect(geometry, paved ? pavingMat : lawnMat);
+    }
     if (paved) pavedPlazaRects.push(edeBounds(ring));
   }
 
@@ -194,10 +229,14 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   }
 
   // Mapped cycleway surfaces keep the riding routes visible between the detailed corridors.
-  const roadSegments = baseRoads && detailCells.size ? edeRoadSegments().filter(({ road, a, b }) =>
+  const mappedRoadSegments = edeRoadSegments();
+  const roadsToDraw = EDE_DATA.meta.north
+    ? mappedRoadSegments.filter(({ road }) => !HESSENHUT_SURFACES.has(road.id)) : mappedRoadSegments;
+  const roadSegments = baseRoads && detailCells.size ? roadsToDraw.filter(({ road, a, b }) =>
     baseRoads.has(road.id) || /^(motorway|trunk|primary|secondary)/.test(road.kind)
+    || (EDE_MTB_WAYS.has(road.id) && /^(path|track|cycleway)$/.test(road.kind))
     || (road.kind === 'cycleway' && osmRoadMaterial(road))
-    || nearExpansionDetail(a.x, a.z) || nearExpansionDetail(b.x, b.z)) : edeRoadSegments();
+    || nearExpansionDetail(a.x, a.z) || nearExpansionDetail(b.x, b.z)) : roadsToDraw;
   const carriagewayKinds = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link',
     'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'residential', 'unclassified', 'service', 'living_street']);
   const curbedKinds = new Set(['trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link',
@@ -344,7 +383,12 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       const joined = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
       if (geometries.length > 1) geometries.forEach(geometry => geometry.dispose());
       const geometry = drapeEdeSurface(joined, true, s.road.id);
-      const material = surface.kind !== 'sidewalk' && osmRoadMaterial(s.road);
+      const naturalTrail = surface.kind === 'path' && s.a.z < northStart
+        && ['track', 'bridleway', 'path'].includes(s.road.kind)
+        && !corridorDetail.zones.some(([left, top, right, bottom]) =>
+          s.a.x >= left && s.a.x <= right && s.a.z >= top && s.a.z <= bottom);
+      const signedTrail = EDE_MTB_WAYS.has(s.road.id) && /^(path|track)$/.test(s.road.kind);
+      const material = surface.kind !== 'sidewalk' && (osmRoadMaterial(s.road) ?? (naturalTrail || signedTrail ? 'sand' : undefined));
       if (material) collectPaving(geometry, material, Math.atan2(s.uz, s.ux), s);
       else if (surface.kind === 'road') collect(geometry, roadMat, s);
       else if (surface.kind === 'sidewalk') {
@@ -468,13 +512,14 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   }
 
   if (treeInventory) {
-    for (const tree of treeInventory) {
+    for (const source of [treeInventory, EDE_DATA.northTrees ?? []]) for (const tree of source) {
       const { x, z } = tree;
       if (waterAt(x, z)) continue;
       const block = blockAt(x, z);
       if (block && !block.park && !block.sidewalk) continue;
       const verge = x > -2027 && x < -2013 ? WVEDE_TREE_POSITIONS.get(`${x}/${z}`) : undefined;
-      const site = edeTreeSite(tree, terrainHeightAt(verge?.[0] ?? x, verge?.[1] ?? z));
+      const record = source === treeInventory ? tree : { x, z, height: tree.h, species: 255 };
+      const site = edeTreeSite(record, terrainHeightAt(verge?.[0] ?? x, verge?.[1] ?? z));
       if (verge) [site.x, site.z] = verge;
       parkTreeSites.push(site);
     }
@@ -485,6 +530,15 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       parkTreeSites.push({ x: tree.x, z: tree.z, y: terrainHeightAt(tree.x, tree.z) + 0.09, scale: tree.h ? Math.max(0.45, Math.min(1.8, tree.h / 13)) : 0.66 + h * 0.62,
         species: h < 0.42 ? 0 : h < 0.65 ? 1 : 2, yaw: h * Math.PI * 2 });
     }
+  }
+  const [courtX, courtZ] = LUNTEREN_STRUCTURES.middelpuntRing;
+  const inMiddelpunt = (x, z) => EDE_DATA.meta.north && (x - courtX) ** 2 + (z - courtZ) ** 2 < 12.6 ** 2;
+  if (EDE_DATA.meta.north) {
+    const [x, z] = LUNTEREN_STRUCTURES.middelpuntLime;
+    const lime = edeTreeSite({ x, z, height: 12.0, species: 0, crownWidth: 7, seasonGroup: 4, sources: 8 }, terrainHeightAt(x, z));
+    const mapped = parkTreeSites.find(tree => Math.hypot(tree.x - x, tree.z - z) < 0.25);
+    if (mapped) Object.assign(mapped, lime);
+    else parkTreeSites.push(lime);
   }
   // OSM often maps a wooded area without mapping each individual tree. Fill
   // those patches procedurally, preserving mapped trees and clear paths.
@@ -516,7 +570,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const outsideTown = (x, z) => baseBounds &&
     (x < baseBounds[0] || x > baseBounds[2] || z < baseBounds[1] || z > baseBounds[3]);
   const plantWoodlandTree = (x, z, gx, gz, extra) => {
-    if (nearbyTree(x, z) || waterAt(x, z)) return;
+    if (inMiddelpunt(x, z) || nearbyTree(x, z) || waterAt(x, z)) return;
     const fill = canopyDensity?.get(`${Math.floor(x / 200)}/${Math.floor(z / 200)}`);
     if (fill !== undefined && hash(gx, gz, extra ? 8 : 4) > fill) return;
     if (LANDMARK_EXCLUSIONS.some(b => x > b.minX - 4 && x < b.maxX + 4 && z > b.minZ - 4 && z < b.maxZ + 4)) return;
@@ -531,6 +585,19 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     indexTree(tree);
   };
 
+  const beforeNorthernWoodland = parkTreeSites.length;
+  for (const [x, z, height] of northernTreeSamples) {
+    if (!Number.isFinite(x + z + height) || height < 4 || height > 40 ||
+        inMiddelpunt(x, z) || nearbyTree(x, z) || waterAt(x, z) || nearbyRailHeightAt(x, z, 6) !== undefined) continue;
+    if (nearestRoads(x, z, 20).some(q => q.dist < q.road.w / 2 + 3)) continue;
+    const block = blockAt(x, z);
+    if (block && !block.park && !block.sidewalk) continue;
+    const tree = edeTreeSite({ x, z, height, species: 255 }, terrainHeightAt(x, z));
+    parkTreeSites.push(tree);
+    indexTree(tree);
+  }
+
+  const northernWoodlandTrees = parkTreeSites.length - beforeNorthernWoodland;
   const woodland = [];
   for (const [i, park] of (EDE_DATA.parks || []).entries()) {
     if (!['wood', 'forest'].includes(park.kind)) continue;
@@ -608,10 +675,21 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       group.add(mesh);
     }
   }
-  group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, railways: railWays, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
+  group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, railways: railWays, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, northernWoodlandTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
     mappedPavingCount, clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, junctionClippedCurbs: true, junctionClippedSidewalks: true };
   scene.add(group);
-  return { group, sidewalks, footprints, highwayLanes: [], colliders };
+  return { group, sidewalks, footprints, highwayLanes: [], colliders,
+    get waterLevels() { return waterLevels; },
+    setWaterLevels(levels) {
+      for (const level of levels) {
+        const mesh = frankenengMeshes.get(level.waterId);
+        mesh.position.y = level.y;
+        // The static city scene skips automatic world-matrix updates.
+        mesh.updateMatrixWorld();
+      }
+      waterLevels = levels;
+    },
+  };
 }
 
 /**

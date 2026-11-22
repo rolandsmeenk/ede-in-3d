@@ -1719,7 +1719,7 @@ class PersonRig {
   }
 
   // Bones of the whole body from the feet, pelvis and gait state (world space)
-  solve() {
+  solve(kite = null) {
     const s = this.s;
     const g = this.gait;
     const run = this.run;
@@ -1738,16 +1738,30 @@ class PersonRig {
       .multiply(qZ(_q, -0.8 * this.pelvisRoll));
     this.writeBone(BONE.CHEST, _qChest, this.jointFrom(BONE.PELVIS, BONE.CHEST, _qPelvis, _pelvis, _chest));
     const look = Math.sin(this.time * 0.37 + this.seed) * 0.25 * idle * idle;
-    qY(_qa, yaw + this.headTurn + look).multiply(qX(_q, 0.05 - 0.1 * run));
+    const headTilt = kite ? -kite.elevation * 0.72 : 0.05 - 0.1 * run;
+    qY(_qa, yaw + this.headTurn + look).multiply(qX(_q, headTilt));
     this.writeBone(BONE.HEAD, _qa, this.jointFrom(BONE.CHEST, BONE.HEAD, _qChest, _chest, _v));
 
     // Arms swing against the legs, a little behind them (elbows bend more on the forward swing, ~90 degrees running)
     const swingAmp = 0.42 * this.armSwing * g * (1 + run * 0.3);
+    if (kite) qY(_qRoot, yaw);
     for (let i = 0; i < 2; i++) {
       const side = SIDES[i];
       const flex = 0.06 - side * this.arm * swingAmp + idle * 0.02;
       const abduction = 0.1 + (this.girth - 1) * 0.35 + run * 0.08;
       this.jointFrom(BONE.CHEST, LIMB.upperArm[i], _qChest, _chest, _shoulder);
+      if (kite) {
+        const right = side < 0;
+        _front.set(0, 0, 1).applyQuaternion(_qRoot);
+        _pole.set(side * 0.55, -1, -0.35).applyQuaternion(_qRoot);
+        const reach = right ? 0.42 - kite.pull : 0.26;
+        const lift = right ? -0.22 + Math.sin(kite.elevation) * 0.56 : -0.24;
+        _target.set(-side * 0.04, lift, reach).multiplyScalar(s).applyQuaternion(_qRoot).add(_shoulder);
+        const grip = this.limb(LIMB.upperArm[i], LIMB.forearm[i], _shoulder, _target,
+          UPPER_ARM * s, (FOREARM + 0.07) * s, _pole, _front, side * ARM_BIND_ABDUCTION);
+        if (right) kite.hand.copy(grip);
+        continue;
+      }
       _qUpper.copy(_qChest).multiply(qZ(_q, side * (abduction - ARM_BIND_ABDUCTION))).multiply(qX(_q, -flex));
       this.writeBone(LIMB.upperArm[i], _qUpper, _shoulder);
       const elbow = 0.2 + 0.55 * Math.max(0, flex) + 0.1 * g + run * 1.05;

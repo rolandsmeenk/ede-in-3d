@@ -82,6 +82,72 @@ function addSheepfoldFences({ trim, colliders }) {
   }
 }
 
+
+function addSheepfoldFlock(group) {
+  // Positions inside the fenced paddock alongside the main sheepfold.
+  const placements = [
+    [4320.6, 1066.8, 0.48, 1.02, true],
+    [4322.5, 1067.5, 1.86, 0.69, false],
+    [4327.1, 1065.2, -0.63, 0.98, false],
+    [4328.8, 1070.3, 2.28, 1.04, true],
+    [4322.1, 1072.8, -1.75, 0.96, true],
+    [4325.7, 1074.0, 0.83, 1.00, false],
+    [4329.7, 1078.1, -2.74, 0.91, true],
+    [4322.0, 1078.4, -0.30, 1.06, true],
+    [4319.5, 1083.4, -0.88, 1.03, false],
+    [4321.3, 1084.4, -1.42, 0.73, true],
+    [4325.4, 1083.1, 2.96, 0.95, true],
+    [4328.6, 1087.0, 1.34, 1.04, false],
+  ];
+  const batch = new CivicBatch();
+  const fleece = [0xe4d9c2, 0xf2e9d4, 0xd2c3a9, 0xe8dfcc];
+  const face = 0xd7cbb2;
+  const hoof = 0x50483c;
+
+  for (const [i, [x, z, heading, size, grazing]] of placements.entries()) {
+    const ground = terrainHeightAt(x, z);
+    const cos = Math.cos(heading), sin = Math.sin(heading);
+    const wool = fleece[i % fleece.length];
+    const part = (color, px, py, pz, rx, ry, rz, tilt = 0, roll = 0) => {
+      const shape = new THREE.SphereGeometry(1, 10, 6).scale(rx, ry, rz)
+        .rotateX(tilt).rotateZ(roll).translate(px, py, pz)
+        .scale(size, size, size).rotateY(heading).translate(x, ground, z);
+      batch.solid(shape, color);
+    };
+
+    part(wool, 0, 0.71, -0.05, 0.30, 0.28, 0.57);
+    part(wool, 0, 0.70, -0.38, 0.27, 0.26, 0.26);
+    part(wool, 0, 0.74, 0.28, 0.27, 0.27, 0.30);
+    part(wool, 0, 0.42, -0.59, 0.077, 0.26, 0.088, 0.18);
+
+    for (const side of [-1, 1]) for (const end of [-1, 1]) {
+      const px = side * 0.17 * size, pz = (end * 0.37 - 0.04) * size;
+      const wx = x + px * cos + pz * sin, wz = z - px * sin + pz * cos;
+      const foot = terrainHeightAt(wx, wz);
+      const leg = ground + 0.56 * size - foot;
+      batch.solid(new THREE.CylinderGeometry(0.043 * size, 0.026 * size, leg, 6)
+        .translate(wx, foot + leg / 2, wz), face);
+      batch.solid(new THREE.CylinderGeometry(0.039 * size, 0.043 * size, 0.068 * size, 6)
+        .rotateY(heading).translate(wx, foot + 0.034 * size, wz), hoof);
+    }
+
+    const headY = grazing ? 0.30 : 1.04, headZ = grazing ? 0.77 : 0.59;
+    part(wool, 0, grazing ? 0.51 : 0.85, grazing ? 0.51 : 0.43,
+      0.146, grazing ? 0.32 : 0.25, 0.15, grazing ? -0.72 : 0.59);
+    part(face, 0, headY, headZ, 0.103, 0.15, 0.12, grazing ? -0.22 : 0.52);
+    part(0xb1a58c, 0, headY - 0.092, headZ + 0.062, 0.073, 0.064, 0.092);
+    part(hoof, 0, headY - 0.095, headZ + 0.143, 0.050, 0.026, 0.017);
+    for (const side of [-1, 1]) {
+      part(face, side * 0.135, headY + 0.048, headZ - 0.046, 0.10, 0.025, 0.042, 0, -side * 0.23);
+      part(0x32281e, side * 0.083, headY + 0.033, headZ + 0.063, 0.019, 0.020, 0.021);
+    }
+  }
+
+  const flock = batch.mesh();
+  flock.name = 'Ginkelse Heide sheep flock';
+  group.add(flock);
+}
+
 function addDeKlompPlatforms({ group, platforms }) {
   const slabs = new CivicBatch();
   const surface = (x, z) => {
@@ -352,71 +418,59 @@ function memorialColliders(site, from, to, offset, thickness, height) {
 function createVensters(_, site) {
   const batch = new CivicBatch();
   const steel = [0x804422, 0x955431, 0x864626, 0x8a4828, 0x7b3c22];
-  const width = 1.68, pitch = 1.72, bottom = 0.46;
-  const stops = [-2, -1, 0, 1, 2];
-  const figures = [
-    [[-0.42, 5.08, 0.28], [0.34, 4.83, 0.31], [-0.07, 3.68, 0.36], [0.34, 2.53, 0.40]],
-    [[-0.38, 4.12, 0.24], [0.32, 4.57, 0.19], [0.33, 3.53, 0.26], [-0.08, 2.74, 0.42]],
-    [[-0.39, 4.06, 0.21], [0.45, 3.82, 0.20]],
-    [[-0.35, 4.31, 0.30], [0.28, 3.72, 0.29], [-0.15, 2.66, 0.36]],
-    [[0.06, 5.03, 0.41], [-0.25, 3.83, 0.24], [0.35, 3.19, 0.25], [-0.04, 2.38, 0.30]],
+  const width = 1.68, pitch = 1.72, bottom = 0.46, header = 0.148, stile = 0.09;
+  const panels = [
+    [42, 299, 163], [323, 595, 119], [619, 918, 73], [942, 1215, 119], [1239, 1495, 163],
   ];
-  function silhouette(points, color) {
-    const ring = points.map(([x, y]) => [x, y, 0.003]);
-    batch.polygon([ring], color);
-    batch.polygon([ring.slice().reverse().map(([x, y]) => [x, y, -0.003])], color);
-  }
-  function strip(ax, ay, bx, by, gauge, color) {
-    batch.solid(new THREE.BoxGeometry(gauge, Math.hypot(bx - ax, by - ay), 0.014)
-      .rotateZ(-Math.atan2(bx - ax, by - ay)).translate((ax + bx) / 2, (ay + by) / 2, 0));
-  }
-  for (const [i, index] of stops.entries()) {
-    const center = index * pitch, color = steel[i], top = 6;
-    const edge = width / 2;
-    // Openwork geometry leaves the heath visible through the frames.
-    for (const side of [-1, 1]) box(batch, center + side * (edge - 0.045), (top + bottom) / 2, 0, 0.09, top - bottom, 0.075, color);
-    box(batch, center, top - 0.074, 0, width, 0.148, 0.075, color);
+  const vertices = [], uv = [], indices = [];
+  const edge = width / 2;
+  for (const [i, [left, right, upper]] of panels.entries()) {
+    const index = i - 2, center = index * pitch, color = steel[i];
+    const top = site.height - Math.abs(index) * 0.2;
+    for (const side of [-1, 1]) {
+      box(batch, center + side * (edge - stile / 2), (top + bottom) / 2, 0, stile, top - bottom, 0.075, color);
+    }
+    box(batch, center, top - header / 2, 0, width, header, 0.075, color);
     box(batch, center, bottom + 0.20, 0, width, 0.40, 0.044, color);
-    for (let rib = 0; rib < 7; rib++) {
-      const at = (rib - 3) * 0.232;
-      strip(center + at, top - 0.10, center + Math.max(-edge, at - 0.40), bottom + 0.36, 0.018, color);
-      strip(center + at, top - 0.10, center + Math.min(edge, at + 0.51), bottom + 0.36, 0.012, color);
-    }
-    for (const [dx, y, half] of figures[i]) {
-      const x = center + dx, h = half * 0.72;
-      const arc = Array.from({ length: 9 }, (_, j) => {
-        const t = Math.PI * j / 8;
-        return [x + Math.cos(t) * half, y + Math.sin(t) * h];
-      });
-      silhouette(arc, color);
-      for (const side of [-1, 1]) strip(x + side * half * 0.88, y, x, y - 0.57, 0.011, color);
-      silhouette([[x - 0.025, y - 0.55], [x + 0.031, y - 0.55], [x + 0.02, y - 0.78], [x - 0.017, y - 0.77]], color);
-    }
-    if (Math.abs(index) <= 1) {
-      for (const [dx, y] of [[-0.47, 5.43], [0.37, 5.07]]) {
-        const x = center + dx;
-        silhouette([[x - 0.026, y + 0.13], [x + 0.026, y + 0.13], [x + 0.043, y + 0.027],
-          [x + 0.33, y - 0.025], [x + 0.29, y - 0.061], [x + 0.04, y - 0.047],
-          [x + 0.085, y - 0.16], [x - 0.085, y - 0.16], [x - 0.04, y - 0.047],
-          [x - 0.29, y - 0.061], [x - 0.33, y - 0.025], [x - 0.043, y + 0.027]], color);
-      }
-    }
-    if (!index) {
-      // A life-size central parachutist gives the panel its recognisable silhouette.
-      silhouette([[-0.42, 2.11], [-0.24, 2.40], [-0.17, 2.77], [-0.36, 3.14], [-0.29, 3.28],
-        [-0.10, 3.04], [0.03, 3.05], [-0.03, 3.20], [0.03, 3.36], [0.16, 3.35],
-        [0.23, 3.24], [0.18, 3.06], [0.37, 3.17], [0.51, 3.57], [0.63, 3.51],
-        [0.52, 3.03], [0.23, 2.73], [0.19, 2.53], [0.33, 2.27], [0.25, 1.98],
-        [0.07, 1.92], [0.11, 2.24], [-0.01, 2.40], [-0.15, 2.15], [-0.35, 2.02]], color);
-    }
     box(batch, center, 0.055, 0.50, width, 0.23, 1.37, 0xb1aa97);
     const a = center - edge + 0.025, b = center + edge - 0.025;
     batch.quad([a, bottom, -0.13], [a, 0.17, 1.15], [b, 0.17, 1.15], [b, bottom, -0.13], 0xc2b9a5);
     batch.quad([a + 0.14, 0.425, 0.03], [a + 0.14, 0.214, 0.97], [b - 0.14, 0.214, 0.97],
-      [b - 0.14, 0.425, 0.03], steel[i]);
+      [b - 0.14, 0.425, 0.03], color);
+
+    // Sample just the five infills. The artwork sits behind the lips of the steel frames.
+    const x0 = center - edge + stile - 0.008, x1 = center + edge - stile + 0.008;
+    const y1 = top - header + 0.008;
+    const u0 = left / 1536, u1 = right / 1536, v0 = 1 - 965 / 1024, v1 = 1 - upper / 1024;
+    const vertex = vertices.length / 3;
+    vertices.push(x0, bottom, 0, x1, bottom, 0, x1, y1, 0, x0, y1, 0);
+    uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
+    indices.push(vertex, vertex + 1, vertex + 2, vertex, vertex + 2, vertex + 3);
   }
-  const edge = pitch * 2 + width / 2;
-  return makeGroup(site.name, batch, memorialColliders(site, -edge, edge, 0.42, 1.48, 6));
+  const limit = pitch * 2 + edge;
+  const group = makeGroup(site.name, batch, memorialColliders(site, -limit, limit, 0.42, 1.48, site.height));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  const material = new THREE.MeshStandardNodeMaterial({
+    side: THREE.DoubleSide, shadowSide: THREE.DoubleSide, roughness: 0.93, alphaTest: 0.34, visible: false,
+  });
+  const cutouts = new THREE.Mesh(geometry, material);
+  cutouts.name = 'Vensters steel openwork';
+  cutouts.castShadow = cutouts.receiveShadow = true;
+  group.add(cutouts);
+  if (typeof document !== 'undefined') {
+    new THREE.TextureLoader().load('./assets/ede-vensters-openwork.webp', map => {
+      map.colorSpace = THREE.SRGBColorSpace;
+      map.anisotropy = 8;
+      material.map = map;
+      material.needsUpdate = true;
+      material.visible = true;
+    });
+  }
+  return group;
 }
 
 function createHuzarenMonument(_, site) {
@@ -463,6 +517,7 @@ export const EXPANSION_LANDMARK_FACTORIES = {
   'schaapskooi-ginkelse-heide': (_, site) => createSurveyLandmark(site, EXPANSION_LANDMARK_SURVEYS[site.id], sheepfoldWall, details => {
     addSheepfoldFences(details);
     addSheepfoldRoofs(details.trim);
+    addSheepfoldFlock(details.group);
   }),
   'juffrouw-tok': (_, site) => buildRestaurant(site),
   doesburgermolen: createDoesburgermolen,

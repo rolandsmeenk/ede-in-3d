@@ -20,6 +20,8 @@ GitHub Pages serves the game and its bundled assets. Live features that use Ede 
 | --- | --- |
 | Live Time | Calculates the sun position in the browser and displays the current time in Europe/Amsterdam. |
 | Live Weather | When enabled, fetches current Ede conditions directly from Open-Meteo if the game’s weather endpoint is absent. |
+| Frankeneng water levels | Fetches the waterschap’s gauge values directly after startup and uses bundled levels offline. |
+| Fuel prices | Street-side signs show estimates from the latest published CBS national average. The browser refreshes the reference hourly while visible and uses a dated bundled value offline. |
 | Road traffic | Uses bundled posted speed limits and Amsterdam time-of-day demand. Live NDW counts, speeds, closures and temporary limits require the feed server. |
 | Buses and trains | Follow bundled timetables. Level-crossing barriers respond to timetable-based trains. Live bus positions, NS GPS and RS34 service updates require the feed server. |
 | Parking | Uses local occupancy profiles. Live readings for supported garages require the feed server and authorised NPR credentials. |

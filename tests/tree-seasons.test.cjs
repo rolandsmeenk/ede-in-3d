@@ -10,7 +10,7 @@ async function seasons() {
   const { Color, Vector4 } = await import('../vendor/three/build/three.webgpu.js');
   return loadModule(source, { imports: {
     'three/webgpu': { Color, Vector4 },
-    'three/tsl': { floor: Math.floor, uniformArray: values => ({ element: i => values[i] }) }
+    'three/tsl': { floor: Math.floor, uniform: value => ({ value }), uniformArray: values => ({ element: i => values[i] }) }
   } });
 }
 
@@ -26,6 +26,42 @@ test('Today follows Amsterdam midnight using the civil date through daylight sav
   assert.equal(setTreeSeason('winter', before), 14);
   assert.equal(refreshTreeSeason(after), 14);
   assert.equal(getTreeSeason(), 'winter');
+});
+
+test('heather blooms in late summer in Amsterdam and the season menu can preview it', async () => {
+  const { heatherBloom, setTreeSeason, refreshTreeSeason } = await seasons();
+  setTreeSeason('today', new Date('2025-07-23T12:00:00Z'));
+  assert.equal(heatherBloom.value, 0);
+  refreshTreeSeason(new Date('2025-08-17T12:00:00Z'));
+  const opening = heatherBloom.value;
+  assert.ok(opening > 0 && opening < 1);
+  refreshTreeSeason(new Date('2025-08-29T12:00:00Z'));
+  assert.equal(heatherBloom.value, 1);
+  refreshTreeSeason(new Date('2025-09-14T12:00:00Z'));
+  assert.ok(heatherBloom.value > 0 && heatherBloom.value < opening);
+  setTreeSeason('heather-bloom', new Date('2025-12-29T12:00:00Z'));
+  assert.equal(heatherBloom.value, 1);
+  setTreeSeason('winter');
+  assert.equal(heatherBloom.value, 0);
+});
+
+test('the heath mask preserves polygon holes and uses more specific BGT terrain classes', async () => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const heathSource = readFileSync(join(__dirname, '../js/ede-heath.js'), 'utf8');
+  const { rasterizeHeath } = loadModule(heathSource, { imports: { 'three/webgpu': three } });
+  const rect = (a, b, c, d) => [a, b, c, b, c, d, a, d];
+  const features = [{ kind: 'heath', ring: rect(0, 0, 32, 32), holes: [rect(8, 8, 24, 24)] },
+    { kind: 'grass', ring: rect(0, 0, 40, 40) }];
+  const landCover = { minX: 8, minZ: 0, sizeX: 16, sizeZ: 16,
+    texture: { image: { width: 2, height: 2, data: [1, 0, 0, 2] } } };
+  const { pixels, width } = rasterizeHeath(features, [0, 0, 40, 40], landCover);
+  const at = (x, z) => pixels[(1 + z) * width + x + 1];
+  assert.equal(at(0, 0), 255, 'OSM heath');
+  assert.equal(at(1, 0), 0, 'BGT woodland');
+  assert.equal(at(1, 1), 0, 'OSM polygon hole');
+  assert.equal(at(2, 1), 255, 'BGT heath');
+  assert.equal(at(4, 4), 0, 'ordinary grass');
+  assert.ok(pixels.slice(0, width).every(value => value === 0));
 });
 
 test('group profiles differ through spring and autumn, with evergreen coverage through winter', async () => {

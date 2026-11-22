@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, mix, texture, uv, vertexColor } from 'three/tsl';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
-import { CivicBatch, civicSigns, makeGroup, wallColliders } from './ede-civic-landmarks.js';
+import { CivicBatch, civicSigns, makeGroup, polygonNormal, wallColliders } from './ede-civic-landmarks.js';
 import { ESTATE_SURVEY } from './ede-estate-survey.js';
 import { terrainHeightAt } from './terrain.js';
 
@@ -590,6 +590,131 @@ export function createHoekelum() {
   bridge(batch, details, colliders, platforms);
   const group = estateGroup('Kasteel Hoekelum and coach house', batch, masonry, colliders, details);
   group.userData.platforms = platforms;
+  return group;
+}
+
+export function createTheehuisHoekelum(footprints, site) {
+  const batch = new CivicBatch(), detail = new CivicBatch(), masonry = [], colliders = [];
+  const ochre = 0xc4a358, plaster = 0xe2dbc3, green = 0x284334, zinc = 0x65645e;
+  const plan = footprints.map(({ outer }) => outer.map(({ x, z }) => [x, z]));
+  const roofFace = (points, color) => batch.polygon([polygonNormal(points).y < 0 ? points.slice().reverse() : points], color);
+
+  const [house, shed] = plan;
+  const rear = frontage(house[0], house[1]), width = rear.length, half = width / 2;
+  const join = 11.8, front = 16.15;
+  const ground = terrainHeightAt(site.x, site.z);
+  const floor = ground + 0.15;
+  const eave = floor + 2.81, ridge = floor + 5.42;
+  const at = (u, d, y) => p(rear, u, y, -d);
+  function walls(ring, base, top, decorate) {
+    ring.forEach((a, i) => {
+      const f = frontage(a, ring[(i + 1) % ring.length]);
+      const wall = decorate(f, i);
+      const start = batch.vertices.length / 3;
+      const bottom = Math.min(base, terrainHeightAt(...a) - 0.12, terrainHeightAt(...ring[(i + 1) % ring.length]) - 0.12);
+      patch(batch, f, 0, f.length, bottom, top, wall, 0);
+      if (wall !== plaster) for (let j = start; j < batch.vertices.length / 3; j++) masonry[j] = 1;
+    });
+  }
+
+  walls(house, floor, eave, (f, i) => {
+    const mid = f.length / 2;
+    if (i >= 2 && i <= 6) {
+      block(detail, f, 0, f.length, floor - 0.08, floor + 0.21, -0.02, 0.045, 0x303632);
+      if (i === 4) opening(detail, f, mid, 1.18, floor + 0.09, floor + 2.31,
+        { trim: ivory, glazing: green, cols: 2, rows: 2, door: true });
+      if (i === 3 || i === 5) opening(detail, f, mid, 1.20, floor + 0.71, floor + 2.28,
+        { trim: ivory, glazing: darkGlass, cols: 2, rows: 3, shutter: true });
+      if (i === 2 || i === 6) surface(detail, f, arched(mid, 0.69, floor + 1.68, floor + 2.04, 0.34), darkGlass);
+      return plaster;
+    }
+    if (i === 7) {
+      opening(detail, f, 2.18, 0.92, floor + 0.03, floor + 2.22,
+        { trim: ivory, glazing: green, cols: 1, rows: 2, door: true });
+      for (const u of [5.47, 8.92]) opening(detail, f, u, 1.12, floor + 0.75, floor + 2.23,
+        { trim: ivory, cols: 2, rows: 3, shutter: true });
+    }
+    if (i === 0 || i === 1) opening(detail, f, mid, 1.10, floor + 0.76, floor + 2.25,
+      { trim: ivory, cols: 2, rows: 3, shutter: true });
+    return brick;
+  });
+  surface(batch, rear, [[0, eave], [width, eave], [half, ridge]], brick, 0);
+  roofFace([at(-0.26, -0.22, eave), at(half, -0.22, ridge), at(half, join, ridge), at(-0.26, join, eave)], slate);
+  roofFace([at(half, -0.22, ridge), at(width + 0.26, -0.22, eave), at(width + 0.26, join, eave), at(half, join, ridge)], slate);
+
+  // The thatch curves from the tiled ridge over the three-sided veranda.
+  const rim = [[-0.26, join], [-0.26, 13.43], [1.48, 15.62], [2.65, front],
+    [width - 2.65, front], [width - 1.48, 15.62], [width + 0.26, 13.43], [width + 0.26, join]];
+  const thatch = [0x7f6b50, 0x877356, 0x837054, 0x8b7557, 0x837054, 0x877356, 0x7f6b50];
+  const roofPoint = (i, t) => {
+    const [u, d] = rim[i], atSeam = i === 0 || i === rim.length - 1;
+    return at(THREE.MathUtils.lerp(u, half, t), THREE.MathUtils.lerp(d, join, t),
+      eave + (ridge - eave) * (atSeam ? t : t ** 1.62));
+  };
+  for (let i = 1; i < rim.length; i++) {
+    for (let band = 0; band < 7; band++) {
+      const a = band / 7, b = (band + 1) / 7;
+      roofFace([roofPoint(i - 1, a), roofPoint(i, a), roofPoint(i, b), roofPoint(i - 1, b)], thatch[i - 1]);
+    }
+    const a = at(...rim[i - 1], eave), b = at(...rim[i], eave);
+    const edge = frontage([b[0], b[2]], [a[0], a[2]]);
+    block(batch, edge, 0, edge.length, eave - 0.15, eave + 0.02, -0.09, 0.02, 0x594632);
+    const panels = Math.max(1, Math.round(edge.length / 0.33));
+    for (let panel = 0; panel < panels; panel++) {
+      const w = edge.length / panels, u = (panel + 0.5) * w;
+      surface(detail, edge, [[u - w / 2, eave - 0.13], [u, eave - 0.27],
+        [u + w / 2, eave - 0.13]], panel % 2 ? 0xb6323c : ivory, 0.026);
+    }
+  }
+  const [capX, , capZ] = at(half, join + 0.04, ridge);
+  for (let i = 0; i < 16; i++) {
+    const capPoint = (j, y) => [capX + 0.48 * Math.sin(j * Math.PI / 8), y, capZ + 0.48 * Math.cos(j * Math.PI / 8)];
+    batch.quad(capPoint(i, ridge - 0.06), capPoint(i + 1, ridge - 0.06),
+      capPoint(i + 1, ridge + 0.59), capPoint(i, ridge + 0.59), Math.floor(i / 2) % 2 ? 0xb22c38 : ivory);
+  }
+  batch.solid(new THREE.CylinderGeometry(0.52, 0.52, 0.10, 16).translate(capX, ridge + 0.62, capZ), zinc);
+
+  const terrace = rim.map(([u, d]) => at(u, d + 0.13, floor));
+  roofFace(terrace, 0x8f8570);
+  for (let i = 0; i < terrace.length; i++) {
+    const a = terrace[i], b = terrace[(i + 1) % terrace.length];
+    const edge = frontage([a[0], a[2]], [b[0], b[2]]);
+    block(batch, edge, 0, edge.length, floor - 0.22, floor, -0.06, 0.08, 0x82734f);
+  }
+  for (const [u, d] of [[0.25, 13.02], [1.82, 15.38], [width - 1.82, 15.38], [width - 0.25, 13.02]]) {
+    const [x, , z] = at(u, d, floor);
+    batch.solid(new THREE.BoxGeometry(0.40, 0.17, 0.40).translate(x, floor + 0.085, z), 0x474942);
+    batch.solid(new THREE.CylinderGeometry(0.111, 0.148, eave - floor - 0.26, 10)
+      .translate(x, (eave + floor) / 2 + 0.04, z), ochre);
+    batch.solid(new THREE.BoxGeometry(0.32, 0.14, 0.32).translate(x, eave - 0.14, z), ivory);
+    colliders.push({ minX: x - 0.20, maxX: x + 0.20, minZ: z - 0.20, maxZ: z + 0.20, minY: floor, maxY: eave });
+  }
+  colliders.push(footprintCollider([house], ground - 0.24, ridge + 0.67));
+
+  const shedGround = terrainHeightAt(shed[0][0], shed[0][1]), shedEave = shedGround + 2.56, shedRidge = shedGround + 4.57;
+  const gable = frontage(shed[2], shed[3]), back = frontage(shed[0], shed[1]);
+  walls(shed, shedGround + 0.04, shedEave, (f, i) => {
+    if (i === 2) {
+      opening(detail, f, f.length / 2, 1.03, shedGround + 0.07, shedGround + 2.14,
+        { trim: ivory, glazing: green, cols: 1, rows: 1, door: true });
+      rose(detail, f, f.length / 2, shedGround + 3.64, 0.21, ivory, darkGlass);
+    }
+    return burntBrick;
+  });
+  for (const f of [gable, back]) {
+    surface(batch, f, [[0, shedEave], [f.length, shedEave], [f.length / 2, shedRidge]], burntBrick, 0);
+    for (const u of [0, f.length]) line(detail, p(f, u, shedEave, 0.04), p(f, f.length / 2, shedRidge, 0.04), 0.039, ivory);
+  }
+  const ga = p(gable, gable.length / 2, shedRidge, 0.11), ba = p(back, back.length / 2, shedRidge, 0.11);
+  roofFace([p(gable, -0.08, shedEave, 0.11), ga, ba, p(back, back.length + 0.08, shedEave, 0.11)], slate);
+  roofFace([ga, p(gable, gable.length + 0.08, shedEave, 0.11), p(back, -0.08, shedEave, 0.11), ba], slate);
+  colliders.push(footprintCollider([shed], shedGround - 0.22, shedRidge));
+  const group = estateGroup(site.name, batch, masonry, colliders, detail);
+  group.children[1].castShadow = false;
+  group.children[1].userData.nearDetail = 95;
+  group.userData.platforms = [{
+    id: 'theehuis-hoekelum-veranda', outer: terrace.map(([x, , z]) => ({ x, z })), holes: [], height: () => floor,
+  }];
   return group;
 }
 

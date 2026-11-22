@@ -1,8 +1,33 @@
 // Reviewed Ede fuel stations in the Oude Kerk scene frame, in metres. Canopy rings are station-local.
 // Geometry: OpenStreetMap contributors (ODbL), 2026-11-20 official map snapshot,
 // and 2025/2026 PDOK aerial imagery for visible forecourts. Operator listings confirm brands and types.
-// Pump counts and clearances are estimates unless separately noted. No live price or operator data is loaded.
+// Pump counts and clearances are estimates unless separately noted.
 // Bonnetstraat has two separate canopy wings. Radonstraat CNG uses an OSM point at a service depot.
+// Double-sided price pylons generally stand at the frontage, clear of the driving and walking surfaces.
+// Use footings visible in the PDOK orthophoto where identifiable and fitted verge placements elsewhere.
+const PYLONS = {
+  'texaco-neonstraat-4a': [-3857.5, 459.9, 2.10],
+  'argos-marconistraat-11': [-2595.8, 1756.1, -0.38],
+  n9922728331: [-4091.3, 1417.4, 0.65],
+  n9922657147: [-4110.68, 1373.49, 2.66],
+  n11658184817: [-3959.1, 671.3, -1.06],
+  n12626162176: [-3431.2, 2216, 3.10],
+  n274870239: [-3338.12, 1555.66, 0.55],
+  n274869580: [-3184.82, 1302.15, 1.10],
+  n2761384978: [-1839.9, 1889, 1.20],
+  n269785004: [-1581.58, 2788.99, 0.70],
+  n247847442: [-1276.2, 1176.8, -3.10],
+  n10060498714: [-1192.22, 1312.99, -3.11],
+  n2764896830: [-1148.8, 548.8, -2.51],
+  n821116450: [-583.7, 0.2, -2.02],
+  n2283543469: [-251.4, -654.4, -0.94],
+  n2560675248: [-79.6, 2024.3, -1.04],
+  n11658200102: [90.88, 1715.79, -0.77],
+  n3124882893: [-4902.0, -4592.1, 0.08],
+  n1001128866: [-2787.3, -3082.05, 0.40],
+  n10819518524: [-4780.8, -6889.6, 0.60],
+};
+
 export const EDE_FUEL_SITES = [
   // Texaco BSP Neonstraat
   // https://texaco.nl/locatie/bsp-ede-neonstraat/
@@ -55,7 +80,33 @@ export const EDE_FUEL_SITES = [
   // Sakko Klinkenbergerweg
   // https://www.sakkocommercial.nl/station/ede/
   {"id": "n11658200102", "name": "Sakko Klinkenbergerweg", "brand": "Sakko", "x": 70.52, "z": 1734.05, "heading": -1.39227, "width": 9.27, "length": 11.17, "bays": 2, "selfService": true, "palette": ["#f4f2e8", "#b12730", "#8c1e20"], "canopyRing": [[-4.63, -5.59], [-4.48, -0.7], [-4.63, 5.59], [4.62, 5.58], [4.62, -5.59]], "canopyOsmId": "w658520912"},
-];
+  // https://havebrandstoffen.nl/tanken-sparen/onze-tankstations/esso-de-stroet/
+  { id: 'n3124882893', name: 'Esso De Stroet', brand: 'Esso', x: -4880.77, z: -4580.65, heading: 0.0936,
+    width: 22.69, length: 14.77, bays: 3, pumps: [[-7, -2], [-0.1, -2], [6.8, -2]], clearance: 4.6,
+    canopyOsmId: 'w1425827536', canopyRing: [[-11.32, 7.37], [-11.34, -7.39], [11.34, -7.39], [11.29, 0.54], [1.48, 0.49], [1.46, 7.39]],
+    truck: true, north: true,
+    shop: { x: -4888.06, z: -4566.72, heading: Math.PI + 0.0936, width: 20.02, length: 11.65, height: 3.9,
+      osmId: 'w271719637', bagId: '0228100000044408', wordmark: 'CAFE HAVÉ' } },
+  // https://havebrandstoffen.nl/tanken-sparen/onze-tankstations/esso-de-tol/
+  { id: 'n1001128866', name: 'Esso De Tol', brand: 'Esso', x: -2799.56, z: -3113.94, heading: 0.399,
+    width: 11.04, length: 23.26, bays: 4, pumps: [[0, -7.5], [0, -2.5], [0, 2.5], [0, 7.5]], clearance: 4.3,
+    canopyRing: [[-5.49, -11.63], [5.43, -11.48], [5.52, 11.5], [-5.52, 11.63]], north: true,
+    shop: { x: -2813.29, z: -3108.68, heading: 0.438 + Math.PI / 2, width: 8.21, length: 8.39, height: 3.6,
+      osmId: 'w271717866', bagId: '0228100000048196', wordmark: 'HAVÉ' } },
+  // https://havebrandstoffen.nl/tanken-sparen/onze-tankstations/esso-spelt/
+  { id: 'n10819518524', name: 'Esso Spelt', brand: 'Esso', x: -4792.78, z: -6900.69, heading: 2.113,
+    width: 10.06, length: 13.39, bays: 3, pumpAxis: 'x', pumps: [[-3, 0], [0, 0], [3, 0]], clearance: 4.3,
+    canopyOsmId: 'w126810513', canopyRing: [[5.03, -6.69], [-4.98, -6.51], [-5.03, 6.69], [5.01, 6.63]],
+    selfService: true, north: true },
+].map(site => {
+  const [x, z, pylonHeading] = PYLONS[site.id];
+  const priceProfile = site.north ? 'lunteren'
+    : ['TinQ', 'Tango', 'SuperTank'].includes(site.brand) || site.id === 'n10060498714' ? 'discount' : 'local';
+  const fuels = site.id === 'n11658184817' ? ['cng']
+    : site.truck && site.id !== 'argos-marconistraat-11' && !site.north ? ['diesel']
+    : site.north || ['n2761384978', 'n269785004'].includes(site.id) ? ['e10', 'diesel', 'lpg'] : ['e10', 'diesel'];
+  return { ...site, pylon: [x, z], pylonHeading, priceProfile, fuels };
+});
 
 // This OSM warehouse outline includes the adjoining open canopy. Retain the warehouse body.
 export const EDE_FUEL_FALLBACK_FOOTPRINTS = [

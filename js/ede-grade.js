@@ -1,4 +1,5 @@
 import { EDE_DATA } from './ede-geodata.js';
+import { EDE_NORTH_RAIL, hasNorthRail } from './ede-north-rail-data.js';
 import { MOTOR } from './road-access.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 
@@ -123,6 +124,14 @@ function stationRailExtensions(profiles) {
 }
 
 export function setEdeGrade(data) {
+  if (hasNorthRail(EDE_DATA)) {
+    const north = EDE_NORTH_RAIL;
+    data = {
+      ...data,
+      sites: [...data.sites, ...north.sites],
+      railCorridors: [...(data.railCorridors ?? []).filter(profile => !Object.hasOwn(north.tracks, profile.wayId)), ...north.railCorridors],
+    };
+  }
   const nextSegments = new Map(), nextProfiles = new Map(), nextWays = new Map(), nextTracks = new Map();
   const nextLocalSurfaceWays = new Map();
   const nextLocalSurfaces = [];

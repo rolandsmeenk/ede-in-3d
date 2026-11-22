@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { CivicBatch, along, facePanel, offsetEdge, polygonNormal, wallColliders, wallExtent } from './ede-civic-landmarks.js';
 import { NIZO_SURVEY, GELDERSE_VALLEI_SURVEY } from './ede-research-survey.js';
+import { createNizoNorthLandmark } from "./ede-industrial-skyline-landmarks.js";
 import { terrainHeightAt } from './terrain.js';
 
 const buff = 0xbeb39a;
@@ -256,6 +257,9 @@ export function createNizoLandmark() {
   const model = campuses('NIZO Food Research', NIZO_SURVEY, decorateNizo);
   const fine = model.children.find(child => child.userData.nearDetail);
   spiral(fine);
+  const north = createNizoNorthLandmark();
+  model.add(north);
+  model.userData.colliders.push(...north.userData.colliders);
   return model;
 }
 

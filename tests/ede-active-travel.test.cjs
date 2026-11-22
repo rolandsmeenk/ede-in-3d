@@ -126,3 +126,39 @@ test('the checked-in Ede graph joins shopping streets and squares and preserves 
   assert.ok(bikes.every(t => ['lane', 'path', 'track'].includes(t.kind)));
   assert.ok(bikes.every(t => !['w6953149', 'w6954746', 'w6953331'].includes(t.wayId)));
 });
+
+test('mountain bikers use the four signed routes and keep their travel direction at junctions', async () => {
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const { buildEdeActiveTravel } = await import('../js/ede-active-travel.js');
+  const { EDE_MTB_ROUTES } = await import('../js/ede-mtb-routes.js');
+  const grade = JSON.parse(readFileSync(join(__dirname, '../assets/ede-grade.json')));
+  const travel = buildEdeActiveTravel(EDE_DATA, grade);
+  const trailTracks = [];
+  travel.mountainBikes(0, 0, 18000, trailTracks);
+  const signed = new Set(EDE_MTB_ROUTES.flat());
+  const turns = new Set(EDE_MTB_ROUTES.flatMap(route => route.map((way, i) => `${way}/${route[(i + 1) % route.length]}`)));
+  const wayId = track => Number(track.wayId.slice(1));
+  const trackWays = new Set(trailTracks.map(wayId));
+  for (const route of EDE_MTB_ROUTES) {
+    assert.ok(route.filter(way => trackWays.has(Math.abs(way))).length > route.length * 0.8);
+  }
+  assert.ok(trailTracks.some(track => track.crossing && track.noSpawn));
+  assert.ok(trailTracks.reduce((length, track) => length + track.len, 0) > 70000);
+  for (const track of trailTracks) {
+    assert.ok(track.mountain);
+    for (let end = 0; end < 2; end++) {
+      const from = (end ? 1 : -1) * wayId(track);
+      if (track.allowed[1 - end]) assert.ok(signed.has(from));
+      for (const path of track.links[end]) {
+        assert.ok(path.every(leg => leg.track.mountain));
+        const next = path.at(-1);
+        const to = next.dir * wayId(next.track);
+        assert.ok(signed.has(to));
+        assert.ok(from === to || turns.has(`${from}/${to}`));
+      }
+    }
+  }
+  const regular = [];
+  travel.bikes(0, 0, 18000, regular);
+  assert.ok(regular.every(track => !track.mountain));
+});

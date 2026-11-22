@@ -6,6 +6,7 @@ import { buildingPassageOpenings } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { ENKA_SURVEY, OUDE_KERK_SURVEY } from './ede-heritage-survey.js';
 import { createWindVane } from './ede-wind-props.js';
+import { createMemorialPlaque } from './ede-memorial-plaque.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const BRICK = 0x765848;
@@ -345,6 +346,16 @@ export function createOudeKerk() {
   const churchDoor = facade(batch, -24.63, -13.34, -0.2514, 0.9679, -1);
   archPanel(churchDoor, 5.02, -0.36, 1.81, 3.37, 0.72, STONE, 0x503a2e, 0.115);
   churchDoor.rectangle(5.02, -0.23, 0.06, 2.52, 0x241f1a, 0.15);
+  const memorial = churchDoor.point(2.83, 0.96, 0.065);
+  group.add(createMemorialPlaque({
+    name: 'Gedenksteen bij de Oude Kerk', ...memorial, heading: churchDoor.heading,
+    width: 0.70, height: 0.50, base: '#88847c', ink: '#d5cfc1', border: '#bdb7ab',
+    lines: [
+      ['NA VIJF JAAR DUITSCHE', 0.17, 0.082], ['BEZETTING EN TERREUR WERD', 0.28, 0.082],
+      ['EDE OP 17 APRIL 1945 DOOR DE', 0.39, 0.082], ['GEZAMENLIJKE GEALLIEERDE', 0.50, 0.082],
+      ['TROEPEN BEVRIJD.', 0.61, 0.082], ['EDES BURGERIJ · 4 MEI 1945', 0.83, 0.059, 0.61],
+    ],
+  }));
   const churchSide = facade(batch, -17.57, 3.94, 0.966, 0.259, -1);
   for (const u of [3.1, 7.4, 11.6, 15.7]) {
     archPanel(churchSide, u, 1.27, 1.84, 5.58, 0.96, 0x9a8772, 0x405052, 0.08);

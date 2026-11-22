@@ -48,11 +48,12 @@ const BLOCKS=[...EDE_DATA.buildings.filter(b=>!b.part).map((b,i)=>makeBlock(b,i)
 const LANDMARK_BLOCKS=new Set();
 const LANDMARK_SITES=GEO.landmarks;
 for (const site of EDE_MODELED_LANDMARKS) {
-  const [{ outer }] = modeledLandmarkFootprints(site);
+  const outer = modeledLandmarkFootprints(site)[0]?.outer ?? [];
   const xs = outer.map(p => p.x), zs = outer.map(p => p.z);
   LANDMARK_SITES[site.name] = {
     x: site.x, z: site.z, h: site.height,
-    w: Math.max(...xs) - Math.min(...xs), d: Math.max(...zs) - Math.min(...zs),
+    w: xs.length ? Math.max(...xs) - Math.min(...xs) : 0,
+    d: zs.length ? Math.max(...zs) - Math.min(...zs) : 0,
     ring: outer.flatMap(p => [p.x, p.z]),
   };
 }
@@ -281,6 +282,12 @@ const defaultSpawn=arrival(5.67204,52.04651,'Driehoek');
 defaultSpawn.x-=Math.cos(defaultSpawn.heading)*1.8;defaultSpawn.z+=Math.sin(defaultSpawn.heading)*1.8;
 // Legacy material code samples ordered district bands through streetZ; keep distinct thresholds.
 const streetZ=(n=37)=>defaultSpawn.z+(37-Number(n))*25;
+const NORTHERN_ARRIVALS = [
+ ['lunteren-centrum', 'Lunteren Centrum', 'Dorpsstraat', [5.62068, 52.08432], [5.6209098, 52.0839981], 2.7],
+ ['goudsberg', 'Goudsberg', 'Hessenweg', [5.645881, 52.1018636], [5.6460047, 52.1015371], 2.4],
+ ['wekeromse-zand', 'Wekeromse Zand', 'Vijfsprongweg', [5.6962398, 52.0991957], [5.69515, 52.09922], 1.8],
+ ['de-valouwe', 'De Valouwe', 'Wekeromseweg', [5.69529625, 52.0844997], [5.69478, 52.0845963], 1.8],
+];
 const NYC_LANDMARKS=[
  ['edewageningen','Station Ede-Wageningen','Ede-Wageningen',5.6741136,52.0274114,'Stationsgebied','Frisopark'],
  ['chico-y-chica','Chico y Chica','Chico y Chica',5.673605,52.045626,'Raadhuisplein','Raadhuisplein'],
@@ -291,7 +298,10 @@ const NYC_LANDMARKS=[
  const site=LANDMARK_SITES[name];
  const {x,z}=site||projectLonLat(lon,lat);
  return {id,name,short,x,z,district,road,lon,lat};
-}).concat(EDE_MODELED_LANDMARKS.map(site => ({
+}).concat(EDE_DATA.meta.north ? NORTHERN_ARRIVALS.map(([id, name, road, from, to, focusHeight]) => ({
+ id, name, short: name, road, district: 'Lunteren', mapScenic: true,
+ ...projectLonLat(...to), approach: projectLonLat(...from), focusHeight, lon: to[0], lat: to[1],
+})) : []).concat(EDE_MODELED_LANDMARKS.map(site => ({
  ...site, short: site.name,
  ...unprojectScene(AFF, site.x, site.z),
 })));
@@ -370,7 +380,7 @@ for(const lm of NYC_LANDMARKS){
  const t=streetPoint?{x:streetPoint.x,z:streetPoint.z,name:streetPoint.road.name}:arrival(lm.lon,lm.lat,lm.road);
  t.heading=Math.atan2(lm.x-t.x,lm.z-t.z);
  const scenic = SCENIC_ARRIVALS[lm.id] ?? (lm.mapScenic && lm.approach &&
-   [lm.approach.x, lm.approach.z, lm.x, lm.z, lm.focusHeight ?? Math.max(1, Math.min(12, lm.height / 2)), lm.road]);
+   [lm.approach.x, lm.approach.z, lm.x, lm.z, lm.focusHeight ?? Math.max(1, Math.min(12, lm.height / 2)), lm.road, lm.focusOffset]);
  if (scenic) {
    const [x, z, tx, tz, height, name, offset] = scenic;
    TELEPORT_LOCATIONS[lm.id] = { x, z, name, heading: Math.atan2(tx - x, tz - z), focus: { x: tx, z: tz, height, offset } };

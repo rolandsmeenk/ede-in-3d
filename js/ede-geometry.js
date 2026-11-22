@@ -175,7 +175,53 @@ function surfaceGeometry(positions, indices, uv) {
   return geometry;
 }
 
-function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y, coarse = false) {
+export function edeWaterCut(geometry) {
+  const points = geometry.getAttribute('position');
+  const cuts = [];
+  for (let i = 0; i < geometry.index.count; i += 3) {
+    const triangle = [i, i + 1, i + 2].map(offset => {
+      const index = geometry.index.getX(offset);
+      return { x: points.getX(index), z: points.getZ(index) };
+    });
+    const [a, b, c] = triangle;
+    const area = (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+    if (Math.abs(area) <= 1e-7) continue;
+    const sign = Math.sign(area);
+    const planes = triangle.map((a, j) => {
+      const b = triangle[(j + 1) % 3];
+      const nx = a.z - b.z, nz = b.x - a.x;
+      return [nx * sign, nz * sign, (nx * a.x + nz * a.z) * sign];
+    });
+    cuts.push({ ...edeBounds(triangle), planes });
+  }
+  return cuts;
+}
+
+export function edeWaterBanks(rings, bottomY) {
+  const positions = [], indices = [];
+  for (const [index, points] of rings.entries()) {
+    const area = points.reduce((sum, a, i) => {
+      const b = points[(i + 1) % points.length];
+      return sum + a.x * b.z - b.x * a.z;
+    }, 0);
+    const ring = (area > 0) === (index === 0) ? points : [...points].reverse();
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const steps = Math.ceil(Math.hypot(dx, dz));
+      if (!steps) continue;
+      for (let j = 0; j <= steps; j++) {
+        const x = a.x + dx * j / steps, z = a.z + dz * j / steps;
+        const vertex = positions.length / 3;
+        positions.push(x, terrainHeightAt(x, z) - 0.015, z, x, bottomY, z);
+        if (j < steps) indices.push(vertex, vertex + 1, vertex + 2, vertex + 2, vertex + 1, vertex + 3);
+      }
+    }
+  }
+  return surfaceGeometry(positions, indices);
+}
+
+function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y, coarse = false, waterCuts = []) {
   const chunk = 64;
   for (let row = 0; row < rows - 1; row += chunk) for (let col = 0; col < columns - 1; col += chunk) {
     const width = Math.min(chunk, columns - 1 - col) + 1;
@@ -191,30 +237,41 @@ function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y,
         indices.push(a, a + width, a + 1, a + 1, a + width, a + width + 1);
       }
     }
-    const cuts = terrainGradeCuts({
+    const bounds = {
       minX: minX + col * step, maxX: minX + (col + width - 1) * step,
       minZ: minZ + row * step, maxZ: minZ + (row + height - 1) * step
-    });
+    };
+    const grade = terrainGradeCuts(bounds);
+    const cuts = grade.concat(waterCuts.filter(cut => overlaps(bounds, cut)));
     if (!cuts.length) {
       yield surfaceGeometry(positions, indices);
       continue;
     }
-    const clipped = [];
+    const clipped = grade.length ? [] : Array.from(positions);
+    const clippedIndices = grade.length ? null : [];
     for (let i = 0; i < indices.length; i += 3) {
-      const triangle = indices.slice(i, i + 3).map(v => ({
+      const vertices = indices.slice(i, i + 3);
+      const triangle = vertices.map(v => ({
         x: positions[v * 3], y: positions[v * 3 + 1], z: positions[v * 3 + 2]
       }));
-      for (const part of clipEdeGround(triangle, cuts)) emitSurface(part, clipped);
+      const parts = clipEdeGround(triangle, cuts);
+      if (clippedIndices && parts.length === 1 && parts[0] === triangle) {
+        clippedIndices.push(...vertices);
+      } else {
+        const start = clipped.length / 3;
+        for (const part of parts) emitSurface(part, clipped);
+        if (clippedIndices) for (let j = start; j < clipped.length / 3; j++) clippedIndices.push(j);
+      }
     }
-    yield surfaceGeometry(clipped);
+    yield surfaceGeometry(clipped, clippedIndices);
   }
 }
 
-export function* edeTerrainGeometries(y) {
+export function* edeTerrainGeometries(y, waterCuts) {
   const terrain = getTerrain();
   const { columns, rows, minX, minZ, maxX, maxZ, step, minY } = terrain;
-  yield* terrainGridGeometries(terrain, y, true);
-  for (const patch of getTerrainPatches()) yield* terrainGridGeometries(patch, y);
+  yield* terrainGridGeometries(terrain, y, true, waterCuts);
+  for (const patch of getTerrainPatches()) yield* terrainGridGeometries(patch, y, false, waterCuts);
   if (getExpansionTerrain()) return;
   // Continue the measured edges into coarse distant scenery.
   const border = 16000;

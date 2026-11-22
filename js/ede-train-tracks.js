@@ -1,10 +1,12 @@
 import { EDE_DATA } from './ede-geodata.js';
+import { EDE_NORTH_RAIL, hasNorthRail } from './ede-north-rail-data.js';
 import { getRailCorridors, railCorridorHeightAt, railHeightAt, RAIL_TOP } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 
 const WAGENINGEN = 'ede-wageningen';
 const CENTRUM = 'ede-centrum';
 const KLOMP = 'de-klomp';
+const LUNTEREN = 'lunteren';
 const APPROACH_MARGIN = 120;
 
 const eastbound = [
@@ -200,6 +202,22 @@ function trainPath(id, route, direction, platform, alignment, terminal, klompPla
   return path;
 }
 
+function addLunterenBerth(path, platform) {
+  const { wayId, stop, number } = platform;
+  path.stops[LUNTEREN] = { distance: path.project(...stop, wayId).distance, platform: number };
+  const [northSwitch, southSwitch] = EDE_NORTH_RAIL.switches.map(point => path.project(...point).distance);
+  const stationApproach = path.project(-245.5, 1883.9).distance;
+  // The two single tracks meet at Lunteren, where an opposing train can wait on
+  // its own platform. Ede Centrum lies inside the southern single-track section.
+  path.blocks = path.direction === 1 ? [
+    { id: 'lunteren-north', from: 0, to: northSwitch },
+    { id: 'lunteren-south', from: southSwitch, to: stationApproach },
+  ] : [
+    { id: 'lunteren-south', from: stationApproach, to: southSwitch },
+    { id: 'lunteren-north', from: northSwitch, to: path.length },
+  ];
+}
+
 export function buildEdeTrainTracks() {
   const ways = new Map(EDE_DATA.railways.map(way => [way.id, way]));
   const [minX, minZ, maxX, maxZ] = EDE_DATA.meta.bounds;
@@ -210,7 +228,17 @@ export function buildEdeTrainTracks() {
   const mainAlignment = (ids, side) => buildAlignment(extendsToKlomp ? [...klompApproaches[side], ...ids] : ids, ways, bounds);
   const track5 = mainAlignment(eastbound, 0);
   const track3 = mainAlignment(westbound, 1);
-  const track1 = buildAlignment(valleilijn, ways, [bounds[0], bounds[1], 230, bounds[3]]);
+  const valleilijnBounds = [bounds[0], bounds[1], 230, bounds[3]];
+  const northern = hasNorthRail(EDE_DATA);
+  const rs34 = direction => {
+    const id = direction === 1 ? 'rs34-south' : 'rs34-north';
+    const platform = EDE_NORTH_RAIL.platforms.find(berth => berth.number === (direction === 1 ? '1' : '2'));
+    const prefix = northern ? [1299229167, 431725851, 227525838, Number(platform.wayId.slice(1)), 431760968] : [];
+    const track = buildAlignment([...prefix, ...valleilijn], ways, valleilijnBounds);
+    const path = trainPath(id, 'rs34', direction, '1', track, WAGENINGEN);
+    if (northern) addLunterenBerth(path, platform);
+    return path;
+  };
   const paths = [
     trainPath('main-5-east', 'main', 1, '5', track5, undefined, klompEast),
     trainPath('main-3-west', 'main', -1, '3', track3, undefined, klompWest),
@@ -220,8 +248,7 @@ export function buildEdeTrainTracks() {
     trainPath('main-5-west', 'main', -1, '5', track5, undefined, klompEast),
     trainPath('main-4-through-east', 'main', 1, '4', mainAlignment(through4East, 0), undefined, klompEast),
     trainPath('main-4-through-west', 'main', -1, '4', mainAlignment(through4West, 1), undefined, klompWest),
-    trainPath('rs34-south', 'rs34', 1, '1', track1, WAGENINGEN),
-    trainPath('rs34-north', 'rs34', -1, '1', track1, WAGENINGEN)
+    rs34(1), rs34(-1)
   ];
 
   function match(fix, { route, direction, platform, terminal, preferredPath, previous } = {}) {

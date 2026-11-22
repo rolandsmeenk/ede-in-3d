@@ -94,14 +94,19 @@ test('train wheels cross every measured public road surface and stay below the A
     w431666247: 'main-3-west', w431666248: 'main-5-east',
     w431762038: 'rs34-south', w431865751: 'rs34-south'
   };
-  const alignmentFor = wayId => paths.find(path => path.id === alignments[wayId]);
+  const alignmentFor = wayId => paths.find(path => path.id === (alignments[wayId] ??
+    (wayId === 'w431760850' ? 'rs34-north' : 'rs34-south')));
   const levelSites = grade.sites.filter(site => site.kind === 'level');
-  assert.equal(levelSites.length, 14);
-  assert.equal(levelSites.reduce((total, site) => total + site.crossings.length, 0), 25);
+  const legacy = levelSites.filter(site => !site.id.startsWith('north-'));
+  const northern = levelSites.filter(site => site.id.startsWith('north-'));
+  assert.equal(legacy.length, 14);
+  assert.equal(legacy.reduce((total, site) => total + site.crossings.length, 0), 25);
+  assert.equal(northern.length, 15);
+  assert.equal(northern.reduce((total, site) => total + site.crossings.length, 0), 17);
   for (const site of levelSites) {
     for (const { x, z, y, railWayId, roadWayIds } of site.crossings) {
       const alignment = alignmentFor(railWayId);
-      const { distance, error } = alignment.project(x, z);
+      const { distance, error } = alignment.project(x, z, railWayId);
       const train = alignment.sample(distance);
       assert.ok(error < 0.5, site.id);
       assert.ok(Math.abs(train.y - (y + 0.055)) < 0.012, site.id);
@@ -165,6 +170,8 @@ test('the whole rail network stays continuous and the Valleilijn mesh follows th
     const nodes = new Map(points.map(([x, z, y]) => [`${x},${z}`, y]));
     for (let i = 0; i < way.pts.length; i += 2) {
       const key = `${way.pts[i]},${way.pts[i + 1]}`;
+      // The northern approach clips the final long OSM way off map.
+      if (way.pts[i + 1] < EDE_DATA.meta.bounds[1] - 123) continue;
       assert.ok(Number.isFinite(nodes.get(key)), way.id);
       if (junctions.has(key)) assert.equal(nodes.get(key), junctions.get(key), key);
       junctions.set(key, nodes.get(key));

@@ -15,7 +15,7 @@ test('the area menu uses a subset of clear, framed arrivals', () => {
   assert.equal(new Set(buttons).size, buttons.length, 'teleport destinations are unique');
   assert.deepEqual(buttons, ['oudekerk', 'edewageningen', 'enka-westhal', 'johan-willem-friso',
     'de-zuiderpoort', 'emmaus', 'bellestein', 'huis-kernhem', 'hoekelum', 'schaapskooi-ginkelse-heide',
-    'planken-wambuis', 'veenendaal-de-klomp', 'hervormde-kerk-ederveen']);
+    'planken-wambuis', 'veenendaal-de-klomp', 'hervormde-kerk-ederveen', 'lunteren-centrum']);
   for (const id of buttons) assert.ok(TELEPORT_LOCATIONS[id]?.focus, id);
   const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([, point]) => point.focus);
   for (const [name, point] of scenic) {
@@ -36,7 +36,12 @@ test('expansion map pins have clear scenic approaches that face the surveyed lan
     'airborne-monument-ginkel', 'vensters-op-het-verleden', 'huzarenmonument', 'amadeus',
     'natuurcentrum-de-ginkel', 'schaapskooi-de-kreel', 'belgenmonument', 'valenberg', 'nieuw-reemst',
     'wildkijkscherm-nieuw-reemst', 'de-klomp-maalderij', 'hervormde-kerk-ederveen', 'groot-zonneoord',
-    'jan-hilgers-monument']) {
+    'jan-hilgers-monument', 'lunteren-centrum', 'goudsberg', 'wekeromse-zand', 'de-valouwe',
+    'station-lunteren', 'de-koepel', 'oude-kerk-lunteren', 'molen-de-hoop', 'museum-lunteren',
+    'hessenhut', 'ijzertijdboerderij', 'dennenhorst', 'de-wormshoef', 'de-eekhorst', 'middelpunt-van-nederland',
+    'lunteren-de-bron', 'lunteren-de-wegwijzer', 'lunteren-de-triangel', 'lunteren-de-triangel-marterlaan',
+    'lunteren-nederwoud', 'bethelkerk-lunteren', 'maranathakerk-lunteren', 'oranjestraat-kerk-lunteren',
+    'witte-kerkje-lunteren', 'molukse-kerk-lunteren']) {
     assert.ok(landmarks.some(landmark => landmark.id === id), id + ' has a scenic map pin');
   }
   for (const landmark of landmarks) {

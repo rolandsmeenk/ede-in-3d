@@ -135,7 +135,7 @@ function pedestrianFigure(walking) {
   ]);
 }
 
-function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLampMounts, treeOptions, signalHardware, gantries = []) {
+function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLampMounts, treeOptions, signalHardware, gantries = [], forecourtLights = []) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeStreetDetails' : 'ManhattanStreetDetails';
 
@@ -225,7 +225,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
   const signalIntersections = [];
   const lampHeadMatrices = [];
   const pedPostMatrices = [];
-  const cobraLampSites = [];
+  const cobraLampSites = [...forecourtLights];
   const streetPointSites = [];
   // Only nearby poles can conflict, even with street furniture across the whole island.
   const POLE_CELL = 8;
@@ -1308,8 +1308,8 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       spot.target.position.set(s.tx, targetY, s.tz);
       spot.target.updateMatrixWorld();
       spot.color.setHex(s.color ?? 0xffe8c2);
-      spot.distance = s.layer > 0 ? Math.min(25, Math.hypot(s.tx - s.x, targetY - s.y, s.tz - s.z) + 2.6) : 25;
-      spot.intensity = 88.0 * lampScale * fade;
+      spot.distance = s.dist ?? (s.layer > 0 ? Math.min(25, Math.hypot(s.tx - s.x, targetY - s.y, s.tz - s.z) + 2.6) : 25);
+      spot.intensity = (s.intensity ?? 88) * lampScale * fade;
     }
     for (let i = spotUsed; i < STREETLIGHT_SPOT_POOL; i++) {
       streetlightSpotPool[i].intensity = 0;
