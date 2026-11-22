@@ -220,11 +220,14 @@ function populationContext() {
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
     nearEdges: [], nearSignals: [], fittedA: {}, activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
-    carSpawns: [], vanSpawns: [], refuseSpawns: [], bikeSpawns: [], mountainBikeSpawns: [], footSpawns: [],
+    vehicleSpawns: { ambient: [], van: [], refuse: [], tractor: [], ambulance: [] },
+    bikeSpawns: [], mountainBikeSpawns: [], footSpawns: [],
     nearMountainBikes: [], roadTraffic: { isClosed: () => false, demand: () => 1, profile: 1 },
     pickByArea: entries => entries[0]?.segment,
     place: (v, e, lane, s) => Object.assign(v, { edge: e, lane, s })
   };
+  context.vehicleSpawnPools = Object.entries(context.vehicleSpawns);
+  context.trafficProfile = trafficFunction('trafficProfile', context);
   context.nearView = trafficFunction('nearView', context);
   context.lanePoint = trafficFunction('lanePoint', context);
   context.ambientLanes = trafficFunction('ambientLanes', context);
@@ -251,7 +254,7 @@ test('cars replenish the road ahead while nearby visible spawning stays blocked'
   const context = populationContext();
   const edge = straightEdge(140);
   context.nearEdges.push(edge);
-  context.carSpawns.push({ segment: edge, end: 20 });
+  context.vehicleSpawns.ambient.push({ segment: edge, end: 20 });
   const spawnVehicle = trafficFunction('spawnVehicle', context);
   const car = { half: 2.25 };
   assert.equal(spawnVehicle(car, 100, 350, true), false);
@@ -265,19 +268,37 @@ test('cars replenish the road ahead while nearby visible spawning stays blocked'
 
 test('a refuse truck spawns only on lanes in its collection network', () => {
   const context = populationContext();
-  const truck = { refuseTruck: true, half: 4.275 };
+  const truck = { roadProfile: 'refuse', half: 4.275 };
   const spawn = trafficFunction('spawnVehicle', context);
-  context.carSpawns.push({ segment: straightEdge(110, 60), end: 60 });
+  context.vehicleSpawns.ambient.push({ segment: straightEdge(110, 60), end: 60 });
   assert.equal(spawn(truck, 0, 350, false), false);
 
   const residential = straightEdge(140, 60);
   residential.refuseLanes = [1];
   residential.lanes.push(3);
   residential.occ.push([]);
-  context.refuseSpawns.push({ segment: residential, end: 60 });
+  context.vehicleSpawns.refuse.push({ segment: residential, end: 60 });
   assert.equal(spawn(truck, 0, 350, false), true);
   assert.equal(truck.edge, residential);
   assert.equal(truck.lane, 1);
+});
+
+test('tractors and ambulances use their own eligible spawn lanes', () => {
+  const context = populationContext();
+  context.vehicleSpawns.ambient.push({ segment: straightEdge(110, 60), end: 60 });
+  const spawn = trafficFunction('spawnVehicle', context);
+  for (const roadProfile of ['tractor', 'ambulance']) {
+    const vehicle = { roadProfile, half: 3 };
+    assert.equal(spawn(vehicle, 0, 350, false), false);
+    const edge = straightEdge(140, 60);
+    edge.lanes.push(1.6);
+    edge.occ.push([]);
+    edge[roadProfile + 'Lanes'] = [1];
+    context.vehicleSpawns[roadProfile].push({ segment: edge, end: 60 });
+    assert.ok(spawn(vehicle, 0, 350, false));
+    assert.equal(vehicle.edge, edge);
+    assert.equal(vehicle.lane, 1);
+  }
 });
 
 test('a scheduled collection stop leaves room at intersections and mapped crossings', () => {

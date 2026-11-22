@@ -92,8 +92,13 @@ test('the updated timetable retains matched boarding on the forecourt and at Sta
   const stops = asset('bus-routes').variants.flatMap(variant => variant.stops);
   const forecourt = stops.filter(stop => stop.x >= 84 && stop.x <= 260 && stop.z >= 2138 && stop.z <= 2255);
   const stadspoort = stops.filter(stop => Math.hypot(stop.x + 1460, stop.z - 3110) < 220);
-  for (const [expected, nearby] of [[7, forecourt], [3, stadspoort]]) {
-    assert.equal(new Set(nearby.map(stop => stop.id)).size, expected);
-    assert.equal(new Set(nearby.filter(stop => stop.matched).map(stop => stop.id)).size, expected);
+  for (const [expected, nearby] of [
+    [['3237550', '3237551', '3956461', '3956462', '3956463', '3956464',
+      '3956465', '3956466', '3956467', '3956468', '4032034'], forecourt],
+    [['3906282', '3906304', '3906305'], stadspoort],
+  ]) {
+    const matched = new Set(nearby.filter(stop => stop.matched).map(stop => stop.id));
+    for (const id of expected) assert.ok(matched.has(id), `No boarding match for stop ${id}`);
+    assert.deepEqual(matched, new Set(nearby.map(stop => stop.id)));
   }
 });

@@ -6,9 +6,13 @@ import { FRANKENENG_DOWNSTREAM } from './ede-water-levels.js';
 const mapUrl = new URL('../assets/ede-map-v1.json.gz', import.meta.url);
 const shorelineUrl = new URL('../assets/ede-shorelines.json.gz', import.meta.url);
 const yearsUrl = new URL('../assets/ede-building-years.json.gz', import.meta.url);
-const northUrl = new URL('../assets/ede-north-v1.json.gz', import.meta.url);
+const northUrl = new URL('../assets/ede-north-v1.json.gz?v=20261122-municipal', import.meta.url);
 const corridorsUrl = new URL('../assets/ede-corridors-v1.json.gz', import.meta.url);
 const windowUsesUrl = new URL('../assets/ede-window-uses.json.gz', import.meta.url);
+const municipalityUrl = new URL('../assets/ede-municipality-v1.json.gz?v=20261122-municipal', import.meta.url);
+const mapLayers = ['buildings', 'roads', 'railways', 'water', 'parks', 'squares', 'trees', 'signals'];
+const mapGraphs = ['roadGraph', 'activeGraph'];
+export let EDE_AERIAL_INPUTS;
 
 export async function readMapAsset(url, optional = false) {
   let bytes;
@@ -132,8 +136,51 @@ function applyCorridors(data, corridors) {
   });
 }
 
+function applyMunicipalCoverage(data, patch) {
+  const prefix = {
+    bounds: data.meta.bounds,
+    counts: mapLayers.map(key => data[key].length),
+    graphs: mapGraphs.map(key => [data[key].nodes.length, data[key].links.length]),
+  };
+  if (patch.version !== 1 || JSON.stringify(prefix) !== JSON.stringify(patch.base)) {
+    throw new Error('Ede municipal bake does not match the expanded map');
+  }
+  const roadIndices = [];
+  for (const key of mapLayers) {
+    const changes = new Map(patch.layers[key].changes);
+    const rows = [];
+    data[key].forEach((row, index) => {
+      if (key === 'roads') roadIndices.push(rows.length);
+      rows.push(...(changes.get(key === 'water' ? row.id : index) ?? [row]));
+    });
+    data[key] = rows;
+    data.meta.counts[key] = rows.length;
+  }
+  for (const key of mapGraphs) {
+    const graph = data[key], layer = patch.graphs[key];
+    const coords = graph.nodes.concat(layer.addNodes), drop = new Set(layer.dropNodes);
+    const nodes = [], indices = [], controls = {};
+    for (let i = 0; i < coords.length / 2; i++) {
+      if (drop.has(i)) continue;
+      const index = nodes.length / 2;
+      indices[i] = index;
+      if (graph.controls?.[i]) controls[index] = graph.controls[i];
+      nodes.push(coords[i * 2], coords[i * 2 + 1]);
+    }
+    const changes = new Map(layer.changes);
+    graph.links = graph.links.flatMap((link, index) => {
+      const rows = changes.get(index);
+      return (rows ?? [link]).map(([a, b, name, width, lanes, dir, inner, road, ...flags]) =>
+        [indices[a], indices[b], name, width, lanes, dir, inner, rows ? road : roadIndices[road], ...flags]);
+    });
+    graph.nodes = nodes;
+    if (graph.controls) graph.controls = controls;
+  }
+  Object.assign(data.meta, patch.prefix, { municipality: patch.source, playableBoundary: patch.boundary });
+}
+
 async function loadMap() {
-  const [data, shoreline, years, corridors, windowUses, north] = await Promise.all([
+  const [data, shoreline, years, corridors, windowUses, north, municipality] = await Promise.all([
     readMapAsset(mapUrl),
     readMapAsset(shorelineUrl, true).catch(error => {
       console.warn('[Ede shorelines] using OSM geometry:', error);
@@ -155,6 +202,7 @@ async function loadMap() {
       console.warn('[Ede north] using the existing extent:', error);
       return null;
     }),
+    readMapAsset(municipalityUrl, true),
   ]);
   if (data?.meta?.city !== 'Ede' || !Array.isArray(data.roads) ||
       !Array.isArray(data.buildings) || !data.roadGraph || !data.activeGraph) {
@@ -172,6 +220,8 @@ async function loadMap() {
     || ring[0] < -3500 || ring[0] > -3410 || ring[1] < 740 || ring[1] > 836);
   data.meta.counts.water = data.water.length;
   if (years) applyBuildingYears(data.buildings, years);
+  // The RGB palette is keyed to the original OSM IDs and original segment counts.
+  EDE_AERIAL_INPUTS = { buildings: data.buildings, roads: data.roads };
   for (const { id, ring, holes } of EDE_FUEL_FALLBACK_FOOTPRINTS) {
     const building = data.buildings.find(row => row.id === id);
     if (building) Object.assign(building, { ring, holes });
@@ -185,6 +235,7 @@ async function loadMap() {
       console.warn('[Ede north] using the existing extent:', error);
     }
   }
+  if (municipality && data.meta.north) applyMunicipalCoverage(data, municipality);
   if (windowUses?.version === 1) {
     const uses = new Map();
     for (const use of ['unlit', 'home', 'office', 'shop', 'mixed']) {

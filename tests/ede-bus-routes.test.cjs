@@ -57,3 +57,23 @@ test('a terminal platform at the end of a bay can board before the next lane', a
   assert.equal(legs[0].start, 0);
   assert.ok(stops[0].at < legs[0].to);
 });
+
+test('a bus lane re-entering the municipal boundary does not cross the excluded area', async () => {
+  const { buildBusRoutes } = await import('../tools/build-ede-bus-routes.mjs');
+  const stops = [
+    { id: 'west', x: 5, z: 0 }, { id: 'outside', x: 50, z: 0 }, { id: 'east', x: 95, z: 0 },
+  ];
+  const feed = { variants: [{ id: 'through', shape: [[5, 0], [95, 0]], stops }] };
+  const boundary = [[[0, -10, 100, -10, 100, 10, 0, 10], [40, -4, 60, -4, 60, 4, 40, 4]]];
+  const graph = { bounds: [0, -10, 100, 10], boundary, edges: [edge(0, 0, 100, [])] };
+  const { data, report } = buildBusRoutes(feed, graph);
+  const [route] = data.variants;
+  assert.equal(route.slices.length, 2);
+  assert.deepEqual(route.stops.map(stop => stop.matched), [true, false, true]);
+  assert.equal(route.stops[1].x, undefined);
+  assert.equal(route.stops[1].distance, 45);
+  const [gap] = report.variants[0].gaps.filter(({ reason }) => reason === 'outside-map');
+  assert.deepEqual([gap.from, gap.to], [35, 55]);
+  assert.ok(route.slices[0].legs.at(-1).to <= 38);
+  assert.ok(route.slices[1].legs[0].from >= 58);
+});

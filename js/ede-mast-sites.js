@@ -11,4 +11,4 @@ export const EDE_MAST_SITES = [
   { id: 'zendmast-otterlo', name: 'Zendmast Otterlo-Noord', district: 'Otterlo', road: 'Apeldoornseweg',
     x: 7320.19, z: -6781.00, height: 33, radius: 0.55, focusHeight: 16,
     approach: { x: 7279.3, z: -6761.9 }, north: true },
-].map(site => ({ ...site, heading: 0, surveyFootprints: [], mapScenic: true }));
+].map(site => ({ ...site, heading: 0, surveyFootprints: [], mapScenic: true, hideOnMap: true }));

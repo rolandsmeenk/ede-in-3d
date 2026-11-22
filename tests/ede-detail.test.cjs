@@ -325,6 +325,12 @@ test('municipal underground shafts respect supporting levels and use close-range
   assert.ok(bounds.min.y > 4.04 && bounds.max.y < 5.03);
 });
 
+test('the motorway sign atlas uses truecolor for Safari WebGPU uploads', () => {
+  const png = readFileSync(path.join(__dirname, '../assets/ede-nbd-signs.png'));
+  assert.equal(png.toString('ascii', 12, 16), 'IHDR');
+  assert.equal(png[25], 2, 'PNG color type 2 stores RGB without a palette');
+});
+
 test('directional sign faces look toward the approach at the baked NAP height', async () => {
   const { buildEdeDetail, THREE } = await fixture();
   const texture = new THREE.Texture();

@@ -63,7 +63,9 @@ class Motorway:
         self.meta = scene['meta']
         self.frame = RoadGraph({**self.meta, 'edges': []})
         self.area = box(*self.meta['bounds'])
-        self.terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']()
+        terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']
+        self.terrain = terrain()
+        self.expansion = terrain(ROOT / 'assets/ede-terrain-tiles/collision.bin') if self.meta.get('north') else None
         grade = read_json(ROOT / 'assets/ede-grade.json')
         self.datum = grade['datumNAP']
         self.profiles = defaultdict(list)
@@ -110,7 +112,7 @@ class Motorway:
                         part.span = approach
                         approach_edges.append(part)
                 continue
-            if not road['oneway'] or road['id'][1:] not in self.tags:
+            if not road['oneway'] or (road['id'][1:] not in self.tags and road.get('ref') not in ('A12', 'A30')):
                 continue
             if road['reverse']:
                 coords.reverse()
@@ -144,7 +146,10 @@ class Motorway:
 
     def ground(self, x, z):
         west, south, east, north = self.meta['bounds']
-        return self.terrain.at((min(east, max(west, x)), min(north, max(south, z))))
+        x, z = min(east, max(west, x)), min(north, max(south, z))
+        west, south, east, north = self.meta.get('baseBounds', self.meta['bounds'])
+        grid = self.terrain if self.expansion is None or (west <= x <= east and south <= z <= north) else self.expansion
+        return grid.at((x, z))
 
     def profile(self, road, x, z, surveyed_y, kind, source_level=None):
         ground = self.ground(x, z)

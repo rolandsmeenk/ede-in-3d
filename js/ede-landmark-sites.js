@@ -1,4 +1,5 @@
 import { EDE_DATA } from './ede-geodata.js';
+import { containsPlayablePoint } from './ede-playable-boundary.js';
 import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
 import { OTHER_CHURCH_SHELLS } from './ede-other-church-shells.js';
 import { EDE_PUBLIC_LANDMARKS } from './ede-public-survey.js';
@@ -268,7 +269,7 @@ export const EDE_MODELED_LANDMARKS = [
     const { name, osm, bag, center: [x, z], road, district, approach, height } = churchSurvey;
     return { id, name, osmId: osm, bagIds: [bag], x, z, road, district, approach, height, churchSurvey, worldSpace: true };
   }),
-];
+].filter(({ x, z }) => containsPlayablePoint(x, z));
 
 const sources = new Set(EDE_MODELED_LANDMARKS.flatMap(site => [site.osmId, ...(site.annexOsmIds ?? [])]));
 const dome = EDE_MODELED_LANDMARKS[1];

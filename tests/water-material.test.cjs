@@ -22,6 +22,9 @@ const env = {
   posWorld: [-1200, -2.2, 500],
   camPos: [-1350, 18, 500],
   interiorGlow: 0.48,
+  wind: [0, 0, 0],
+  waterTravel: [0, 0],
+  waveSamples: null,
   nonUniformRead: false,
   branchDepth: 0,
   nonUniformBranchDepth: 0,
@@ -156,7 +159,12 @@ const sandbox = {
   LONG_ISLAND_POLYGONS: [[{ x: 1900, z: -7000 }, { x: 1900, z: 8000 }, { x: 4000, z: 8000 }, { x: 4000, z: -7000 }]],
   streetZ: (n) => (42 - n) * 80,
   getWaterWaveTexture: () => ({}),
-  cityUniforms: { uInteriorGlow: new TNode(() => [env.interiorGlow]) },
+  WATER_WAVE_AXIS: 0.3,
+  cityUniforms: {
+    uInteriorGlow: new TNode(() => [env.interiorGlow]),
+    uWind: new TNode(() => env.wind),
+    uWaterTravel: new TNode(() => env.waterTravel)
+  },
   positionWorld: new TNode(() => { env.nonUniformRead = true; return env.posWorld; }),
   cameraPosition: new TNode(() => env.camPos),
   normalWorldGeometry: wrap([0, 1, 0]),
@@ -217,7 +225,10 @@ const sandbox = {
     if (env.nonUniformBranchDepth > 0) env.fwidthInsideBranch++;
     return arr(v).map(() => 0.02);
   }),
-  texture: () => wrap([0.04, -0.03, 0.015, 0.2])
+  texture: (_texture, uv) => {
+    env.waveSamples?.push(arr(uv));
+    return wrap([0.04, -0.03, 0.015, 0.2]);
+  }
 };
 
 const noiseStart = source.indexOf('const hash2D = Fn(');
@@ -226,6 +237,29 @@ assert.ok(noiseStart >= 0 && noiseEnd > noiseStart);
 const helpersSrc = source.slice(noiseStart, noiseEnd) + '\n' + pulseAndBox;
 const createWaterMaterial = vm.runInNewContext(`${helpersSrc}\n${waterFnSrc}\ncreateWaterMaterial;`, sandbox);
 const waterMat = createWaterMaterial();
+
+test('wind strengthens water ripples and advects the texture downwind', () => {
+  env.posWorld = [20, -2.2, 10];
+  const sample = (wind, travel) => {
+    env.wind = wind;
+    env.waterTravel = travel;
+    env.waveSamples = [];
+    const [x, , z] = waterMat.normalNode.eval();
+    const [uv] = env.waveSamples;
+    env.waveSamples = null;
+    return { tilt: Math.hypot(x, z), uv };
+  };
+  const calm = sample([0, 0, 0], [0, 0]);
+  const strong = sample([1, 0, 1], [0, 0]);
+  assert.ok(strong.tilt > calm.tilt * 10);
+  assert.deepEqual(strong.uv, calm.uv, 'a wind change leaves phase where it was');
+  const east = sample([1, 0, 1], [3, 0]);
+  const west = sample([-1, 0, 1], [-3, 0]);
+  const north = sample([0, -1, 1], [0, -3]);
+  assert.ok(east.uv[0] < calm.uv[0] && west.uv[0] > calm.uv[0]);
+  assert.ok(north.uv[1] > calm.uv[1] && north.uv[0] === calm.uv[0]);
+  assert.deepEqual(sample([0, 0, 0], [0, 0]), calm);
+});
 
 test('water emissiveNode skips skyline raycast in midday and golden hour presets', () => {
   env.posWorld = [-1200, -2.2, 500];

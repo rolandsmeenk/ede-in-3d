@@ -5,7 +5,7 @@ const office = [[0, .04], [6, .04], [8, .49], [9, .68], [16.5, .68], [18, .38], 
 const shop = [[0, .06], [7, .06], [9, .59], [17, .57], [19, .31], [21, .14], [23, .06], [24, .06]];
 
 export const PRESET_WINDOW_LIGHTS = {
-  golden: [.16, .15, .21], midday: [0, 0, 0], twilight: [.53, .23, .31], midnight: [.52, .09, .14],
+  golden: [0, 0, 0], midday: [0, 0, 0], twilight: [.53, .23, .31], midnight: [.52, .09, .14],
 };
 
 function interpolate(profile, hour) {
@@ -20,11 +20,13 @@ function interpolate(profile, hour) {
 }
 
 export function liveWindowLights(date, elevation) {
+  // Solar elevation is geometric. The visible sun sets at roughly −0.83°.
+  const shade = Math.min(1, (-0.83 - elevation) / 3.17);
+  if (shade <= 0) return PRESET_WINDOW_LIGHTS.midday;
   const local = localClock(date.getTime() / 1000);
   const hour = local.seconds / HOUR;
   const day = weekday(local.date);
   const weekend = day === 0 || day === 6;
-  const shade = Math.min(1, Math.max(0, (8 - elevation) / 12));
   const darkness = shade * shade * (3 - 2 * shade);
   return [interpolate(home, hour), weekend ? .035 : interpolate(office, hour), interpolate(shop, hour) * (day === 0 ? .65 : 1)]
     .map(level => level * darkness);

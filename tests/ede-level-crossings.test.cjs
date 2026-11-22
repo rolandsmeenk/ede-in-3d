@@ -34,7 +34,7 @@ test('a scheduled RS34 closes Telefoonweg for road users until the last carriage
   const { tracks, trains, build } = await setup();
   const { serviceEpoch } = await import('../js/ede-transit-time.js');
   const { planTimeAt } = await import('../js/ede-train-schedule.js');
-  const date = '2026-11-19';
+  const date = timetable.dates.find(day => [1, 2, 3, 4, 5].includes(new Date(day).getUTCDay()));
   const index = timetable.dates.indexOf(date);
   const trip = timetable.trips.find(trip => trip.operator === 'RRReis' && trip.direction === 1 &&
     trip.stops[0].departure > 10 * 3600 && timetable.calendars[trip.calendar].includes(index));

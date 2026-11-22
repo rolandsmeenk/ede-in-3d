@@ -2,9 +2,17 @@
 
 Traffic, weather, parking and public transport in Ede in 3D. [Hosting and feed availability](running.md#github-pages-and-live-data) · [Traffic pilot and verification](../tools/data/ede-traffic-pilot.md)
 
-## Night lighting
+## Environment
 
-Live Time follows the sun at Oude Kerk. As dusk ends, the scene settles into the same sky and cool fill as the Night preset. Window lights follow a separate Europe/Amsterdam schedule. Homes gradually light up as daylight fades, peak around 21:00 and taper off overnight. Offices begin switching off after the workday and have fewer lit windows at weekends. Manual lighting presets have fixed window profiles. The same local hour can have lit windows in winter and full daylight in summer.
+In **Environment → Live**, the scene follows the date and time in Europe/Amsterdam. The same mode enables live weather and Frankeneng gauge readings. The toolbar shows Ede’s clock. Open the menu to see the date, weather source and update time, and gauge coverage.
+
+**Environment → Preset** starts in Golden Hour with the current season selected. Choose any of the four times of day and seasons, and set weather independently. Wind and rain can be combined, and Winter adds Snow to the weather list. Summer represents late August with heather in bloom. Presets use local scene settings and the bundled water levels. Switching back restores your preset choices.
+
+The Schuttersveld skating oval in Ede and the outdoor court beside the De Zanding pool in Otterlo can show ice. Live mode estimates coverage from 48 hours of modeled outdoor temperatures. Ice builds during frost and recedes during a thaw. The Winter preset uses a simulated cold spell. Coverage is a visual estimate of rink conditions. [Edese IJsvereniging track](https://eijvarchief.nl/content/nieuws/nieuws.asp?Nummer=1294&v_titel=algemene+info+inline+skaten) · [De Zanding rink](https://storage.pubble.nl/96897487/pdf/barneveldsekrant20240111lr_74048.pdf) · [Open-Meteo hourly temperatures](https://open-meteo.com/en/docs)
+
+### Night lighting
+
+Live mode follows the sun at Oude Kerk. As dusk ends, the scene settles into the same sky and cool fill as the Night preset. Window lights fade in after sunset and follow a separate Europe/Amsterdam schedule. Homes peak around 21:00 and taper off overnight. Offices begin switching off after the workday and have fewer lit windows at weekends. Golden Hour and Midday have unlit windows. Blue Hour and Night have fixed window profiles. The same local hour can have lit windows in winter and full daylight in summer.
 
 The window simulation uses building uses from the public BAG register. A 64 KB offline asset matches those uses to 25,470 of the map's footprints, including 22,820 homes and 501 office or education matches. OpenStreetMap tags cover additional buildings, with a conservative profile where use is unknown. Windows are emissive surfaces on the existing façade meshes. Their pattern is seeded per building and changes as the schedule fades. These are illustrative schedules. [Kadaster building-use definitions](https://catalogus.kadaster.nl/bag/nl/page/Gebruiksdoel) · [PDOK BAG](https://www.pdok.nl/ogc-apis/-/article/basisregistratie-adressen-en-gebouwen-ba-1)
 
@@ -20,23 +28,33 @@ uv run --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-window-
 
 The live server caches the national NDW DATEX II v3 and OVapi GTFS-Realtime feeds and serves only matches within the Ede map. NDW readings change demand and cruising speed on their matched direction. Posted or applicable temporary limits cap speed. Valid closures block new entry. The camera-local simulation uses Amsterdam time-of-day demand and the timetable when live data expires. See the [traffic data notes](../tools/data/ede-traffic-sources.md) for coverage, fallbacks, and the frame-time measurements.
 
+## Tractor and ambulance traffic
+
+Tractors use a rural subset of the road network. Routing checks vehicle clearances, mapped agricultural access, matched NDW closure signs and Gelderland's N304 agricultural vehicle ban. The simulation keeps tractors outside town centres and lets them leave the road at five mapped farm or field entrances. The game simulates farm trips and their frequency. The NDW counters used for live road traffic group vehicles by length. [NDW traffic counts](https://docs.ndw.nu/en/handleidingen/DEXTER/intensiteiten-en-snelheden/) · [Gelderland traffic restrictions](https://geoportaal.gelderland.nl/gisserver/rest/services/Infra/Infra/MapServer/28)
+
+Ambulances run simulated trips from the Breelaan and Argonstraat bases via fictional pickup stops to the public-road approach to the emergency entrance at Ziekenhuis Gelderse Vallei. They use the regular traffic and signal simulation. [Ambulance service area](https://ambulancezorggm.nl/over-ambulancezorg/werkgebied) · [Hospital access](https://www.geldersevallei.nl/contact/locatie/ede)
+
+## Live emergency dispatches
+
+The live server checks the public Municipality of Ede P2000 feed once per minute. Recent police, ambulance and fire dispatches can trigger a simulated response within a kilometre of the player. The game targets a nearby road using the street name when available and an approximate town centre otherwise. Alerts expire after ten minutes and each accepted alert triggers one response per game session. Vehicle positions, routes and arrival times are simulated. [Ede P2000 feed](https://112-nu.nl/regio/gemeente-ede/alles/0) · [Feed reuse terms](https://112-nu.nl/rss.html)
+
 ## Fuel price estimates
 
 Roadside signs show simulated fuel prices rounded to the nearest euro cent. The game combines the latest published Dutch average with regional adjustments. [Fuel price data sources and calculations](../tools/data/ede-fuel-prices.sources.md)
 
 ## Frankeneng water levels
 
-The upstream reach and a short stretch of the downstream ditch at the Frankeneng weir follow gauges `WS000610` and `WS000611`. The browser checks the waterschap every five minutes while the game is visible, starting after the first playable frame. The feed dates the layer as a whole. A failed request, a layer publication older than 45 minutes, or an unusable value restores the affected reach to its bundled level of 6.65 m NAP upstream or 6.25 m NAP downstream. [Waterschap surface-water map](https://storymaps.arcgis.com/stories/bff91946a94c4b7bb22a340c0dc262f0) · [Gauge feature service](https://services1.arcgis.com/ug8NBKcLHVNmdmdt/arcgis/rest/services/1ee052d2-43ba-4c3c-8e80-40bcea8c6405/FeatureServer/0)
+The upstream reach and a short stretch of the downstream ditch at the Frankeneng weir follow gauges `WS000610` and `WS000611` in Live mode. The browser checks the waterschap every five minutes while the game is visible. The feed dates the layer as a whole. A failed request, a layer publication older than 45 minutes, or an unusable value restores the affected reach to its bundled level of 6.65 m NAP upstream or 6.25 m NAP downstream. [Waterschap surface-water map](https://storymaps.arcgis.com/stories/bff91946a94c4b7bb22a340c0dc262f0) · [Gauge feature service](https://services1.arcgis.com/ug8NBKcLHVNmdmdt/arcgis/rest/services/1ee052d2-43ba-4c3c-8e80-40bcea8c6405/FeatureServer/0)
 
 The upstream surface uses the existing shoreline. The downstream outline takes the part of active BGT waterdeel `15747567-3938-5819-9832-219e997593e6` within 25 m of its gauge, simplified to 20 cm. The two surfaces stay inside those outlines and use fixed bank faces fitted to the local AHN terrain. The covered link at the weir stays below ground. [BGT waterdeel](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/waterdeel/items/15747567-3938-5819-9832-219e997593e6) · [PDOK weir KST-1106](https://api.pdok.nl/hwh/waterschappen-kunstwerken-imwa/ogc/v2/collections/stuw/items/64bf15fa-ee25-59ee-9c2d-15d510ae0261)
 
-## Live Weather
+## Weather
 
-Turn on **Live Weather** in the toolbar to use current model estimates for Oude Kerk. The weather card shows the source and model update time in Europe/Amsterdam. You can use Live Weather with any preset or Live Time. Turning it off restores the selected lighting mode’s weather settings.
+Choose **Environment → Live** to use current model estimates for Oude Kerk. The Environment menu shows the source and model update time in Europe/Amsterdam.
 
-The game requests an update about every 15 minutes while visible. The local server shares one cached reading across clients. Static hosting requests the same conditions from Open-Meteo when the server endpoint is absent. A reading is marked stale after 30 minutes and fades back to the selected mode after an hour. When no reading is available, the selected mode supplies the weather settings.
+The game requests an update about every 15 minutes while visible. The local server shares one cached reading across clients. Static hosting requests the same conditions from Open-Meteo when the server endpoint is absent. A reading is marked stale after 30 minutes. When a reading is unavailable or is more than an hour old, the scene uses the lighting mode’s default weather.
 
-Concordiamolen, De Keetmolen and Doesburgermolen use the 10 m reading by Oude Kerk. The Maanderbroek turbines use model wind at the wind farm, interpolated between 80 m and 120 m. The Live Weather card shows both the town wind and the modeled wind at the 99.5 m hubs. Preset weather supplies a simulated 18 km/h southwesterly breeze when Live Weather is off or a reading is unavailable.
+Concordiamolen, De Keetmolen and Doesburgermolen use the 10 m reading by Oude Kerk. The Maanderbroek turbines use model wind at the wind farm, interpolated between 80 m and 120 m. The Environment menu shows the town wind and the modeled wind at the 99.5 m hubs when available. Preset weather supplies its own wind. Lighting default and unavailable live readings use a simulated 18 km/h southwesterly breeze.
 
 The Maanderbroek Siemens SWT-3.2-101 turbines have a 3 m/s cut-in speed and a 25 m/s cut-out speed at hub height. Siemens lists a 6.5–19 RPM operating range. The game approximates the controller’s speed curve within that range. If the wind farm forecast is unavailable, it estimates wind at the hubs from a 10 m reading with the 1/7 power law. Blinking red beacons mark the rear of both nacelles at dusk and at night. [Wind farm construction record](https://verwaard-bv.nl/raedthuys-windpark-a30-a12-maanderbroek/) · [Siemens datasheet](https://datasheet.datasheetarchive.com/originals/crawler/siemens.com/d1ee0e9960c2d8b87e5d46af432194c2.pdf) · [Wind shear reference](https://docs.nrel.gov/docs/fy15osti/63696.pdf)
 
@@ -44,7 +62,7 @@ The three historic mills show canvas on their wooden lattices as they turn. At D
 
 The Raadhuis flags and the Lukkien windsock trail downwind. The weather vanes at Oude Kerk, Beatrixkerk and the Evangelisch-Lutherse Kerk point into the same town wind used by the historic mills. [Raadhuis photo](https://www.ede.nl/fileadmin/ede.nl/Pdf-en/Zienswijze__bezwaar_of_beroep/Jaarverslag_commissie_voor_de_bezwaarschriften_2023.pdf) · [Oude Kerk vane](https://indebuurt.nl/ede/genieten-van/mysteries/mysterie-opgelost-dit-betekenen-die-bol-kruis-en-haan-op-de-toren-van-de-oude-kerk~85582/) · [Beatrixkerk vane](https://www.kerkvaan.nl/115-ede.html) · [Lutherse Kerk vane](https://edesemonumenten.nl/fiets-en-wandelroute/)
 
-Rain and snow use one camera-local draw with at most 1,200 particles. The effect is suppressed below mapped tunnel roofs, bridge decks and open sheds. Rain gradually darkens exposed pavement and gives it a sheen. Standing puddles appear only during rain. The wet sheen dries gradually once the rain ends. Lighting presets and Live Time start with dry pavement. The timestamped reading and freshness status are available through `window.__slopwaw.weather`.
+Rain and snow use one camera-local draw with at most 1,200 particles. The effect is suppressed below mapped tunnel roofs, bridge decks and open sheds. Rain gradually darkens exposed pavement and gives it a sheen. Standing puddles appear only during rain. The wet sheen dries gradually once the rain ends. The timestamped live reading and freshness status are available through `window.__slopwaw.weather`.
 
 [Open-Meteo](https://open-meteo.com/en/docs) supplies the weather estimates. [Isometric Warsaw](https://bedirhanyildirim.com/warsaw-izo/) and [Slop Geneva](https://github.com/emmanpi/slop-geneva/blob/HEAD/js/weather.js) are references for the weather controls and camera-local precipitation.
 

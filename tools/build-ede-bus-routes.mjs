@@ -4,11 +4,13 @@ import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { EDE_TURN_RESTRICTIONS } from '../js/ede-turn-restrictions.js';
 import { BUS } from '../js/road-access.js';
+import { containsPlayablePoint } from '../js/ede-playable-boundary.js';
 
 const STEP = 8; // metres between shape observations
 const REACH = 21; // maximum deviation from the operator's shape, in metres
 const CELL = 32;
 const EPS = 1e-6;
+const STATION_PRECISION = 0.001;
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const round = n => Math.round(n * 1000) / 1000;
 const between = (a, b, t) => a + (b - a) * t;
@@ -27,6 +29,50 @@ function clip(a, b, bounds) {
     end = Math.min(end, Math.max(t0, t1));
   }
   return start < end ? [start, end] : null;
+}
+
+function boundaryClipper(boundary) {
+  const edges = boundary.flatMap(polygon => polygon.flatMap(ring => {
+    const sides = [];
+    for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+      const [x, z, ex, ez] = [ring[j], ring[j + 1], ring[i], ring[i + 1]];
+      if (x === ex && z === ez) continue;
+      sides.push({ x, z, ex, ez, minX: Math.min(x, ex), minZ: Math.min(z, ez), maxX: Math.max(x, ex), maxZ: Math.max(z, ez) });
+    }
+    return sides;
+  }));
+  return ([x, z], [ex, ez]) => {
+    const dx = ex - x, dz = ez - z, lengthSquared = dx * dx + dz * dz;
+    if (!lengthSquared) return [];
+    const minX = Math.min(x, ex), maxX = Math.max(x, ex), minZ = Math.min(z, ez), maxZ = Math.max(z, ez);
+    const breaks = [0, 1];
+    for (const edge of edges) {
+      if (edge.minX > maxX || edge.maxX < minX || edge.minZ > maxZ || edge.maxZ < minZ) continue;
+      const ux = edge.ex - edge.x, uz = edge.ez - edge.z;
+      const qx = edge.x - x, qz = edge.z - z;
+      const cross = dx * uz - dz * ux;
+      const side = qx * dz - qz * dx;
+      if (Math.abs(cross) < EPS) {
+        if (Math.abs(side) < EPS) {
+          const a = (qx * dx + qz * dz) / lengthSquared, b = a + (ux * dx + uz * dz) / lengthSquared;
+          breaks.push(clamp(a, 0, 1), clamp(b, 0, 1));
+        }
+      } else if (side / cross >= -EPS && side / cross <= 1 + EPS) {
+        const at = (qx * uz - qz * ux) / cross;
+        if (at > 0 && at < 1) breaks.push(at);
+      }
+    }
+    breaks.sort((a, b) => a - b);
+    const ranges = [];
+    for (let i = 1; i < breaks.length; i++) {
+      const a = breaks[i - 1], b = breaks[i];
+      const mid = (a + b) / 2;
+      if (b - a < EPS || !containsPlayablePoint(x + dx * mid, z + dz * mid, boundary)) continue;
+      if (ranges.at(-1) && a - ranges.at(-1)[1] < EPS) ranges.at(-1)[1] = b;
+      else ranges.push([a, b]);
+    }
+    return ranges;
+  };
 }
 
 function sourceShape(points) {
@@ -86,23 +132,23 @@ function shapeStops(stops, shape) {
   return projected;
 }
 
-function modeledRanges(shape, bounds, start, end) {
+function modeledRanges(shape, clipRanges, start, end) {
   const ranges = [];
   for (const seg of shape.segments) {
     if (seg.s > end) break;
     if (seg.s + seg.len < start) continue;
-    const interval = clip(seg.a, seg.b, bounds);
-    if (!interval) continue;
-    const a = Math.max(start, seg.s + interval[0] * seg.len), b = Math.min(end, seg.s + interval[1] * seg.len);
-    if (b <= a) continue;
-    const last = ranges.at(-1);
-    if (last && a - last[1] < EPS) last[1] = b;
-    else ranges.push([a, b]);
+    for (const [enter, exit] of clipRanges(seg.a, seg.b)) {
+      const a = Math.max(start, seg.s + enter * seg.len), b = Math.min(end, seg.s + exit * seg.len);
+      if (b <= a) continue;
+      const last = ranges.at(-1);
+      if (last && a - last[1] < EPS) last[1] = b;
+      else ranges.push([a, b]);
+    }
   }
   return ranges;
 }
 
-function directedLanes(graph) {
+function directedLanes(graph, clipRanges) {
   const { bounds, edges } = graph;
   if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(Number.isFinite) || bounds[0] >= bounds[2] || bounds[1] >= bounds[3]) {
     throw new Error('Expected road graph bounds [minX, minZ, maxX, maxZ]');
@@ -123,12 +169,15 @@ function directedLanes(graph) {
     const lanes = e.lanes.map((offset, index) => {
       const x = x0 + rx * offset, z = z0 + rz * offset;
       const ex = x + span * dx, ez = z + span * dz;
-      const range = clip([x, z], [ex, ez], bounds);
+      const ranges = e.laneMask?.[index] === false ? [] : clipRanges([x, z], [ex, ez]).map(([enter, exit]) => [
+        enter * span + (graph.boundary && enter > 0 ? STATION_PRECISION : 0),
+        exit * span - (graph.boundary && exit < 1 ? STATION_PRECISION : 0),
+      ]).filter(([enter, exit]) => exit > enter);
       return { edge: e, index, x, z, x0, z0, dx, dz, rx, rz, span, clearStart, clearEnd: clearStart + len,
-        sideCost: (e.lanes.length - index - 1) * 0.9, turns: [], range: e.laneMask?.[index] === false ? null : range?.map(t => t * span) };
+        sideCost: (e.lanes.length - index - 1) * 0.9, turns: [], ranges };
     });
     byId.set(id, lanes);
-    if (lanes.some(lane => lane.range)) {
+    if (lanes.some(lane => lane.ranges.length)) {
       visit(Math.min(x0, to.x), Math.min(z0, to.z), Math.max(x0, to.x), Math.max(z0, to.z), key => {
         if (!cells.has(key)) cells.set(key, []);
         cells.get(key).push(lanes);
@@ -139,7 +188,7 @@ function directedLanes(graph) {
     for (const lane of lanes) for (const move of lane.edge.moves) {
       for (const index of [move.out[lane.index], ...(move.alternatives?.[lane.index] || [])]) {
         const next = byId.get(move.to)?.[index];
-        if (lane.range?.[1] >= lane.span - EPS && next?.range?.[0] <= EPS) lane.turns.push({ next, move });
+        if (lane.ranges.at(-1)?.[1] >= lane.span - EPS && next?.ranges[0]?.[0] <= EPS) lane.turns.push({ next, move });
       }
     }
   }
@@ -157,13 +206,15 @@ function directedLanes(graph) {
         if (d <= REACH) ways.push({ lanes, t, cost: d * 1.2 + (1 - facing) * 9 });
       }
     });
-    return ways.sort((a, b) => a.cost - b.cost).slice(0, 8).flatMap(({ lanes, t, cost }) => lanes.filter(l => l.range).map(lane => {
+    return ways.sort((a, b) => a.cost - b.cost).slice(0, 8).flatMap(({ lanes, t, cost }) => lanes.flatMap(lane => {
       const padding = Math.min(0.8, lane.edge.len / 3);
       const position = stop && positionOnLane(stop, lane, lane.clearStart + (endsTrip ? padding : 0), lane.clearEnd - (beginsTrip ? padding : 0));
       const target = stop?.platform && position.error < 6 && (beginsTrip || endsTrip) ? position.t : t;
-      const along = clamp(target, ...lane.range);
       const dockCost = position ? position.error * (stop.platform ? 2.8 : 0.65) + Math.max(0, -position.side - 0.8) * 3 : 0;
-      return { lane, t: along, cost: cost + lane.sideCost + Math.abs(along - t) + dockCost };
+      return lane.ranges.map(range => {
+        const along = clamp(target, ...range);
+        return { lane, range, t: along, cost: cost + lane.sideCost + Math.abs(along - t) + dockCost };
+      });
     }));
   }
   return { nearby, byId };
@@ -175,14 +226,19 @@ function positionOnLane(stop, lane, min, max) {
   return { t, side: dx * lane.rx + dz * lane.rz, error: Math.hypot(dx - lane.dx * t, dz - lane.dz * t) };
 }
 
+function laneRange(lane, t) {
+  return lane.ranges.find(([start, end]) => t >= start - 0.001 && t <= end + 0.001);
+}
+
 function roadTransitions(from, targets, a, b, reach = REACH) {
+  if (!from.range) return new Map();
   const [x, z] = a.point, [ex, ez] = b.point;
   const dx = ex - x, dz = ez - z, d2 = dx * dx + dz * dz;
   const interval = b.s - a.s, limit = interval * 2.4 + 9;
   const out = new Map();
-  const queue = [{ lane: from.lane, start: from.t, length: 0, steps: [], restriction: from.restriction }];
+  const queue = [{ lane: from.lane, range: from.range, start: from.t, length: 0, steps: [], restriction: from.restriction }];
   const visited = new Set();
-  const key = (lane, restriction) => lane.edge.id + '/' + lane.index + '/' + (restriction?.key || '');
+  const key = (lane, range, restriction) => [lane.edge.id, lane.index, range[0], restriction?.key].join('/');
   const deviation = (lane, t) => {
     const ax = lane.x0 + lane.dx * t - x, az = lane.z0 + lane.dz * t - z;
     const f = d2 > EPS ? clamp((ax * dx + az * dz) / d2, 0, 1) : 0;
@@ -190,23 +246,25 @@ function roadTransitions(from, targets, a, b, reach = REACH) {
   };
   while (queue.length) {
     queue.sort((p, q) => q.length - p.length);
-    const { lane, start, length, steps, restriction } = queue.pop();
-    const visit = key(lane, restriction);
+    const { lane, range, start, length, steps, restriction } = queue.pop();
+    const visit = key(lane, range, restriction);
     if (visited.has(visit)) continue;
     visited.add(visit);
     for (const target of targets) {
-      if (target.lane !== lane || target.t < start - EPS || length + target.t - start > limit) continue;
+      if (target.lane !== lane || target.range !== range || target.t < start - EPS || length + target.t - start > limit) continue;
       if (deviation(lane, start) > reach || deviation(lane, target.t) > reach) continue;
-      const next = { lane, from: start, to: target.t };
+      const next = { lane, range, from: start, to: target.t };
       if (!out.has(target)) out.set(target, []);
       out.get(target).push({ steps: [...steps, next], restriction, cost: Math.abs(length + target.t - start - interval) * 0.8 });
     }
     const toNode = length + lane.span - start;
-    if (toNode > limit || deviation(lane, start) > reach || deviation(lane, lane.span) > reach) continue;
+    if (range[1] < lane.span - EPS || toNode > limit || deviation(lane, start) > reach || deviation(lane, lane.span) > reach) continue;
     for (const { next, move } of lane.turns) {
       const state = EDE_TURN_RESTRICTIONS.step(restriction, move, BUS);
-      if (state && !visited.has(key(next, state))) queue.push({
-        lane: next, start: 0, length: toNode, steps: [...steps, { lane, from: start, to: lane.span }], restriction: state
+      const entry = next.ranges[0];
+      if (state && !visited.has(key(next, entry, state))) queue.push({
+        lane: next, range: entry, start: 0, length: toNode,
+        steps: [...steps, { lane, range, from: start, to: lane.span }], restriction: state
       });
     }
   }
@@ -267,11 +325,11 @@ function routeSlices(chain) {
     if (!steps) { finish(); continue; }
     let along = 0;
     const length = steps.reduce((sum, step) => sum + step.to - step.from, 0);
-    for (const { lane, from, to } of steps) {
+    for (const { lane, range, from, to } of steps) {
       const offset = along;
       along += to - from;
       const pos = t => length < EPS ? s : between(prev.s, s, (offset + t - from) / length);
-      const a = Math.max(from, lane.clearStart, lane.range[0]), b = Math.min(to, lane.clearEnd, lane.range[1]);
+      const a = Math.max(from, lane.clearStart, range[0]), b = Math.min(to, lane.clearEnd, range[1]);
       if (b - a < EPS) continue;
       const leg = { edge: lane.edge.id, lane: lane.index, start: round(pos(a)), end: round(pos(b)), from: round(a - lane.clearStart), to: round(b - lane.clearStart) };
       if (leg.end <= leg.start || leg.to <= leg.from) continue;
@@ -291,7 +349,8 @@ function stitchShortGaps(shape, roads, paths) {
   const slices = [];
   const position = (leg, at) => {
     const lane = roads.byId.get(leg.edge)[leg.lane];
-    return { lane, t: clamp(lane.clearStart + at, 0, lane.span) };
+    const t = clamp(lane.clearStart + at, 0, lane.span);
+    return { lane, range: laneRange(lane, t), t };
   };
   function legal(legs) {
     let prior, restriction;
@@ -324,14 +383,14 @@ function stitchShortGaps(shape, roads, paths) {
   return slices;
 }
 
-function snapStops(projected, slices, roads, bounds) {
+function snapStops(projected, slices, roads, contains) {
   const firstLeg = slices[0]?.legs[0], lastLeg = slices.at(-1)?.legs.at(-1);
   let previous = 0;
   return projected.map((stop, index) => {
     const isFirst = index === 0, isLast = index === projected.length - 1;
     const latest = projected[index + 1]?.distance ?? Infinity;
     let best;
-    if (inside([stop.x, stop.z], bounds)) for (const slice of slices) {
+    if (contains(stop.x, stop.z)) for (const slice of slices) {
       for (const [legIndex, leg] of slice.legs.entries()) {
         const { start, end, from, to } = leg;
         const reach = stop.platform ? 24 : 16;
@@ -339,8 +398,9 @@ function snapStops(projected, slices, roads, bounds) {
         const lane = roads.byId.get(leg.edge)[leg.lane];
         const first = isFirst && leg === firstLeg && start - stop.distance < 6;
         const last = isLast && leg === lastLeg && stop.distance - end < 6;
-        const lo = Math.max(lane.range[0], lane.clearStart + (first ? 0 : from + (last ? 0.1 : 0)));
-        const hi = Math.min(lane.range[1], lane.clearStart + (last ? lane.edge.len : to - (first ? 0.1 : 0)));
+        const range = laneRange(lane, lane.clearStart + (from + to) / 2);
+        const lo = Math.max(range[0], lane.clearStart + (first ? 0 : from + (last ? 0.1 : 0)));
+        const hi = Math.min(range[1], lane.clearStart + (last ? lane.edge.len : to - (first ? 0.1 : 0)));
         if (lo > hi) continue;
         const position = positionOnLane(stop, lane, lo, hi);
         const maxError = stop.platform ? 6 : 20;
@@ -369,7 +429,8 @@ function snapStops(projected, slices, roads, bounds) {
 function clipBoundary(slice, roads, distance, entering) {
   const leg = entering ? slice.legs[0] : slice.legs.at(-1);
   const lane = roads.byId.get(leg.edge)[leg.lane];
-  const boundary = lane.range[entering ? 0 : 1];
+  const range = laneRange(lane, lane.clearStart + (leg.from + leg.to) / 2);
+  const boundary = range[entering ? 0 : 1];
   if (entering ? boundary <= EPS : boundary >= lane.span - EPS) return;
   const progress = entering ? leg.start : leg.end, at = entering ? leg.from : leg.to;
   const s = boundary - lane.clearStart;
@@ -411,7 +472,13 @@ function coverageGaps(start, end, ranges) {
 }
 
 export function buildBusRoutes(feed, graph) {
-  const roads = directedLanes(graph);
+  const { bounds, boundary } = graph;
+  const clipRanges = boundary ? boundaryClipper(boundary) : (a, b) => {
+    const interval = clip(a, b, bounds);
+    return interval ? [interval] : [];
+  };
+  const contains = boundary ? (x, z) => containsPlayablePoint(x, z, boundary) : (x, z) => inside([x, z], bounds);
+  const roads = directedLanes(graph, clipRanges);
   const byId = new Map(graph.edges.map(e => [e.id, e]));
   const edgeKeys = new Map(), calendarKeys = new Map(), calendars = [];
   const dateIndex = dates => {
@@ -425,7 +492,7 @@ export function buildBusRoutes(feed, graph) {
     const shape = sourceShape(coords);
     const projected = shapeStops(stops, shape);
     const start = projected[0].distance, end = projected.at(-1).distance;
-    const insideRanges = modeledRanges(shape, graph.bounds, start, end);
+    const insideRanges = modeledRanges(shape, clipRanges, start, end);
     const slices = insideRanges.flatMap(([a, b]) => {
       const paths = stitchShortGaps(shape, roads, routeSlices(matchRange(shape, roads, projected, a, b)));
       if (!paths.length) return paths;
@@ -433,7 +500,7 @@ export function buildBusRoutes(feed, graph) {
       if (b < end - EPS) clipBoundary(paths.at(-1), roads, b, false);
       return paths;
     });
-    const locatedStops = snapStops(projected, slices, roads, graph.bounds);
+    const locatedStops = snapStops(projected, slices, roads, contains);
     slices.forEach(mergeLegs);
     const sliceRanges = slices.map(({ legs }) => [legs[0].start, legs.at(-1).end]);
     for (const { legs } of slices) for (const leg of legs) {
@@ -455,7 +522,9 @@ export function buildBusRoutes(feed, graph) {
       serviceDistanceM: round(end - start), insideMapM: sum(insideRanges), matchedM: sum(sliceRanges),
       matchedStops: locatedStops.filter(stop => stop.matched).length,
       stops: locatedStops.map(({ id, name, platform, x, z, distance, matched }) => ({ id, name, platform, x, z, distance, matched })), gaps });
-    return { ...variant, length: round(shape.length), stops: locatedStops, slices,
+    const assetStops = boundary ? locatedStops.map(({ x, z, ...stop }) =>
+      contains(x, z) ? { ...stop, x, z } : stop) : locatedStops;
+    return { ...variant, length: round(shape.length), stops: assetStops, slices,
       trips: trips.map(trip => ({ ...trip, dates: dateIndex(trip.dates) })) };
   });
   return { data: { ...feed, bounds: graph.bounds, edges: [...edgeKeys.keys()], calendars, variants }, report };

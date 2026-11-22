@@ -18,15 +18,16 @@ GitHub Pages serves the game and its bundled assets. Live features that use Ede 
 
 | Feature | On GitHub Pages |
 | --- | --- |
-| Live Time | Calculates the sun position in the browser and displays the current time in Europe/Amsterdam. |
-| Live Weather | When enabled, fetches current Ede conditions directly from Open-Meteo if the game’s weather endpoint is absent. |
-| Frankeneng water levels | Fetches the waterschap’s gauge values directly after startup and uses bundled levels offline. |
+| Environment clock and seasons | Live calculates the sun position and seasonal date in the browser and displays the current date and time in Europe/Amsterdam. |
+| Weather | Live fetches current Ede conditions directly from Open-Meteo if the game’s weather endpoint is absent. Preset weather works offline. |
+| Frankeneng water levels | Live fetches the waterschap’s gauge values directly. Preset mode and unavailable readings use bundled levels. |
 | Fuel prices | Street-side signs show estimates from the latest published CBS national average. The browser refreshes the reference hourly while visible and uses a dated bundled value offline. |
 | Road traffic | Uses bundled posted speed limits and Amsterdam time-of-day demand. Live NDW counts, speeds, closures and temporary limits require the feed server. |
+| Emergency responses | Live P2000 dispatches require the traffic feed server. Ambulances continue their simulated rounds while it is unavailable. |
 | Buses and trains | Follow bundled timetables. Level-crossing barriers respond to timetable-based trains. Live bus positions, NS GPS and RS34 service updates require the feed server. |
 | Parking | Uses local occupancy profiles. Live readings for supported garages require the feed server and authorised NPR credentials. |
 
-The game can stay on GitHub Pages if the feed server is deployed separately over HTTPS. The client currently requests the API on the same origin. A separate deployment requires configuring the client to use that server and allowing requests from the Pages origin.
+The game can stay on GitHub Pages while the feed server runs separately over HTTPS. For live road traffic, buses and P2000, start the server with `--cors-origin https://yourname.github.io` and set `data-traffic-endpoint="https://feeds.example.org/api/ede-traffic"` on `#canvas-container` in `index.html`. To try a feed server without editing the page, append `?trafficApi=https://feeds.example.org/api/ede-traffic` to the game URL. The train and parking endpoints use the game's own origin.
 
 ## Graphics and profiling
 

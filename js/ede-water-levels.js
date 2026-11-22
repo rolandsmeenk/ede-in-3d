@@ -41,6 +41,7 @@ export function resolveFrankenengLevels(layer, result, now = Date.now()) {
 }
 
 export function watchFrankenengLevels(update, page = document) {
+  const lifetime = new AbortController();
   let lastRequest = -Infinity;
   let pending = false;
   const fields = new URLSearchParams({
@@ -50,25 +51,30 @@ export function watchFrankenengLevels(update, page = document) {
 
   async function refresh() {
     const now = Date.now();
-    if (pending || page.hidden || now - lastRequest < REFRESH_MS) return;
+    if (lifetime.signal.aborted || pending || page.hidden || now - lastRequest < REFRESH_MS) return;
     lastRequest = now;
     pending = true;
     try {
-      const options = { cache: 'no-store', signal: AbortSignal.timeout(8000) };
+      const options = { cache: 'no-store', signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(8000)]) };
       const [layer, result] = await Promise.all([`${SERVICE}?f=json`, `${SERVICE}/query?${fields}`].map(async url => {
         const response = await fetch(url, options);
         if (!response.ok) throw new Error(`Water level HTTP ${response.status}`);
         return response.json();
       }));
-      update(resolveFrankenengLevels(layer, result));
+      if (!lifetime.signal.aborted) update(resolveFrankenengLevels(layer, result));
     } catch {
-      update(resolveFrankenengLevels());
+      if (!lifetime.signal.aborted) update(resolveFrankenengLevels());
     } finally {
       pending = false;
     }
   }
 
   page.addEventListener('visibilitychange', refresh);
-  setInterval(refresh, REFRESH_MS);
+  const timer = setInterval(refresh, REFRESH_MS);
   void refresh();
+  return () => {
+    lifetime.abort();
+    clearInterval(timer);
+    page.removeEventListener('visibilitychange', refresh);
+  };
 }

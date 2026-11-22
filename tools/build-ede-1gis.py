@@ -18,7 +18,7 @@ from shapely import STRtree, make_valid, union_all
 from shapely.geometry import LineString, Point, Polygon
 
 from ede_gis import Frame, source_crs, to_rd
-from ede_map import load_scene
+from ede_map import load_playable_boundary, load_playable_scene
 from ede_motorway_infrastructure import (
     Motorway, ROOT, assignments, import_line, line_parts, points, project, read_json, snap, write_json,
 )
@@ -95,8 +95,20 @@ def fetch(directory, geographic_bounds):
     directory.mkdir(parents=True, exist_ok=True)
 
     def download(layer):
-        with urlopen(f'{SOURCE}/{layer}/query?{query}', timeout=75) as response:
-            data = json.load(response)
+        features, seen = [], set()
+        while True:
+            with urlopen(f'{SOURCE}/{layer}/query?{query}&resultRecordCount=1000&resultOffset={len(features)}', timeout=75) as response:
+                data = json.load(response)
+            page = data.get('features', [])
+            ids = {row['attributes']['objectid'] for row in page}
+            if seen & ids or not page and data.get('exceededTransferLimit'):
+                raise ValueError(f'Incomplete or repeated page for 1GIS layer {layer}')
+            seen.update(ids)
+            features.extend(page)
+            if not data.get('exceededTransferLimit'):
+                break
+        if 'features' in data:
+            data['features'] = features
         validate(layer, data)
         write_json(directory / f'{layer}.json', data)
 
@@ -469,6 +481,7 @@ def bake(snapshot, motorway, to_scene):
     features, evidence = [], []
     review, stats, counts = defaultdict(list), Counter(), Counter()
     layers = snapshot['layers']
+    boundary = load_playable_boundary()
     sign_positions = []
     for row in layers['13']:
         coordinate = coordinates(row['geometry'])[0][0]
@@ -481,6 +494,9 @@ def bake(snapshot, motorway, to_scene):
     for layer in LAYERS:
         identities = Counter(row['attributes']['gisobjid'] for row in layers[str(layer)])
         for row in layers[str(layer)]:
+            horizontal = scene_geometry(row, to_scene)
+            if not horizontal.intersects(boundary):
+                continue
             properties = row['attributes']
             native = source_fields(layer, row, snapshot['date'])
             type_ = properties['type']
@@ -525,14 +541,16 @@ def bake(snapshot, motorway, to_scene):
             elif layer == 23:
                 kind = 'guardrail'
                 added = [part for line in local_lines(row, to_scene)
-                         for part in import_line(line, kind, motorway, stats, source_level)]
+                         for run in line_parts(line.intersection(boundary))
+                         for part in import_line(run, kind, motorway, stats, source_level)]
                 if type_ == 'Geleidebarrier' and 'stalen' not in properties.get('type_2', '').lower():
                     for part in added:
                         part['solid'] = True
             elif layer == 30:
                 kind = 'marking'
                 added = [part for line in local_lines(row, to_scene)
-                         for part in markings(line, properties, motorway, source_level, stats)]
+                         for run in line_parts(line.intersection(boundary))
+                         for part in markings(run, properties, motorway, source_level, stats)]
             else:
                 kind = 'gantry' if type_ == 'Verkeersportaal' else 'fence'
                 if kind == 'gantry':
@@ -575,7 +593,7 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-1gis-detail.json.gz')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
-    scene = load_scene()
+    scene = load_playable_scene()
     # These two N781 carriageways feed Ede exit 24 immediately south of the ramps.
     motorway = Motorway(scene, gantry_ways=('w25999022', 'w25999048'))
     to_scene = Frame(scene['meta']['lonLatAffine']).rd_to_scene

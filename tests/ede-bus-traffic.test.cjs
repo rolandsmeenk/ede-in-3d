@@ -31,6 +31,7 @@ test('matched buses start at the boundary and use only connected lanes', async (
 
 test('ordinary traffic has an onward lane without entering the bus-only station roads', async () => {
   const { buildRoadNetwork } = await import('../js/road-network.js');
+  const { VAN, VEHICLE_CLEARANCE, fitsRoad } = await import('../js/road-access.js');
   const { edges } = buildRoadNetwork([], []);
   assert.ok(edges.some((edge) => edge.busOnly && edge.busExclusive));
   assert.ok(edges.some(edge => edge.wayId === 'w6960104' && edge.ambientLanes.length === 2));
@@ -40,6 +41,22 @@ test('ordinary traffic has an onward lane without entering the bus-only station 
       assert.ok(edge.motorway && edge.moves.length === 0);
     } else {
       assert.ok(edge.ambientMoves.some((move) => move.to.ambientLanes.includes(move.out[lane])));
+    }
+  }
+  for (const kind of ['tractor', 'ambulance']) {
+    const lanes = kind + 'Lanes', moves = kind + 'Moves';
+    assert.ok(edges.some(edge => edge[lanes].length), kind);
+    for (const edge of edges) {
+      if (!edge[lanes].length) continue;
+      assert.ok(fitsRoad(VEHICLE_CLEARANCE[kind], edge.limits, VAN));
+      assert.ok(!edge.motorway && !edge.motorwayLink);
+      if (kind === 'tractor') {
+        assert.ok(!edge.underpass && !/^(motorway|trunk|primary)/.test(edge.roadKind));
+      }
+      for (const lane of edge[lanes]) {
+        assert.ok(edge.motorwayExit || edge[moves].some(move => move.to[lanes].includes(move.out[lane])),
+          kind + ' must have a connected route');
+      }
     }
   }
 });

@@ -89,6 +89,9 @@ class CityAudioSources {
     this.cars = trafficSystem.cars;
     this.buses = trafficSystem.buses;
     this.refuseTrucks = trafficSystem.refuseTrucks;
+    this.tractors = trafficSystem.tractors;
+    this.ambulances = trafficSystem.ambulances;
+    this.fireEngines = trafficSystem.fireEngines;
     this.peds = trafficSystem.peds;
     this.highwayCars = highwayTraffic.cars;
     this.signalSites = streetDetails.audioSignals;
@@ -149,7 +152,8 @@ class CityAudioSources {
       if (!v.edge) continue;
       const y = v.y + 0.7;
       const d2 = this.distanceSq(v.x, y, v.z);
-      const range = v.isPolice ? SIREN_RANGE : MOTOR_RANGE;
+      const siren = Boolean(v.isPolice || v.liveResponse);
+      const range = siren ? SIREN_RANGE : MOTOR_RANGE;
       if (!Number.isFinite(d2) || d2 > range * range) continue;
       if (d2 <= MOTOR_RANGE * MOTOR_RANGE) {
         this.snapshot.traffic += (1 - d2 / (MOTOR_RANGE * MOTOR_RANGE)) * (0.2 + 0.8 * unit(v.speed / 12));
@@ -157,7 +161,7 @@ class CityAudioSources {
       const green = !v.edge.to.signal || signalPhase(elapsed, v.edge.axisIndex === 0) === 'green';
       const blocked = v.wait > 2 && v.speed < 0.5 && v.gap < 8 && v.leaderSpeed < 0.5 && green && !v.conn && !v.yielding;
       this.motor(v, v.bus ? 'bus' : v.engine, v.x, y, v.z,
-        v.speed, roadLoad(v.speed, v.acc, v.driver.a), v.yaw + v.yawOffset, !!v.isPolice, false, seedAt(seedOffset + i), blocked);
+        v.speed, roadLoad(v.speed, v.acc, v.driver.a), v.yaw + v.yawOffset, siren, false, seedAt(seedOffset + i), blocked);
     }
   }
 
@@ -200,6 +204,9 @@ class CityAudioSources {
     this.streetVehicles(this.cars, elapsed, 100);
     this.streetVehicles(this.buses, elapsed, 1000);
     if (this.refuseTrucks) this.streetVehicles(this.refuseTrucks, elapsed, 1100);
+    if (this.tractors) this.streetVehicles(this.tractors, elapsed, 1200);
+    if (this.ambulances) this.streetVehicles(this.ambulances, elapsed, 1300);
+    if (this.fireEngines) this.streetVehicles(this.fireEngines, elapsed, 1400);
     for (let i = 0; i < this.highwayCars.length; i++) {
       const car = this.highwayCars[i];
       // Lane ends sink into the road and the Battery tunnel is underground; neither should sound above ground.

@@ -27,10 +27,12 @@ test('Ginkel and restaurant landmarks build finite meshes in the surveyed frame'
   const surveyBuilder = load('ede-survey-landmark.js', {
     './ede-civic-landmarks.js': civic, './terrain.js': terrain,
   });
+  const sheepFleeceInfluences = [0];
   const { EXPANSION_LANDMARK_FACTORIES } = load('ede-expansion-landmarks.js', {
     'three/webgpu': three, './ede-civic-landmarks.js': civic, './terrain.js': terrain,
     './ede-grade.js': { nearbyRailHeightAt: () => undefined, RAIL_TOP: 0.13 },
     './ede-expansion-landmark-surveys.js': surveys, './ede-survey-landmark.js': surveyBuilder,
+    './tree-seasons.js': { sheepFleeceInfluences },
     './ede-windmill.js': load('ede-windmill.js', { 'three/webgpu': three }),
   });
   const amadeus = load('ede-amadeus-survey.js');
@@ -55,7 +57,15 @@ test('Ginkel and restaurant landmarks build finite meshes in the surveyed frame'
       assert.equal(buildingColliders.length, site.bagIds.length, site.id);
     }
     if (site.id === 'veenendaal-de-klomp') assert.equal(model.userData.platforms.length, 2);
-    if (site.id === 'schaapskooi-ginkelse-heide') assert.ok(model.userData.colliders.some(collider => collider.obb));
+    if (site.id === 'schaapskooi-ginkelse-heide') {
+      assert.ok(model.userData.colliders.some(collider => collider.obb));
+      const flock = model.getObjectByName('Ginkelse Heide sheep flock');
+      const shorn = flock.getVertexPosition(0, new three.Vector3());
+      sheepFleeceInfluences[0] = 1;
+      const full = flock.getVertexPosition(0, new three.Vector3());
+      assert.ok(full.y > shorn.y + 0.10, 'the shared season weight adds visible wool');
+      assert.equal(flock.geometry.morphAttributes.position[0].count, flock.geometry.attributes.position.count);
+    }
     if (site.id === 'doesburgermolen') {
       const cap = model.getObjectByName('Windmill cap');
       const sails = model.getObjectByName('Windmill sails');

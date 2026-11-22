@@ -3,6 +3,7 @@ import {
   ISLAND_BOUNDS,
   CENTRAL_PARK_BOUNDS,
   getIslandBoundsAtZ,
+  constrainToPlayableArea,
   isTypingInField,
   blockAt,
   streetZ,
@@ -634,7 +635,7 @@ class ThirdPersonControllerManager {
         if (west > east) return null;
         px = Math.max(west, Math.min(east, px));
       }
-      return { x: px, z: pz };
+      return constrainToPlayableArea ? constrainToPlayableArea(px, pz) : { x: px, z: pz };
     };
     const clear = (p, shape) => {
       if (!p) return false;
@@ -1728,6 +1729,11 @@ class ThirdPersonControllerManager {
         pos.x = maxShoreX;
         if (carEntity && carEntity.speed) carEntity.speed *= 0.4;
       }
+    }
+    if (constrainToPlayableArea) {
+      const limit = constrainToPlayableArea(pos.x, pos.z);
+      pos.x = limit.x;
+      pos.z = limit.z;
     }
 
     const collisionEntity = entity || this.entities?.[this.activeMode];

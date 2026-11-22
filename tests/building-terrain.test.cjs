@@ -43,7 +43,7 @@ class Vector3 {
 }
 
 function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {},
-  facadeStyle = () => null, isEdeShed = () => false, globals = {}, meta = {}, landmarks = {} } = {}) {
+  facadeStyle = () => null, isEdeShed = () => false, globals = {}, meta = {}, landmarks = {}, boundary = {} } = {}) {
   return loadModule(read('bag3d.js').replaceAll('export async function', 'async function'), {
     globals,
     imports: {
@@ -57,6 +57,7 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}
       'three/addons/loaders/GLTFLoader.js': {},
       'three/addons/libs/meshopt_decoder.module.js': {},
       './ede-scene-coordinates.js': loadModule(read('ede-scene-coordinates.js')),
+      './ede-playable-boundary.js': { playableBoundsCovered: () => true, playableBoundsOverlap: () => true, ...boundary },
       './nyc-geodata.js': { GEO: { ede: { meta: { bounds: [0, 0, 30, 30], ...meta } } } },
       './city-config.js': { BLOCKS: blocks },
       './building-collision.js': loadModule(read('building-collision.js')),
@@ -319,6 +320,18 @@ test('BAG replaces only the named landmark features in a shared tile', () => {
   const [kept] = bakeTile(gltf, {}, null, null, null, [new Map([[6, true]])]);
   assert.deepEqual(Array.from(kept.index.array), [3, 4, 5]);
   assert.equal(bakeTile(gltf, {}, null, null, null, [new Map([[6, true], [7, true]])]).length, 0);
+});
+
+test('a municipal edge tile retains only complete in-bounds BAG features', () => {
+  const { bakeTile } = loadBag({ boundary: { playableBoundsCovered: (minX, minZ, maxX) => maxX <= 3.5 } });
+  const mesh = { isMesh: true, geometry: { attributes: {
+    position: new BufferAttribute([1,0,0, 2,0,0, 2,2,0, 3,0,0, 4,0,0, 4,2,0], 3),
+    normal: new BufferAttribute([0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1], 3),
+    _feature_id_0: new BufferAttribute([6,6,6, 7,7,7], 1),
+  } } };
+  const gltf = { scene: { updateMatrixWorld() {}, traverse(fn) { fn(mesh); } } };
+  const [kept] = bakeTile(gltf, {}, null, null, null, null, null, null, true);
+  assert.deepEqual(Array.from(kept.index.array), [0, 1, 2]);
 });
 
 test('a landmark switches visible models without hiding its static sun-shadow silhouette', async () => {

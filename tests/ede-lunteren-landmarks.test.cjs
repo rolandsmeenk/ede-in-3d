@@ -30,6 +30,10 @@ test('Lunteren models are grounded, batched, and replace only the surveyed footp
   const survey = load('ede-lunteren-survey.js');
   const rail = load('ede-north-rail-data.js');
   const { LUNTEREN_LANDMARK_FACTORIES: factories } = load('ede-lunteren-landmarks.js', {
+    './ede-clock-model.js': load('ede-clock-model.js', {
+      'three/webgpu': three, 'three/tsl': tsl,
+      './tsl-materials.js': { cityUniforms: { uInteriorGlow: tsl.uniform(0.48) } },
+    }),
     'three/webgpu': three, './ede-civic-landmarks.js': civic, './terrain.js': terrain,
     './ede-north-rail-data.js': rail, './ede-lunteren-survey.js': survey,
     './ede-survey-landmark.js': load('ede-survey-landmark.js', {

@@ -29,6 +29,7 @@ def fetch_weather():
         'latitude': f"{affine['lat0']},{PARK_LATITUDE}",
         'longitude': f"{affine['lon0']},{PARK_LONGITUDE}",
         'current': ','.join((*FIELDS, *PARK_FIELDS)), 'timezone': 'GMT', 'timeformat': 'unixtime',
+        'hourly': 'temperature_2m', 'past_hours': 48, 'forecast_hours': 1,
         'temperature_unit': 'celsius', 'wind_speed_unit': 'kmh', 'precipitation_unit': 'mm',
     })
     with urlopen(url, timeout=5) as response:

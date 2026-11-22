@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { attribute, cameraPosition, fwidth, length, max, min, positionWorld, smoothstep } from 'three/tsl';
+import { attribute, cameraPosition, color, fwidth, length, max, min, mix, mx_noise_float,
+  positionLocal, positionWorld, smoothstep, uniform, vec3 } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
 import { polygonContains } from './building-collision.js';
 import { drapeEdeSurface, edePoints, edePolygonGeometry, edeSpatialGroups } from './ede-geometry.js';
@@ -9,6 +10,26 @@ import { terrainHeightAt } from './terrain.js';
 
 const SURFACE_Y = 0.052;
 const PAINT_Y = 0.085;
+const SKATING_OVAL_SURFACE = 0xb9ae77;
+// The multipurpose court beside De Zanding's indoor pool is flooded during frost.
+const DE_ZANDING_WINTER_RINK = 'w60580311';
+const rinkIceCover = uniform(0);
+
+export function setEdeSportsIceCover(cover) {
+  rinkIceCover.value = cover;
+}
+
+function makeRinkMaterial() {
+  const material = new THREE.MeshStandardNodeMaterial();
+  const point = positionWorld.xz;
+  const frost = mx_noise_float(point.mul(0.29), 0.62, 0.40);
+  const ice = mix(color(0x5b8499), color(0xb5cfd8), frost.clamp());
+  material.colorNode = mix(attribute('color', 'vec3'), ice, rinkIceCover);
+  material.roughnessNode = mix(0.90, 0.17, rinkIceCover);
+  // A thin ice layer buries the summer markings on multipurpose courts at full cover.
+  material.positionNode = positionLocal.add(vec3(0, rinkIceCover.mul(0.05), 0));
+  return material;
+}
 const WHITE = 0xf3f1df;
 const STEEL = 0x555e5b;
 const NET = 0xa7aaa0;
@@ -197,6 +218,7 @@ export function buildEdeSports(scene, asset) {
   group.name = 'Ede sports fields';
   const surface = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.93 });
   const paint = makePaintMaterial();
+  const rink = makeRinkMaterial();
   const stats = { pitches: 0, layouts: {}, surfaceOnly: 0, triangles: 0, meshes: 0 };
   const built = new Set(asset.source?.tesquaSupersedes ?? []);
   const fields = asset.pitches.map(record => ({
@@ -206,6 +228,7 @@ export function buildEdeSports(scene, asset) {
   const location = ({ frame, polygon: { outer } }) => frame ?? outer[0];
   for (const cell of edeSpatialGroups(fields, location)) {
     const ground = { positions: [], colors: [] };
+    const skating = { positions: [], colors: [] };
     const props = { positions: [], colors: [] };
     const lines = new Map();
     const painted = { positions: [], colors: [], band: [] };
@@ -216,8 +239,11 @@ export function buildEdeSports(scene, asset) {
         ...frame, athletics: record.athletics, lanes: record.lanes,
       });
       const sport = layout?.sport;
-      const tint = SURFACE[record.surface] ?? SURFACE[DEFAULT_SURFACE[sport ?? record.sports[0]]] ?? SURFACE.grass;
-      collect(ground, drapeEdeSurface(edePolygonGeometry(outer, holes, SURFACE_Y), true), tint);
+      const oval = record.sports.includes('ice_skating');
+      const isRink = oval || record.id === DE_ZANDING_WINTER_RINK;
+      const tint = SURFACE[record.surface] ?? (oval ? SKATING_OVAL_SURFACE :
+        SURFACE[DEFAULT_SURFACE[sport ?? record.sports[0]]] ?? SURFACE.grass);
+      collect(isRink ? skating : ground, drapeEdeSurface(edePolygonGeometry(outer, holes, SURFACE_Y), true), tint);
       built.add(record.id);
       stats.pitches++;
       if (!layout || !(layout.lines.length || layout.fills?.length || layout.equipment?.length)) {
@@ -252,6 +278,7 @@ export function buildEdeSports(scene, asset) {
       collect(painted, drapeEdeSurface(geometry, true, undefined, false, 'sportPaintBand'), color);
     }
     stats.triangles += makeMesh(group, ground, surface, 'Pitch surfaces') ?? 0;
+    stats.triangles += makeMesh(group, skating, rink, 'Seasonal skating surfaces') ?? 0;
     stats.triangles += makeMesh(group, painted, paint, 'Pitch markings', true) ?? 0;
     stats.triangles += makeMesh(group, props, surface, 'Pitch goals, nets and hoops', true) ?? 0;
   }

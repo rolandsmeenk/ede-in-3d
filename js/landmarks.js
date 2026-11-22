@@ -35,6 +35,7 @@ import { createOnTheRocks } from './ede-on-the-rocks.js';
 import { createWorkGarden } from './ede-work-garden.js';
 import { buildEdeFuelStations } from './ede-fuel-stations.js';
 import { EDE_FUEL_SITES } from './ede-fuel-sites.js';
+import { containsPlayablePoint } from './ede-playable-boundary.js';
 import { PUBLIC_LANDMARK_FACTORIES } from './ede-public-landmarks.js';
 import { createMarnixCollege } from './ede-marnix-landmark.js';
 import { SCHOOL_LANDMARK_FACTORIES } from './ede-school-landmarks.js';
@@ -61,7 +62,7 @@ import { EDE_LUNTEREN_ART_LANDMARK_FACTORIES } from './ede-lunteren-art.js';
 import { EDE_SKYLINE_LANDMARK_FACTORIES } from './ede-skyline-landmarks.js';
 import { EDE_CENTRE_SKYLINE_LANDMARK_FACTORIES } from './ede-centre-skyline-landmarks.js';
 import { EDE_VILLAGE_SKYLINE_LANDMARK_FACTORIES } from './ede-village-skyline-landmarks.js';
-import { EDE_MAST_FACTORIES } from './ede-mast-models.js';
+import { createZendmastLod, EDE_MAST_FACTORIES } from './ede-mast-models.js';
 import { EDE_INDUSTRIAL_SKYLINE_LANDMARK_FACTORIES } from './ede-industrial-skyline-landmarks.js';
 import { EDE_PAASBERG_MEMORIAL_FACTORIES } from './ede-paasberg-memorials.js';
 import { EDE_TOWN_MEMORIAL_FACTORIES } from './ede-town-memorials.js';
@@ -117,7 +118,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
   const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [], forecourtLights = [];
-  const landmarkLods = [], treeClearance = [];
+  const landmarkLods = [], treeClearance = [], masts = [], clockUpdates = [];
   const replacements = { bag: new Set(), osm: new Set(), parcelSources: new Set() };
   scene.add(group);
 
@@ -250,6 +251,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     ...EDE_OUTER_MEMORIAL_FACTORIES,
   };
   function registerDetail(detail) {
+    if (detail.userData.setClockMinutes) clockUpdates.push(detail.userData.setClockMinutes);
     const range = detail.userData.nearDetail;
     if (range) {
       detail.updateWorldMatrix(true, false);
@@ -272,12 +274,15 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     for (const source of site.replaceParcelSources ?? []) replacements.parcelSources.add(source);
     helipads.push(...(model.userData.helipads ?? []));
     place(model, site.modelOrigin ?? site, site.heading, footprints, site.baseY, site.colliderHeights, site.worldSpace);
+    if (model.userData.mast) masts.push(model.userData.mast);
     model.traverse(registerDetail);
     if (model.userData.landmarkLod) {
       const lod = model.userData.landmarkLod;
       landmarkLods.push({ ...lod, bounds: new THREE.Box3().setFromObject(model), far: false });
     }
   }
+  const mastLod = createZendmastLod(masts);
+  group.add(mastLod.mesh);
   const brutus = createVillaBrutusTerraces();
   group.add(brutus);
   colliders.push(...brutus.userData.colliders);
@@ -298,7 +303,9 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   const flags = createAkoesticumFlags();
   group.add(flags);
   flags.traverse(registerDetail);
-  const fuelSites = EDE_FUEL_SITES.filter(site => !site.north || EDE_DATA.meta.north);
+  const [west, north, east, south] = EDE_DATA.meta.bounds;
+  const fuelSites = EDE_FUEL_SITES.filter(({ x, z }) =>
+    x >= west && x <= east && z >= north && z <= south && containsPlayablePoint(x, z));
   for (const model of buildEdeFuelStations(fuelSites, { live: true })) {
     group.add(model);
     colliders.push(...model.userData.colliders);
@@ -334,5 +341,9 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   function updateWind(dt, reading) {
     for (const update of windUpdates) update(dt, reading);
   }
-  return { group, colliders, platforms, helipads, weatherCovers, forecourtLights, treeClearance, replacements, exclusions: LANDMARK_EXCLUSIONS, update, updateWind };
+  function setClockMinutes(minutes) {
+    for (const update of clockUpdates) update(minutes);
+  }
+  return { group, colliders, platforms, helipads, weatherCovers, forecourtLights, treeClearance, replacements,
+    exclusions: LANDMARK_EXCLUSIONS, update, updateWind, setClockMinutes, updateMastLod: mastLod.update };
 }

@@ -1,4 +1,4 @@
-import { roadEdgeKey } from './road-network.js?v=20261121-hospital-approaches';
+import { roadEdgeKey } from './road-network.js?v=20261122-startup';
 
 export function streetRoadKey(edge) {
   return `${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer ?? 0}`;

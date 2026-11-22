@@ -1,4 +1,4 @@
-import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad } from './road-access.js';
+import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad } from './road-access.js?v=20261122-startup';
 import { localClock, weekday } from './ede-transit-time.js';
 import { indexLocalRoads } from './traffic-area.js';
 
@@ -98,7 +98,7 @@ function search(start, { neighbors, identify, target, remaining, budget, range }
   return null;
 }
 
-export function findRoadTrip(network, roadTraffic, origin, goals, mode=CAR, { budget=180, range=1150 }={}) {
+export function findRoadTrip(network, roadTraffic, origin, goals, mode=CAR, { budget=180, range=1150, moves = edge => moveList(edge, mode) }={}) {
   const { edge, lane, s, restriction }=origin;
   if (!edge || !goals.length) return null;
   const allowed = new Map();
@@ -118,7 +118,7 @@ export function findRoadTrip(network, roadTraffic, origin, goals, mode=CAR, { bu
     remaining: heuristic,
     neighbors: row => {
       const next=[];
-      for (const move of moveList(row.edge, mode)) {
+      for (const move of moves(row.edge)) {
         const lane=move.out[row.lane];
         if (lane==null || lane<0 || !moveAllowed(move,mode) || roadTraffic.isClosed(move.to)) continue;
         if (mode===BUS && (move.to.unmodeledTunnel || !((move.to.laneModes?.[lane]??move.to.modes??BUS)&BUS) ||

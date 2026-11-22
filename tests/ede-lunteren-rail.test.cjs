@@ -5,10 +5,10 @@ const timetable = require('../assets/ede-train-timetable.json');
 const grade = require('../assets/ede-grade.json');
 const { loadModule } = require('./helpers/module.cjs');
 
-const date = '2026-11-19';
+const date = timetable.dates.find(day => [1, 2, 3, 4, 5].includes(new Date(day).getUTCDay()));
 const stopName = 'lunteren';
 
-test('both RS34 directions use their published Lunteren platform and continue off-map', async () => {
+test('both RS34 directions use their published Lunteren platform and reach the playable boundary', async () => {
   const { buildEdeTrainTracks } = await import('../js/ede-train-tracks.js');
   const { createEdeTrainSchedule, trainPathFor, trainPlan, timetablePosition } = await import('../js/ede-train-schedule.js');
   const { EDE_DATA } = await import('../js/ede-geodata.js');
@@ -41,7 +41,7 @@ test('both RS34 directions use their published Lunteren platform and continue of
     assert.ok(Math.abs(train.y + grade.datumNAP - 16.8) < 0.12);
     assert.ok(Math.hypot(train.x - platform.stop[0], train.z - platform.stop[1]) < 0.004);
     const edge = path.sample(direction === 1 ? 0 : path.length);
-    assert.ok(edge.z < EDE_DATA.meta.bounds[1] - 100);
+    assert.ok(Math.abs(edge.z - EDE_DATA.meta.bounds[1]) < 0.02);
   }
   assert.ok(Math.hypot(points[0].x - points[1].x, points[0].z - points[1].z) > 5);
 

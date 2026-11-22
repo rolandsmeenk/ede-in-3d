@@ -4,6 +4,7 @@ import { createSurveyLandmark, surveyLabel, surveyPanel, surveyWindow } from './
 import { BARRACKS_HERITAGE_SURVEY } from './ede-barracks-heritage-survey.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 import { createMemorialPlaque } from './ede-memorial-plaque.js';
+import { addClockDetails, clockFace } from './ede-clock-model.js';
 
 const { barracks, enka } = BARRACKS_HERITAGE_SURVEY;
 const cream = 0xd1bf97, barracksGlass = 0x324347, brownBrick = 0x745047;
@@ -71,17 +72,9 @@ function finishBarracks({ group }) {
   }
   const clock = new THREE.CircleGeometry(0.40, 36).translate(0, 0, 0.685).rotateY(yaw).translate(x, y + 0.64, z);
   tower.solid(clock, 0xdcdad2);
-  for (let i = 0; i < 12; i++) {
-    const angle = i * Math.PI / 6;
-    tower.solid(new THREE.BoxGeometry(0.024, 0.065, 0.025)
-      .translate(0, 0.334, 0).rotateZ(angle).translate(0, 0, 0.70)
-      .rotateY(yaw).translate(x, y + 0.64, z), 0x343537);
-  }
-  for (const [length, angle] of [[0.24, -0.88], [0.17, 0.20]]) {
-    tower.solid(new THREE.BoxGeometry(0.023, length, 0.023)
-      .translate(0, length * 0.5, 0).rotateZ(angle).translate(0, 0, 0.71)
-      .rotateY(yaw).translate(x, y + 0.64, z), 0x343537);
-  }
+  const clockOnTower = (u, h, d) => new THREE.Vector3(u, h, 0.722 + d)
+    .applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(new THREE.Vector3(x, y + 0.64, z));
+  addClockDetails(group, [clockFace(clockOnTower, 0.40, 0x343537)]);
   for (const [u, width] of [[-4.10, 3.80], [0, 2.5], [3.95, 3.50]]) {
     const dormerX = x + u * Math.cos(yaw), dormerZ = z + 3.21 - u * Math.sin(yaw);
     box(tower, [dormerX, 20.83, dormerZ], width, 1.40, 1.52, 0x626160, yaw);

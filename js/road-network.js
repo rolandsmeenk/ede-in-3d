@@ -10,7 +10,7 @@ import {
 } from './city-config.js';
 import { GEO } from './nyc-geodata.js';
 import { polygonBoxOverlaps } from './building-collision.js';
-import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad } from './road-access.js';
+import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad, tractorClosedWays, tractorRoadAllowed } from './road-access.js?v=20261122-startup';
 import { buildEdeActiveTravel } from './ede-active-travel.js';
 import { resolveEdeRoadLanes, permittedTurn, shareTurn } from './ede-road-lanes.js';
 import { motorwayLanesAt } from './ede-motorway-lanes.js';
@@ -57,7 +57,7 @@ const HOSPITAL_APPROACHES = {
     [-1720, 4, 12.6, 1.8]], stop: [-1669.1, 2476.0] },
 };
 
-function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade) {
+function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade, signs) {
   // 1. Spatial hash of ground footprints: curbs bound the roads, everything else also blocks pedestrians
   const hash = new Map();
   const cellKey = (ix, iz) => (ix + 512) * 1024 + iz + 512;
@@ -702,7 +702,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
         graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
         turnTagsAtEnd: !!run.turnTagsAtEnd[direction] && laneDefinition.lanes.some(lane => lane.turns), headings: run.headings[direction] } : {}),
       osmStart: direction ? run.osmEnd : run.osmStart, osmEnd: direction ? run.osmStart : run.osmEnd,
-      roadKind: road?.kind, extension: run.extension,
+      roadKind: road?.kind, roadName: road?.name, extension: run.extension,
+      motorroad: road?.motorroad === true || road?.motorroad === 'yes', agricultural: road?.agricultural,
       motorway: road?.kind === 'motorway' && (road.ref === 'A12' || road.ref === 'A30'),
       motorwayLink: road?.kind === 'motorway_link',
       underpass, tunnelType: road?.tunnelType, bridge, boundary, keepShape, wayId: road?.id, layer: road?.layer || 0, limits: road?.limits });
@@ -1314,11 +1315,16 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade)
   for (const e of edges) e.motorwayExit = e.motorway && e.moves.length === 0;
   for (const e of edges) e.unmodeledTunnel = !!gradeWays && e.underpass && e.tunnelType !== 'building_passage' && !gradeWays.has(e.wayId);
   const refuseClearance = { height: 3.42, width: 2.54, weight: 23.6, length: 8.55, axleLoad: 11.5 };
+  const fireClearance = { height: 3.4, width: 2.55, weight: 15, length: 7.8, axleLoad: 9 };
   const residential = e => e.roadKind === 'residential' || e.roadKind === 'living_street';
+  const closedToTractors = tractorClosedWays?.(signs);
   for (const [mode, vehicle, lanes, moves, allowed] of [
     [CAR, VEHICLE_CLEARANCE.car, 'ambientLanes', 'ambientMoves'],
     [VAN, VEHICLE_CLEARANCE.van, 'vanLanes', 'vanMoves'],
-    [VAN, refuseClearance, 'refuseLanes', 'refuseMoves', residential]
+    [VAN, refuseClearance, 'refuseLanes', 'refuseMoves', residential],
+    [VAN, VEHICLE_CLEARANCE.tractor, 'tractorLanes', 'tractorMoves', e => tractorRoadAllowed(e, closedToTractors)],
+    [VAN, VEHICLE_CLEARANCE.ambulance, 'ambulanceLanes', 'ambulanceMoves', e => e.roadKind !== 'motorway' && !e.motorwayLink],
+    [VAN, fireClearance, 'fireLanes', 'fireMoves', e => e.roadKind !== 'motorway' && !e.motorwayLink]
   ]) {
     const eligible = edges.filter(e => (!allowed || allowed(e)) && !e.boundary && !e.unmodeledTunnel &&
       ((e.modes ?? MOTOR) & mode) && fitsRoad(vehicle, e.limits, mode));

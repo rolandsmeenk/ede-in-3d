@@ -21,7 +21,7 @@ from shapely.geometry import LineString, Point, Polygon, box, shape
 from shapely.ops import nearest_points
 
 from ede_gis import Frame, source_crs, to_rd
-from ede_map import ROOT, load_scene
+from ede_map import ROOT, load_playable_boundary, load_playable_scene
 
 DETAIL = runpy.run_path(str(Path(__file__).with_name('build-ede-bgt-detail.py')))
 parts = DETAIL['parts']
@@ -218,6 +218,58 @@ def scene_shape(row):
     if row.get('points'):
         return LineString(row['points'])
     return Polygon(row['polygon'], row.get('holes', ()))
+
+
+def municipal_features(rows, boundary):
+    for row in rows:
+        form = scene_shape(row)
+        if boundary.covers(form):
+            yield row
+            continue
+        for index, piece in enumerate(parts(make_valid(form).intersection(boundary), form.geom_type)):
+            item = dict(row)
+            if index:
+                item['id'] += f'~{index + 1}'
+            if piece.geom_type == 'LineString':
+                if piece.length < 0.1:
+                    continue
+                item['points'] = list(piece.coords)
+            else:
+                if piece.area < 0.01:
+                    continue
+                item['polygon'] = list(piece.exterior.coords)[:-1]
+                item['holes'] = [list(hole.coords)[:-1] for hole in piece.interiors]
+            yield item
+
+
+def clip_released_parcels(output, tiles, boundary):
+    with gzip.open(output, 'rt') as source:
+        asset = json.load(source)
+    static = list(municipal_features(asset['features'], boundary))
+    retained = {row['id'] for row in static}
+    index, removed, trimmed = [], 0, 0
+    for tile in asset['tiles']:
+        extent = box(*tile['bounds'])
+        if boundary.covers(extent):
+            index.append(tile)
+        elif not boundary.intersects(extent):
+            removed += 1
+        else:
+            path = tiles / f"{tile['id']}.json.gz"
+            with gzip.open(path, 'rt') as source:
+                contents = json.load(source)
+            features = list(municipal_features(contents['features'], boundary))
+            if not features:
+                removed += 1
+                continue
+            bounds = union_all([scene_shape(row) for row in features]).bounds
+            index.append({**tile, 'bounds': bounds, 'count': len(features)})
+            if features != contents['features']:
+                write_json(path, {**contents, 'features': features})
+                trimmed += 1
+    replaces = [identity for identity in asset['replaces'] if f'parcel:bgt:{identity}' in retained]
+    write_json(output, {**asset, 'features': static, 'tiles': index, 'replaces': replaces, 'municipality': 'GM0228'})
+    return len(static), len(index), removed, trimmed
 
 
 def local_union(index, area, margin=0):
@@ -971,7 +1023,7 @@ def write_parcel_assets(output, tile_directory, asset):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('snapshot', type=Path)
+    parser.add_argument('snapshot', type=Path, nargs='?')
     parser.add_argument('--date', default=date.today().isoformat(),
                         help='Snapshot date; BRK and BAG are live on fetch and then cached')
     parser.add_argument('--fetch', action='store_true')
@@ -980,16 +1032,18 @@ def main():
     parser.add_argument('--tiles', type=Path, help='directory for streamed geometry, defaults to ede-parcel-tiles beside the output')
     parser.add_argument('--report', type=Path, default=ROOT / 'tools/data/ede-parcel-detail.review.json')
     parser.add_argument('--observations', type=Path, default=ROOT / 'tools/data/ede-parcel-observations.json')
+    parser.add_argument('--clip-existing', action='store_true', help='Clip the installed parcel assets without refreshing their sources')
     arguments = parser.parse_args()
-    scene = load_scene()
+    boundary = load_playable_boundary()
+    tile_directory = arguments.tiles or arguments.output.parent / 'ede-parcel-tiles'
+    if arguments.clip_existing:
+        records, tiles, removed, trimmed = clip_released_parcels(arguments.output, tile_directory, boundary)
+        print(f'{records} fixed placements, {tiles} retained tiles, {removed} removed, {trimmed} clipped')
+        return
+    if not arguments.snapshot:
+        parser.error('Provide a dated source directory or --clip-existing.')
+    scene = load_playable_scene()
     frame = Frame(scene['meta']['lonLatAffine'])
-    corridors = read_packed('ede-corridors-v1.json.gz')
-    for key in ('buildings', 'roads', 'railways', 'water', 'parks', 'squares', 'trees'):
-        scene[key].extend(corridors[key])
-    scene['activeGraph']['nodes'].extend(corridors['activeGraph']['nodes'])
-    scene['activeGraph']['links'].extend(corridors['activeGraph']['links'])
-    scene['meta']['baseBounds'] = scene['meta']['bounds']
-    scene['meta']['bounds'] = corridors['bounds']
     tiles = dict(snapshot_tiles(scene, frame))
     roads = {row['id']: row for row in scene['roads']}
     pilots = {place: (category, transform(LineString(DETAIL['BGT']['pairs'](roads[identity]['pts'])),
@@ -1004,7 +1058,7 @@ def main():
         fetch_review_images(arguments.snapshot)
     extract_osm(arguments.snapshot, arguments.osm, frame.geographic_bounds(scene['meta']['bounds']))
     asset, report = bake(arguments.snapshot, scene, frame, arguments.date, arguments.observations, pilots, tiles)
-    tile_directory = arguments.tiles or arguments.output.parent / 'ede-parcel-tiles'
+    asset['features'] = list(municipal_features(asset['features'], boundary))
     size, count = write_parcel_assets(arguments.output, tile_directory, asset)
     report['assetBytes'] = arguments.output.stat().st_size
     report['streamedTileBytes'] = size

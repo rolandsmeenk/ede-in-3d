@@ -502,7 +502,7 @@ function corridorOverlay() {
     geographicBounds,
     detail: { arrivals, routes: paths, ...(north && { zones }) },
     ...(north && { north: true, railExtensions, streetDetail: northernDetail, source: { osmTimestamp: osm.osm3s?.timestamp_osm_base } }),
-    buildings: additions('buildings', 'ring').filter(({ ring }) =>
+    buildings: additions('buildings', 'ring').filter(({ ring }) => north ||
       ring.some((x, i) => i % 2 === 0 && detailed(x, ring[i + 1]))),
     roads: newRoads.map(road => ({ ...road, ...roadTags[road.id] })),
     railways: additions('railways', 'pts').map(trimRail).filter(rail => rail.pts.length >= 4),
@@ -511,7 +511,7 @@ function corridorOverlay() {
       .map((row, index) => ({ ...row, id: `${north ? 'north' : 'corridor'}-water${index}` })),
     parks: additions('parks', 'ring'),
     squares: additions('squares', 'ring'),
-    trees: trees.filter(({ x, z }) => outside(x, z) && detailed(x, z) && (!north || inRange(x, z))),
+    trees: trees.filter(({ x, z }) => outside(x, z) && (north ? inRange(x, z) : detailed(x, z))),
     signals: signals.filter(({ x, z }) => outside(x, z) && (!north || inRange(x, z))),
     roadGraph: graphExtension('roadGraph'),
     activeGraph: graphExtension('activeGraph'),

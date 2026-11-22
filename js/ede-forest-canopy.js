@@ -1,8 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { attribute, cameraPosition, float, interleavedGradientNoise, mix, positionWorld,
-  screenCoordinate, smoothstep, uniform } from 'three/tsl';
+  screenCoordinate, smoothstep, uniform, userData } from 'three/tsl';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { terrainHeightAt } from './terrain.js';
+import { playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
 import { treeSeasonNodes } from './tree-seasons.js';
 
 const DIRECTORY = new URL('../assets/ede-forest-canopy/', import.meta.url);
@@ -10,10 +11,14 @@ const CELLS = 50;
 const MAX_LOADS = 4;
 const RESIDENT_LIMIT = 80;
 const SWITCH_DISTANCE = 1200;
+const TILE_FADE_MS = 400;
 const FAR_LIMIT = 6500;
 const FADE_START = 380, FADE_END = 580;
 const FULL_EDGE = 2 ** CELLS - 1;
 const BEVEL = 0.42;
+const SKIRT_BASE = [1, 1, 0.42];
+const CROWN_PROFILE = [[0, 0.22, 0.94], [0.16, 0.59, 0.72], SKIRT_BASE];
+const DISTANT_CROWN_PROFILE = [[0, 0.28, 0.92], SKIRT_BASE];
 
 async function request(file) {
   const response = await fetch(new URL(file, DIRECTORY));
@@ -34,7 +39,7 @@ export async function loadForestCanopy() {
     }
     const samples = Array.isArray(northernTreeSamples) && northernTreeSamples.every(sample =>
       Array.isArray(sample) && sample.length === 3 && sample.every(Number.isFinite));
-    return { cells, northernTreeSamples: samples ? northernTreeSamples : [] };
+    return { cells: cells.filter(cell => playableBoundsOverlap(...cell.bounds)), northernTreeSamples: samples ? northernTreeSamples : [] };
   } catch (error) {
     console.warn('[forest canopy] using individual trees:', error);
     return null;
@@ -45,7 +50,14 @@ export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FUL
   const side = CELLS + 1;
   const offset = CELLS * CELLS;
   if (buffer.byteLength !== offset + side * side * 2) throw new Error('Invalid canopy cell size');
-  const mask = new Uint8Array(buffer, 0, offset);
+  const rawMask = new Uint8Array(buffer, 0, offset);
+  const mask = playableBoundsCovered && !playableBoundsCovered(...bounds) ? rawMask.slice() : rawMask;
+  if (mask !== rawMask) for (let z = 0; z < CELLS; z++) for (let x = 0; x < CELLS; x++) {
+    const i = z * CELLS + x;
+    if (!mask[i]) continue;
+    const left = bounds[0] + x * size, top = bounds[1] + z * size;
+    if (!playableBoundsCovered(left, top, left + size, top + size)) mask[i] = 0;
+  }
   const height = new DataView(buffer, offset);
   const positions = new Array(side * side * 3);
   const shades = new Array(side * side);
@@ -59,27 +71,31 @@ export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FUL
     const shade = Math.sin(worldX * 0.743 + worldZ * 0.513) * 43758.5453;
     shades[i] = 0.70 + 0.30 * (shade - Math.floor(shade));
   }
-  // Keep the sides of connected crowns in the same mesh, using the surveyed
-  // neighbouring mask to leave the interior of a forest open across tile seams.
-  const sides = new Map();
-  function sideVertices(i) {
-    let pair = sides.get(i);
-    if (!pair) {
-      const x = positions[i * 3], top = positions[i * 3 + 1], z = positions[i * 3 + 2];
-      const base = Math.min(top - 0.08, terrainHeightAt(x, z) + 0.2);
-      pair = [positions.length / 3, positions.length / 3 + 1];
-      positions.push(x, top, z, x, base, z);
-      shades.push(shades[i] * 0.82, shades[i] * 0.36);
-      sides.set(i, pair);
-    }
-    return pair;
-  }
-  function wall(a, b) {
-    const [topA, lowA] = sideVertices(a), [topB, lowB] = sideVertices(b);
-    indices.push(topA, topB, lowA, lowA, topB, lowB);
-  }
-  const cuts = new Uint8Array(CELLS * CELLS);
+  const outlines = new Map(), isolated = new Set();
   const coveredOnNeighbor = (edge, index) => Math.floor(neighborMask[edge] / 2 ** index) % 2;
+  function covered(x, z) {
+    if (z < 0) return coveredOnNeighbor(0, x);
+    if (x >= CELLS) return coveredOnNeighbor(1, z);
+    if (z >= CELLS) return coveredOnNeighbor(2, x);
+    if (x < 0) return coveredOnNeighbor(3, z);
+    return mask[z * CELLS + x] ? 1 : 0;
+  }
+
+  const walls = [], insets = new Map(), previousVertex = new Map(), nextVertex = new Map();
+  function wall(a, b) {
+    const dx = positions[b * 3] - positions[a * 3];
+    const dz = positions[b * 3 + 2] - positions[a * 3 + 2];
+    const length = Math.hypot(dx, dz);
+    for (const i of [a, b]) {
+      if (!insets.has(i)) insets.set(i, [0, 0]);
+      const inset = insets.get(i);
+      inset[0] -= dz / length;
+      inset[1] += dx / length;
+    }
+    walls.push([a, b]);
+    nextVertex.set(a, b);
+    previousVertex.set(b, a);
+  }
   function bevel(corner, toward) {
     const index = positions.length / 3;
     for (let axis = 0; axis < 3; axis++) {
@@ -92,10 +108,8 @@ export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FUL
   for (let z = 0; z < CELLS; z++) for (let x = 0; x < CELLS; x++) {
     const cell = z * CELLS + x;
     if (!mask[cell]) continue;
-    const north = z > 0 ? mask[cell - CELLS] : coveredOnNeighbor(0, x);
-    const east = x + 1 < CELLS ? mask[cell + 1] : coveredOnNeighbor(1, z);
-    const south = z + 1 < CELLS ? mask[cell + CELLS] : coveredOnNeighbor(2, x);
-    const west = x > 0 ? mask[cell - 1] : coveredOnNeighbor(3, z);
+    const north = covered(x, z - 1), east = covered(x + 1, z);
+    const south = covered(x, z + 1), west = covered(x - 1, z);
     const a = z * side + x, b = a + 1, c = a + side, d = c + 1;
     if (north && east && south && west) {
       indices.push(a, c, b, b, c, d);
@@ -103,7 +117,6 @@ export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FUL
     }
     const corners = [a, b, d, c];
     const neighbors = [north, east, south, west];
-    const connected = neighbors.some(Boolean);
     const ring = [];
     const starts = [], ends = [];
     for (let i = 0; i < 4; i++) {
@@ -113,18 +126,95 @@ export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FUL
         ring.push(corners[i]);
         continue;
       }
-      cuts[cell] |= 1 << i;
       starts[i] = bevel(corners[i], corners[previous]);
       ends[i] = bevel(corners[i], corners[next]);
       ring.push(starts[i], ends[i]);
-      if (connected) wall(starts[i], ends[i]);
+      wall(starts[i], ends[i]);
     }
+    if (!neighbors.some(Boolean)) for (const vertex of ring) isolated.add(vertex);
+    outlines.set(cell, ring);
     for (let i = 1; i < ring.length - 1; i++) indices.push(ring[0], ring[i + 1], ring[i]);
-    if (connected) {
-      for (let i = 0; i < 4; i++) {
-        if (!neighbors[i]) wall(ends[i], starts[(i + 1) % 4]);
-      }
+    for (let i = 0; i < 4; i++) {
+      if (!neighbors[i]) wall(ends[i], starts[(i + 1) % 4]);
     }
+  }
+
+  // Both tiles solve a shared rim vertex using the same four coverage samples.
+  // Keep it on the seam whenever covered cells connect across it.
+  function alignSeam(x, z, vertical) {
+    const i = z * side + x;
+    const nw = covered(x - 1, z - 1), ne = covered(x, z - 1);
+    const sw = covered(x - 1, z), se = covered(x, z);
+    if (!insets.has(i) && nw + ne + sw + se !== 3) return;
+    const joins = vertical ? (nw && ne) || (sw && se) : (nw && sw) || (ne && se);
+    const dx = joins && vertical ? 0 : ne + se - nw - sw;
+    const dz = joins && !vertical ? 0 : sw + se - nw - ne;
+    insets.set(i, [dx, dz]);
+  }
+  for (let j = 1; j < CELLS; j++) {
+    alignSeam(j, 0, false);
+    alignSeam(j, CELLS, false);
+    alignSeam(0, j, true);
+    alignSeam(CELLS, j, true);
+  }
+  // Corner neighbours aren't represented in the tile mask.
+  for (const i of [0, CELLS, CELLS * side, side * side - 1]) {
+    if (insets.has(i)) insets.set(i, [0, 0]);
+  }
+
+  // Smooth the traced polygon before rolling its sides down. Tile joins stay pinned,
+  // and a concave turn can move only a little into a mapped clearing.
+  const smoothed = new Map();
+  for (const [i, [inwardX, inwardZ]] of insets) {
+    const col = i % side, row = Math.floor(i / side);
+    if (row < side && (col === 0 || col === CELLS || row === 0 || row === CELLS)) continue;
+    const a = previousVertex.get(i), b = nextVertex.get(i);
+    if (a === undefined || b === undefined) continue;
+    const x = positions[i * 3], z = positions[i * 3 + 2];
+    const ax = positions[a * 3] - x, az = positions[a * 3 + 2] - z;
+    const bx = positions[b * 3] - x, bz = positions[b * 3 + 2] - z;
+    const lengthA = Math.hypot(ax, az), lengthB = Math.hypot(bx, bz);
+    const step = Math.min(lengthA, lengthB) * 0.33;
+    const shiftX = (ax / lengthA + bx / lengthB) * step;
+    const shiftZ = (az / lengthA + bz / lengthB) * step;
+    const limit = shiftX * inwardX + shiftZ * inwardZ < 0 ? Math.min(1.15, size * 0.115) : size * 0.20;
+    const scale = Math.min(1, limit / (Math.hypot(shiftX, shiftZ) || 1));
+    smoothed.set(i, [x + shiftX * scale, z + shiftZ * scale]);
+  }
+
+  const rings = new Map(), profile = size === 10 ? CROWN_PROFILE : DISTANT_CROWN_PROFILE;
+  for (const [i, [dx, dz]] of insets) {
+    const [x, z] = smoothed.get(i) ?? [positions[i * 3], positions[i * 3 + 2]];
+    const top = positions[i * 3 + 1];
+    const height = top - terrainHeightAt(x, z);
+    // The short edges between two diagonal cuts need a smaller inset.
+    const radius = Math.max(0, Math.min(size * (i < side * side ? 0.30 : 0.15), height * 0.36));
+    const scale = radius / (Math.hypot(dx, dz) || 1);
+    const insetX = dx * scale, insetZ = dz * scale;
+    const footX = x + insetX, footZ = z + insetZ;
+    const ground = Math.min(top - 0.08, terrainHeightAt(footX, footZ) + 0.18);
+    // Leave air below a single detached crown rather than putting a skirt all the way to the ground.
+    const base = isolated.has(i) ? ground + (top - ground) * 0.38 : ground;
+    positions[i * 3] = footX;
+    positions[i * 3 + 2] = footZ;
+    const ring = [i];
+    // Roll out from the roof, then bend back in toward the ground.
+    for (const [inset, drop, shade] of profile) {
+      ring.push(positions.length / 3);
+      positions.push(x + insetX * inset, top + (base - top) * drop, z + insetZ * inset);
+      shades.push(shades[i] * shade);
+    }
+    rings.set(i, ring);
+  }
+  for (const [a, b] of walls) {
+    const left = rings.get(a), right = rings.get(b);
+    for (let j = 1; j < left.length; j++) {
+      indices.push(left[j - 1], right[j - 1], left[j], left[j], right[j - 1], right[j]);
+    }
+  }
+
+  for (const outline of outlines.values()) {
+    for (let i = 0; i < outline.length; i++) outline[i] = rings.get(outline[i])?.[1] ?? outline[i];
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -132,7 +222,7 @@ export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FUL
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  return { geometry, mask, cuts };
+  return { geometry, mask, outlines };
 }
 
 export function createForestCanopy(scene, source, seasonal) {
@@ -148,11 +238,21 @@ export function createForestCanopy(scene, source, seasonal) {
   material.colorNode = tint ? base.mul(mix(1, tint.rgb, 0.55)).mul(mix(0.48, 1, tint.a)) : base;
   const distance = positionWorld.xz.distance(cameraPosition.xz).add(aerialOffset);
   const visibility = mix(smoothstep(FADE_START, FADE_END, distance), 1, holdNear);
-  material.opacityNode = float(interleavedGradientNoise(screenCoordinate.xy).lessThan(visibility));
+  const pattern = interleavedGradientNoise(screenCoordinate.xy);
+  const range = userData('lodRange', 'vec2');
+  // The parent and children occupy complementary parts of the same screen-door pattern.
+  material.opacityNode = float(pattern.greaterThanEqual(range.x.mul(visibility))
+    .and(pattern.lessThan(range.y.mul(visibility))));
 
   const cells = new Map(source.map(cell => [cell.id, { ...cell }]));
   const owned = new Set(source.flatMap(cell => cell.children ?? []));
   const roots = [...cells.values()].filter(cell => !owned.has(cell.id));
+  for (const root of roots) {
+    root.lodRange = new THREE.Vector2(0, 1);
+    root.childLodRange = new THREE.Vector2(0, 1);
+    root.childTiles = (root.children ?? []).map(id => cells.get(id)).filter(Boolean);
+    for (const child of root.childTiles) child.lodRange = root.childLodRange;
+  }
   const anchors = new Map();
   for (const cell of source) {
     if (!anchors.has(cell.step)) anchors.set(cell.step, cell.bounds);
@@ -163,7 +263,7 @@ export function createForestCanopy(scene, source, seasonal) {
     return `${Math.floor((x - west) / size)}/${Math.floor((z - north) / size)}`;
   };
   const active = { 10: new Map(), 20: new Map() };
-  const visible = new Set(), ready = [], resident = new Set();
+  const visible = new Set(), ready = [], resident = new Set(), fading = new Set();
   const frustum = new THREE.Frustum(), viewProjection = new THREE.Matrix4(), box = new THREE.Box3();
   const stats = { visible: 0, loading: 0, resident: 0, residentBytes: 0, peakResidentBytes: 0, revision: 0 };
   let pending = 0, tick = 0, nextUpdate = 0;
@@ -189,15 +289,40 @@ export function createForestCanopy(scene, source, seasonal) {
       if (!cell) continue;
       const u = (x - cell.bounds[0]) / size, v = (z - cell.bounds[1]) / size;
       const col = Math.floor(u), row = Math.floor(v);
-      const index = row * CELLS + col, cornerCuts = cell.cuts[index];
+      const index = row * CELLS + col;
       if (!cell.mask[index]) return false;
-      const dx = u - col, dz = v - row;
-      return (!(cornerCuts & 1) || dx + dz >= BEVEL) &&
-        (!(cornerCuts & 2) || 1 - dx + dz >= BEVEL) &&
-        (!(cornerCuts & 4) || 2 - dx - dz >= BEVEL) &&
-        (!(cornerCuts & 8) || dx + 1 - dz >= BEVEL);
+      const outline = cell.outlines.get(index);
+      if (!outline) return true;
+      const points = cell.mesh.geometry.attributes.position;
+      let inside = false;
+      for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+        const az = points.getZ(outline[j]), bz = points.getZ(outline[i]);
+        if ((az > z) === (bz > z)) continue;
+        const ax = points.getX(outline[j]), bx = points.getX(outline[i]);
+        if (x < ax + (bx - ax) * (z - az) / (bz - az)) inside = !inside;
+      }
+      return inside;
     }
     return false;
+  }
+
+  function setBlend(root, blend) {
+    root.blend = blend;
+    root.lodRange.x = blend;
+    root.childLodRange.y = blend;
+  }
+
+  function selectBlend(root, target, now, canFade) {
+    if (!canFade || root.blend === undefined) {
+      fading.delete(root);
+      setBlend(root, target);
+    } else if (root.target !== target) {
+      root.fadeFrom = root.blend;
+      root.fadeStart = now;
+      if (root.fadeFrom === target) fading.delete(root);
+      else fading.add(root);
+    }
+    root.target = target;
   }
 
   function update(camera, treeField) {
@@ -205,12 +330,14 @@ export function createForestCanopy(scene, source, seasonal) {
     if (job) {
       const { cell, buffer } = job;
       try {
-        const { geometry, mask, cuts } = canopyGeometry(buffer, cell);
+        const { geometry, mask, outlines } = canopyGeometry(buffer, cell);
         cell.mesh = new THREE.Mesh(geometry, material);
         cell.mesh.visible = false;
+        cell.mesh.userData.lodRange = cell.lodRange;
         cell.mask = mask;
-        cell.cuts = cuts;
-        cell.bytes = mask.byteLength + cuts.byteLength + geometry.index.array.byteLength + Object.values(geometry.attributes)
+        cell.outlines = outlines;
+        const outlineBytes = [...outlines.values()].reduce((sum, outline) => sum + outline.length * 4, 0);
+        cell.bytes = mask.byteLength + outlineBytes + geometry.index.array.byteLength + Object.values(geometry.attributes)
           .reduce((sum, attr) => sum + attr.array.byteLength, 0);
         group.add(cell.mesh);
         resident.add(cell);
@@ -231,6 +358,15 @@ export function createForestCanopy(scene, source, seasonal) {
     fullCanopyRadiusSq = (FADE_END - aerialOffset.value) ** 2;
     holdNear.value = treeField.coveragePending?.(x, z) ? 1 : 0;
     const now = performance.now();
+    for (const root of fading) {
+      const t = Math.min(1, (now - root.fadeStart) / TILE_FADE_MS);
+      const blend = t * t * (3 - 2 * t);
+      setBlend(root, root.fadeFrom + (root.target - root.fadeFrom) * blend);
+      if (t === 1) {
+        fading.delete(root);
+        nextUpdate = 0;
+      }
+    }
     if (now < nextUpdate && !job) return;
     nextUpdate = now + 90;
     tick++;
@@ -250,19 +386,26 @@ export function createForestCanopy(scene, source, seasonal) {
       const d = distance(root);
       if (d > FAR_LIMIT || (d > 650 && !inView(root))) continue;
       root.used = tick;
-      const children = d < SWITCH_DISTANCE && root.children?.map(id => cells.get(id)).filter(Boolean);
-      if (children?.length) {
+      const children = root.childTiles;
+      const preferDetail = d < SWITCH_DISTANCE && children.length > 0;
+      const detailReady = children.length > 0 && children.every(child => child.mesh);
+      if (preferDetail) {
         for (const child of children) {
           child.used = tick;
           if (!child.mesh) candidates.push([child, distance(child)]);
         }
-        if (children.every(cell => cell.mesh)) {
-          children.forEach(cell => next.add(cell));
-          continue;
+      }
+      if (!root.mesh && (!preferDetail || !detailReady)) candidates.push([root, d - 400]);
+      if (!root.mesh && !detailReady) continue;
+      const target = detailReady && (preferDetail || !root.mesh) ? 1 : 0;
+      selectBlend(root, target, now, root.mesh && detailReady);
+      if (root.mesh && (root.blend < 1 || target === 0)) next.add(root);
+      if (detailReady && (root.blend > 0 || target === 1)) {
+        for (const child of children) {
+          child.used = tick;
+          next.add(child);
         }
       }
-      if (root.mesh) next.add(root);
-      else candidates.push([root, d - 400]);
     }
     candidates.sort((a, b) => a[1] - b[1]);
     for (const [cell] of candidates) {
@@ -287,7 +430,7 @@ export function createForestCanopy(scene, source, seasonal) {
         if (resident.size <= RESIDENT_LIMIT) break;
         group.remove(cell.mesh);
         cell.mesh.geometry.dispose();
-        cell.mesh = cell.mask = cell.cuts = null;
+        cell.mesh = cell.mask = cell.outlines = null;
         resident.delete(cell);
         stats.residentBytes -= cell.bytes;
       }

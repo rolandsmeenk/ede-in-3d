@@ -9,7 +9,7 @@ function crossing() {
   const state = { walk: false, clear: true };
   const { createPedestrianSystem } = loadModule(readFileSync(join(__dirname, '../js/pedestrian-system.js'), 'utf8'), {
     imports: {
-      './road-access.js': { FOOT: 16 },
+      './road-access.js?v=20261122-startup': { FOOT: 16 },
       './city-config.js': { blockAt: () => null },
       './terrain.js': { terrainHeightAt: () => 0 },
       './pedestrian-routes.js': { createPedestrianRoutes: () => ({ next: () => null }) },

@@ -142,8 +142,22 @@ const cityUniforms = {
   uWindowLights: uniform(new THREE.Vector3()),
   uRoadWetness: uniform(0),
   uRoadPuddles: uniform(0),
+  uWind: uniform(new THREE.Vector3()),
+  uWaterTravel: uniform(new THREE.Vector2()),
   uCanyonBounce: uniform(0.52)
 };
+
+function updateSceneWind(dt, windX, windZ) {
+  const speed = Math.hypot(windX, windZ);
+  const divisor = Math.max(speed, 0.001);
+  // Keep the tree bend within the existing culling bounds, even in strong gusts.
+  const strength = Math.min(1, speed / 14);
+  const x = windX / divisor, z = windZ / divisor;
+  cityUniforms.uWind.value.set(x, z, strength);
+  // Accumulate travel so a change in weather never resets the water phase.
+  cityUniforms.uWaterTravel.value.x += x * strength * dt;
+  cityUniforms.uWaterTravel.value.y += z * strength * dt;
+}
 
 // Fast deterministic 2D -> 1D hash in TSL
 const hash2D = Fn(([p]) => {
@@ -1325,9 +1339,6 @@ class TreeNodeMaterial extends THREE.MeshStandardNodeMaterial {
   }
 }
 
-// Prevailing wind (xz, blowing from the west-north-west across Manhattan)
-const TREE_WIND = vec2(0.86, 0.51);
-
 /**
  * Instanced street & park tree material (js/trees.js): bark tubes and alpha-tested leaf cards in ONE draw per mesh.
  * Geometry attributes:
@@ -1368,21 +1379,22 @@ function createTreeMaterial(leafAtlas, { seasons = false, fadeClock } = {}) {
   mat.positionNode = Fn(() => {
     const p = positionLocal;
     const g = positionGeometry;
+    const direction = cityUniforms.uWind.xy;
     const phase = rnd.mul(6.2832);
     // gusts rolling downwind across the city
-    const gust = sin(time.mul(0.5).sub(dot(p.xz, TREE_WIND).mul(0.045))).mul(0.5).add(0.5);
+    const gust = sin(time.mul(0.5).sub(dot(p.xz, direction).mul(0.045))).mul(0.5).add(0.5);
     const strength = gust.mul(gust).mul(0.7).add(0.3);
     // the whole tree bends with height, leaning downwind and rocking across it
     const h = g.y.div(11.0);
     const bend = h.mul(h);
     const lean = sin(time.mul(0.85).add(phase)).mul(0.45).add(0.55).mul(strength).mul(0.2);
     const rock = sin(time.mul(0.67).add(phase.mul(1.7))).mul(0.06).mul(strength);
-    const sway = vec3(TREE_WIND.x.mul(lean).sub(TREE_WIND.y.mul(rock)), 0.0, TREE_WIND.y.mul(lean).add(TREE_WIND.x.mul(rock))).mul(bend);
+    const sway = vec3(direction.x.mul(lean).sub(direction.y.mul(rock)), 0.0, direction.y.mul(lean).add(direction.x.mul(rock))).mul(bend);
     // branches bob, the phase flowing smoothly through the crown so joints stay together
     const bob = sin(time.mul(2.1).add(g.x.mul(0.9)).add(g.z.mul(0.7)).add(phase)).mul(0.05).mul(aTree.z).mul(strength);
     // leaves flutter, every card on its own
     const flutter = sin(time.mul(8.0).add(aTree.w.mul(37.0)).add(g.y.mul(2.0))).mul(0.03).mul(isLeaf).mul(aTree.z).mul(strength.add(0.25));
-    return p.add(sway).add(vec3(0.0, bob, 0.0)).add(normalLocal.mul(flutter));
+    return p.add(sway.add(vec3(0.0, bob, 0.0)).add(normalLocal.mul(flutter)).mul(cityUniforms.uWind.z));
   })();
 
   // Texture hue gives each leaf a stable threshold. Keep woody twigs and the geometry underneath.
@@ -2318,6 +2330,7 @@ function createBillboardMaterial(themeIndex = 0) {
  * which createWaterMaterial turns into GGX roughness (LEAN mapping) instead of letting them shimmer.
  */
 let _waterWaveTexture = null;
+const WATER_WAVE_AXIS = 0.3;
 
 // In-place 2D inverse FFT (unnormalised, n = power of two) on separate real / imaginary arrays
 function fft2DInverse(re, im, n) {
@@ -2389,8 +2402,8 @@ function getWaterWaveTexture() {
   const hIm = new Float64Array(size);
   const kPeak = 5.0; // spectral peak (cycles per tile)
   const kCut = 56.0; // soft high cut, well inside Nyquist so slopes stay resolved at mip 0
-  const windU = Math.cos(0.3);
-  const windV = Math.sin(0.3);
+  const windU = Math.cos(WATER_WAVE_AXIS);
+  const windV = Math.sin(WATER_WAVE_AXIS);
   for (let y = 0; y < N; y++) {
     const ky = y < N / 2 ? y : y - N;
     for (let x = 0; x < N; x++) {
@@ -2561,14 +2574,16 @@ function createWaterMaterial() {
   // vec4(mean slope x, mean slope z, unresolved slope variance, crest height)
   const waves = Fn(() => {
     const p = positionWorld.xz;
-    const t = time;
+    const direction = cityUniforms.uWind.xy;
+    const strength = cityUniforms.uWind.z;
+    const travel = cityUniforms.uWaterTravel;
     const q = p.mul(mix(float(1.0), float(2.6), pond)); // sheltered ponds: finer ripples
 
     // Wind patches drifting with the breeze: large-scale wave energy that reads from the air and hides tiling
-    const gustA = noise2D(p.mul(0.0047).add(vec2(t.mul(0.011), t.mul(-0.007))));
-    const gustB = noise2D(p.mul(0.0135).add(vec2(t.mul(-0.009), t.mul(0.013))).add(31.7));
+    const gustA = noise2D(p.mul(0.0047).sub(travel.mul(0.011)));
+    const gustB = noise2D(p.mul(0.0135).sub(travel.mul(0.009)).add(31.7));
     const gust = smoothstep(0.18, 0.82, gustA.mul(0.62).add(gustB.mul(0.38)));
-    const energy = mix(float(0.45), float(1.3), gust).mul(mix(float(1.0), float(0.42), pond)).toVar();
+    const energy = mix(0.45, 1.3, gust).mul(mix(1.0, 0.42, pond)).mul(mix(0.06, 2.4, strength)).toVar();
 
     const slope = vec2(0.0, 0.0).toVar();
     const variance = energy.mul(energy).mul(0.0022).toVar(); // capillary ripples, always below a pixel
@@ -2576,14 +2591,16 @@ function createWaterMaterial() {
     for (const [L, rot, sigma] of LAYERS) {
       const c = Math.cos(rot);
       const s = Math.sin(rot);
-      const speed = (0.8 * Math.sqrt(L / 9)) / L; // ~phase speed of the tile's dominant waves, in tiles per second
-      const uv = vec2(q.x.mul(c).sub(q.y.mul(s)), q.x.mul(s).add(q.y.mul(c))).div(L)
-        .add(vec2(Math.cos(0.3) * speed, Math.sin(0.3) * speed).mul(t));
+      const drift = q.sub(travel.mul(0.8 * Math.sqrt(L / 9)));
+      const uv = vec2(drift.x.mul(c).sub(drift.y.mul(s)), drift.x.mul(s).add(drift.y.mul(c))).div(L);
       const smp = texture(waveTex, uv);
-      const amp = energy.mul(sigma);
+      // Favour ripple layers already aligned with the wind, keeping their world-space phase continuous.
+      const axis = WATER_WAVE_AXIS - rot;
+      const alignment = dot(direction, vec2(Math.cos(axis), Math.sin(axis)));
+      const amp = energy.mul(sigma).mul(alignment.mul(alignment).mul(0.65).add(0.55));
       slope.addAssign(vec2(smp.x.mul(c).add(smp.y.mul(s)), smp.y.mul(c).sub(smp.x.mul(s))).mul(amp));
       variance.addAssign(max(smp.z.sub(dot(smp.xy, smp.xy)), 0.0).mul(amp.mul(amp)));
-      crest.addAssign(smp.w.mul(sigma));
+      crest.addAssign(smp.w.mul(amp));
     }
     return vec4(slope, variance, crest.mul(4.0));
   })();
@@ -2874,6 +2891,7 @@ export {
   createChryslerCrownMaterial,
   createCarPaintMaterial,
   createTreeMaterial,
+  updateSceneWind,
   createParkPavingMaterial,
   createEdePavingMaterial,
   createTreeGrateMaterial,

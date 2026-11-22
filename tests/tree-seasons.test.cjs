@@ -14,8 +14,8 @@ async function seasons() {
   } });
 }
 
-test('Today follows Amsterdam midnight using the civil date through daylight savings and leap years', async () => {
-  const { amsterdamDayOfYear, getTreeSeason, setTreeSeason, refreshTreeSeason } = await seasons();
+test('live seasons follow Amsterdam midnight using the civil date through daylight saving time and leap years', async () => {
+  const { amsterdamDayOfYear, getTreeSeason, setTreeSeason, refreshTreeSeason, seasonPresetFor } = await seasons();
   const before = new Date('2024-03-31T21:59:59Z');
   const after = new Date('2024-03-31T22:00:00Z');
   assert.equal(amsterdamDayOfYear(before), 90);
@@ -26,10 +26,35 @@ test('Today follows Amsterdam midnight using the civil date through daylight sav
   assert.equal(setTreeSeason('winter', before), 14);
   assert.equal(refreshTreeSeason(after), 14);
   assert.equal(getTreeSeason(), 'winter');
+  assert.equal(seasonPresetFor(new Date('2026-05-31T21:59:59Z')), 'spring');
+  assert.equal(seasonPresetFor(new Date('2026-05-31T22:00:00Z')), 'summer');
 });
 
-test('heather blooms in late summer in Amsterdam and the season menu can preview it', async () => {
-  const { heatherBloom, setTreeSeason, refreshTreeSeason } = await seasons();
+test('Ginkelse Heide sheep are shorn on the second Saturday in June and regrow fleece for winter', async () => {
+  const { sheepFleeceInfluences, setTreeSeason, refreshTreeSeason } = await seasons();
+  for (const lastUnshornEvening of ['2024-06-07T21:59:59Z', '2026-06-12T21:59:59Z']) {
+    const before = new Date(lastUnshornEvening);
+    setTreeSeason('today', before);
+    assert.equal(sheepFleeceInfluences[0], 1);
+    refreshTreeSeason(new Date(before.getTime() + 1000));
+    assert.equal(sheepFleeceInfluences[0], 0);
+  }
+
+  setTreeSeason('today', new Date('2026-07-10T12:00:00Z'));
+  assert.equal(sheepFleeceInfluences[0], 0);
+  setTreeSeason('summer');
+  const lateSummerWool = sheepFleeceInfluences[0];
+  assert.ok(lateSummerWool > 0 && lateSummerWool < 0.5);
+  setTreeSeason('autumn');
+  assert.ok(sheepFleeceInfluences[0] > lateSummerWool && sheepFleeceInfluences[0] < 1);
+  setTreeSeason('winter');
+  assert.equal(sheepFleeceInfluences[0], 1);
+  setTreeSeason('spring');
+  assert.equal(sheepFleeceInfluences[0], 1);
+});
+
+test('heather blooms in late summer in Amsterdam and in the Summer preset', async () => {
+  const { TREE_SEASONS, heatherBloom, setTreeSeason, refreshTreeSeason } = await seasons();
   setTreeSeason('today', new Date('2025-07-23T12:00:00Z'));
   assert.equal(heatherBloom.value, 0);
   refreshTreeSeason(new Date('2025-08-17T12:00:00Z'));
@@ -39,7 +64,8 @@ test('heather blooms in late summer in Amsterdam and the season menu can preview
   assert.equal(heatherBloom.value, 1);
   refreshTreeSeason(new Date('2025-09-14T12:00:00Z'));
   assert.ok(heatherBloom.value > 0 && heatherBloom.value < opening);
-  setTreeSeason('heather-bloom', new Date('2025-12-29T12:00:00Z'));
+  assert.equal(Object.hasOwn(TREE_SEASONS, 'heather-bloom'), false);
+  setTreeSeason('summer', new Date('2025-12-29T12:00:00Z'));
   assert.equal(heatherBloom.value, 1);
   setTreeSeason('winter');
   assert.equal(heatherBloom.value, 0);

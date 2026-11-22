@@ -1,7 +1,7 @@
 import { blockAt } from './city-config.js';
 import { terrainHeightAt } from './terrain.js';
 import { createPedestrianRoutes } from './pedestrian-routes.js';
-import { FOOT } from './road-access.js';
+import { FOOT } from './road-access.js?v=20261122-startup';
 import { PersonCrowd, PersonRig, PEDESTRIAN_DIVE_DURATION } from './pedestrians.js';
 
 // Local pedestrian population: connected walks, curb queues, conversations and player avoidance.

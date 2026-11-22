@@ -572,7 +572,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
       if (poleHeight > 0) {
         setMatrix(poleMatrices, lampX, poleBase + poleHeight / 2, lampZ, poleRadius, poleHeight, poleRadius);
         signSupport = { x: lampX, z: lampZ, baseY: poleBase, topY: headY - 0.25,
-          layer: s.layer ?? 0, radius: poleRadius, kind: 'lamp' };
+          layer: s.layer ?? 0, radius: poleRadius, ux, uz, kind: 'lamp' };
         signSupports.push(signSupport);
       }
       const armCount = s.doubleArm ? 2 : 1;

@@ -18,7 +18,7 @@ from shapely import STRtree, force_2d, make_valid, transform, union_all
 from shapely.geometry import LineString, Point, Polygon, box, shape
 
 from ede_gis import Frame, SCENE_NAP_ORIGIN, source_crs
-from ede_map import ROOT
+from ede_map import ROOT, load_playable_boundary
 
 
 ASSETS = ROOT / 'assets'
@@ -385,7 +385,7 @@ def main():
         '--input-type=module', '-e', "import { EDE_DATA } from './js/ede-geodata.js'; "
         "const { meta, water, roads, railways } = EDE_DATA; console.log(JSON.stringify({meta, water, roads, railways}));"], cwd=ROOT))
     frame = Frame(scene['meta']['lonLatAffine'])
-    area = transform(box(*scene['meta']['bounds']), frame.scene_to_rd, interleaved=False)
+    area = transform(load_playable_boundary(), frame.scene_to_rd, interleaved=False)
     if args.fetch:
         args.cache.mkdir(parents=True, exist_ok=True)
         bounds = frame.geographic_bounds(scene['meta']['bounds'])

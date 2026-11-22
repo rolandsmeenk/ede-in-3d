@@ -7,7 +7,7 @@ const platformNumber = value => String(value ?? '').trim().toLowerCase().match(/
 export const trainKey = (operator, date, number) => `${operator}/${date}/${number}`;
 
 export async function loadEdeTrainTimetable() {
-  const response = await fetch(new URL('../assets/ede-train-timetable.json', import.meta.url));
+  const response = await fetch(new URL('../assets/ede-train-timetable.json?v=20261122-municipal-coverage', import.meta.url));
   if (!response.ok) throw new Error(`Rail timetable HTTP ${response.status}`);
   const timetable = await response.json();
   if (timetable.version !== 1 || !Array.isArray(timetable.trips) ||

@@ -105,7 +105,7 @@ export async function loadEdeDetail({
         for (const id of asset.replaces) replacedBgt.add(id);
       }
       if (source === 'nbd' && asset.features.length) {
-        nbdTexture = await new THREE.TextureLoader().loadAsync(assetUrl(source, 'png?v=20261120-traffic-blue').href);
+        nbdTexture = await new THREE.TextureLoader().loadAsync(assetUrl(source, 'png?v=20261122-truecolor').href);
         nbdTexture.colorSpace = THREE.SRGBColorSpace;
         nbdTexture.anisotropy = 4;
       }

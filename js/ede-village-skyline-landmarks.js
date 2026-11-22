@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { CivicBatch } from './ede-civic-landmarks.js';
+import { addClockDetails, addRoundClock } from './ede-clock-model.js';
 import { VILLAGE_SKYLINE_SURVEYS } from './ede-village-skyline-survey.js';
 import { createSurveyLandmark, surveyLabel, surveyOpeningFits, surveyPanel, surveyWindow } from './ede-survey-landmark.js';
 
@@ -154,29 +155,12 @@ function createMaalderij(_footprints, site) {
 }
 
 function clockDial(wall, y, radius, dial, marks) {
-  const u = wall.width / 2;
-  const p = (a, b, depth) => wall.point(a, b, depth);
-  const ring = Array.from({ length: 24 }, (_, i) => {
-    const a = i * Math.PI / 12;
-    return p(u + Math.cos(a) * radius, y + Math.sin(a) * radius, 0.064);
-  });
-  wall.shell.polygon([ring], dial);
-  for (let i = 0; i < 12; i++) {
-    const a = i * Math.PI / 6, c = Math.cos(a), s = Math.sin(a), d = radius * 0.045;
-    const at = radius * 0.86, h = radius * (i % 3 === 0 ? 0.13 : 0.08);
-    wall.trim.polygon([[
-      p(u + (at - h) * c + d * s, y + (at - h) * s - d * c, 0.078),
-      p(u + (at + h) * c + d * s, y + (at + h) * s - d * c, 0.078),
-      p(u + (at + h) * c - d * s, y + (at + h) * s + d * c, 0.078),
-      p(u + (at - h) * c - d * s, y + (at - h) * s + d * c, 0.078),
-    ]], marks);
-  }
-  surveyPanel(wall, u - radius * 0.04, u + radius * 0.04, y - radius * 0.06, y + radius * 0.73, marks, 0.083);
-  surveyPanel(wall, u - radius * 0.42, u + radius * 0.03, y - radius * 0.036, y + radius * 0.036, marks, 0.086);
+  return addRoundClock(wall.shell, (u, v, d) => wall.point(wall.width / 2 + u, y + v, 0.064 + d),
+    radius, dial, marks);
 }
 
 function createWekeromChurch(_footprints, site) {
-  const survey = VILLAGE_SKYLINE_SURVEYS[site.id];
+  const survey = VILLAGE_SKYLINE_SURVEYS[site.id], clocks = [];
   const { ground } = survey;
   const west = [[3064.98,-7396.98], [3065.48,-7397.13], [3064.17,-7401.65], [3063.66,-7401.50]];
   const east = [[3067.82,-7398.77], [3068.2,-7399.12], [3066.94,-7402.23], [3066.41,-7402.08]];
@@ -188,7 +172,7 @@ function createWekeromChurch(_footprints, site) {
       const { width, base, low, high, building, buildingIndex, normal, shell } = wall;
       if (building.style === 'tower') {
         if (width > 3 && buildingIndex === 1 && Math.abs(normal.x) > 0.5) {
-          clockDial(wall, 7.65, 0.72, 0x536961, 0xd8cfaa);
+          clocks.push(clockDial(wall, 7.65, 0.72, 0x536961, 0xd8cfaa));
         }
         surveyPanel({ ...wall, trim: shell }, 0.016, width - 0.016, high - 0.12, high - 0.015, 0x6c695d, 0.025);
         return width > 2.0 ? 0xa68165 : brick;
@@ -204,6 +188,7 @@ function createWekeromChurch(_footprints, site) {
       }
       return brick;
     }, ({ group }) => {
+      addClockDetails(group, clocks);
       const top = new CivicBatch(), x = 3064.15, z = -7400.20;
       top.solid(new THREE.CylinderGeometry(0.038, 0.038, 0.92, 8).translate(x, 14.43, z), 0x585449);
       top.solid(new THREE.BoxGeometry(0.56, 0.075, 0.07).translate(x, 14.77, z), 0xa38a57);
@@ -231,7 +216,7 @@ function lancet(wall, u, width, low, height, brick) {
 }
 
 function createOtterloChurch(_footprints, site) {
-  const survey = VILLAGE_SKYLINE_SURVEYS[site.id];
+  const survey = VILLAGE_SKYLINE_SURVEYS[site.id], clocks = [];
   const { ground } = survey;
   const brick = 0x916b54, slate = 0x4c5657, eaves = 21.82;
   const shaft = [[6965.80,-6102.45], [6969.49,-6102.51], [6969.43,-6099.18], [6965.76,-6099.13]];
@@ -240,7 +225,7 @@ function createOtterloChurch(_footprints, site) {
     [{ ...survey, wallColor: brick, roofColor: slate }, tower], wall => {
       const { base, low, high, width, building, shell } = wall;
       if (building.style === 'tower') {
-        clockDial(wall, 20.35, 0.55, 0x483d31, 0xcbb075);
+        clocks.push(clockDial(wall, 20.35, 0.55, 0x483d31, 0xcbb075));
         for (const shift of [-0.43, 0.43]) lancet(wall, width / 2 + shift, 0.47, 17.4, 2.03, 0xa98567);
         for (let i = 0; i < 6; i++) {
           const u = width * (i + 0.5) / 6;
@@ -259,6 +244,7 @@ function createOtterloChurch(_footprints, site) {
       }
       return brick;
     }, ({ group, colliders }) => {
+      addClockDetails(group, clocks);
       const roof = new CivicBatch(), x = 6967.60, z = -6100.82, tip = 32.10;
       const ring = (radius, y) => Array.from({ length: 4 }, (_, i) => {
         const a = Math.PI / 4 + i * Math.PI / 2;

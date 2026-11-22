@@ -1,4 +1,4 @@
-import { BICYCLE, FOOT, MOTOR } from './road-access.js';
+import { BICYCLE, FOOT, MOTOR } from './road-access.js?v=20261122-startup';
 import { EDE_SHOPS } from './ede-shops.js';
 import { edeBikeFacilities } from './ede-road-lanes.js';
 import { EDE_TURN_RESTRICTIONS } from './ede-turn-restrictions.js';

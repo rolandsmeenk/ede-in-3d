@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, mix } from 'three/tsl';
 import { sampleGroundColor } from './aerial-colors.js';
+import { playableBoundary, playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
 import { cityUniforms, heathBloomColor } from './tsl-materials.js';
 import { expansionSeamOffset, getExpansionTerrain, getTerrain, sampleTerrain } from './terrain.js';
 
@@ -59,6 +60,34 @@ export function sizeTerrainSkirts(nodes, roots, field) {
   }
 }
 
+export function triangulateTerrainBoundary(polygons) {
+  const edges = [];
+  const parts = polygons.flatMap(polygon => {
+    const [contour, ...holes] = polygon.map(ring => Array.from({ length: ring.length / 2 }, (_, i) =>
+      new THREE.Vector2(ring[i * 2], ring[i * 2 + 1])));
+    for (const ring of [contour, ...holes]) for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      edges.push([Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)]);
+    }
+    const vertices = contour.concat(...holes);
+    return THREE.ShapeUtils.triangulateShape(contour, holes).map(face => {
+      const [a, b, c] = face.map(i => vertices[i]);
+      const direction = Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+      const bounds = [Math.min(a.x, b.x, c.x), Math.min(a.y, b.y, c.y), Math.max(a.x, b.x, c.x), Math.max(a.y, b.y, c.y)];
+      const planes = [[a, b], [b, c], [c, a]].map(([start, end]) => {
+        const x = (start.y - end.y) * direction, z = (end.x - start.x) * direction;
+        return [x, z, -(start.x * x + start.y * z)];
+      });
+      return { bounds, planes };
+    });
+  });
+  return { edges, parts };
+}
+
+function overlap(a, b) {
+  return a[0] <= b[2] && a[1] <= b[3] && a[2] >= b[0] && a[3] >= b[1];
+}
+
 export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
   if (bytes.byteLength !== side * side * 5) throw new Error('Invalid AHN terrain tile size');
   const view = new DataView(bytes);
@@ -105,6 +134,74 @@ export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
   const pointAt = i => [positions[i * 3], positions[i * 3 + 1] + 0.025, positions[i * 3 + 2],
     colors[i * 4], colors[i * 4 + 1], colors[i * 4 + 2]];
 
+  // Boundary tiles intersect a triangulation of the municipality. Using the same polygon for
+  // the overview and every tile level keeps the edge fixed while height and colour refine.
+  const binsPerSide = 8;
+  const binSize = (maxX - minX) / binsPerSide;
+  const bins = tile.boundary && Array.from({ length: binsPerSide ** 2 }, (_, i) => {
+    const x = minX + i % binsPerSide * binSize, z = minZ + Math.floor(i / binsPerSide) * binSize;
+    const bounds = [x, z, x + binSize + step, z + binSize + step];
+    const parts = tile.boundary.parts.filter(part => overlap(bounds, part.bounds));
+    const edges = tile.boundary.edges.filter(edge => overlap(bounds, edge));
+    return { parts, edges, inside: !edges.length && parts.some(({ planes }) => planes.every(([a, b, c]) => a * x + b * z + c >= 0)) };
+  });
+  const binAt = (value, origin) => Math.max(0, Math.min(binsPerSide - 1, Math.floor((value - origin) / binSize)));
+  function addTriangle(a, b, c) {
+    if (!bins) {
+      indices.push(a, b, c);
+      return;
+    }
+    const west = Math.min(positions[a * 3], positions[b * 3], positions[c * 3]);
+    const north = Math.min(positions[a * 3 + 2], positions[b * 3 + 2], positions[c * 3 + 2]);
+    const bin = bins[binAt(west, minX) + binAt(north, minZ) * binsPerSide];
+    if (!bin.edges.length) {
+      if (bin.inside) indices.push(a, b, c);
+      return;
+    }
+    const east = Math.max(positions[a * 3], positions[b * 3], positions[c * 3]);
+    const south = Math.max(positions[a * 3 + 2], positions[b * 3 + 2], positions[c * 3 + 2]);
+    const bounds = [west, north, east, south];
+    if (!bin.edges.some(edge => overlap(bounds, edge))) {
+      if (bin.parts.some(part => overlap(bounds, part.bounds) && part.planes.every(([x, z, offset]) =>
+        x * positions[a * 3] + z * positions[a * 3 + 2] + offset >= 0))) indices.push(a, b, c);
+      return;
+    }
+    const corners = [a, b, c];
+    const points = corners.map(pointAt);
+    for (const part of bin.parts) {
+      if (!overlap(bounds, part.bounds)) continue;
+      let fragment = points;
+      for (const [x, z, offset] of part.planes) {
+        const distance = p => x * p[0] + z * p[2] + offset;
+        if (fragment.every(p => distance(p) >= 0)) continue;
+        const clipped = [];
+        for (let i = 0; i < fragment.length; i++) {
+          const p = fragment[i], q = fragment[(i + 1) % fragment.length];
+          const dp = distance(p), dq = distance(q);
+          if (dp >= 0) clipped.push(p);
+          if ((dp < 0 && dq > 0) || (dp > 0 && dq < 0)) {
+            const t = dp / (dp - dq);
+            clipped.push(p.map((value, j) => value + (q[j] - value) * t));
+          }
+        }
+        fragment = clipped;
+        if (fragment.length < 3) break;
+      }
+      if (fragment === points) {
+        indices.push(a, b, c);
+        return;
+      }
+      if (fragment.length < 3) continue;
+      const clipped = fragment.map(point => {
+        const original = points.indexOf(point);
+        if (original >= 0) return corners[original];
+        const [x, y, z, r, g, b] = point;
+        return vertex(x, y, z, Math.round(r), Math.round(g), Math.round(b));
+      });
+      for (let i = 1; i + 1 < clipped.length; i++) indices.push(clipped[0], clipped[i], clipped[i + 1]);
+    }
+  }
+
   // The retained town rectangle owns its original grid and surveyed grades.
   const insideLegacy = (x, z) => x > legacy.minX && x < legacy.maxX && z > legacy.minZ && z < legacy.maxZ;
   const trim = minX < legacy.maxX && maxX > legacy.minX && minZ < legacy.maxZ && maxZ > legacy.minZ;
@@ -130,13 +227,13 @@ export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
   };
   function triangle(a, b, c) {
     if (!trim) {
-      indices.push(a, b, c);
+      addTriangle(a, b, c);
       return;
     }
     const points = [a, b, c].map(pointAt);
     const outsideLegacy = planes.some(([axis, edge, sign]) => points.every(p => (p[axis] - edge) * sign <= 0));
     if (outsideLegacy) {
-      indices.push(a, b, c);
+      addTriangle(a, b, c);
       return;
     }
     if (points.every(([x, , z]) => insideLegacy(x, z))) return;
@@ -145,7 +242,7 @@ export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
       const outside = clip(inside, axis, edge, -direction);
       if (outside.length >= 3) {
         const vertices = outside.map(edgeVertex);
-        for (let i = 1; i + 1 < vertices.length; i++) indices.push(vertices[0], vertices[i], vertices[i + 1]);
+        for (let i = 1; i + 1 < vertices.length; i++) addTriangle(vertices[0], vertices[i], vertices[i + 1]);
       }
       inside = clip(inside, axis, edge, direction);
       if (inside.length < 3) break;
@@ -178,7 +275,8 @@ export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
       if (a[axis] === b[axis]) return;
       const [topA, downA] = a[axis] === lastPoint ? lastPair : addPair(a);
       const [topB, downB] = addPair(b);
-      indices.push(topA, topB, downA, downA, topB, downB);
+      addTriangle(topA, topB, downA);
+      addTriangle(downA, topB, downB);
       lastPoint = b[axis];
       lastPair = [topB, downB];
     }
@@ -220,7 +318,16 @@ export function createTerrainTiles(scene, heath) {
   if (!data) return null;
   const { manifest, field, directory, detail } = data;
   const legacy = getTerrain();
-  const nodes = new Map(Object.entries(manifest.tiles).map(([id, tile]) => [id, { ...tile, id }]));
+  const nodes = new Map(Object.entries(manifest.tiles).filter(([, tile]) => playableBoundsOverlap(...tile.bounds))
+    .map(([id, tile]) => [id, { ...tile, id }]));
+  const boundary = triangulateTerrainBoundary(playableBoundary);
+  for (const tile of nodes.values()) {
+    if (!playableBoundsCovered(...tile.bounds)) tile.boundary = {
+      parts: boundary.parts.filter(part => overlap(tile.bounds, part.bounds)),
+      edges: boundary.edges.filter(edge => overlap(tile.bounds, edge)),
+    };
+    if (tile.children) tile.children = tile.children.filter(id => nodes.has(id));
+  }
   if (detail) {
     for (const tile of nodes.values()) {
       const [w, n, e, s] = tile.bounds;
@@ -229,7 +336,7 @@ export function createTerrainTiles(scene, heath) {
       }
     }
   }
-  const roots = manifest.roots.map(id => nodes.get(id));
+  const roots = manifest.roots.map(id => nodes.get(id)).filter(Boolean);
   sizeTerrainSkirts(nodes.values(), roots, field);
   const group = new THREE.Group();
   group.name = 'EdeTerrainQuadtree';

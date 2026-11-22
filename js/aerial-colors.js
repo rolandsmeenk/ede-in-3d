@@ -1,5 +1,5 @@
 import { getExpansionTerrain } from './terrain.js';
-import { EDE_DATA } from './ede-geodata.js';
+import { EDE_AERIAL_INPUTS } from './ede-geodata.js';
 
 // Byte RGB from the orthophoto is sRGB; the mesh attributes are linear.
 const linear = Float32Array.from({ length: 256 }, (_, byte) => {
@@ -70,9 +70,7 @@ export async function loadAerialColors() {
     requestAsset('ede-aerial-colors.bin').then((response) => response.arrayBuffer()),
   ]);
   const ground = await decodeGround(metadata, photo);
-  const { baseBuildingCount, baseRoadCount } = EDE_DATA.meta;
-  const buildings = baseBuildingCount === undefined ? EDE_DATA.buildings : EDE_DATA.buildings.slice(0, baseBuildingCount);
-  const roads = baseRoadCount === undefined ? EDE_DATA.roads : EDE_DATA.roads.slice(0, baseRoadCount);
+  const { buildings, roads } = EDE_AERIAL_INPUTS;
   aerial = { ground, ...decodeAerialPalette(palette, buildings, roads) };
   return aerial;
 }

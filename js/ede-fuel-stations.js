@@ -349,7 +349,8 @@ function drawStation(site, style, shopStyle, atlas, priceDisplay) {
   group.add(mainMesh);
   if (illuminated.vertices.length) {
     const mesh = illuminated.mesh();
-    mesh.material.emissiveNode = mix(color(0xfff4df).mul(2.1), color(0xffd298).mul(0.68), attribute('civicGloss', 'float'))
+    const shopWindow = color(0xffd298).mul(0.68).mul(smoothstep(0, 0.06, cityUniforms.uWindowLights.z));
+    mesh.material.emissiveNode = mix(color(0xfff4df).mul(2.1), shopWindow, attribute('civicGloss', 'float'))
       .mul(smoothstep(0.42, 1.1, cityUniforms.uInteriorGlow));
     mesh.name = 'Canopy lamps and lit shop windows';
     mesh.castShadow = false;

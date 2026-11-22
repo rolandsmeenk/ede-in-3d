@@ -5,6 +5,7 @@ import { LUNTEREN_STRUCTURES as structures, LUNTEREN_SURVEYS as surveys } from '
 import { EDE_NORTH_RAIL } from './ede-north-rail-data.js';
 import { addWindmillSailcloth, createWindmillRig } from './ede-windmill.js';
 import { terrainHeightAt } from './terrain.js';
+import { addClockDetails, clockFace } from './ede-clock-model.js';
 
 const cream = 0xd0c6ad;
 const zinc = 0x50585c;
@@ -172,22 +173,21 @@ function churchDetails({ group, trim }) {
   cone.solid(new THREE.CylinderGeometry(tipRadius, baseRadius, top - y, 8).rotateY(Math.PI / 8)
     .translate(x, (y + top) / 2, z), 0x4d555c);
   group.add(cone.mesh());
+  const clocks = [];
   for (const [dx, dz] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
-    const clockPoint = (i, steps, length, reveal) => {
-      const angle = i * 2 * Math.PI / steps;
-      const localY = 2.33 + Math.cos(angle) * length;
-      const side = Math.sin(angle) * length;
+    const onDial = (side, height, reveal) => {
+      const localY = 2.33 + height;
       const radius = THREE.MathUtils.lerp(baseRadius, tipRadius, localY / (top - y)) * Math.cos(Math.PI / 8) + reveal;
       return [x + dx * radius + dz * side, y + localY, z + dz * radius - dx * side];
     };
+    const clockPoint = (i, steps, length, reveal) => {
+      const angle = i * 2 * Math.PI / steps;
+      return onDial(Math.sin(angle) * length, Math.cos(angle) * length, reveal);
+    };
     trim.polygon([Array.from({ length: 16 }, (_, i) => clockPoint(15 - i, 16, 0.71, 0.03))], 0x414850);
-    for (let i = 0; i < 12; i++) {
-      beam(trim, clockPoint(i, 12, 0.57, 0.06), clockPoint(i, 12, 0.69, 0.06), 0.045, 0xcbb67f);
-      if (i === 2 || i === 10) {
-        beam(trim, clockPoint(i, 12, 0, 0.06), clockPoint(i, 12, i === 2 ? 0.52 : 0.41, 0.06), 0.045, 0xcbb67f);
-      }
-    }
+    clocks.push(clockFace((u, h, d) => onDial(u, h, 0.088 + d), 0.70, 0xcbb67f));
   }
+  addClockDetails(group, clocks);
   trim.solid(new THREE.SphereGeometry(0.123, 8, 6).translate(x, top + 0.05, z), 0xc3a36d);
   beam(trim, [x, top, z], [x, top + 0.81, z], 0.051, 0x464642);
   beam(trim, [x - 0.16, top + 0.63, z], [x + 0.16, top + 0.63, z], 0.044, 0x464642);

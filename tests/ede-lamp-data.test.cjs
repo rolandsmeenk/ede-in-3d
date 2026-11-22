@@ -8,18 +8,30 @@ const { loadModule } = require('./helpers/module.cjs');
 test('the checked-in BGT lamp posts cover the Ede scene and reject an incomplete asset', async () => {
   const { decodeEdeLamps } = await import('../js/ede-lamp-data.js');
   const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const { containsPlayablePoint } = await import('../js/ede-playable-boundary.js');
+  const { decodeTerrain, sampleTerrain } = await import('../js/terrain.js');
   const bytes = gunzipSync(readFileSync(join(__dirname, '../assets/ede-lamps.bin.gz')));
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const lamps = decodeEdeLamps(buffer);
   const [minX, minZ, maxX, maxZ] = EDE_DATA.meta.bounds;
-  assert.ok(lamps.length > 14000);
+  assert.ok(lamps.length > 18000);
   assert.ok(lamps.every(({ x, z }) => x >= minX - 0.1 && x <= maxX + 0.1 && z >= minZ - 0.1 && z <= maxZ + 0.1));
+  assert.ok(lamps.every(({ x, z }) => containsPlayablePoint(x, z)));
+  assert.ok(lamps.some(({ x, z }) => Math.max(Math.abs(x), Math.abs(z)) > 6553.4));
+  const lunteren = lamps.filter(({ x, z }) => x >= -3900 && x <= -2850 && z >= -5300 && z <= -3900);
+  assert.ok(lunteren.length > 700);
+  const field = decodeTerrain(Uint8Array.from(readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin'))).buffer);
+  for (const { x, z, baseY } of lunteren.filter(lamp => !lamp.surveyed && !lamp.fitted).slice(0, 20)) {
+    assert.ok(Math.abs(baseY - sampleTerrain(field, x, z)) < 0.15);
+  }
   assert.ok(lamps.filter(({ x, z }) => Math.hypot(x, z) < 350).length > 300);
   assert.ok(lamps.every(lamp => lamp.height >= 3 && lamp.height <= 20 &&
     Math.abs(Math.hypot(lamp.nx, lamp.nz) - 1) < 1e-12));
   assert.throws(() => decodeEdeLamps(buffer.slice(0, -4)), /asset length/);
   const doubleArm = lamps.filter(lamp => lamp.doubleArm);
-  assert.equal(doubleArm.length, 93);
+  const [west, north, east, south] = EDE_DATA.meta.baseBounds;
+  assert.equal(doubleArm.filter(({ x, z }) => x >= west && x <= east && z >= north && z <= south).length, 93);
+  assert.ok(doubleArm.length > 93);
   assert.ok(doubleArm.every(lamp => lamp.surveyed));
   assert.ok(doubleArm.some(lamp => lamp.layer === 1 && lamp.fitted));
 

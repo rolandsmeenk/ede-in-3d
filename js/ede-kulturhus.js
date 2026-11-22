@@ -1,5 +1,10 @@
+import * as THREE from 'three/webgpu';
+import { color, mix, smoothstep, uv } from 'three/tsl';
+import { CivicBatch } from './ede-civic-landmarks.js';
 import { createSurveyLandmark, surveyLabel, surveyPanel, surveyWindow } from './ede-survey-landmark.js';
 import { KULTURHUS_SHELL } from './ede-kulturhus-survey.js';
+import { createWindFlag } from './ede-wind-props.js';
+import { terrainHeightAt } from './terrain.js';
 
 const frame = 0xc5c4b9;
 const glass = 0x566469;
@@ -39,6 +44,38 @@ function decorate(wall) {
   }
 }
 
+// From the lawn edge on the 2026 PDOK orthophoto, ordered east to west.
+const flagpoles = [[3037.94, -7316.64, 8.5], [3039.05, -7318.83, 7.4], [3040.26, -7320.93, 8.5]];
+
+function addFlagpoles({ group }) {
+  const batch = new CivicBatch();
+  const flags = flagpoles.map(([x, z, height], index) => {
+    const ground = terrainHeightAt(x, z);
+    batch.solid(new THREE.CylinderGeometry(0.044, 0.071, height + 0.12, 7)
+      .translate(x, ground + height / 2 - 0.06, z), 0xdaddd7);
+    batch.solid(new THREE.CylinderGeometry(0.093, 0.077, 0.05, 8)
+      .translate(x, ground + height, z), index === 1 ? 0x494d49 : 0xde8151);
+
+    const material = new THREE.MeshStandardNodeMaterial({ color: index === 1 ? 0x222327 : 0xf5f3ed,
+      side: THREE.DoubleSide, roughness: 0.92 });
+    if (index === 0) {
+      const y = uv().y;
+      const lower = mix(color(0x24201f), color(0xf0cc26), smoothstep(0.31, 0.35, y));
+      material.colorNode = mix(lower, color(0x294575), smoothstep(0.64, 0.68, y));
+    }
+    const flag = createWindFlag(material, index * 2);
+    flag.name = 'Kulturhus flag';
+    flag.position.set(x, ground + height - 0.14, z);
+    flag.userData.nearDetail = 140;
+    flag.castShadow = false;
+    return flag;
+  });
+  const poles = batch.mesh();
+  poles.name = 'Kulturhus flagpoles';
+  poles.castShadow = false;
+  group.add(poles, ...flags);
+}
+
 export function createKulturhus(_footprints, site) {
-  return createSurveyLandmark(site, [{ ...KULTURHUS_SHELL, roofColors: { 47: 0x828078 } }], decorate);
+  return createSurveyLandmark(site, [{ ...KULTURHUS_SHELL, roofColors: { 47: 0x828078 } }], decorate, addFlagpoles);
 }

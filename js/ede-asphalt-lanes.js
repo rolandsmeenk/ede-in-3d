@@ -3,7 +3,7 @@ import { EDE_DATA } from './ede-geodata.js';
 import { nearestEdeRoad } from './ede-geometry.js';
 import { resolveEdeRoadLanes } from './ede-road-lanes.js';
 import { motorwayLanesAt } from './ede-motorway-lanes.js';
-import { MOTOR } from './road-access.js';
+import { MOTOR } from './road-access.js?v=20261122-startup';
 
 const laneBands = new WeakMap();
 const directions = [0, 1];

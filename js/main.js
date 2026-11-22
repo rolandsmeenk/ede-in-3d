@@ -11,57 +11,61 @@ import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildStreetDetails } from './street-details.js?v=20261122-forecourt-lights';
 import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-hospital-signals';
-import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261121-hospital-approaches';
+import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261122-startup';
 import { loadEdeParking } from './ede-parking.js';
 import { buildRoadPaint } from './road-paint.js?v=20261121-roundabouts';
 import { overlapsEdeTravelPavement } from './ede-geometry.js';
-import { ThirdPersonControllerManager } from './controllers.js?v=20261120-dutch-bikes';
+import { ThirdPersonControllerManager } from './controllers.js?v=20261122-municipal-coverage';
 import { EDE_BIKE_STYLES } from './ede-bikes.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
 import { LightingSystem } from './lighting.js?v=20261121-night-lighting';
-import { createLiveWeather, formatWeatherTime, weatherCondition } from './ede-weather.js';
-import { watchFrankenengLevels } from './ede-water-levels.js';
+import { createLiveWeather, formatWeatherTime, presetRinkIce, weatherCondition } from './ede-weather.js?v=20261122-rink-ice';
+import { resolveFrankenengLevels, watchFrankenengLevels } from './ede-water-levels.js';
 import { loadEdeWaterWorks, buildEdeWaterWorks } from './ede-water-works-world.js';
 import { createWeatherPrecipitation } from './weather-precipitation.js';
+import { updateSceneWind } from './tsl-materials.js';
 import { createKiteFlyers } from './ede-kites.js';
 import { formatEdeTime } from './live-sky.js';
-import { NYCMapSystem } from './nyc-map.js?v=20261121-area-teleports';
+import { NYCMapSystem } from './nyc-map.js?v=20261122-municipal-coverage';
 import { createExpansionCulling, setupSceneCulling, updateSceneCulling } from './scene-culling.js';
-import { CityAudioSystem } from './audio-system.js?v=20261120-acv-truck';
+import { CityAudioSystem } from './audio-system.js?v=20261122-p2000';
 import { loadTerrain, terrainHeightAt } from './terrain.js';
 import { createTerrainTiles } from './ede-terrain-tiles.js';
 import { createEdeHeathCover } from './ede-heath.js';
 import { createForestCanopy, loadForestCanopy } from './ede-forest-canopy.js';
 import { loadAerialColors, loadExpansionGroundColors } from './aerial-colors.js';
-import { loadEdeTrees } from './ede-tree-data.js';
-import { TREE_SEASONS, setTreeSeason, getTreeSeason, refreshTreeSeason } from './tree-seasons.js';
-import { loadEdeLamps } from './ede-lamp-data.js';
+import { loadEdeTrees } from './ede-tree-data.js?v=20261122-safari-cache';
+import { TREE_SEASONS, setTreeSeason, getTreeSeason, seasonPresetFor } from './tree-seasons.js';
+import { loadEdeLamps } from './ede-lamp-data.js?v=20261122-safari-cache';
+import { buildEdePosters } from './ede-posters.js';
+import { buildEdeSeasonalDecorations } from './ede-seasonal-decorations.js';
+import { localClock } from './ede-transit-time.js';
 import { buildEdeLunterenPlatforms } from './ede-lunteren-platforms.js';
 import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdeHelipads, setEdePlatforms, setEdeStructureRoofs } from './ede-grade.js';
-import { buildEdeSports, loadEdeSports } from './ede-sports.js';
+import { buildEdeSports, loadEdeSports, setEdeSportsIceCover } from './ede-sports.js?v=20261122-rink-ice';
 import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
 import { loadEdeTrainTimetable } from './ede-train-schedule.js';
 import { createEdeTrainSystem } from './ede-trains.js?v=20261120-train-models';
 import { createEdeLevelCrossings } from './ede-level-crossings.js';
-import { BICYCLE, FOOT } from './road-access.js';
-import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js';
-import { loadEdeStreetFeatures } from './ede-street-features.js';
+import { BICYCLE, FOOT } from './road-access.js?v=20261122-startup';
+import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js?v=20261122-p2000';
+import { loadEdeStreetFeatures } from './ede-street-features.js?v=20261122-startup';
 import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js?v=20261121-shared-sign-posts';
 import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
 import { loadEdeCorridorFallbacks } from './ede-facades.js';
-import { bikeRackGround, buildEdeDetail, loadEdeDetail, streamParcelTiles } from './ede-detail.js?v=20261121-signal-optics';
+import { bikeRackGround, buildEdeDetail, loadEdeDetail, streamParcelTiles } from './ede-detail.js?v=20261122-truecolor-signs';
 
 // js/main.js
 // Main entry point for Ede in Three.js WebGPURenderer & TSL (three.js dev, see index.html)
 
-async function initApp() {
+export async function initApp() {
   const query = new URLSearchParams(window.location.search);
   const profiling = query.get('perf') === '1';
   const fixedStep = profiling && query.get('bench') === '1';
@@ -84,9 +88,8 @@ async function initApp() {
   const treeQuality = ['legacy', 'high', 'auto'].includes(requestedTreeQuality) ? requestedTreeQuality : 'auto';
   const requestedTreeSeason = profiling ? query.get('treeSeason') : null;
   const treeSeasonsEnabled = requestedTreeSeason !== 'off';
-  const initialTreeSeason = Object.hasOwn(TREE_SEASONS, requestedTreeSeason) ? requestedTreeSeason : 'today';
-  const dateNow = () => new Date(Date.now());
-  if (treeSeasonsEnabled) setTreeSeason(initialTreeSeason, dateNow());
+  const initialTreeSeason = TREE_SEASONS[requestedTreeSeason]?.day != null ? requestedTreeSeason : seasonPresetFor(new Date());
+  if (treeSeasonsEnabled) setTreeSeason(initialTreeSeason);
   let trafficUpdates = enabled('trafficUpdates');
   const container = document.getElementById('canvas-container');
   const loadingOverlay = document.getElementById('loading-overlay');
@@ -265,7 +268,6 @@ async function initApp() {
   const lunterenPlatforms = buildEdeLunterenPlatforms(scene);
   setEdePlatforms([...(bgtWorld?.platforms ?? []), ...landmarks.platforms, ...lunterenPlatforms]);
   setEdeHelipads(landmarks.helipads);
-  setEdeStructureRoofs([...(bgtWorld?.weatherCovers ?? []), ...landmarks.weatherCovers]);
   markInit('landmarks');
   const mappedLamps = lampResult.status === 'fulfilled' ? lampResult.value : undefined;
   let importedDetail;
@@ -324,6 +326,11 @@ async function initApp() {
     ...gradeWorld.colliders, ...(bgtWorld?.colliders || [])];
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');
+  const busStops = buildEdeBusStops(scene, busSchedule, {
+    surveyed: importedDetail ? detailData?.features.filter(feature => feature.type === 'shelter') : undefined
+  });
+  allColliders.push(...busStops.colliders);
+  setEdeStructureRoofs([...(bgtWorld?.weatherCovers ?? []), ...landmarks.weatherCovers, ...busStops.covers]);
   const forestCanopy = terrainTiles && createForestCanopy(scene, forest?.cells, treeSeasonsEnabled);
   if (forestCanopy) forestCanopy.group.visible = graphics.vegetation;
   if (signalHardwareResult.status === 'rejected') console.warn('[signals] using generated roadside placements:', signalHardwareResult.reason);
@@ -332,8 +339,9 @@ async function initApp() {
       clearance: landmarks.treeClearance },
     signalHardwareResult.value, importedDetail?.gantries, landmarks.forecourtLights);
   const { treeField } = streetDetails;
+  const posters = mappedLamps && buildEdePosters(scene, streetDetails.signSupports);
+  const decorations = buildEdeSeasonalDecorations(scene, mappedLamps);
   treeField.group.visible = graphics.vegetation;
-  if (busSchedule) buildEdeBusStops(scene, busSchedule.variants);
   if (importedDetail) allColliders.push(...importedDetail.colliders);
   markInit('streetDetails');
   await showLoadingStage('Creating traffic and pedestrian routes...');
@@ -363,7 +371,7 @@ async function initApp() {
     {enabled:trafficPilot,streetFeatures,railStop,profile:profiling,laneFits:laneFitResult.value,
       bikeParking: enabled('bikeParking') && detailData?.features, bikeRackGround});
   if (parkingResult.status==='rejected') console.warn('[parking] inventory unavailable:', parkingResult.reason);
-  watchEdeTraffic(roadTraffic);
+  watchEdeTraffic(roadTraffic, query.get('trafficApi') || container.dataset.trafficEndpoint);
   markInit('traffic');
   const highwayTraffic = createHighwayTraffic(scene, cityGrid.highwayLanes);
   const trafficGroups = [trafficSystem.group, highwayTraffic.group, trainSystem?.group].filter(Boolean);
@@ -452,7 +460,8 @@ async function initApp() {
   // (scene-culling.js)
   await showLoadingStage('Preparing scene visibility and shadows...');
   const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'EdeGradeWorld', 'Ede BGT structures', 'Ede sports fields',
-    'EdeLandmarks', 'Ede Lunteren platforms', 'EdeBoundaryContext', 'RoadMarkings', 'EdeStreetFeatures', 'EdeImportedDetail', 'Ede Water Works']
+    'EdeLandmarks', 'Ede Lunteren platforms', 'EdeBoundaryContext', 'RoadMarkings', 'EdeStreetFeatures', 'EdeImportedDetail',
+    'EdeBusStops', 'Ede Water Works']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
   setupSceneCulling(scene, cullingRoots, graphics.shadows ? lightingSystem.sunLight.shadow : null);
@@ -528,27 +537,39 @@ async function initApp() {
   const modeButtons = document.querySelectorAll('[data-mode]');
   const modes = Array.from(modeButtons, (button) => button.dataset.mode);
   const cameraButtons = document.querySelectorAll('[data-camera]');
-  const timeButtons = document.querySelectorAll('[data-time]');
-  const treeSeasonButtons = document.querySelectorAll('[data-tree-season]');
   const treeQualityButtons = document.querySelectorAll('[data-tree-quality]');
+  const environmentButtons = document.querySelectorAll('[data-environment]');
+  const environmentLabel = document.getElementById('environment-label');
+  const presetControls = document.getElementById('environment-presets');
+  const liveInfo = document.getElementById('environment-live-info');
+  const presetTime = document.getElementById('environment-time');
+  const presetSeason = document.getElementById('environment-season');
+  const presetWeather = document.getElementById('environment-weather');
+  const snowOption = presetWeather.querySelector('[value="snow"]');
+  presetSeason.value = initialTreeSeason;
   const liveClock = document.getElementById('time-live-clock');
+  const liveDate = document.getElementById('environment-live-date');
+  const localDate = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Amsterdam', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const presetClockMinutes = { golden: 17 * 60 + 30, midday: 12 * 60, twilight: 20 * 60 + 30, midnight: 0 };
+  let environmentMode;
   let liveTimeTimer;
-  const weatherButton = document.getElementById('btn-live-weather');
-  const weatherInfo = document.getElementById('live-weather-info');
+  let stopWaterLevels;
+  const waterStatus = document.getElementById('live-water-status');
   const weatherStatus = document.getElementById('live-weather-status');
   const weatherClock = document.getElementById('live-weather-time');
   const liveWeather = createLiveWeather({
-    onChange({ enabled, status, current }) {
-      weatherButton.setAttribute('aria-pressed', String(enabled));
-      weatherInfo.hidden = !enabled;
+    onChange({ status, current }) {
+      if (status !== 'off') setEdeSportsIceCover(status === 'fresh' || status === 'stale' ? (current?.rinkIce ?? 0) : 0);
       weatherClock.hidden = !current;
       weatherClock.textContent = current ? formatWeatherTime(current.observedAt) : '';
       if (current) weatherClock.dateTime = new Date(current.observedAt).toISOString();
       else weatherClock.removeAttribute('datetime');
 
       if (status === 'loading') weatherStatus.textContent = 'Loading weather…';
-      else if (status === 'unavailable') weatherStatus.textContent = 'Weather unavailable · using preset';
-      else if (status === 'expired') weatherStatus.textContent = 'Weather expired · using preset';
+      else if (status === 'unavailable') weatherStatus.textContent = 'Weather unavailable · using lighting default';
+      else if (status === 'expired') weatherStatus.textContent = 'Weather expired · using lighting default';
       else if (current) {
         const wind = `Wind ${Math.round(current.windSpeed)} km/h at 10 m`;
         const hub = current.turbineWind ? ` · Maanderbroek hubs ${Math.round(current.turbineWind.windSpeed)} km/h` : '';
@@ -556,7 +577,6 @@ async function initApp() {
       } else weatherStatus.textContent = '';
     }
   });
-  weatherButton.addEventListener('click', () => liveWeather.setEnabled(!liveWeather.state.enabled));
   const teleportButtons = document.querySelectorAll('[data-teleport]');
   const lunterenButton = document.getElementById('tp-lunteren-centrum');
   if (lunterenButton) lunterenButton.hidden = !TELEPORT_LOCATIONS['lunteren-centrum'];
@@ -670,35 +690,85 @@ async function initApp() {
     const now = new Date();
     const { from, to, weight } = lightingSystem.applyLive(now);
     colorGrade.applyBlend(from, to, weight);
-    liveClock.textContent = formatEdeTime(now);
+    if (treeSeasonsEnabled) setTreeSeason('today', now);
+    decorations.update(localClock(now.getTime() / 1000).date);
+    const time = formatEdeTime(now);
+    const [hour, minute] = time.split(':').map(Number);
+    landmarks.setClockMinutes(hour * 60 + minute);
+    liveClock.textContent = time;
     liveClock.dateTime = now.toISOString();
+    liveDate.textContent = localDate.format(now);
+    liveDate.dateTime = liveClock.dateTime;
     if (!document.hidden) {
       liveTimeTimer = setTimeout(refreshLiveTime, 60000 - Date.now() % 60000);
     }
   }
 
-  function selectTime(timeId) {
+  function applyPresetTime() {
+    lightingSystem.applyPreset(presetTime.value);
+    colorGrade.applyPreset(lightingSystem.activePresetId);
+    landmarks.setClockMinutes(presetClockMinutes[lightingSystem.activePresetId]);
+  }
+
+  function applyPresetSeason() {
+    if (treeSeasonsEnabled) setTreeSeason(presetSeason.value);
+    decorations.update(undefined, presetSeason.value);
+    setEdeSportsIceCover(presetRinkIce(presetSeason.value));
+    snowOption.disabled = snowOption.hidden = presetSeason.value !== 'winter';
+    if (snowOption.disabled && presetWeather.value === 'snow') presetWeather.value = 'default';
+    liveWeather.setPreset(presetWeather.value);
+  }
+
+  function updateWaterLevels(levels) {
+    cityGrid.setWaterLevels(levels);
+    const liveCount = levels.filter(level => level.publishedAt !== null).length;
+    waterStatus.textContent = liveCount ? `Frankeneng water · ${liveCount}/${levels.length} gauges live`
+      : 'Frankeneng water · reference levels';
+  }
+
+  function selectEnvironment(mode) {
+    if (mode === environmentMode) return;
+    environmentMode = mode;
     clearTimeout(liveTimeTimer);
-    const live = timeId === 'live';
+    const live = mode === 'live';
+    setPressed(environmentButtons, 'environment', mode);
+    presetControls.hidden = live;
+    liveInfo.hidden = !live;
+    environmentLabel.textContent = live ? 'Live' : 'Environment';
     liveClock.hidden = !live;
+    liveWeather.setEnabled(live);
     if (live) {
       refreshLiveTime();
+      waterStatus.hidden = cityGrid.waterLevels.length === 0;
+      if (!waterStatus.hidden && !fixedStep) stopWaterLevels = watchFrankenengLevels(updateWaterLevels);
     } else {
       liveClock.textContent = '';
-      lightingSystem.applyPreset(timeId);
-      colorGrade.applyPreset(lightingSystem.activePresetId);
+      liveClock.removeAttribute('datetime');
+      stopWaterLevels?.();
+      stopWaterLevels = undefined;
+      if (cityGrid.waterLevels.length) updateWaterLevels(resolveFrankenengLevels());
+      applyPresetTime();
+      applyPresetSeason();
     }
-    timeButtons.forEach((btn) => {
-      const active = btn.getAttribute('data-time') === timeId;
-      btn.classList.toggle('active', active);
-      btn.setAttribute('aria-pressed', String(active));
-    });
+  }
+
+  function selectTime(timeId) {
+    if (timeId === 'live') return selectEnvironment('live');
+    presetTime.value = Object.hasOwn(presetClockMinutes, timeId) ? timeId : 'golden';
+    if (environmentMode === 'preset') applyPresetTime();
+    else selectEnvironment('preset');
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (!lightingSystem.live) return;
+    if (environmentMode !== 'live') return;
     clearTimeout(liveTimeTimer);
     if (!document.hidden) refreshLiveTime();
+  });
+  window.addEventListener('pagehide', event => {
+    if (event.persisted) return;
+    clearTimeout(liveTimeTimer);
+    liveWeather.setEnabled(false);
+    stopWaterLevels?.();
   });
 
   // Popovers (native [popover]: light dismiss & Esc for free) open against the control that toggles them: data-anchor
@@ -764,17 +834,17 @@ async function initApp() {
     setPressed(treeQualityButtons, 'treeQuality', quality);
   }
   function selectTreeSeason(season) {
-    if (!treeSeasonsEnabled) return;
-    setTreeSeason(season, dateNow());
-    setPressed(treeSeasonButtons, 'treeSeason', getTreeSeason());
+    if (season === 'today') return selectEnvironment('live');
+    if (TREE_SEASONS[season]?.day == null) return;
+    presetSeason.value = season;
+    if (environmentMode === 'preset') applyPresetSeason();
+    else selectEnvironment('preset');
   }
-  document.getElementById('btn-tree-seasons').hidden = !treeSeasonsEnabled;
   setPressed(treeQualityButtons, 'treeQuality', treeQuality);
-  if (treeSeasonsEnabled) selectTreeSeason(initialTreeSeason);
-  for (const button of treeSeasonButtons) button.addEventListener('click', () => {
-    selectTreeSeason(button.dataset.treeSeason);
-    closePopovers();
-  });
+  for (const button of environmentButtons) button.addEventListener('click', () => selectEnvironment(button.dataset.environment));
+  presetTime.addEventListener('change', () => selectTime(presetTime.value));
+  presetSeason.addEventListener('change', () => selectTreeSeason(presetSeason.value));
+  presetWeather.addEventListener('change', () => liveWeather.setPreset(presetWeather.value));
   for (const button of treeQualityButtons) button.addEventListener('click', () => {
     selectTreeQuality(button.dataset.treeQuality);
     closePopovers();
@@ -797,13 +867,6 @@ async function initApp() {
   const camNextBtn = document.getElementById('cam-next');
   if (camPrevBtn) camPrevBtn.addEventListener('click', () => cycleCamera(-1));
   if (camNextBtn) camNextBtn.addEventListener('click', () => cycleCamera(1));
-
-  timeButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      selectTime(btn.getAttribute('data-time'));
-      closePopovers();
-    });
-  });
 
   // A mouse click mustn't leave the focus on a HUD button, or Space (jump / ascend) and Enter would press it again
   document.addEventListener('click', (e) => {
@@ -1006,6 +1069,8 @@ async function initApp() {
   // Initialize the UI and chase camera around the restored player, or the default taxi on a first visit.
   selectMode(controllerManager.activeMode);
   selectCamera('chase', true);
+  posters?.updateView(cameraSystem.camera.position, performance.now());
+  decorations.updateView(cameraSystem.camera.position);
   selectTime('golden');
   // the web fonts change the buttons' widths once they arrive
   if (document.fonts) document.fonts.ready.then(placeModeIndicator);
@@ -1089,16 +1154,20 @@ async function initApp() {
     for (const o of culled) o.frustumCulled = true;
   }
 
-  const restoreTreeWarmup = treeField.prepareWarmup();
-  const aerialShell = cityBlocks.group.children.find(object => object.userData.aerialBuildingProxy);
-  if (aerialShell) aerialShell.visible = true;
-  try {
-    await precompileShaders();
-  } finally {
-    if (aerialShell) aerialShell.visible = false;
-    restoreTreeWarmup();
+  // An unculled map-wide first frame takes too much memory on Safari's WebGPU backend.
+  const warmWholeScene = navigator.vendor !== 'Apple Computer, Inc.' || !renderer.backend.isWebGPUBackend;
+  if (warmWholeScene) {
+    const restoreTreeWarmup = treeField.prepareWarmup();
+    const aerialShell = cityBlocks.group.children.find(object => object.userData.aerialBuildingProxy);
+    if (aerialShell) aerialShell.visible = true;
+    try {
+      await precompileShaders();
+    } finally {
+      if (aerialShell) aerialShell.visible = false;
+      restoreTreeWarmup();
+    }
+    markInit('compile');
   }
-  markInit('compile');
   await showLoadingStage('Preparing shadows and the first frame...');
 
   // 6. Animation Loop
@@ -1108,7 +1177,6 @@ async function initApp() {
   let frameCount = 0;
   let fpsTimer = 0;
   let nextPlayerSave = 0;
-  let nextSeasonRefresh = 0;
   let warmedUp = false; // see the first frame below
 
   if (elFps) elFps.textContent = '60';
@@ -1127,6 +1195,7 @@ async function initApp() {
     laneDebug?.update(cameraSystem.camera.position);
     terrainTiles?.update(cameraSystem.camera, renderer.domElement.height);
     bgtWorld?.updateMastLod(cameraSystem.camera, renderer.domElement.height);
+    if (warmedUp) landmarks.updateMastLod(cameraSystem.camera, renderer.domElement.height, lightingSystem.uNightFactor.value);
     profiler?.stage('Player, camera and terrain');
     if (trafficUpdates) {
       trafficClock += dt;
@@ -1147,10 +1216,6 @@ async function initApp() {
     }
     cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     profiler?.stage('Buildings, façades and murals');
-    if (treeSeasonsEnabled && now >= nextSeasonRefresh && !document.hidden) {
-      refreshTreeSeason(dateNow());
-      nextSeasonRefresh = now + 60000;
-    }
     if (graphics.vegetation) {
       const camera = cameraSystem.camera;
       forestCanopy?.update(camera, treeField);
@@ -1167,11 +1232,14 @@ async function initApp() {
     }
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
+    posters?.updateView(cameraSystem.camera.position, now);
+    decorations.updateView(cameraSystem.camera.position);
     if (warmedUp) parcelTiles?.update(cameraSystem.camera.position, now);
     if (parcelTiles) profiler?.stage('Parcel tiles');
     const weatherEffects = liveWeather.update(dt);
     const windReading = liveWeather.windReading;
     const windDt = fixedStep ? dt : THREE.MathUtils.clamp(rawDt, 0, 0.25);
+    updateSceneWind(windDt, weatherEffects.windX, weatherEffects.windZ);
     landmarks.updateWind(windDt, windReading);
     kiteFlyers.update(windDt, cameraSystem.camera.position, windReading);
     lightingSystem.update(cameraSystem.currentPos, weatherEffects);
@@ -1181,14 +1249,16 @@ async function initApp() {
     mapSystem.update();
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
     profiler?.stage('Map and audio');
-    if (warmedUp) expansionCulling?.update(cameraSystem.camera);
-    if (warmedUp) updateSceneCulling(cameraSystem.camera.position); // the warm-up frame draws every chunk
+    if (warmedUp || !warmWholeScene) {
+      expansionCulling?.update(cameraSystem.camera);
+      updateSceneCulling(cameraSystem.camera.position);
+    }
     // Traffic collisions can move the player after controller updates; finalize moving hierarchies here.
     for (const root of dynamicRoots) root.updateMatrixWorld();
     profiler?.stage('Visibility and transforms');
 
     // Render frame via TSL RenderPipeline (SSR + Bloom)
-    if (!warmedUp) {
+    if (!warmedUp && warmWholeScene) {
       // First frame = pipeline warm-up behind the loading screen, for what precompileShaders() can't reach (the shadow
       // map passes): with frustum culling off, every visible material's pipelines compile now instead of stalling the
       // first time the camera turns towards it (one chunk / shadow stand-in per shared pipeline is enough)
@@ -1213,7 +1283,10 @@ async function initApp() {
       markInit('warmup');
     }
     // Compile both landmark meshes behind the loader, then choose the first visible LOD.
-    if (!warmedUp) landmarks.update(cameraSystem.camera.position);
+    if (!warmedUp) {
+      landmarks.update(cameraSystem.camera.position);
+      landmarks.updateMastLod(cameraSystem.camera, renderer.domElement.height, lightingSystem.uNightFactor.value);
+    }
     renderPipeline.render();
     profiler?.stage('Render submission');
     profiler?.endFrame();
@@ -1252,6 +1325,7 @@ async function initApp() {
             canopyCells: loadedTrees?.canopyDensity?.size ?? 0,
           },
           get treeSeason() { return treeSeasonsEnabled ? getTreeSeason() : 'off'; },
+          get environment() { return environmentMode; },
           get weather() { return liveWeather.state; }, streetFeatures, importedDetail, parcelTiles: parcelTiles?.stats, murals: murals.statistics,
           get waterLevels() { return cityGrid.waterLevels; },
           waterWorks: waterWorks?.userData.counts,
@@ -1268,7 +1342,6 @@ async function initApp() {
         };
         initTimings = null;
         if (loadingOverlay) loadingOverlay.classList.add('hidden');
-        if (!fixedStep && cityGrid.waterLevels.length) watchFrankenengLevels(cityGrid.setWaterLevels);
         audioSystem.ready = true;
         setLoadingProgress(1);
       });
@@ -1302,15 +1375,3 @@ async function initApp() {
     }
   });
 }
-
-initApp().catch((error) => {
-  console.error(error);
-  const status = document.getElementById('loading-status');
-  if (status) status.textContent = 'Ede couldn’t open this time. Please try again.';
-  document.getElementById('loading-overlay')?.classList.add('has-error');
-  const retry = document.getElementById('loading-retry');
-  if (retry) {
-    retry.hidden = false;
-    retry.addEventListener('click', () => window.location.reload());
-  }
-});

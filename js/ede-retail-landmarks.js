@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { sampleRoofColor } from './aerial-colors.js';
 import { terrainHeightAt } from './terrain.js';
+import { edeAdMaterial } from './ede-advertising.js';
 import {
   CivicBatch, along, offsetEdge, facePanel, wallExtent, wallColliders, makeGroup, civicSigns, polygonNormal,
 } from './ede-civic-landmarks.js';
@@ -719,11 +720,12 @@ export function createPatheEde() {
   const [c, d] = offsetEdge(along(a, b, 0.34), along(a, b, 0.68), north, 0.065);
   const signs = [{ text: 'Pathé', a: c, b: d, lo: floor + 5.30, hi: floor + 6.72,
     color: '#333737', textColor: '#f1b828' }];
+  let campaignPanel;
   // The A12-facing projection boxes carry illuminated programme panels.
-  for (const [x0, z0, x1, z1, lo, hi, tint] of [
+  for (const [x0, z0, x1, z1, lo, hi, tint, campaign] of [
     [-1668.16, 3396.33, -1654.25, 3397.36, -2.06, 0.79, '#465659'],
     [-1648.65, 3397.59, -1637.35, 3397.89, -1.86, 0.82, '#3a4754'],
-    [-1617.03, 3397.76, -1589.03, 3395.39, -2.07, 0.82, '#514444'],
+    [-1617.03, 3397.76, -1589.03, 3395.39, -2.07, 0.82, '#514444', true],
     [-1564.07, 3393.97, -1516.27, 3379.85, -2.01, 0.65, '#3b4f53'],
     [-1516.81, 3378.06, -1490.69, 3368.12, -0.71, 2.53, '#354451'],
   ]) {
@@ -733,11 +735,20 @@ export function createPatheEde() {
     const clear = Math.min(0.35, 6.20 / width);
     facePanel(batch, p, q, n, 0.5 - clear, 0.5 + clear, lo, hi, 0x393533, 0.053);
     const [start, end] = offsetEdge(along(p, q, 0.52 - clear), along(p, q, 0.48 + clear), n, 0.077);
-    signs.push({ text: 'Pathé', a: end, b: start, lo: lo + 0.08, hi: hi - 0.08, color: tint, textColor: '#efc851' });
+    if (campaign && typeof document !== 'undefined') {
+      const imageWidth = Math.hypot(end.x - start.x, end.z - start.z);
+      campaignPanel = new THREE.Mesh(new THREE.PlaneGeometry(imageWidth, hi - lo - 0.16), edeAdMaterial('banner'));
+      campaignPanel.name = 'CineMec A12 campaign panel';
+      campaignPanel.position.set((start.x + end.x) / 2, (lo + hi) / 2, (start.z + end.z) / 2);
+      campaignPanel.rotation.y = Math.atan2(n.x, n.z);
+    } else {
+      signs.push({ text: 'Pathé', a: end, b: start, lo: lo + 0.08, hi: hi - 0.08, color: tint, textColor: '#efc851' });
+    }
   }
   const group = makeGroup('Pathé Ede', batch, colliders);
   const sign = civicSigns(signs, { wide: true });
   if (sign) group.add(sign);
+  if (campaignPanel) group.add(campaignPanel);
   return group;
 }
 

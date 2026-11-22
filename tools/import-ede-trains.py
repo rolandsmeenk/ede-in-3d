@@ -40,7 +40,7 @@ ROUTE_STATIONS = {
     'main': ('ut', 'utvr', 'bnk', 'db', 'mrn', 'klp', 'ed', 'wf', 'otb', 'ah'),
     'rs34': ('bnn', 'bnc', 'bnz', 'ltn', 'edc', 'ed'),
 }
-LOCAL_STATIONS = {'ed', 'edc'}
+LOCAL_STATIONS = {'klp', 'ed', 'edc', 'ltn'}
 ANCHORS_PER_SIDE = 2
 
 

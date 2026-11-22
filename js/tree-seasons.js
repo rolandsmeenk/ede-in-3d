@@ -4,8 +4,7 @@ import { floor, uniform, uniformArray } from 'three/tsl';
 export const TREE_SEASONS = Object.freeze({
   today: { label: 'Today', day: null },
   spring: { label: 'Spring', day: 117 },
-  summer: { label: 'Summer', day: 195 },
-  'heather-bloom': { label: 'Heather bloom', day: 239 },
+  summer: { label: 'Summer', day: 239 },
   autumn: { label: 'Autumn', day: 298 },
   winter: { label: 'Winter', day: 14 }
 });
@@ -28,19 +27,39 @@ const civilDate = new Intl.DateTimeFormat('en-GB', {
   year: 'numeric', month: 'numeric', day: 'numeric'
 });
 
-export function amsterdamDayOfYear(date) {
+function amsterdamCalendarDay(date) {
   const parts = civilDate.formatToParts(date);
   const day = Number(parts.find(p => p.type === 'day').value);
   const month = Number(parts.find(p => p.type === 'month').value);
   const year = Number(parts.find(p => p.type === 'year').value);
   // Midnight in the two UTC dates only measures calendar-day distance, including DST and leap days.
-  return (Date.UTC(year, month - 1, day) - Date.UTC(year, 0, 1)) / 86400000;
+  return { year, month, dayOfYear: (Date.UTC(year, month - 1, day) - Date.UTC(year, 0, 1)) / 86400000 };
+}
+
+export function amsterdamDayOfYear(date) {
+  return amsterdamCalendarDay(date).dayOfYear;
+}
+
+export function seasonPresetFor(date) {
+  const { month } = amsterdamCalendarDay(date);
+  return ['winter', 'spring', 'summer', 'autumn'][Math.floor(month / 3) % 4];
 }
 
 const smoothStep = (a, b, day) => {
   const t = Math.min(1, Math.max(0, (day - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };
+
+// The sheepfold mesh shares this single fleece morph weight with the season clock.
+export const sheepFleeceInfluences = [0];
+
+function sheepFleeceAt(day, year) {
+  // Edese Schaapskudden shears on the second Saturday of June.
+  const june8 = new Date(Date.UTC(year, 5, 8));
+  const shearingDay = (june8.getTime() - Date.UTC(year, 0, 1)) / 86400000 + 6 - june8.getUTCDay();
+  // Keep the shorn silhouette for six weeks, then grow a full coat by late November.
+  return day < shearingDay ? 1 : smoothStep(shearingDay + 42, shearingDay + 168, day);
+}
 
 // Typical local Calluna season. The shoulders fade in and out around mid-August to mid-September.
 export const heatherBloom = uniform(0);
@@ -71,7 +90,9 @@ export function getTreeSeason() {
 
 export function setTreeSeason(id, now = new Date()) {
   if (Object.hasOwn(TREE_SEASONS, id)) mode = id;
-  const day = TREE_SEASONS[mode].day ?? amsterdamDayOfYear(now);
+  const { year, dayOfYear } = amsterdamCalendarDay(now);
+  const day = TREE_SEASONS[mode].day ?? dayOfYear;
+  sheepFleeceInfluences[0] = sheepFleeceAt(day, year);
   if (day === selectedDay) return day;
   selectedDay = day;
   heatherBloom.value = heatherBloomAt(day);

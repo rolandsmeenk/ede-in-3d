@@ -7,6 +7,7 @@ import { terrainHeightAt } from './terrain.js';
 import { ENKA_SURVEY, OUDE_KERK_SURVEY } from './ede-heritage-survey.js';
 import { createWindVane } from './ede-wind-props.js';
 import { createMemorialPlaque } from './ede-memorial-plaque.js';
+import { addClockDetails, clockFace } from './ede-clock-model.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const BRICK = 0x765848;
@@ -272,7 +273,7 @@ export function createEnkaWesthal(footprints) {
 }
 
 export function createOudeKerk() {
-  const group = new THREE.Group(), batch = buildMesh();
+  const group = new THREE.Group(), batch = buildMesh(), clocks = [];
   addSurvey(batch, OUDE_KERK_SURVEY, (roof, face) => {
     if (roof) return face[0].y > 29 ? 0x76695d : 0x62534e;
     if (face.every(p => p.x < -14.8) && Math.max(...face.map(p => p.y)) > 9) return 0x9b8873;
@@ -307,17 +308,7 @@ export function createOudeKerk() {
     const clock = width / 2, clockY = 24.15;
     wall.rectangle(clock, clockY - 1.035, 2.08, 2.08, 0xe0ceab, 0.16);
     wall.rectangle(clock, clockY - 0.94, 1.87, 1.87, 0x354554, 0.18);
-    for (let j = 0; j < 12; j++) {
-      const angle = Math.PI * j / 6, dx = Math.sin(angle), dy = Math.cos(angle);
-      wall.panel([[clock + 0.60*dx - 0.065*dy, clockY + 0.60*dy + 0.065*dx],
-        [clock + 0.84*dx - 0.084*dy, clockY + 0.84*dy + 0.084*dx],
-        [clock + 0.84*dx + 0.084*dy, clockY + 0.84*dy - 0.084*dx],
-        [clock + 0.60*dx + 0.065*dy, clockY + 0.60*dy - 0.065*dx]], 0xf2e3b7, 0.20);
-    }
-    for (const [dx, dy] of [[-0.44,0.52],[0.32,-0.31]]) {
-      wall.panel([[clock - 0.05,clockY - 0.04], [clock + dx,clockY + dy],
-        [clock + dx + 0.09,clockY + dy - 0.07], [clock + 0.05,clockY + 0.05]], 0xf1dfae, 0.215);
-    }
+    clocks.push(clockFace((u, y, depth) => wall.point(clock + u, clockY + y, 0.217 + depth), 0.92, 0xf1dfae, 0xf2e3b7));
   }
 
   // The BAG crown is flat. The native 0.5 m DSM reaches 69.58 m NAP on the slate spire.
@@ -363,5 +354,6 @@ export function createOudeKerk() {
   }
 
   group.add(batch.mesh());
+  addClockDetails(group, clocks);
   return group;
 }

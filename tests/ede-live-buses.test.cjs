@@ -33,6 +33,10 @@ feed = decode_ede_bus_feed(body, network)
 assert feed == {'timestamp': 1795043366, 'vehicles': [{'tripId': 'valid', 'x': 0.0, 'z': 0.0,
     'serviceDate': '2026-11-18', 'timestamp': 1795043352, 'stopSequence': 7, 'status': 2,
     'stopId': 'platform', 'bearing': 90.0, 'speed': 11.0}]}, feed
+municipality = [[[0, -1000, 1000, -1000, 1000, 1000, 0, 1000], [400, -50, 600, -50, 600, 50, 400, 50]]]
+border_feed = header + entity(b'valid', lon=4.99) + entity(b'valid', lon=5.005) + entity(b'valid', lon=5.01) + entity(b'valid', lon=5.02)
+vehicles = decode_ede_bus_feed(border_feed, (*network, municipality))['vehicles']
+assert [row['x'] for row in vehicles] == [340.0, 680.0], vehicles
 try:
     decode_ede_bus_feed(body[:-1], network)
 except ValueError:

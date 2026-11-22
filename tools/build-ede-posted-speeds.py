@@ -15,18 +15,19 @@ from ede_traffic_geometry import RoadGraph, Segment, SegmentIndex, load_graph, n
 ALLOWED_SPEEDS = {5, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 130}
 
 
-def read_segments(path, as_of):
+def read_segments(path, as_of, bounds):
     with sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True) as connection:
         srs_id, crs = geopackage_crs(connection, 'Snelheden')
         if crs.to_epsg() != 28992:
             raise ValueError('WKD Snelheden spatial index must be in RD New')
         # The Ede map plus buffer in metres RD New. Geometry is already clipped to VAN/NAAR.
+        xmin, ymin, xmax, ymax = bounds
         rows = connection.execute('''
             SELECT geom, stt_naam, wegnummer, maxshd, begintijd, eindtijd, maxshd_alt, kenm_richt, dat_maxshd
             FROM rtree_Snelheden_geom AS r JOIN Snelheden AS s ON s.id = r.id
-            WHERE r.maxx >= 168000 AND r.minx <= 178000 AND r.maxy >= 446000 AND r.miny <= 454000
+            WHERE r.maxx >= ? AND r.minx <= ? AND r.maxy >= ? AND r.miny <= ?
                 AND betrwbheid = '100%' AND maxshd NOT IN ('NVT', 'NOA')
-        ''')
+        ''', (xmin - 50, xmax + 50, ymin - 50, ymax + 50))
         for blob, name, number, speed, start, end, alternate, direction, valid_from in rows:
             if valid_from and valid_from[:10] > as_of:
                 continue
@@ -102,12 +103,22 @@ def main():
     parser.add_argument('geopackage', type=Path)
     parser.add_argument('release', type=date.fromisoformat)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--previous', type=Path, help='Preserve verified same-release profiles on unchanged directed edges')
     args = parser.parse_args()
     graph = rd_graph(load_graph())
-    edges = posted_speeds(graph, SegmentIndex(read_segments(args.geopackage, args.release.isoformat())))
+    release = args.release.isoformat()
+    edges = posted_speeds(graph, SegmentIndex(read_segments(args.geopackage, release, graph.bounds)))
     if not edges:
         raise ValueError('No posted speeds matched the Ede road network')
-    payload = {'version': 1, 'release': args.release.isoformat(), 'edges': edges}
+    if args.previous:
+        previous = json.loads(args.previous.read_bytes())
+        if previous['release'] != release:
+            parser.error('--previous needs a posted-speed asset from the same source release')
+        for edge in graph.edges:
+            key = edge.data['key']
+            if key in previous['edges']:
+                edges.setdefault(key, previous['edges'][key])
+    payload = {'version': 1, 'release': release, 'edges': edges}
     args.output.write_text(json.dumps(payload, separators=(',', ':'), sort_keys=True) + '\n')
     print(f'WKD matched {len(edges)} directed edges, including {sum(len(p) > 1 for p in edges.values())} scheduled limits')
 

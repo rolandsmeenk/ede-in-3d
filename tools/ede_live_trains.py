@@ -14,7 +14,8 @@ from urllib.request import Request, urlopen
 from xml.etree.ElementTree import ParseError, fromstring
 from zlib import error as ZlibError
 
-from ede_live_buses import ROOT, fields, local_map, string
+from ede_live_buses import ROOT, fields, inside_boundary, local_map, string
+from ede_map import MUNICIPAL_ASSET, read_packed
 from ede_scene import SceneAffine
 
 
@@ -69,8 +70,17 @@ def unpack_gzip(body, limit):
     return body
 
 
+@lru_cache(maxsize=1)
+def local_rail_map():
+    bounds, affine = local_map()
+    if (ROOT / MUNICIPAL_ASSET).exists():
+        municipal = read_packed(MUNICIPAL_ASSET)
+        return municipal['base']['bounds'], affine, municipal['boundary']
+    return bounds, affine, None
+
+
 def decode_ns_positions(body, now, map_reference=None):
-    bounds, affine = local_map() if map_reference is None else map_reference
+    bounds, affine, boundary = local_rail_map() if map_reference is None else (*map_reference, None)
     projection = SceneAffine(affine)
     min_x, min_z, max_x, max_z = bounds
     root = fromstring(unpack_gzip(body, GPS_MAX_BYTES))
@@ -108,9 +118,10 @@ def decode_ns_positions(body, now, map_reference=None):
             ((order, record) for order, record in units if record['timestamp'] >= latest - 8),
             key=lambda candidate: (candidate[0], -candidate[1]['timestamp']),
         )
-        positions[number] = record['timestamp'], (
-            record if min_x - 500 <= record['x'] <= max_x + 500 and min_z - 500 <= record['z'] <= max_z + 500 else None
-        )
+        x, z = record['x'], record['z']
+        in_area = inside_boundary(x, z, boundary) if boundary else (
+            min_x - 500 <= x <= max_x + 500 and min_z - 500 <= z <= max_z + 500)
+        positions[number] = record['timestamp'], record if in_area else None
     return positions
 
 

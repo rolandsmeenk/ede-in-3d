@@ -33,4 +33,4 @@ const records = [...busEdges].map((e) => ({
       connectorLengths: out.map((j, i) => j < 0 ? null : connector(e, i, to, j).len) };
   }),
 }));
-process.stdout.write(JSON.stringify({ bounds: EDE_DATA.meta.bounds, edges: records }));
+process.stdout.write(JSON.stringify({ bounds: EDE_DATA.meta.bounds, boundary: EDE_DATA.meta.playableBoundary, edges: records }));

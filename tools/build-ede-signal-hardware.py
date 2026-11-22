@@ -11,13 +11,14 @@ import math
 from pathlib import Path
 import struct
 from statistics import median
-from urllib.parse import urlencode, urljoin
+from urllib.parse import parse_qsl, urlencode, urljoin
 from urllib.request import urlopen
 
+from shapely import prepare
 from shapely.geometry import LineString, Point
 
 from ede_gis import Frame, SCENE_NAP_ORIGIN, source_crs
-from ede_map import ROOT, load_scene
+from ede_map import ROOT, load_playable_boundary, load_playable_scene
 from ede_motorway_infrastructure import points, project, read_json, segments, snap, write_json
 from ede_traffic_geometry import Segment, SegmentIndex
 
@@ -63,12 +64,19 @@ def fetch(directory, bounds, frame):
         while url:
             with urlopen(url, timeout=60) as response:
                 data = json.load(response)
-            if 'features' not in data or data.get('exceededTransferLimit'):
+            if 'features' not in data:
                 raise ValueError(f'Incomplete {key} survey: {data.get("error")}')
             if not metadata:
                 metadata = {k: data[k] for k in ('type', 'crs', 'spatialReference', 'timeStamp', 'hasZ') if k in data}
             records.extend(data['features'])
-            url = next((urljoin(url, link['href']) for link in data.get('links', ()) if link.get('rel') == 'next'), None)
+            if data.get('exceededTransferLimit'):
+                if not data['features']:
+                    raise ValueError(f'Empty page in {key} survey')
+                endpoint, _, query = url.partition('?')
+                query = [(name, value) for name, value in parse_qsl(query) if name != 'resultOffset']
+                url = f"{endpoint}?{urlencode([*query, ('resultOffset', len(records))])}"
+            else:
+                url = next((urljoin(url, link['href']) for link in data.get('links', ()) if link.get('rel') == 'next'), None)
         write_json(directory / f'{key}.json', {**metadata, 'features': records})
 
     jobs = []
@@ -77,7 +85,8 @@ def fetch(directory, bounds, frame):
         jobs.append((key, f'{BGT}?{urlencode(params)}'))
     for key, (layer, where) in SURVEY_TYPES.items():
         params = {'geometry': rd, 'geometryType': 'esriGeometryEnvelope', 'inSR': 28992, 'outSR': 28992,
-                  'where': where, 'returnZ': 'true', 'outFields': '*', 'f': 'json'}
+                  'where': where, 'returnZ': 'true', 'outFields': '*', 'orderByFields': 'objectid',
+                  'resultRecordCount': 1000, 'f': 'json'}
         jobs.append((key, f'{RWS}/{layer}/query?{urlencode(params)}'))
     directory.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
@@ -303,10 +312,11 @@ def add_aerial_signals(layouts, heads, supports, roads):
                               'source': f'{source}:{index}', 'mount': 'overhead', 'support': support})
 
 
-def bake(documents, scene, bounds, frame, day):
+def bake(documents, scene, boundary, frame, day):
+    prepare(boundary)
+
     def in_bounds(point):
-        x, z = point
-        return bounds[0] <= x <= bounds[2] and bounds[1] <= z <= bounds[3]
+        return boundary.covers(Point(point))
 
     poles = active_poles(documents['poles'], day, frame, in_bounds)
     portals = active_poles(documents['portals'], day, frame, in_bounds)
@@ -321,7 +331,7 @@ def bake(documents, scene, bounds, frame, day):
     for key in ('heads', 'supports'):
         if source_crs(documents[key]).to_epsg() != 28992 or not documents[key].get('hasZ'):
             raise ValueError(f'Expected an RD New {key} survey with NAP elevations')
-    arms = []
+    arms, outside_supports = [], set()
     for record in documents['supports']['features']:
         props = record['attributes']
         for path in record['geometry']['paths']:
@@ -329,13 +339,14 @@ def bake(documents, scene, bounds, frame, day):
                 continue
             xy = [frame.rd_to_scene(*p[:2]) for p in path]
             a, b = xy[0], xy[-1]
-            if not all(map(in_bounds, (a, b))):
+            line = LineString([a, b])
+            if not boundary.covers(line):
+                outside_supports.add(props['objectid'])
                 continue
-            length = math.dist(a, b)
+            length = line.length
             if not 3.5 <= length <= 52 or length < LineString(xy).length * .86:
                 continue
             axis = ((b[0] - a[0]) / length, (b[1] - a[1]) / length)
-            line = LineString([a, b])
             z = [p[2] for p in path if len(p) > 2 and observed_z(p[2])]
             arms.append((props, line, axis, z, []))
     surveyed_arms = {row[0]['objectid']: row for row in arms}
@@ -361,6 +372,9 @@ def bake(documents, scene, bounds, frame, day):
         directory_match = reviewed_heads.get(obj['objectid'])
         if directory_match:
             identity, approach = directory_match
+            if identity not in surveyed_arms and identity in outside_supports:
+                rejected['supportOutsideBounds'] += 1
+                continue
             anchor, _, segment, travel, score = reviewed_approach(searches, approach['anchor'], approach['wayId'])
             base = searches.nap(segment, point)
             if base is None or not 4.6 <= nap - base <= 8.5:
@@ -498,7 +512,10 @@ def bake(documents, scene, bounds, frame, day):
     hospital = [{'source': f'pdok:aerial:ede-vri-2:{direction}', 'kind': 'gantry', 'points': feet,
                  'approaches': [{'anchor': anchor, 'wayId': way, 'offsets': offsets}]}
                 for direction, anchor, way, feet, offsets in HOSPITAL_GANTRIES]
-    add_aerial_signals([*hospital, *reviewed['aerial']], heads, supports, searches)
+    aerial = [item for item in [*hospital, *reviewed['aerial']]
+              if boundary.covers(LineString(item['points']))
+              and all(in_bounds(approach['anchor']) for approach in item['approaches'])]
+    add_aerial_signals(aerial, heads, supports, searches)
     counts = {'bgtPoles': len(poles), 'bgtPortals': len(portals), 'heads1gis': len(documents['heads']['features']),
               'roadside': sum(h['mount'] == 'roadside' for h in heads),
               'overhead': sum(h['mount'] == 'overhead' for h in heads),
@@ -530,15 +547,12 @@ def main():
     parser.add_argument('--fetch', action='store_true')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-signal-hardware.json')
     args = parser.parse_args()
-    scene = load_scene(include_shorelines=False)
-    overlay = read_json(ROOT / 'assets/ede-corridors-v1.json.gz')
-    for key in ('roads', 'signals'):
-        scene[key].extend(overlay[key])
+    scene = load_playable_scene(include_shorelines=False)
     frame = Frame(scene['meta']['lonLatAffine'])
     if args.fetch:
-        fetch(args.snapshot, overlay['geographicBounds'], frame)
+        fetch(args.snapshot, scene['meta']['geographicBounds'], frame)
     documents = {key: read_json(args.snapshot / f'{key}.json') for key in BGT_TYPES | SURVEY_TYPES}
-    data = bake(documents, scene, overlay['bounds'], frame, args.date.isoformat())
+    data = bake(documents, scene, load_playable_boundary(), frame, args.date.isoformat())
     write_json(args.output, data)
     print(json.dumps(data['counts'], indent=2))
 

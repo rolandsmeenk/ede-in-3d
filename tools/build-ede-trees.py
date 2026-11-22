@@ -211,8 +211,10 @@ def pack(trees):
              t.species, t.sources, min(255, round(t.crown_width * 10)), t.season_group) for t in trees]
     tile_step = round(TILE / STEP)
     rows.sort(key=lambda row: (row[0] // tile_step, row[1] // tile_step, row))
-    record = struct.Struct('<hhHBBB')
-    data = bytearray(struct.pack('<4sI', b'EDT3' if expanded else b'EDT2' if has_crowns else b'EDT1', len(rows)))
+    wide = any(not (-32768 <= row[0] <= 32767 and -32768 <= row[1] <= 32767) for row in rows)
+    record = struct.Struct('<iiHBBB' if wide else '<hhHBBB')
+    version = b'EDT4' if wide else b'EDT3' if expanded else b'EDT2' if has_crowns else b'EDT1'
+    data = bytearray(struct.pack('<4sI', version, len(rows)))
     for *fields, crown, season_group in rows:
         data.extend(record.pack(*fields))
         sources = fields[-1]
@@ -226,18 +228,23 @@ def pack(trees):
 def unpack_baseline(path, frame):
     data = path.read_bytes()
     magic, count = struct.unpack_from('<4sI', data)
-    if magic not in {b'EDT1', b'EDT2'}:
-        raise ValueError('The expansion requires the original Ede inventory')
+    if magic not in {b'EDT1', b'EDT2', b'EDT3', b'EDT4'}:
+        raise ValueError('Unexpected Ede tree inventory format')
+    record = struct.Struct('<iiHBBB' if magic == b'EDT4' else '<hhHBBB')
+    expanded = magic in {b'EDT3', b'EDT4'}
     offset, sites = 8, []
     for _ in range(count):
-        x, z, height, diameter, species, sources = struct.unpack_from('<hhHBBB', data, offset)
-        offset += 9
+        x, z, height, diameter, species, sources = record.unpack_from(data, offset)
+        offset += record.size
         crown = 0
-        if magic == b'EDT2' and sources & SURVEYED:
+        if (expanded and sources & (SURVEYED | AHN)) or (magic == b'EDT2' and sources & SURVEYED):
             crown = data[offset] / 10
             offset += 1
+        season_group = data[offset] if sources & PHENOLOGY else 0
+        if sources & PHENOLOGY:
+            offset += 1
         world = x / 5, z / 5
-        sites.append(Tree(frame.scene_to_rd(*world), world, height / 10, diameter, species, sources, crown))
+        sites.append(Tree(frame.scene_to_rd(*world), world, height / 10, diameter, species, sources, crown, season_group))
     if offset != len(data):
         raise ValueError('Invalid baseline tree inventory size')
     return sites
@@ -305,6 +312,8 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path)
     parser.add_argument('--mor', type=Path, help='Public MOR WFS snapshot for an expanded bake')
     parser.add_argument('--roadside', type=Path, help='Gelderland road tree ArcGIS JSON snapshot')
+    parser.add_argument('--playable', action='store_true', help='Clip the combined inventory to expanded Gemeente Ede')
+    parser.add_argument('--preserve', type=Path, help='Retain existing reviewed and measured tree attributes at matching trunks')
     parser.add_argument('--baseline', type=Path, default=ROOT / 'assets/ede-trees.bin')
     parser.add_argument('--audit', type=Path, help='Write per-record match and placement decisions as JSON')
     parser.add_argument('--canopy', type=Path, help='Directory of native canopy, DSM and DTM audit tiles')
@@ -313,7 +322,7 @@ if __name__ == '__main__':
         if not args.roadside:
             parser.error('the MOR bake requires a Gelderland snapshot via --roadside')
         from ede_tree_expansion import expand
-        expand(args, Tree, unpack_baseline, pack, classify)
+        expand(args, Tree, unpack_baseline, pack, classify, read_geojson, unique, join)
     else:
         if not args.pdok or not args.municipal:
             parser.error('both baseline snapshots or --mor and --roadside are required')

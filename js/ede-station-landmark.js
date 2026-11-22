@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { getEdeGrade, gradeDeckAt, gradeSections, nearbyRailHeightAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { createMemorialPlaque } from './ede-memorial-plaque.js';
+import { addClockDetails, clockFace } from './ede-clock-model.js';
 
 const TIMBER = 0xc89356;
 const STEEL = 0x40464a;
@@ -211,7 +212,7 @@ export function createEdeStationLandmark() {
   const bottom = tower.map(p => point(p, 4.47));
   const centerTower = tower.reduce(([x, z], p) => [x + p[0] / 3, z + p[1] / 3], [0, 0]);
   const taper = (p, amount, y) => point([centerTower[0], centerTower[1]], y).lerp(p.clone().setY(y), amount);
-  const clockBottom = bottom.map(p => taper(p, 0.88, 23.8));
+  const clockBottom = bottom.map(p => taper(p, 0.88, 23.8)), clocks = [];
   const crown = bottom.map((p, i) => taper(p, 0.79, [33.55, 30.1, 31.65][i]));
   for (let i = 0; i < tower.length; i++) {
     const j = (i + 1) % tower.length;
@@ -230,15 +231,14 @@ export function createEdeStationLandmark() {
       const top = clockBottom[i].clone().lerp(clockBottom[j], t).addScaledVector(outward, 0.024);
       beam(foot, top, 0.024, 0.024, 0x525d63);
     }
-    const faceCenter = midpoint(origin, midpoint(crown[i], crown[j])).addScaledVector(outward, 0.065);
+    const crownCenter = midpoint(crown[i], crown[j]);
+    const faceCenter = midpoint(origin, crownCenter).addScaledVector(outward, 0.065);
+    const rise = crownCenter.sub(origin);
+    const vertical = rise.addScaledVector(across, -rise.dot(across)).normalize();
     const radius = width * 0.37;
-    const dial = (angle, r) => faceCenter.clone().addScaledVector(across, Math.sin(angle) * r).addScaledVector(up, Math.cos(angle) * r);
-    for (let hour = 0; hour < 12; hour++) {
-      const angle = hour * Math.PI / 6;
-      beam(dial(angle, radius * 0.83), dial(angle, radius), 0.056, 0.047, 0x22282d);
-    }
-    beam(dial(Math.PI * 0.38, 0.02), dial(Math.PI * 0.38, radius * 0.92), 0.073, 0.06, 0x22282d);
-    beam(dial(-Math.PI * 0.34, 0.02), dial(-Math.PI * 0.34, radius * 0.63), 0.101, 0.065, 0x22282d);
+    const onDial = (u, y, d = 0) => faceCenter.clone().addScaledVector(across, u)
+      .addScaledVector(vertical, y).addScaledVector(outward, d);
+    clocks.push(clockFace((u, y, d) => onDial(u, y, d + 0.035), radius * 1.08, 0x22282d));
   }
   triangle(...crown, ZINC);
   beam(point([173.4, 2109.7], -1.8), point([190, 2114.65], -1.8), 0.9, 1.5, 0x4d5356);
@@ -252,6 +252,7 @@ export function createEdeStationLandmark() {
   structure.castShadow = true;
   structure.receiveShadow = true;
   group.add(structure);
+  addClockDetails(group, clocks);
 
   const roofGlass = new THREE.BufferGeometry();
   roofGlass.setAttribute('position', new THREE.Float32BufferAttribute(skylights, 3));

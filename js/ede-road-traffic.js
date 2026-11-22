@@ -42,7 +42,7 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
   const byKey = new Map();
   const sourceRuns = new Map();
   const states = new WeakMap();
-  let observations = [], restrictions = [], busFeedHandler;
+  let observations = [], restrictions = [], busFeedHandler, emergencyFeedHandler;
   let timeOfDay = cityClock(now());
   let profile = demandProfile(timeOfDay);
   let lastRefresh = now();
@@ -151,6 +151,7 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
         Number.isFinite(r.startsAt) && Number.isFinite(r.expiresAt));
     }
     if (Array.isArray(snapshot.buses?.vehicles)) busFeedHandler?.(snapshot.buses);
+    if (Array.isArray(snapshot.emergency)) emergencyFeedHandler?.(snapshot.emergency);
     refresh();
     return true;
   }
@@ -158,6 +159,7 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
   return {
     bind, refresh, setSnapshot,
     onBusFeed(handler) { busFeedHandler = handler; },
+    onEmergencyFeed(handler) { emergencyFeedHandler = handler; },
     get profile() { return profile; },
     isClosed: edge => states.get(edge)?.closed === true,
     hasObservedFlow: edge => {
@@ -179,8 +181,14 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
   };
 }
 
-export function watchEdeTraffic(traffic) {
-  const url = new URL('../api/ede-traffic', import.meta.url);
+export function watchEdeTraffic(traffic, endpoint) {
+  let url = new URL('../api/ede-traffic', import.meta.url);
+  if (endpoint) {
+    try {
+      const remote = new URL(endpoint);
+      if (remote.protocol === 'https:' && !remote.username && !remote.password) url = remote;
+    } catch { /* Use the same-origin endpoint. */ }
+  }
   let next = 0, pending = false, unavailable = false;
   async function poll() {
     const now = Date.now();

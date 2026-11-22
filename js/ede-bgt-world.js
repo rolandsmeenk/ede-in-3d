@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { attribute, cameraPosition, cameraProjectionMatrix, cameraViewMatrix, color, fwidth, length, max, mix,
-  positionGeometry, screenSize, smoothstep, uniform, uv, varying, vec4 } from 'three/tsl';
+import { color, length, smoothstep, uniform, uv } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
+import { mastStrokeMesh } from './ede-mast-strokes.js';
 import { edeBounds, edePoints, edePolygonGeometry, EDE_RENDER_CELL } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
 import { createWindmillRig } from './ede-windmill.js';
@@ -16,6 +16,14 @@ const PALETTE = {
 const REPLACED_WALLS = new Set([
   'L0002.80e3a26ba49b4f55bcb97658316d4005', 'L0002.f11210899e044752ab4109bbccedc279',
 ]);
+const AUTHORED_PLATFORMS = new Set([
+  // Lunteren has surveyed platform slopes and ramp models.
+  'L0004.0971bf0fc3ca4d938b074c2793e4456e', 'L0004.4403f8468bde4df2bd96574e02e347b8',
+  // De Klomp has two authored slabs across these BGT sections.
+  'L0004.259ce80caac146b58d788438f3c4820d', 'L0004.990e57a3116d460581441bb3543ba347',
+  'L0004.ab7c81b3b4210f19e0530b29a8c02470', 'L0004.ef6e5e029d594e3cae6f8908baccb259',
+]);
+const MAANDERBROEK_HUB_HEIGHT = 99.5;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -75,56 +83,6 @@ function splitRing(ring) {
     }
   }
   return points;
-}
-
-function mastStrokeMesh(strokes, cutoff, night) {
-  // All distant masts share one draw. Expand each beam's screen footprint,
-  // then integrate its physical width instead of snapping it to pixel centres.
-  const geometry = new THREE.InstancedBufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute([
-    0, -1, 0, 1, -1, 0, 0, 1, 0,
-    0, 1, 0, 1, -1, 0, 1, 1, 0,
-  ], 3));
-  geometry.setAttribute('mastStart', new THREE.InstancedBufferAttribute(new Float32Array(strokes.start), 3));
-  geometry.setAttribute('mastEnd', new THREE.InstancedBufferAttribute(new Float32Array(strokes.end), 4));
-  geometry.setAttribute('mastCentre', new THREE.InstancedBufferAttribute(new Float32Array(strokes.centre), 3));
-  geometry.instanceCount = strokes.start.length / 3;
-  geometry.boundingBox = strokes.bounds.expandByScalar(10);
-  geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere());
-
-  const mat = new THREE.MeshBasicNodeMaterial({
-    transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true,
-  });
-  const start = attribute('mastStart', 'vec3'), endAndRadius = attribute('mastEnd', 'vec4');
-  const end = endAndRadius.xyz, radius = endAndRadius.w;
-  const centre = attribute('mastCentre', 'vec3');
-  const line = end.sub(start);
-  const beamLength = length(line);
-  const axis = line.div(beamLength);
-  const across = axis.cross(cameraPosition.sub(start.add(end).mul(0.5)));
-  const right = across.div(max(length(across), 0.00001));
-  const endpoint = mix(start, end, positionGeometry.x);
-  const viewDepth = cameraViewMatrix.mul(vec4(endpoint, 1.0)).z.negate();
-  const focal = cameraProjectionMatrix.element(1).element(1).mul(screenSize.y).mul(0.5);
-  const pixel = max(viewDepth, 0.1).div(max(focal, 1));
-  const offset = positionGeometry.y.mul(radius.add(pixel));
-  const cap = positionGeometry.x.mul(2).sub(1).mul(pixel);
-  const distant = cameraPosition.distance(centre).greaterThanEqual(cutoff);
-  mat.positionNode = distant.select(endpoint.add(right.mul(offset)).add(axis.mul(cap)), centre);
-
-  const lateral = varying(offset);
-  const along = varying(positionGeometry.x.mul(beamLength).add(cap));
-  const footprint = max(fwidth(lateral), 0.00001);
-  const edge = footprint.mul(0.5).sub(lateral);
-  const alpha = edge.add(radius).div(footprint).clamp().sub(edge.sub(radius).div(footprint).clamp());
-  const capDistance = max(along.negate(), along.sub(beamLength));
-  const endCoverage = capDistance.div(max(fwidth(along), 0.00001)).negate().add(0.5).clamp();
-  mat.colorNode = color(0x7d8180).mul(mix(1, 0.36, night));
-  mat.opacityNode = alpha.mul(endCoverage);
-  mat.mrtNode = transparentEffectMRT;
-  const mesh = new THREE.Mesh(geometry, mat);
-  mesh.name = 'Ede filtered mast lattice';
-  return mesh;
 }
 
 export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) {
@@ -252,7 +210,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     const positions = [];
     const lattice = (a, b, radius) => {
       beam('steel', a, b, radius, radius, positions);
-      mastStrokes.start.push(...a);
+      mastStrokes.start.push(...a, radius);
       mastStrokes.end.push(...b, radius);
       mastStrokes.centre.push(centre.x, centre.y, centre.z);
       mastStrokes.bounds.expandByPoint(strokeEndpoint.fromArray(a));
@@ -305,32 +263,35 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     }
   }
 
-  function turbine(rings, x, z) {
+  function turbine(rings, x, z, hubHeight = MAANDERBROEK_HUB_HEIGHT) {
     const ground = terrainHeightAt(x, z);
-    const hubHeight = 99.5;
+    const scale = hubHeight / MAANDERBROEK_HUB_HEIGHT;
     const hubY = ground + hubHeight;
     slab('footing', rings, () => ground + 0.32, () => ground - 0.25);
-    beam('turbine', [x, ground, z], [x, hubY, z], 2.35, 1.15);
-    column(x, z, ground + 0.32, hubY, 2.35);
+    beam('turbine', [x, ground, z], [x, hubY, z], 2.35 * scale, 1.15 * scale);
+    column(x, z, ground + 0.32, hubY, 2.35 * scale);
 
     const tower = new THREE.Group();
-    tower.name = 'A30 wind turbine';
+    tower.name = scale < 1 ? 'Small wind turbine' : 'A30 wind turbine';
     tower.position.set(x, ground, z);
+    tower.scale.setScalar(scale);
     group.add(tower);
-    const { cap, sails } = createWindmillRig(tower, hubHeight, 3.55, 0, { turbine: true });
+    const { cap, sails } = createWindmillRig(tower, MAANDERBROEK_HUB_HEIGHT, 3.55, 0, { turbine: true });
     cap.name = 'Wind turbine nacelle';
     sails.name = 'Wind turbine blades';
     turbineUpdates.push(cap.userData.updateWind);
-    const beacon = new THREE.Sprite(beaconMaterial);
-    beacon.name = 'Turbine obstruction beacon';
-    beacon.position.set(0, hubHeight + 1.9, -2.95);
-    beacon.scale.set(4.8, 4.8, 1);
-    beacon.visible = false;
-    cap.add(beacon);
-    turbineBeacons.push(beacon);
+    if (scale === 1) {
+      const beacon = new THREE.Sprite(beaconMaterial);
+      beacon.name = 'Turbine obstruction beacon';
+      beacon.position.set(0, MAANDERBROEK_HUB_HEIGHT + 1.9, -2.95);
+      beacon.scale.set(4.8, 4.8, 1);
+      beacon.visible = false;
+      cap.add(beacon);
+      turbineBeacons.push(beacon);
+    }
     const material = materialFor('turbine');
     const nacelle = new THREE.CylinderGeometry(1.42, 1.65, 6.6, 12)
-      .rotateX(Math.PI / 2).translate(0, hubHeight, 0);
+      .rotateX(Math.PI / 2).translate(0, MAANDERBROEK_HUB_HEIGHT, 0);
     const spinner = new THREE.SphereGeometry(1.05, 10, 6).scale(1, 1, 1.25);
     const positions = [];
     for (let blade = 0; blade < 3; blade++) {
@@ -365,7 +326,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
 
   for (const feature of structures) {
     const { kind, layer, ids, polygons } = feature;
-    if (ids.every(id => REPLACED_WALLS.has(id))) continue;
+    if (ids.every(id => REPLACED_WALLS.has(id) || AUTHORED_PLATFORMS.has(id))) continue;
     const rings = polygons.map(polygon => polygon.map(edePoints));
     if (kind === 'pylon') {
       tower(feature, rings);
@@ -423,7 +384,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
         const size = Math.min(maxX - minX, maxZ - minZ);
         slab(kind, form, () => ground + clamp(size * 0.59, 3.4, 7.5), belowGround);
       } else if (kind === 'turbine') {
-        turbine(form, x, z);
+        turbine(form, x, z, feature.hubHeight);
       } else {
         const height = maxX - minX > 25 || maxZ - minZ > 25 ? 5.8 : 4.3;
         const open = kind === 'shed';
@@ -460,7 +421,11 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     else firstMeshes.set(kind, mesh);
     group.add(mesh);
   }
-  if (mastDetails.length) group.add(mastStrokeMesh(mastStrokes, mastCutoff, mastNight));
+  if (mastDetails.length) {
+    const filtered = mastStrokeMesh(mastStrokes, mastCutoff, mastNight);
+    filtered.name = 'Ede filtered mast lattice';
+    group.add(filtered);
+  }
   group.userData = { counts, source: source.url, date: source.date };
   scene.add(group);
   return {

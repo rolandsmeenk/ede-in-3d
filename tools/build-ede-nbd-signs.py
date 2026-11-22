@@ -287,7 +287,8 @@ def bake(directory, survey, mounts, review, date, atlas, output):
                                            (x + graphic.width - .5) / sheet.width, 1 - (y + .5) / sheet.height)]
         features.append(row)
     encoded = BytesIO()
-    use_traffic_blue(sheet.quantize(colors=192)).save(encoded, format='PNG', optimize=True)
+    # WebKit's WebGPU upload can corrupt the colors of indexed PNGs.
+    use_traffic_blue(sheet.quantize(colors=192)).convert('RGB').save(encoded, format='PNG', optimize=True)
     atlas.write_bytes(encoded.getvalue())
     summary = {'locations': len(signs), 'withDestinations': sum(bool(row['destinations']) for row in signs.values()),
                'reviewed': len(review), 'rendered': len(features), 'mounts': dict(Counter('standalone' if r.get('support') else 'portal' for r in features)),

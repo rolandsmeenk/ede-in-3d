@@ -7,7 +7,7 @@ import re
 import struct
 from urllib.request import urlopen
 
-from ede_map import load_scene_metadata
+from ede_map import MUNICIPAL_ASSET, load_scene_metadata, read_packed
 from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,10 +75,27 @@ def local_network():
     _, projection = local_map()
     trips = {trip['id']: (variant['routeId'], variant['direction'])
              for variant in schedule['variants'] for trip in variant['trips']}
-    return trips, schedule['bounds'], projection
+    boundary = read_packed(MUNICIPAL_ASSET)['boundary'] if (ROOT / MUNICIPAL_ASSET).exists() else None
+    return trips, schedule['bounds'], projection, boundary
 
 
-def local_vehicle(data, trips, bounds, projection):
+def inside_boundary(x, z, polygons):
+    def side(ring):
+        inside = False
+        ax, az = ring[-2:]
+        for bx, bz in zip(ring[::2], ring[1::2]):
+            cross = (bx - ax) * (z - az) - (bz - az) * (x - ax)
+            if abs(cross) <= 1e-8 and min(ax, bx) <= x <= max(ax, bx) and min(az, bz) <= z <= max(az, bz):
+                return 0
+            if (az > z) != (bz > z) and ax + (bx - ax) * (z - az) / (bz - az) > x:
+                inside = not inside
+            ax, az = bx, bz
+        return 1 if inside else -1
+
+    return any(side(shell) >= 0 and all(side(hole) <= 0 for hole in holes) for shell, *holes in polygons)
+
+
+def local_vehicle(data, trips, bounds, projection, boundary=None):
     vehicle = dict(fields(data))
     if not isinstance(vehicle.get(1), memoryview) or not isinstance(vehicle.get(2), memoryview):
         return None
@@ -96,6 +113,8 @@ def local_vehicle(data, trips, bounds, projection):
     x, z = projection.lon_lat_to_scene(lon, lat)
     min_x, min_z, max_x, max_z = bounds
     if not (min_x - 100 <= x <= max_x + 100 and min_z - 100 <= z <= max_z + 100):
+        return None
+    if boundary is not None and not inside_boundary(x, z, boundary):
         return None
     result = {'tripId': trip_id, 'x': round(x, 1), 'z': round(z, 1)}
     date = string(trip.get(3))
@@ -117,7 +136,7 @@ def local_vehicle(data, trips, bounds, projection):
 
 
 def decode_ede_bus_feed(body, network=None):
-    trips, bounds, affine = network if network is not None else local_network()
+    trips, bounds, affine, *boundary = network if network is not None else local_network()
     projection = SceneAffine(affine)
     timestamp, vehicles = 0, []
     header_found = False
@@ -135,7 +154,7 @@ def decode_ede_bus_feed(body, network=None):
         elif number == 2 and isinstance(value, memoryview):
             entity = dict(fields(value))
             if not entity.get(2) and isinstance(entity.get(4), memoryview):
-                vehicle = local_vehicle(entity[4], trips, bounds, projection)
+                vehicle = local_vehicle(entity[4], trips, bounds, projection, *boundary)
                 if vehicle:
                     vehicles.append(vehicle)
     if not header_found:

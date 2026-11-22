@@ -8,12 +8,12 @@ from datetime import datetime, timezone
 import gzip
 from hashlib import sha256
 import json
-from math import atan2, degrees, hypot, isfinite
+from math import atan2, ceil, degrees, hypot, isfinite
 from pathlib import Path
 import subprocess
 from urllib.parse import urlencode, urljoin
 
-from ede_map import load_scene
+from ede_map import load_playable_boundary, load_playable_scene
 from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,13 +29,14 @@ NDW_FIELDS = ('rvvCode', 'blackCode', 'bearing', 'placement', 'zoneCode', 'suppl
 
 
 def scene_metadata():
-    return load_scene()['meta']
+    return load_playable_scene(include_shorelines=False)['meta']
 
 
 def build_tiles(bounds):
     south, west, north, east = bounds
-    xs = [west + (east - west) * i / 6 for i in range(7)]
-    ys = [south + (north - south) * i / 3 for i in range(4)]
+    cols, rows = ceil((east - west) / 0.019), ceil((north - south) / 0.017)
+    xs = [west + (east - west) * i / cols for i in range(cols + 1)]
+    ys = [south + (north - south) * i / rows for i in range(rows + 1)]
     return [(x0, y0, x1, y1) for y0, y1 in zip(ys, ys[1:]) for x0, x1 in zip(xs, xs[1:])]
 
 
@@ -73,7 +74,8 @@ def distinct(features, identify, modified):
     return [by_id[key] for key in sorted(by_id)]
 
 
-def snapshot(bounds):
+def snapshot(meta):
+    bounds = meta['geographicBounds']
     south, west, north, east = bounds
     tiles = build_tiles(bounds)
     urls = [query(NDW, tile, status='PLACED') for tile in tiles]
@@ -85,7 +87,7 @@ def snapshot(bounds):
         nwb_features = nwb_fetch.result()
     if not ndw_features or not bgt_features or not nwb_features:
         raise ValueError('Refusing to save an incomplete traffic-sign snapshot')
-    ndw = distinct(ndw_features, lambda f: f['id'], lambda f: (
+    ndw = distinct(local_features(ndw_features, meta), lambda f: f['id'], lambda f: (
         f['properties'].get('lastModifiedOn') or '', f['properties'].get('registeredOn') or ''))
     linked_road_ids = {f['properties'].get('roadSectionId') for f in ndw}
     nwb = distinct((f for f in nwb_features if f['properties']['wvk_id'] in linked_road_ids),
@@ -95,9 +97,10 @@ def snapshot(bounds):
         'bounds': bounds,
         'sources': {'ndw': NDW, 'bgt': BGT, 'nwb': NWB},
         'ndwTiles': tiles,
-        'ndwDuplicates': len(ndw_features) - len(ndw),
+        'ndwDuplicates': len(ndw_features) - len({feature['id'] for feature in ndw_features}),
         'ndw': ndw,
-        'bgt': distinct(bgt_features, lambda f: f['id'], lambda f: f['properties']['tijdstip_registratie']),
+        'bgt': distinct(local_features(bgt_features, meta), lambda f: f['id'],
+                        lambda f: f['properties']['tijdstip_registratie']),
         'nwb': nwb,
     }
 
@@ -133,6 +136,24 @@ def face_key(record):
     return ':'.join((code, value, zone)).rstrip(':')
 
 
+def local_features(features, meta):
+    from shapely import Point, prepare
+
+    boundary = load_playable_boundary()
+    prepare(boundary)
+    frame = SceneAffine(meta['lonLatAffine'])
+    for feature in features:
+        geometry = feature['geometry']
+        if geometry['type'] != 'Point':
+            raise ValueError(f"Expected a Point for sign {feature['id']}")
+        lon, lat = geometry['coordinates'][:2]
+        if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+            raise ValueError(f"Invalid WGS84 coordinates for sign {feature['id']}")
+        point = frame.lon_lat_to_scene(lon, lat)
+        if boundary.covers(Point(*(round(coordinate, 2) for coordinate in point))):
+            yield feature
+
+
 def sign_records(raw, meta):
     if raw['bounds'] != meta['geographicBounds']:
         raise ValueError('Sign snapshot and game have different geographic bounds. Refresh with --fetch.')
@@ -149,7 +170,7 @@ def sign_records(raw, meta):
                  and not f['properties']['termination_date'] and not f['properties']['eind_registratie']
                  and f['properties']['plus_type'] in BGT_KINDS),
                 lambda f: f['properties']['lokaal_id'], lambda f: f['properties']['tijdstip_registratie'])
-        for feature in features:
+        for feature in local_features(features, meta):
             geometry = feature['geometry']
             if geometry['type'] != 'Point':
                 raise ValueError(f"Expected a Point for {source} sign {feature['id']}")
@@ -209,7 +230,7 @@ def main():
     args = parser.parse_args()
     meta = scene_metadata()
     if args.fetch:
-        raw = snapshot(meta['geographicBounds'])
+        raw = snapshot(meta)
         write(args.snapshot, gzip.compress(json.dumps(raw, separators=(',', ':'), ensure_ascii=False).encode(), mtime=0))
     else:
         raw = json.loads(gzip.decompress(args.snapshot.read_bytes()))

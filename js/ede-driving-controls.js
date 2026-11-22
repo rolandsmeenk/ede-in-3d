@@ -1,4 +1,4 @@
-import { FOOT, MOTOR, BUS } from './road-access.js';
+import { FOOT, MOTOR, BUS } from './road-access.js?v=20261122-startup';
 import { EDE_DRIVING_CONTROL_EVIDENCE } from './ede-driving-control-evidence.js';
 
 const EMPTY = [];

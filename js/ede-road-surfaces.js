@@ -113,7 +113,10 @@ export async function loadEdeRoadSurfaces({ north = false } = {}) {
   for (const extension of extensions) {
     if (!extension) continue;
     asset.surfaces = asset.surfaces.concat(extension.surfaces);
-    Object.assign(asset.covered, extension.covered);
+    for (const [way, indices] of Object.entries(extension.covered)) {
+      const prior = asset.covered[way];
+      asset.covered[way] = prior ? [...new Set([...prior, ...indices])].sort((a, b) => a - b) : indices;
+    }
   }
   const grade = new Map(), ground = new Map();
   for (const surface of asset.surfaces) {

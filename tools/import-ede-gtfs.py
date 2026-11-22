@@ -12,7 +12,8 @@ from math import dist
 from pathlib import Path
 from zipfile import ZipFile
 
-from ede_map import load_scene_metadata
+from ede_live_buses import inside_boundary
+from ede_map import MUNICIPAL_ASSET, load_scene_metadata, read_packed
 from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -126,15 +127,31 @@ def stop_progress(raw, distances, progress):
     return round(progress[index - 1] + weight * (progress[index] - progress[index - 1]), 2)
 
 
-def import_feed(archive, project):
+def local_stop_trips(archive, project, boundary):
+    rings = [shell for shell, *_ in boundary]
+    min_x, max_x = min(min(ring[::2]) for ring in rings), max(max(ring[::2]) for ring in rings)
+    min_z, max_z = min(min(ring[1::2]) for ring in rings), max(max(ring[1::2]) for ring in rings)
+    local_stops = set()
+    for row in read_table(archive, 'stops'):
+        if not row['stop_lon'] or not row['stop_lat']:
+            continue
+        x, z = project(row['stop_lon'], row['stop_lat'])
+        if min_x <= x <= max_x and min_z <= z <= max_z and inside_boundary(x, z, boundary):
+            local_stops.add(row['stop_id'])
+    return {row['trip_id'] for row in read_table(archive, 'stop_times', 'stop_id', local_stops)}
+
+
+def import_feed(archive, project, boundary=None):
     agency = {row['agency_id']: row for row in read_table(archive, 'agency')}
-    routes = {row['route_id']: row for row in read_table(archive, 'routes')
-              if ROUTES.get((row['agency_id'], row['route_id'])) == row['route_short_name']
-              and row['route_type'] == '3'}
-    missing = REQUIRED_ROUTES - {(row['agency_id'], route_id) for route_id, row in routes.items()}
+    routes = {row['route_id']: row for row in read_table(archive, 'routes') if row['route_type'] == '3'}
+    known_routes = {route_id for route_id, row in routes.items()
+                    if ROUTES.get((row['agency_id'], route_id)) == row['route_short_name']}
+    missing = REQUIRED_ROUTES - {(routes[route_id]['agency_id'], route_id) for route_id in known_routes}
     if missing:
         raise ValueError(f'Expected Ede bus routes are missing from the feed: {sorted(missing)}')
-    trips = {row['trip_id']: row for row in read_table(archive, 'trips', 'route_id', routes)}
+    local_trips = local_stop_trips(archive, project, boundary) if boundary else set()
+    trips = {row['trip_id']: row for row in read_table(archive, 'trips', 'route_id', routes if boundary else known_routes)
+             if row['route_id'] in known_routes or row['trip_id'] in local_trips}
     dates = service_dates(archive, {row['service_id'] for row in trips.values()})
     trips = {trip_id: row for trip_id, row in trips.items() if dates[row['service_id']]}
     empty_routes = {route_id for _, route_id in REQUIRED_ROUTES} - {row['route_id'] for row in trips.values()}
@@ -170,7 +187,8 @@ def import_feed(archive, project):
 
     def trip_order(item):
         trip_id, trip = item
-        return int(routes[trip['route_id']]['route_short_name']), trip_id
+        line = routes[trip['route_id']]['route_short_name']
+        return (0, int(line), trip_id) if line.isascii() and line.isdecimal() else (1, line, trip_id)
 
     variants = {}
     for trip_id, row in sorted(trips.items(), key=trip_order):
@@ -234,8 +252,9 @@ def main():
     args = parser.parse_args()
     if args.feed.resolve() == args.output.resolve():
         parser.error('The feed ZIP and output JSON must have different paths')
+    boundary = read_packed(MUNICIPAL_ASSET)['boundary'] if (ROOT / MUNICIPAL_ASSET).exists() else None
     with ZipFile(args.feed) as archive:
-        data = import_feed(archive, load_projection())
+        data = import_feed(archive, load_projection(), boundary)
     args.output.write_text(json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(',', ':')) + '\n',
                            encoding='utf-8')
     trips = sum(len(variant['trips']) for variant in data['variants'])

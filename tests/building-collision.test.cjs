@@ -137,7 +137,7 @@ test('road queries preserve the open area inside concave and courtyard bounds', 
       getIslandBoundsAtZ: () => ({ westX: -200, eastX: 200 })
     },
     './nyc-geodata.js': { GEO: {} }, './building-collision.js': { polygonBoxOverlaps },
-    './road-access.js': { VEHICLE_CLEARANCE: {} }, './ede-active-travel.js': {},
+    './road-access.js?v=20261122-startup': { VEHICLE_CLEARANCE: {} }, './ede-active-travel.js': {},
     './ede-road-lanes.js': {}, './ede-motorway-lanes.js': {},
     './ede-turn-restrictions.js': { EDE_TURN_RESTRICTIONS: {} }
   } });

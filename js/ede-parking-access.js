@@ -1,5 +1,5 @@
 import { fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
-import { CAR } from './road-access.js';
+import { CAR } from './road-access.js?v=20261122-startup';
 import { indexLocalRoads } from './traffic-area.js';
 import { gradeWayAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';

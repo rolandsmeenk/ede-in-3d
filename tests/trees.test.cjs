@@ -590,25 +590,32 @@ test('measured sites check stem clearance while legacy sites also check crowns',
   assert.deepEqual([...field.sites], [adjacent, underDeck]);
 });
 
-test('measured medium LOD uses dense clumps with fewer triangles than legacy medium LOD', () => {
+test('measured and estimated trees keep the same dense crown across detail levels', () => {
   const field = createTreeField({}, [
     { x: 2, z: 140, species: 0, height: 20 },
     { x: 4, z: 140, species: 0, scale: 1 }
   ]);
   field.update(new Vector3(0, 10, -50));
-  const [measured, legacy] = field.meshes.filter((m) => m.visible);
-  assert.match(measured.name, /_v0_measured_lod1_/);
-  assert.match(legacy.name, /_v0_lod1_/);
-  const clumpCards = ({ attributes: { aTree, uv } }) => {
-    let vertices = 0;
+  const [middle] = field.meshes.filter((m) => m.visible);
+  assert.match(middle.name, /_v0_lod1_/);
+  assert.equal(middle.count, 2, 'both trees share one middle-detail batch');
+  const clumpVertices = ({ attributes: { aTree, position, uv } }) => {
+    const vertices = [];
     for (let i = 0; i < aTree.count; i++) {
-      if (aTree.array[i * 4] && uv.array[i * 2] > 0.5 && uv.array[i * 2 + 1] > 0.5) vertices++;
+      const [u, v] = uv.array.subarray(i * 2, i * 2 + 2);
+      if (aTree.array[i * 4] && u > 0.5 && v > 0.5) {
+        vertices.push([...position.array.subarray(i * 3, i * 3 + 3), u, v, aTree.array[i * 4 + 3]]);
+      }
     }
-    return vertices / 4;
+    return vertices;
   };
-  assert.equal(clumpCards(measured.geometry), 18);
-  assert.equal(clumpCards(legacy.geometry), 0);
-  assert.ok(measured.geometry.index.count < legacy.geometry.index.count);
+  const crown = clumpVertices(middle.geometry);
+  assert.equal(crown.length, 18 * 4);
+  const near = field.meshes.find((m) => m.name.includes('_v0_lod0_'));
+  const far = field.meshes.find((m) => m.name.includes('_v0_lod2_'));
+  assert.deepEqual(clumpVertices(near.geometry), crown);
+  assert.deepEqual(clumpVertices(far.geometry), crown);
+  assert.ok(middle.geometry.index.count < near.geometry.index.count);
 });
 
 test('conifer geometry stays tapered and uses separately culled 200 m cells', () => {

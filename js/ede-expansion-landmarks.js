@@ -5,6 +5,7 @@ import { DE_KLOMP_PLATFORMS, EXPANSION_LANDMARK_SURVEYS, GINKEL_SHEEPFOLD_FENCES
 import { createSurveyLandmark, surveyLabel, surveyPanel, surveyWindow } from './ede-survey-landmark.js';
 import { addWindmillSailcloth, createWindmillRig } from './ede-windmill.js';
 import { terrainHeightAt } from './terrain.js';
+import { sheepFleeceInfluences } from './tree-seasons.js';
 
 function box(batch, x, y, z, width, height, depth, color, heading = 0) {
   batch.solid(new THREE.BoxGeometry(width, height, depth).rotateY(heading).translate(x, y, z), color);
@@ -82,8 +83,7 @@ function addSheepfoldFences({ trim, colliders }) {
   }
 }
 
-
-function addSheepfoldFlock(group) {
+function sheepfoldFlockBatch(coat) {
   // Positions inside the fenced paddock alongside the main sheepfold.
   const placements = [
     [4320.6, 1066.8, 0.48, 1.02, true],
@@ -115,16 +115,16 @@ function addSheepfoldFlock(group) {
       batch.solid(shape, color);
     };
 
-    part(wool, 0, 0.71, -0.05, 0.30, 0.28, 0.57);
-    part(wool, 0, 0.70, -0.38, 0.27, 0.26, 0.26);
-    part(wool, 0, 0.74, 0.28, 0.27, 0.27, 0.30);
-    part(wool, 0, 0.42, -0.59, 0.077, 0.26, 0.088, 0.18);
+    part(wool, 0, 0.71, -0.05, 0.24 + 0.14 * coat, 0.22 + 0.14 * coat, 0.53 + 0.07 * coat);
+    part(wool, 0, 0.70, -0.38, 0.21 + 0.135 * coat, 0.20 + 0.12 * coat, 0.245 + 0.055 * coat);
+    part(wool, 0, 0.74, 0.28, 0.21 + 0.14 * coat, 0.22 + 0.115 * coat, 0.265 + 0.06 * coat);
+    part(wool, 0, 0.42, -0.59, 0.052 + 0.047 * coat, 0.26, 0.065 + 0.045 * coat, 0.18);
 
     for (const side of [-1, 1]) for (const end of [-1, 1]) {
       const px = side * 0.17 * size, pz = (end * 0.37 - 0.04) * size;
       const wx = x + px * cos + pz * sin, wz = z - px * sin + pz * cos;
       const foot = terrainHeightAt(wx, wz);
-      const leg = ground + 0.56 * size - foot;
+      const leg = ground + 0.63 * size - foot;
       batch.solid(new THREE.CylinderGeometry(0.043 * size, 0.026 * size, leg, 6)
         .translate(wx, foot + leg / 2, wz), face);
       batch.solid(new THREE.CylinderGeometry(0.039 * size, 0.043 * size, 0.068 * size, 6)
@@ -133,7 +133,7 @@ function addSheepfoldFlock(group) {
 
     const headY = grazing ? 0.30 : 1.04, headZ = grazing ? 0.77 : 0.59;
     part(wool, 0, grazing ? 0.51 : 0.85, grazing ? 0.51 : 0.43,
-      0.146, grazing ? 0.32 : 0.25, 0.15, grazing ? -0.72 : 0.59);
+      0.116 + 0.066 * coat, grazing ? 0.32 : 0.25, 0.13 + 0.052 * coat, grazing ? -0.72 : 0.59);
     part(face, 0, headY, headZ, 0.103, 0.15, 0.12, grazing ? -0.22 : 0.52);
     part(0xb1a58c, 0, headY - 0.092, headZ + 0.062, 0.073, 0.064, 0.092);
     part(hoof, 0, headY - 0.095, headZ + 0.143, 0.050, 0.026, 0.017);
@@ -143,7 +143,19 @@ function addSheepfoldFlock(group) {
     }
   }
 
-  const flock = batch.mesh();
+  return batch;
+}
+
+function addSheepfoldFlock(group) {
+  const flock = sheepfoldFlockBatch(0).mesh();
+  const winter = sheepfoldFlockBatch(1);
+  winter.geometry.setAttribute('position', new THREE.Float32BufferAttribute(winter.vertices, 3));
+  winter.geometry.computeVertexNormals();
+  flock.geometry.morphAttributes.position = [winter.geometry.attributes.position];
+  flock.geometry.morphAttributes.normal = [winter.geometry.attributes.normal];
+  flock.geometry.computeBoundingBox();
+  flock.updateMorphTargets();
+  flock.morphTargetInfluences = sheepFleeceInfluences;
   flock.name = 'Ginkelse Heide sheep flock';
   group.add(flock);
 }

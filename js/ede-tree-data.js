@@ -1,37 +1,41 @@
-// EDT1 through EDT3 store compact tree records in the existing Oude Kerk scene frame.
+// EDT1 through EDT4 store tree records in the existing Oude Kerk scene frame.
 // Records hold x/z in 20 cm steps, height in decimetres and trunk diameter in centimetres.
 export function decodeEdeTrees(buffer) {
   const view = new DataView(buffer);
   const invalid = () => new Error('Invalid Ede tree asset');
   if (view.byteLength < 8) throw invalid();
   const magic = view.getUint32(0, true);
-  const expanded = magic === 0x33544445;
+  const wide = magic === 0x34544445;
+  const expanded = wide || magic === 0x33544445;
   const hasCrowns = expanded || magic === 0x32544445;
   if (!hasCrowns && magic !== 0x31544445) throw invalid();
   const count = view.getUint32(4, true);
-  const maxRecordSize = expanded ? 11 : hasCrowns ? 10 : 9;
-  if (!count || view.byteLength < 8 + count * 9 || view.byteLength > 8 + count * maxRecordSize) throw invalid();
+  const coordinates = wide ? 8 : 4;
+  const recordSize = coordinates + 5;
+  const maxRecordSize = recordSize + (expanded ? 2 : Number(hasCrowns));
+  if (!count || view.byteLength < 8 + count * recordSize || view.byteLength > 8 + count * maxRecordSize) throw invalid();
 
   const trees = new Array(count);
   let offset = 8;
   for (let i = 0; i < count; i++) {
-    if (offset + 9 > view.byteLength) throw invalid();
-    const species = view.getUint8(offset + 7), sources = view.getUint8(offset + 8);
+    if (offset + recordSize > view.byteLength) throw invalid();
+    const fields = offset + coordinates;
+    const species = view.getUint8(fields + 3), sources = view.getUint8(fields + 4);
     if ((species > 3 && species !== 255) || sources < 1 || sources > (expanded ? 255 : hasCrowns ? 15 : 7)) throw invalid();
     const crown = Boolean(sources & (expanded ? 72 : 8));
     const group = Boolean(sources & 128);
-    const next = offset + 9 + Number(crown) + Number(group);
+    const next = offset + recordSize + Number(crown) + Number(group);
     if (next > view.byteLength) throw invalid();
     const seasonGroup = group ? view.getUint8(next - 1) : undefined;
     if (seasonGroup > 7) throw invalid();
     trees[i] = {
-      x: view.getInt16(offset, true) / 5,
-      z: view.getInt16(offset + 2, true) / 5,
-      height: view.getUint16(offset + 4, true) / 10,
-      trunkDiameter: view.getUint8(offset + 6) / 100,
+      x: (wide ? view.getInt32(offset, true) : view.getInt16(offset, true)) / 5,
+      z: (wide ? view.getInt32(offset + 4, true) : view.getInt16(offset + 2, true)) / 5,
+      height: view.getUint16(fields, true) / 10,
+      trunkDiameter: view.getUint8(fields + 2) / 100,
       species,
       sources,
-      ...(crown ? { crownWidth: view.getUint8(offset + 9) / 10 } : {}),
+      ...(crown ? { crownWidth: view.getUint8(offset + recordSize) / 10 } : {}),
       ...(group ? { seasonGroup } : {})
     };
     offset = next;
@@ -49,7 +53,7 @@ export async function loadEdeTrees(inventory = 'expanded') {
   if (inventory === 'expanded') {
     try {
       const [records, canopyDensity] = await Promise.all([
-        read('../assets/ede-trees-expanded.bin'), loadWoodlandCanopyDensity(),
+        read('../assets/ede-trees-expanded.bin?v=20261122-safari-cache'), loadWoodlandCanopyDensity(),
       ]);
       return { inventory: 'expanded', records, canopyDensity };
     } catch (error) {

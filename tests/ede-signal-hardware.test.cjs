@@ -10,7 +10,8 @@ const readAsset = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '..
 test('baked signal heads join the current OSM controls and reuse surveyed gantries', async () => {
   const { indexEdeSignalHardware } = await import('../js/ede-signal-hardware.js');
   const { byAnchor, supports } = indexEdeSignalHardware(asset);
-  const maps = [readAsset('ede-map-v1.json.gz'), readAsset('ede-corridors-v1.json.gz')];
+  const { containsPlayablePoint } = await import('../js/ede-playable-boundary.js');
+  const maps = ['ede-map-v1.json.gz', 'ede-corridors-v1.json.gz', 'ede-north-v1.json.gz'].map(readAsset);
   const anchors = new Set(maps.flatMap(map => map.signals.map(({ x, z }) => `${x}/${z}`)));
   const ways = new Set(maps.flatMap(map => map.roads.map(road => road.id)));
   const gantries = new Set(readAsset('ede-1gis-detail.json.gz').features.filter(f => f.type === 'gantry').map(f => f.id));
@@ -18,6 +19,9 @@ test('baked signal heads join the current OSM controls and reuse surveyed gantri
     assert.ok(anchors.has(key), key);
     for (const head of heads) {
       assert.ok(ways.has(head.wayId), head.source);
+      assert.ok(containsPlayablePoint(...head.point), head.source);
+      assert.ok(containsPlayablePoint(...head.anchor), head.source);
+      if (head.pole) assert.ok(containsPlayablePoint(...head.pole), head.source);
       if (head.mount === 'overhead') assert.equal(supports[head.support].level, head.level, head.source);
     }
   }
@@ -26,7 +30,10 @@ test('baked signal heads join the current OSM controls and reuse surveyed gantri
   assert.ok(asset.heads.some(head => head.mount === 'overhead'));
   assert.ok(supports.some(s => s.kind === 'gantry'));
   assert.ok(supports.some(s => s.kind === 'cantilever'));
-  for (const support of supports) if (support.existingId) assert.ok(gantries.has(support.existingId), support.existingId);
+  for (const support of supports) {
+    if (support.existingId) assert.ok(gantries.has(support.existingId), support.existingId);
+    assert.ok(support.points.every(point => containsPlayablePoint(...point)), support.source);
+  }
 });
 
 test('invalid signal support references are rejected before replacing the roadside fallback', async () => {

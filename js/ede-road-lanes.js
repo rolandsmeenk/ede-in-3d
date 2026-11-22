@@ -1,4 +1,4 @@
-import { BICYCLE, BUS, CAR, MOTOR, VAN } from './road-access.js';
+import { BICYCLE, BUS, CAR, MOTOR, VAN } from './road-access.js?v=20261122-startup';
 
 const DIRECTIONS = ['forward', 'backward'];
 const LANE_CONTROLS = ['access', 'vehicle', 'motor_vehicle', 'motorcar', 'goods', 'bus', 'psv'];

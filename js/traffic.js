@@ -1,9 +1,16 @@
 import * as THREE from 'three/webgpu';
-import { buildRoadNetwork, isMotorwayContinuation, roadEdgeKey } from './road-network.js?v=20261121-hospital-approaches';
+import { buildRoadNetwork, isMotorwayContinuation, roadEdgeKey } from './road-network.js?v=20261122-startup';
 import { ACV_TRUCK, buildAcvTruck } from './ede-refuse-truck.js';
+import { TRACTOR, TRACTOR_PALETTES, buildEdeTractor } from './ede-tractor.js';
+import { AMBULANCE, buildEdeAmbulance } from './ede-ambulance.js?v=20261122-p2000';
+import { AMBULANCE_STOPS } from './ede-ambulance-routes.js';
+import { FIRE_ENGINE, buildEdeFireEngine } from './ede-fire-engine.js';
+import { createEmergencyAlerts } from './ede-emergency.js';
+import { TRACTOR_FARMS } from './ede-tractor-farms.js';
+import { createServiceTrips, farmTrailPose } from './ede-service-trips.js?v=20261122-p2000';
 import { bindEdeFittedLanes, fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
 import { indexLocalRoads, localSegmentLength, pickByArea } from './traffic-area.js';
-import { busEntryAt, busRouteDistance, busTrackingSpeed, createEdeBusTracker, prepareEdeBusPaths } from './ede-bus-traffic.js';
+import { busEntryAt, busRouteDistance, busTrackingSpeed, createEdeBusTracker, prepareEdeBusPaths } from './ede-bus-traffic.js?v=20261122-startup';
 import { terrainHeightAt } from './terrain.js';
 import { createEdeParking } from './ede-parking.js';
 import { parkingPose } from './ede-parking-access.js';
@@ -11,7 +18,7 @@ import { buildEdeBikeParkingSites } from './ede-bike-parking-sites.js';
 import { bikeStyleFor, createBikeParkingState, renderBikeParking } from './ede-bike-parking.js';
 import { createEdeTrips } from './ede-trips.js';
 import { createEdeDrivingControls } from './ede-driving-controls.js';
-import { CAR, VAN, BUS, BICYCLE } from './road-access.js';
+import { CAR, VAN, BUS, BICYCLE } from './road-access.js?v=20261122-startup';
 import { getEdeGrade, gradeHeightAt, gradeWayAt } from './ede-grade.js';
 import { createPedestrianSystem } from './pedestrian-system.js';
 import { vehicleContact, resolveVehicleContact, sweptVehicleContact } from './vehicle-physics.js';
@@ -132,9 +139,18 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // =========================================================================
   // 0. ROAD NETWORK
   // =========================================================================
-  const network = buildRoadNetwork(sidewalks, obstacles, signalIntersections, getEdeGrade());
+  const network = buildRoadNetwork(sidewalks, obstacles, signalIntersections, getEdeGrade(), pilot.streetFeatures?.signs);
   const fitted = bindEdeFittedLanes(network, pilot.laneFits, edge => `${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer ?? 0}`);
   const { nodes, edges, connector, curvePoint } = network;
+  const farmTrips = createServiceTrips(network, roadTraffic, TRACTOR_FARMS, 'tractor');
+  const ambulanceTrips = createServiceTrips(network, roadTraffic, AMBULANCE_STOPS, 'ambulance');
+  const fireStations = [
+    { x: -44.94, z: 529.71, wayIds: ['w6953097'] }, // Breelaan
+    { x: -3732.12, z: -4315.07, wayIds: ['w6960241'] } // Zilvervoslaan, Lunteren
+  ];
+  const responseTrips = { ambulance: ambulanceTrips };
+  const emergency = createEmergencyAlerts(edges);
+  roadTraffic.onEmergencyFeed?.(emergency.accept);
   let bikeParking;
   if (pilot.bikeParking && network.activeTravel) {
     const active = network.activeTravel, nearby = [];
@@ -173,10 +189,12 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const recentlyUsedRoads=trips && new WeakMap();
   const controls=pilot.enabled ? createEdeDrivingControls(pilot.streetFeatures,network) : null;
   const railStop=pilot.railStop;
-  const roadMode = v => v.bus ? BUS : (v.refuseTruck || v.bodyType === 'van') ? VAN : CAR;
+  function trafficProfile(v) {
+    return v.roadProfile ?? (v.bodyType === 'van' ? 'van' : 'ambient');
+  }
+  const roadMode = v => v.bus ? BUS : trafficProfile(v) === 'ambient' ? CAR : VAN;
   function ambientLanes(v, e) {
-    if (v.refuseTruck) return e.refuseLanes;
-    return v.bodyType === 'van' ? e.vanLanes : e.ambientLanes;
+    return e[`${trafficProfile(v)}Lanes`];
   }
   roadTraffic.bind(edges, edge => `${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer}`);
   const busPaths = prepareEdeBusPaths(busSchedule, edges, network.alternateBusMove);
@@ -571,17 +589,28 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   }
   group.add(...bikeMeshes);
   const drawBikeParking = bikeParking && renderBikeParking(group, bikeParking, bikeModels);
-  const refuseTruck = createVehicle(false, ACV_TRUCK.length / 2, ACV_TRUCK.width / 2, ACV_TRUCK.axle, BUS_DRIVER, ACV_TRUCK.speed);
-  Object.assign(refuseTruck, { refuseTruck: true, halfL: refuseTruck.half, mass: ACV_TRUCK.mass, engine: 'bus' });
+  function modeledVehicle(model, spec, roadProfile, driver, engine) {
+    const v = createVehicle(false, spec.length / 2, spec.width / 2, spec.axle, driver, spec.speed);
+    Object.assign(v, { model, roadProfile, maxSpeed: spec.speed, wheelRadius: spec.wheelRadius,
+      halfL: v.half, mass: spec.mass, engine });
+    const shadow = new THREE.Mesh(unitPlane, contactShadowMat);
+    shadow.scale.set(spec.width + 0.32, 1, spec.length + 0.42);
+    shadow.position.y = 0.018;
+    shadow.renderOrder = 998;
+    model.root.add(shadow);
+    for (const { wheel } of model.wheels) wheel.rotation.x = v.wheelSpin;
+    group.add(model.root);
+    return v;
+  }
+  const refuseTruck = modeledVehicle(buildAcvTruck(), ACV_TRUCK, 'refuse', BUS_DRIVER, 'bus');
+  refuseTruck.refuseTruck = true;
   const refuseTrucks = [refuseTruck];
-  const refuseModel = buildAcvTruck();
-  const refuseShadow = new THREE.Mesh(unitPlane, contactShadowMat);
-  refuseShadow.scale.set(ACV_TRUCK.width + 0.32, 1, ACV_TRUCK.length + 0.42);
-  refuseShadow.position.y = 0.018;
-  refuseShadow.renderOrder = 998;
-  refuseModel.root.add(refuseShadow);
-  group.add(refuseModel.root);
-  const vehicles = [...cars, ...buses, ...bikes, ...refuseTrucks];
+  const tractors = Array.from({ length: 2 }, () => modeledVehicle(buildEdeTractor(), TRACTOR, 'tractor', BUS_DRIVER, 'bus'));
+  const ambulances = [modeledVehicle(buildEdeAmbulance(), AMBULANCE, 'ambulance', CAR_DRIVER, 'suv')];
+  const fireEngines = [modeledVehicle(buildEdeFireEngine(), FIRE_ENGINE, 'fire', BUS_DRIVER, 'bus')];
+  const responseFleet = { police: cars.filter(v => v.isPolice), ambulance: ambulances, fire: fireEngines };
+  const modeledVehicles = [...refuseTrucks, ...tractors, ...ambulances, ...fireEngines];
+  const vehicles = [...cars, ...buses, ...bikes, ...modeledVehicles];
 
   // =========================================================================
   // 3. PEDESTRIAN SYSTEM
@@ -594,7 +623,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const nearFoot = activeTravel ? [] : null;
   const nearBikes = [], nearMountainBikes = [];
   const queryLocal = indexLocalRoads(edges.filter(e => !e.busExclusive), nodes.filter(n => n.signal));
-  const carSpawns = [], vanSpawns = [], refuseSpawns = [], bikeSpawns = [], mountainBikeSpawns = [], footSpawns = [];
+  const vehicleSpawns = { ambient: [], van: [], refuse: [], tractor: [], ambulance: [], fire: [] };
+  const vehicleSpawnPools = Object.entries(vehicleSpawns);
+  const bikeSpawns = [], mountainBikeSpawns = [], footSpawns = [];
   let carTarget = 0, bikeTarget = 0, mountainBikeTarget = 0, pedTarget = 0;
   const pedestrianSystem = createPedestrianSystem(network, {
     player, nearEdges, nearSignals, nearFoot,
@@ -739,7 +770,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     for (const v of vehicles) {
       const e = v.edge;
       if (!e || e.mapped) continue;
-      if (v.parkingTrip?.phase==='maneuver') {
+      if (v.excursion || v.parkingTrip?.phase==='maneuver') {
         const p = projectFittedLane(e, v.lane, v.x, v.z, 0, e.len, fittedA);
         const side = (v.z - p.z) * p.dx - (v.x - p.x) * p.dz;
         if (Math.abs(side) < 2.45 && p.station > 0 && p.station < e.len) occupy(e.occ[v.lane], v, p.station);
@@ -810,7 +841,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       activeTravel?.mountainBikes(focusX, focusZ, NEAR_RADIUS + 35, nearMountainBikes);
     } else if (clock < nextDemandCheck) return;
     nextDemandCheck = clock + 1;
-    carSpawns.length = vanSpawns.length = refuseSpawns.length = bikeSpawns.length = footSpawns.length = 0;
+    for (const [, pool] of vehicleSpawnPools) pool.length = 0;
+    bikeSpawns.length = footSpawns.length = 0;
     mountainBikeSpawns.length = 0;
     let roadArea = 0, footArea = 0;
     for (const e of nearEdges) {
@@ -818,10 +850,12 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       const areaPerLane = nearLength(e.sx, e.sz, e.dx, e.dz, e.len) * clamp(e.half, 2.4, 3.5) * roadTraffic.demand(e);
       if (!(areaPerLane > 0)) continue;
       const carLanes = e.ambientLanes.length, vanLanes = e.vanLanes.length;
-      if (carLanes) carSpawns.push({ segment: e, end: (carSpawns.at(-1)?.end || 0) + carLanes * areaPerLane });
-      if (vanLanes) vanSpawns.push({ segment: e, end: (vanSpawns.at(-1)?.end || 0) + vanLanes * areaPerLane });
-      if (e.refuseLanes?.length && e.len > 40) {
-        refuseSpawns.push({ segment: e, end: (refuseSpawns.at(-1)?.end || 0) + e.refuseLanes.length * areaPerLane });
+      for (const [kind, pool] of vehicleSpawnPools) {
+        const lanes = e[`${kind}Lanes`]?.length;
+        if (!lanes || (kind === 'refuse' && e.len <= 40)) continue;
+        const neighborhood = e.roadKind === 'residential' || e.roadKind === 'living_street';
+        const weight = kind === 'tractor' && neighborhood ? 0.14 : 1;
+        pool.push({ segment: e, end: (pool.at(-1)?.end || 0) + lanes * areaPerLane * weight });
       }
       roadArea += areaPerLane * Math.max(carLanes, vanLanes);
     }
@@ -977,7 +1011,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // Intelligent Driver Model: acceleration on a free road, and the braking term for an obstacle `gap` metres
   // (bumper to bumper) ahead moving at `speed`
   function roadSpeed(v) {
-    return Math.min(roadTraffic.limit(v.edge), v.conn ? roadTraffic.limit(v.move.to) : Infinity, v.refuseTruck ? ACV_TRUCK.speed : Infinity);
+    return Math.min(roadTraffic.limit(v.edge), v.conn ? roadTraffic.limit(v.move.to) : Infinity, v.maxSpeed ?? Infinity);
   }
 
   function freeAcc(v) {
@@ -1036,11 +1070,14 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       if (!hop && e===trip.link.entrance.edge && v.lane===trip.link.entrance.lane) return null;
       parking.cancel(v,clock);
     }
-    const trip=v.destinationTrip;
+    const trip=v.serviceTrip ?? v.destinationTrip;
     const step=trip?.steps[trip.index];
     if (step?.from===e && step.lane===v.lane && !roadTraffic.isClosed(step.move.to) && legalTurn(v,step.move)) return step.move;
-    if (step && (step.from!==e || step.lane!==v.lane)) v.destinationTrip=null;
-    const moves = (v.refuseTruck ? e.refuseMoves : v.bodyType === 'van' ? e.vanMoves : e.ambientMoves) || e.moves;
+    if (step && (step.from!==e || step.lane!==v.lane)) {
+      if (v.serviceTrip) v.serviceTrip = null;
+      else v.destinationTrip = null;
+    }
+    const moves = e[`${trafficProfile(v)}Moves`] ?? e.moves;
     let total = 0;
     for (let k = 0; k < moves.length; k++) {
       const m = moves[k];
@@ -1535,7 +1572,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         cap = Math.min(cap, Math.sqrt(4 * Math.max(0, distance)));
       }
     }
-    const serviceAt = v.collectionAt ?? (v.parkingTrip?.phase === 'approach' ? parkingTarget(v) : null);
+    const serviceAt = v.collectionAt ?? (v.serviceTrip ? serviceTarget(v) : null) ??
+      (v.parkingTrip?.phase === 'approach' ? parkingTarget(v) : null);
     if (serviceAt !== null) {
       const remaining = serviceAt - v.s;
       worst=Math.min(worst,stopAt(v,remaining+0.22,0.24));
@@ -1680,7 +1718,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     v.s = v.cs - v.conn.len;
     controls?.resetVehicle(v);
     v.turnHistory=network.turnRestrictionState?.(v.turnHistory,v.move,roadMode(v));
-    if (v.destinationTrip?.steps[v.destinationTrip.index]?.move===v.move) v.destinationTrip.index++;
+    const trip = v.serviceTrip ?? v.destinationTrip;
+    if (trip && trip.steps[trip.index]?.move === v.move) trip.index++;
     v.edge = v.move.to;
     if (recentlyUsedRoads && !v.bus) recentlyUsedRoads.set(v.edge,clock);
     v.lane = v.out;
@@ -1763,7 +1802,54 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     v.collectionAt = target;
   }
 
+  function serviceTarget(v) {
+    const t = v.serviceTrip;
+    return !v.conn && t?.goal.edge === v.edge && t.goal.lane === v.lane && t.index === t.steps.length ? t.goal.at : null;
+  }
+
+  function advanceServicePlan(v) {
+    if (v.conn || v.commit) return;
+    const active = v.serviceTrip;
+    if (active && !roadTraffic.isClosed(active.goal.edge) && !roadTraffic.isClosed(active.steps[active.index]?.move.to)) return;
+    if (clock < (v.nextServicePlan ?? 0)) return;
+    if (v.liveResponse) {
+      const { planner, row } = v.liveResponse;
+      v.serviceTrip = planner.route(v, row);
+      v.nextServicePlan = clock + 6;
+      v.move = chooseMove(v, true);
+      return;
+    }
+    const farm = v.roadProfile === 'tractor';
+    const planner = farm ? farmTrips : ambulanceTrips;
+    const targetKind = v.lastServiceKind === 'base' ? 'pickup'
+      : v.lastServiceKind === 'pickup' ? 'hospital' : 'base';
+    const distance = row => Math.min(...row.goals.map(g => Math.hypot(g.x - v.x, g.z - v.z)));
+    const nearby = planner.rows.filter(row => (farm ? distance(row) < 1450 : row.site.kind === targetKind) &&
+      row.site.id !== v.lastServiceId && (!farm || !tractors.some(other => other !== v && other.edge &&
+        (other.serviceTrip?.row === row || other.excursion?.goal.site === row.site))));
+    nearby.sort((a, b) => distance(a) - distance(b));
+    if (!farm && nearby.length) {
+      const offset = (v.serviceCycles ?? 0) % nearby.length;
+      nearby.push(...nearby.splice(0, offset));
+    }
+    v.serviceTrip = null;
+    for (const row of nearby.slice(0, farm ? 3 : 2)) {
+      v.serviceTrip = planner.route(v, row);
+      if (v.serviceTrip) break;
+    }
+    v.nextServicePlan = clock + 6;
+    if (v.serviceTrip) v.move = chooseMove(v, true);
+  }
+
   function drive(v, dt) {
+    if (clock < v.serviceDwellUntil) {
+      v.speed = v.acc = 0;
+      return;
+    }
+    if (v.liveResponse && clock >= v.liveResponse.until) {
+      v.liveResponse = v.serviceTrip = null;
+    }
+    if (v.liveResponse || v.roadProfile === 'tractor' || v.roadProfile === 'ambulance') advanceServicePlan(v);
     if (v.refuseTruck) {
       if (clock < v.collectionUntil) {
         v.speed = v.acc = 0;
@@ -1807,7 +1893,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         const p = fittedLanePoint(v.edge, v.lane, stop.at, fittedA);
         if (network.isRoadClear(p.x - p.dz * offset, p.z + p.dx * offset, v.halfWidth)) v.off = offset;
       }
-    } else if (!v.parkingTrip && !v.destinationTrip && v.collectionAt == null) {
+    } else if (!v.parkingTrip && !v.destinationTrip && !v.serviceTrip && v.collectionAt == null) {
       v.laneTimer -= dt;
       if (v.laneTimer <= 0) {
         v.laneTimer = (v.bike ? 0.15 : 0.4) + Math.random() * 0.3;
@@ -1840,6 +1926,23 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         v.collectionAt = null;
         v.collectionUntil = clock + 5;
         v.nextCollectionAt = v.collectionUntil + 32;
+        return;
+      }
+      const serviceStop = v.serviceTrip ? serviceTarget(v) : null;
+      if (serviceStop !== null && v.s >= serviceStop - 0.22) {
+        const { goal } = v.serviceTrip;
+        v.s = serviceStop;
+        v.speed = v.acc = 0;
+        v.lastServiceId = goal.site.id;
+        v.lastServiceKind = goal.site.kind;
+        if (v.lastServiceKind === 'hospital') v.serviceCycles++;
+        v.liveResponse = v.serviceTrip = null;
+        v.serviceDwellUntil = clock + (goal.site.dwell ?? 0);
+        v.nextServicePlan = clock + (goal.trail ? 0 : 1);
+        if (goal.trail) {
+          v.excursion = { goal, distance: 0 };
+          v.dl = v.nose = v.steer = 0;
+        }
         return;
       }
       const parkAt=v.parkingTrip?.phase==='approach' ? parkingTarget(v) : null;
@@ -1967,6 +2070,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
 
   // Move v along and across its path by (dx, dz), as far as the road allows
   function shove(v, dx, dz) {
+    if (v.excursion) return;
     const along = (dx * v.tx + dz * v.tz) * (v.stationScale ?? 1);
     if (v.edge.mapped) {
       v.s = clamp(v.s + along, 0, v.edge.len);
@@ -2179,6 +2283,11 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     if (recentlyUsedRoads && !v.bus) recentlyUsedRoads.set(e,clock);
     v.turnHistory=null;
     v.destinationTrip=null;
+    v.liveResponse = v.serviceTrip = v.excursion = null;
+    v.serviceDwellUntil = 0;
+    v.nextServicePlan = clock;
+    v.lastServiceId = v.lastServiceKind = null;
+    v.serviceCycles = 0;
     v.nextDestinationParking=0;
     v.pilotStopDistance=Infinity;
     controls?.resetVehicle(v);
@@ -2227,9 +2336,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     let nearbyClear=true;
     parkingBody.x=x; parkingBody.z=z;
     parkingBody.sin=Math.sin(sample.yaw); parkingBody.cos=Math.cos(sample.yaw);
-    parkingBody.halfW=0.87; parkingBody.halfL=2.13;
-    parking.forParked(x,z,5,({space})=>{
-      if (!nearbyClear || space===v.parkingTrip.token.space || Math.abs(y-space.y)>1.55) return;
+    parkingBody.halfW = v.excursion ? v.halfWidth : 0.87;
+    parkingBody.halfL = v.excursion ? v.halfL : 2.13;
+    parking?.forParked(x,z,5,({space})=>{
+      if (!nearbyClear || space===v.parkingTrip?.token?.space || Math.abs(y-space.y)>1.55) return;
       const heading=space.heading;
       parkedCheck.x=space.x; parkedCheck.z=space.z;
       parkedCheck.sin=Math.sin(heading); parkedCheck.cos=Math.cos(heading);
@@ -2237,6 +2347,37 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       if (vehicleContact(parkingBody,parkedCheck,vehicleHit)) nearbyClear=false;
     });
     return nearbyClear;
+  }
+
+  const farmPose = {}, farmLook = {};
+  function moveFarmTractor(v, dt) {
+    const trip = v.excursion, { goal } = trip, trail = goal.trail;
+    const lastSpeed = v.speed, remaining = trail.length - trip.distance;
+    const speed = Math.min(4.8, lastSpeed + 1.35 * dt, Math.sqrt(Math.max(0.16, 2.8 * remaining)));
+    const at = Math.min(trail.length, trip.distance + speed * dt);
+    farmTrailPose(trail, at, farmPose);
+    farmTrailPose(trail, Math.min(trail.length, at + 1.8 + speed * 0.4), farmLook);
+    for (const [sample, station] of [[farmPose, at], [farmLook, Math.min(trail.length, at + 1.8 + speed * 0.4)]]) {
+      const blend = clamp(Math.min(station, trail.length - station) / 5, 0, 1);
+      sample.y = (1 - blend) * roadGround(goal.edge, sample.x, sample.z) +
+        blend * terrainHeightAt(sample.x, sample.z);
+    }
+    if (!parkingClear(v, farmPose, farmLook) || (remaining < 7 &&
+        (roadTraffic.isClosed(goal.edge) || !laneClear(goal.edge.occ[goal.lane], goal.out, 6.5, v)))) {
+      v.acc = -Math.min(3, lastSpeed / dt);
+      v.speed = 0;
+      return;
+    }
+    const turn = Math.atan2(Math.sin(farmLook.yaw - farmPose.yaw), Math.cos(farmLook.yaw - farmPose.yaw));
+    Object.assign(v, { x: farmPose.x, z: farmPose.z, y: farmPose.y, yaw: farmPose.yaw,
+      tx: Math.sin(farmPose.yaw), tz: Math.cos(farmPose.yaw), steer: clamp(turn, -0.65, 0.65),
+      speed, acc: (speed - lastSpeed) / dt, vx: 0, vz: 0, yawOffset: 0, yawVel: 0 });
+    trip.distance = at;
+    if (at < trail.length) return;
+    place(v, goal.edge, goal.lane, goal.out);
+    v.speed = Math.min(speed, 2.5);
+    v.lastServiceId = goal.site.id;
+    v.nextServicePlan = clock + 14;
   }
 
   function setManeuverPose(v,path,s) {
@@ -2318,7 +2459,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
 
   // Put v in a free lane around the focus. Normal replenishment protects the near view; teleports can fill it.
   function spawnVehicle(v, rMin, rMax, protectView) {
-    const spawns = v.refuseTruck ? refuseSpawns : v.bodyType === 'van' ? vanSpawns : carSpawns;
+    const spawns = vehicleSpawns[trafficProfile(v)];
     for (let attempt = 0; attempt < 6; attempt++) {
       let e=pickByArea(spawns);
       // Spread unmeasured traffic across its legal lane area. Keep measured directions
@@ -2628,7 +2769,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       v.roadPitch=v.roadRoll=0;
       return;
     }
-    const ground = v.edge?.wayId ? (x, z) => roadGround(v.edge, x, z, v.conn && v.move?.to) : terrainHeightAt;
+    const ground = !v.excursion && v.edge?.wayId
+      ? (x, z) => roadGround(v.edge, x, z, v.conn && v.move?.to) : terrainHeightAt;
     const nose = ground(v.x + sinY * v.axle, v.z + cosY * v.axle);
     const side = ground(v.x + cosY * v.halfWidth, v.z - sinY * v.halfWidth);
     v.roadPitch = Math.atan2(v.y - nose, v.axle);
@@ -2760,23 +2902,24 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     }
   }
 
-  function renderRefuseTruck(v) {
+  function renderModeledVehicle(v) {
     const yaw = v.yaw + v.yawOffset;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
     const distance = (v.x - v.prevX) * sin + (v.z - v.prevZ) * cos;
-    v.wheelSpin = (v.wheelSpin + clamp(distance / ACV_TRUCK.wheelRadius, -0.48, 0.48)) % (Math.PI * 2);
-    const { root, wheels, brake, beacon } = refuseModel;
+    const { root, wheels, brake, beacon } = v.model;
+    for (const { wheel, radius } of wheels) {
+      const spin = clamp(distance / (radius ?? v.wheelRadius), -0.48, 0.48);
+      wheel.rotation.x = (wheel.rotation.x + spin) % (Math.PI * 2);
+    }
     if (hasView && !visible(v.x, v.z, 18, v.y)) return;
     fitVehicleGrade(v, sin, cos);
     root.visible = true;
     root.position.set(v.x, v.y, v.z);
     root.rotation.set(v.roadPitch + v.pitch, yaw, v.roadRoll + v.roll, 'YXZ');
-    for (const { pivot, wheel, front } of wheels) {
-      if (front) pivot.rotation.y = v.steer;
-      wheel.rotation.x = v.wheelSpin;
-    }
-    brake.emissiveIntensity = v.acc < -0.8 || v.speed < 0.3 ? 1.3 : 0.19;
-    beacon.emissiveIntensity = clock < v.collectionUntil && (clock * 2.2) % 1 < 0.48 ? 2.5 : 0.23;
+    for (const { pivot, front } of wheels) if (front) pivot.rotation.y = v.steer;
+    if (brake) brake.emissiveIntensity = v.acc < -0.8 || v.speed < 0.3 ? 1.3 : 0.19;
+    if (v.refuseTruck) beacon.emissiveIntensity = clock < v.collectionUntil && (clock * 2.2) % 1 < 0.48 ? 2.5 : 0.23;
+    else if (beacon) beacon.emissiveIntensity = v.liveResponse && (clock * 3.1) % 1 < 0.38 ? 3.4 : 0.20;
   }
 
   function renderBike(b) {
@@ -2959,6 +3102,109 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   let lastFocusX = Infinity;
   let lastFocusZ = Infinity;
   const carPopulation={cursor:0}, bikePopulation={cursor:0}, mountainBikePopulation={cursor:0}, refusePopulation={cursor:0};
+  const tractorPopulation = { cursor: 0 }, ambulancePopulation = { cursor: 0 };
+  let nextTractorPalette = 0;
+  function spawnTractor(v, min, max, protect) {
+    const nearFarms = farmTrips.rows.filter(row => !tractors.some(other => other.edge &&
+      (other.serviceTrip?.row === row || other.excursion?.goal.site === row.site)));
+    for (const row of nearFarms) {
+      for (const goal of row.goals) {
+        const s = Math.max(v.half + 5, goal.at - 24);
+        if (goal.at - s < 8 || roadTraffic.isClosed(goal.edge)) continue;
+        const { x, z } = lanePoint(goal.edge, goal.lane, s, fittedA);
+        const distance = Math.hypot(x - focusX, z - focusZ);
+        if (distance < min || distance > max ||
+            (protect && nearView(x, z, v.half + 4, VEHICLE_SPAWN_DISTANCE, roadGround(goal.edge, x, z))) ||
+            (player.active && Math.hypot(x - player.x, z - player.z) < 25) ||
+            !laneClear(goal.edge.occ[goal.lane], s, v.half + 8)) continue;
+        place(v, goal.edge, goal.lane, s);
+        v.serviceTrip = { goal, row, steps: [], index: 0 };
+        break;
+      }
+      if (v.edge) break;
+    }
+    if (!v.edge && !spawnVehicle(v, min, max, protect)) return false;
+    v.model.setPalette(TRACTOR_PALETTES[nextTractorPalette++ % TRACTOR_PALETTES.length]);
+    return true;
+  }
+  function spawnAmbulance(v, min, max, protect) {
+    if (!ambulanceTrips.rows.some(row => row.goals.some(g => Math.hypot(g.x - focusX, g.z - focusZ) < 1100))) return false;
+    return spawnVehicle(v, min, max, protect);
+  }
+  let nextDispatchCheck = 0;
+  function startEmergencyResponses(jump) {
+    const engine = fireEngines[0];
+    if (engine.edge && (jump || !engine.liveResponse) &&
+        Math.hypot(engine.x - focusX, engine.z - focusZ) > VEHICLE_RADIUS) {
+      engine.edge = engine.liveResponse = null;
+    }
+    if (clock < nextDispatchCheck) return;
+    nextDispatchCheck = clock + 2;
+    const attempted = new Set();
+    for (const alert of emergency.nearby(focusX, focusZ)) {
+      const service = alert.service, fleet = responseFleet[service];
+      if (attempted.has(service) || fleet.some(v => v.liveResponse)) continue;
+      attempted.add(service);
+      const planner = responseTrips[service] ??= service === 'fire'
+        ? createServiceTrips(network, roadTraffic, fireStations, 'fire')
+        : createServiceTrips(network, roadTraffic, [], 'ambient');
+      const row = planner.destination({
+        id: alert.id, kind: service === 'ambulance' ? 'pickup' : 'incident',
+        x: alert.x, z: alert.z, radius: 160, dwell: service === 'fire' ? 22 : 14
+      });
+      if (!row) {
+        emergency.retry(alert);
+        continue;
+      }
+
+      const distance = v => Math.hypot(v.x - alert.x, v.z - alert.z);
+      const available = fleet.filter(v => v.edge && !v.conn && !v.commit && distance(v) < 1600)
+        .sort((a, b) => distance(a) - distance(b));
+      let v, plan;
+      for (const unit of available.slice(0, 2)) {
+        plan = planner.route(unit, row);
+        if (plan) {
+          v = unit;
+          break;
+        }
+      }
+      if (!plan) {
+        const standby = fleet.find(unit => !unit.edge);
+        if (standby && service === 'fire') {
+          for (const base of planner.rows) {
+            const goal = base.goals.find(g => distance(g) < 1700 && !roadTraffic.isClosed(g.edge) &&
+              laneClear(g.edge.occ[g.lane], g.at, standby.half + 8) &&
+              (!player.active || Math.hypot(g.x - player.x, g.z - player.z) >= 25) &&
+              !nearView(g.x, g.z, standby.half + 4, VEHICLE_SPAWN_DISTANCE, roadGround(g.edge, g.x, g.z)));
+            if (!goal) continue;
+            plan = planner.route({ edge: goal.edge, lane: goal.lane, s: goal.at }, row);
+            if (plan) {
+              v = standby;
+              place(v, goal.edge, goal.lane, goal.at);
+              break;
+            }
+          }
+        }
+        if (!plan && standby && spawnVehicle(standby, 100, NEAR_RADIUS, !jump)) {
+          v = standby;
+          plan = planner.route(v, row);
+          if (!plan) v.edge = null;
+        }
+      }
+      if (!plan) {
+        emergency.retry(alert);
+        continue;
+      }
+      v.liveResponse = { planner, row, until: clock + 360 };
+      v.destinationTrip = null;
+      v.serviceTrip = plan;
+      v.serviceDwellUntil = 0;
+      v.nextServicePlan = clock;
+      v.move = chooseMove(v, true);
+      emergency.sent(alert);
+    }
+  }
+
   const isMountainBiker = bike => Boolean(bike.edge.mountain);
   const isCityCyclist = bike => !isMountainBiker(bike);
   const spawnMountainBike = (bike, min, max, protect) => spawnBike(bike, min, max, protect, true);
@@ -2969,9 +3215,11 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     let count = 0;
     for (const v of pool) {
       if (!v.edge) continue;
-      if (Math.hypot(v.x-focusX,v.z-focusZ)>VEHICLE_RADIUS) {
+      const onAmbulanceTrip = v.roadProfile === 'ambulance' && !jump &&
+        (v.serviceTrip || (v.lastServiceKind && clock <= v.serviceDwellUntil + 12));
+      if (!onAmbulanceTrip && (!v.liveResponse || jump) && Math.hypot(v.x-focusX,v.z-focusZ)>VEHICLE_RADIUS) {
         if (v.parkingTrip) parking.cancel(v);
-        v.edge=null;
+        v.edge = v.liveResponse = null;
       } else if (!matches || matches(v)) count++;
     }
     let budget = jump ? 8 : 3;
@@ -2981,7 +3229,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       if (count < target && !v.edge) {
         budget--;
         if (spawn(v, jump ? 0 : innerRadius, NEAR_RADIUS, !jump)) count++;
-      } else if (count > target && v.edge && (!matches || matches(v)) && !v.parkingTrip && !nearView(v.x,v.z,v.half+4,NEAR_RADIUS,v.y)) {
+      } else if (count > target && v.edge && (!matches || matches(v)) && !v.parkingTrip && !v.liveResponse && !nearView(v.x,v.z,v.half+4,NEAR_RADIUS,v.y)) {
         v.edge = null;
         count--;
         budget--;
@@ -3027,6 +3275,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     parking?.tick(focusX,focusZ,clock,jump);
     populate(cars, carPopulation, carTarget, spawnCar, 100, jump);
     populate(refuseTrucks, refusePopulation, 1, spawnVehicle, 85, jump);
+    populate(tractors, tractorPopulation, tractors.length, spawnTractor, 100, jump);
+    populate(ambulances, ambulancePopulation, ambulances.length, spawnAmbulance, 100, jump);
+    startEmergencyResponses(jump);
     if (parking?.enabled && clock>=nextParkingOffer) {
       nextParkingOffer=clock+1.65;
       for (let i=0;i<cars.length;i++) {
@@ -3060,6 +3311,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
 
       v.prevX=v.x;
       v.prevZ=v.z;
+      if (v.excursion) {
+        moveFarmTractor(v, dt);
+        continue;
+      }
       if (v.parkingTrip?.phase==='maneuver') {
         moveParking(v,dt);
         continue;
@@ -3088,12 +3343,12 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     collideTraffic();
     parking?.flush();
     drawBikeParking?.();
-    refuseModel.root.visible = false;
+    for (const v of modeledVehicles) v.model.root.visible = false;
     for (const v of vehicles) {
       if (!v.edge) continue;
       if (v.bus) renderBus(v);
       else if (v.bike) renderBike(v);
-      else if (v.refuseTruck) renderRefuseTruck(v);
+      else if (v.model) renderModeledVehicle(v);
       else renderCar(v);
     }
     const hideEmpty = ++updates > 2;
@@ -3171,6 +3426,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     roadTraffic,
     bikes,
     refuseTrucks,
+    tractors,
+    ambulances,
+    fireEngines,
+    serviceStops: { tractors: farmTrips.rows, ambulances: ambulanceTrips.rows },
     peds: pedestrianSystem.peds,
     parking,
     bikeParking,

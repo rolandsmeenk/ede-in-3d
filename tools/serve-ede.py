@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Serve the local Ede simulator with optional same-origin traffic, train, parking and weather feeds."""
+"""Serve the local Ede simulator with optional traffic, train, parking, weather and dispatch feeds."""
 
 import argparse
 import json
+import re
 import sys
 import time
 from functools import partial
@@ -18,6 +19,7 @@ sys.dont_write_bytecode = True
 from ede_ndw import CLOSURES, CONFIG, MEASUREMENTS, TEMPORARY_SPEEDS, fetch_xml, read_observations, read_restrictions, read_sites
 from ede_live_parking import parking_readers, parking_snapshot
 from ede_live_trains import TrainUpdates, ns_position_snapshots, train_snapshot
+from ede_p2000 import read_p2000, recent_p2000
 from ede_traffic_geometry import load_graph
 from ede_weather import LiveWeather
 
@@ -34,6 +36,7 @@ class LiveFeeds:
         if not offline:
             Thread(target=self.start_ndw, daemon=True).start()
             self.refresh('buses', 30, self.read_buses)
+            self.refresh('emergency', 60, read_p2000)
             self.refresh('trainUpdates', 60, TrainUpdates())
             Thread(target=self.start_ns_positions, daemon=True).start()
             for key, read in parking_readers():
@@ -111,17 +114,25 @@ class LiveFeeds:
         buses = feeds.get('buses')
         if buses and 0 <= now - buses['timestamp'] * 1000 < 120_000:
             snapshot['buses'] = buses
+        if 'emergency' in feeds:
+            snapshot['emergency'] = [alert for alert in feeds['emergency'] if recent_p2000(alert['publishedAt'], now)]
         return snapshot
 
 
 class Handler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, feeds, weather, **kwargs):
+    def __init__(self, *args, feeds, weather, cors_origin=None, **kwargs):
         self.feeds = feeds
         self.weather = weather
+        self.cors_origin = cors_origin
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def end_headers(self):
-        if urlsplit(self.path).path not in ('/api/ede-traffic', '/api/ede-trains', '/api/ede-parking', '/api/ede-weather'):
+        path = urlsplit(self.path).path
+        if path == '/api/ede-traffic' and self.cors_origin:
+            self.send_header('Vary', 'Origin')
+            if self.headers.get('Origin') == self.cors_origin:
+                self.send_header('Access-Control-Allow-Origin', self.cors_origin)
+        if path not in ('/api/ede-traffic', '/api/ede-trains', '/api/ede-parking', '/api/ede-weather'):
             self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
@@ -150,13 +161,20 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(payload)
 
 
+def https_origin(value):
+    if not re.fullmatch(r'https://[a-z0-9.-]+(?::[0-9]{1,5})?/?', value, re.IGNORECASE | re.ASCII):
+        raise argparse.ArgumentTypeError('expected one HTTPS origin, for example https://example.github.io')
+    return value.rstrip('/').lower().removesuffix(':443')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bind', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8000)
-    parser.add_argument('--offline', action='store_true', help='serve static assets without contacting traffic, train, parking or weather feeds')
+    parser.add_argument('--offline', action='store_true', help='serve static assets without contacting live feeds')
+    parser.add_argument('--cors-origin', type=https_origin, help='allow this HTTPS website to read the traffic API')
     args = parser.parse_args()
-    handler = partial(Handler, feeds=LiveFeeds(args.offline), weather=LiveWeather(args.offline))
+    handler = partial(Handler, feeds=LiveFeeds(args.offline), weather=LiveWeather(args.offline), cors_origin=args.cors_origin)
     with ThreadingHTTPServer((args.bind, args.port), handler) as server:
         print(f'Open http://{args.bind}:{server.server_port}/', flush=True)
         try:

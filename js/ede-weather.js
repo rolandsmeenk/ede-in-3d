@@ -4,7 +4,21 @@ const REFRESH_MS = 15 * 60 * 1000;
 const RETRY_MS = 60 * 1000;
 const STALE_MS = 30 * 60 * 1000;
 const EXPIRE_MS = 60 * 60 * 1000;
+const RINK_HISTORY_HOURS = 48;
+const HOUR_SECONDS = 3600;
 const PRESET_WIND = Object.freeze({ windSpeed: 18, windDirection: 225 });
+const dry = { interval: 900, rain: 0, showers: 0, snowfall: 0, windGusts: 22, ...PRESET_WIND };
+const breezy = { windSpeed: 39, windDirection: 250, windGusts: 58 };
+const rain = { code: 63, cloudCover: 97, rain: 0.9 };
+const weatherPresets = {
+  clear: { ...dry, code: 0, cloudCover: 8 },
+  cloudy: { ...dry, code: 3, cloudCover: 83 },
+  windy: { ...dry, ...breezy, code: 2, cloudCover: 55 },
+  rain: { ...dry, ...rain },
+  'wind-and-rain': { ...dry, ...rain, ...breezy },
+  fog: { ...dry, code: 45, cloudCover: 85, windSpeed: 6, windGusts: 9 },
+  snow: { ...dry, code: 73, cloudCover: 94, snowfall: 0.32, windSpeed: 12, windGusts: 18 },
+};
 const MAANDERBROEK = { latitude: 52.03207, longitude: 5.61268 };
 const HUB_WEIGHT = (99.5 - 80) / (120 - 80);
 const PARK_FIELDS = ['wind_speed_80m', 'wind_direction_80m', 'wind_speed_120m', 'wind_direction_120m'];
@@ -45,6 +59,36 @@ function parseTurbineWind(park, time) {
   });
 }
 
+function changeRinkIce(cover, temperature, hours) {
+  // Visual coverage rises with accumulated frost and melts faster in a thaw.
+  const rate = temperature < 0 ? -temperature / 72 : -temperature / 36;
+  return Math.max(0, Math.min(1, cover + rate * hours));
+}
+
+function rinkIceFromHistory(hourly, time, temperature) {
+  const times = hourly?.time, temperatures = hourly?.temperature_2m;
+  if (!Array.isArray(times) || !Array.isArray(temperatures) || times.length !== temperatures.length) return;
+  const windowStart = time - RINK_HISTORY_HOURS * HOUR_SECONDS;
+  let cover = 0, latestEnd;
+  for (const [i, start] of times.entries()) {
+    if (!Number.isInteger(start) || start + HOUR_SECONDS <= windowStart || start >= time) continue;
+    const end = Math.min(time, start + HOUR_SECONDS);
+    const sample = end === start + HOUR_SECONDS ? temperatures[i] : temperature;
+    if (!Number.isFinite(sample) || sample < -100 || sample > 70 || start < (latestEnd ?? -Infinity)) continue;
+    if (latestEnd !== undefined && latestEnd !== start) cover = 0;
+    const hours = (end - Math.max(start, windowStart)) / HOUR_SECONDS;
+    cover = changeRinkIce(cover, sample, hours);
+    latestEnd = end;
+  }
+  // Between hourly samples, use the latest current reading for the partial hour.
+  if (latestEnd === undefined || time - latestEnd >= HOUR_SECONDS) return;
+  return changeRinkIce(cover, temperature, (time - latestEnd) / HOUR_SECONDS);
+}
+
+export function presetRinkIce(season) {
+  return changeRinkIce(0, season === 'winter' ? -4 : 10, RINK_HISTORY_HOURS);
+}
+
 export function parseWeather(payload, now = Date.now()) {
   const [town, park] = Array.isArray(payload) ? payload : [payload];
   const p = town?.current;
@@ -59,13 +103,14 @@ export function parseWeather(payload, now = Date.now()) {
     throw new Error('Invalid weather reading');
   }
   const turbineWind = parseTurbineWind(park?.current ?? town.parkWind, p.time);
+  const rinkIce = rinkIceFromHistory(town.hourly, p.time, p.temperature_2m);
   return Object.freeze({
     source: 'Open-Meteo', observedAt,
     fetchedAt: Number.isFinite(town.fetchedAt) ? town.fetchedAt : now,
     interval: p.interval, temperature: p.temperature_2m, code: p.weather_code, cloudCover: p.cloud_cover,
     rain: p.rain, showers: p.showers, snowfall: p.snowfall,
     windSpeed: p.wind_speed_10m, windDirection: p.wind_direction_10m, windGusts: p.wind_gusts_10m,
-    ...(turbineWind && { turbineWind })
+    ...(turbineWind && { turbineWind }), ...(rinkIce !== undefined && { rinkIce })
   });
 }
 
@@ -80,6 +125,7 @@ async function fetchWeather(signal) {
       latitude: [lat0, MAANDERBROEK.latitude].join(','),
       longitude: [lon0, MAANDERBROEK.longitude].join(','),
       current: [...CURRENT_FIELDS, ...PARK_FIELDS].join(','),
+      hourly: 'temperature_2m', past_hours: RINK_HISTORY_HOURS, forecast_hours: 1,
       timezone: 'GMT', timeformat: 'unixtime', temperature_unit: 'celsius',
       wind_speed_unit: 'kmh', precipitation_unit: 'mm'
     });
@@ -88,6 +134,16 @@ async function fetchWeather(signal) {
   if (!response.ok) throw new Error(`Open-Meteo weather HTTP ${response.status}`);
   return response.json();
 }
+
+function windVector(reading) {
+  const bearing = reading.windDirection * Math.PI / 180;
+  const gust = Math.max(0, (reading.windGusts ?? reading.windSpeed) - reading.windSpeed);
+  const speed = Math.min(25, (reading.windSpeed + gust * 0.25) / 3.6);
+  // The bearing is where the wind comes from. Ede uses +X east and +Z south.
+  return { windX: -Math.sin(bearing) * speed, windZ: Math.cos(bearing) * speed };
+}
+
+const defaultWind = windVector(PRESET_WIND);
 
 function weatherTargets(reading) {
   if (!reading) return null;
@@ -98,13 +154,10 @@ function weatherTargets(reading) {
   const rain = Math.max(-Math.expm1(-rainRate / 2.5),
     ['Rain', 'Showers', 'Thunderstorms', 'Drizzle'].includes(condition) ? 0.12 : 0);
   const snow = Math.max(-Math.expm1(-snowRate / 0.65), condition === 'Snow' ? 0.14 : 0);
-  const bearing = reading.windDirection * Math.PI / 180;
-  const wind = Math.min(25, (reading.windSpeed + Math.max(0, reading.windGusts - reading.windSpeed) * 0.25) / 3.6);
   return {
     cloud: reading.cloudCover / 100, fog: condition === 'Fog' ? 1 : 0, rain, snow,
     wetness: Math.max(rain * 0.65, rainRate > 0 ? 1 - 0.81 * Math.exp(-rainRate / 3) : 0),
-    // The bearing is where the wind comes from. Ede uses +X east and +Z south.
-    windX: -Math.sin(bearing) * wind, windZ: Math.cos(bearing) * wind
+    ...windVector(reading)
   };
 }
 
@@ -114,17 +167,20 @@ function approach(value, target, dt, seconds) {
 
 export function createWeatherTransition() {
   let target = null;
-  const effects = { blend: 0, cloud: 0, fog: 0, rain: 0, raining: false, snow: 0, wetness: 0, windX: 0, windZ: 0 };
+  const effects = { blend: 0, cloud: 0, fog: 0, rain: 0, raining: false, snow: 0, wetness: 0, ...defaultWind };
   return {
     setReading(reading) {
       target = weatherTargets(reading);
       effects.raining = (target?.rain ?? 0) > 0;
       if (target && effects.blend === 0) {
-        for (const key of ['cloud', 'fog', 'windX', 'windZ']) effects[key] = target[key];
+        for (const key of ['cloud', 'fog']) effects[key] = target[key];
         effects.wetness = 0;
       }
     },
     update(dt) {
+      const wind = target ?? defaultWind;
+      effects.windX = approach(effects.windX, wind.windX, dt, 1.8);
+      effects.windZ = approach(effects.windZ, wind.windZ, dt, 1.8);
       if (!target && effects.blend === 0 && effects.rain === 0 && effects.snow === 0) return effects;
       effects.blend = approach(effects.blend, target ? 1 : 0, dt, 0.85);
       effects.rain = approach(effects.rain, target?.rain ?? 0, dt, 0.8);
@@ -132,8 +188,6 @@ export function createWeatherTransition() {
       if (target) {
         effects.cloud = approach(effects.cloud, target.cloud, dt, 1.25);
         effects.fog = approach(effects.fog, target.fog, dt, 1.25);
-        effects.windX = approach(effects.windX, target.windX, dt, 1.8);
-        effects.windZ = approach(effects.windZ, target.windZ, dt, 1.8);
         effects.wetness = approach(effects.wetness, target.wetness, dt, effects.wetness < target.wetness ? 6 : 75);
       }
       return effects;
@@ -147,6 +201,8 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
   let enabled = false;
   let current = null;
   let active = null;
+  let preset = null;
+  let sceneReading = null;
   let failed = false;
   let nextFetch = 0;
   let pending;
@@ -159,10 +215,11 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
     const status = !enabled ? 'off'
       : !current ? failed ? 'unavailable' : 'loading'
       : age >= EXPIRE_MS ? 'expired' : age >= STALE_MS ? 'stale' : 'fresh';
-    const nextActive = status === 'fresh' || status === 'stale' ? current : null;
-    if (nextActive !== active) {
-      active = nextActive;
-      transition.setReading(active);
+    active = status === 'fresh' || status === 'stale' ? current : null;
+    const nextReading = enabled ? active : preset;
+    if (nextReading !== sceneReading) {
+      sceneReading = nextReading;
+      transition.setReading(sceneReading);
     }
     const displayed = enabled ? current : null;
     if (state.status !== status || state.current !== displayed || state.enabled !== enabled) {
@@ -216,9 +273,13 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
   page.addEventListener('visibilitychange', tick);
   return {
     setEnabled, update: transition.update,
+    setPreset(id) {
+      preset = Object.hasOwn(weatherPresets, id) ? weatherPresets[id] : null;
+      if (!enabled) tick();
+    },
     get state() { return state; },
     get activeReading() { return active; },
-    get windReading() { return active ?? PRESET_WIND; },
-    get turbineWind() { return active?.turbineWind ?? active ?? PRESET_WIND; }
+    get windReading() { return sceneReading ?? PRESET_WIND; },
+    get turbineWind() { return sceneReading?.turbineWind ?? sceneReading ?? PRESET_WIND; }
   };
 }

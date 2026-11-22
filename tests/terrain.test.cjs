@@ -212,7 +212,7 @@ test('the Ginkelse Heide detail resolves both sand areas with continuous terrain
   const { tileGeometry } = loadModule(readFileSync(path.join(root, 'js/ede-terrain-tiles.js'), 'utf8'), {
     imports: {
       'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
-      './tsl-materials.js': {}, './terrain.js': terrain,
+      './tsl-materials.js': {}, './ede-playable-boundary.js': {}, './terrain.js': terrain,
     },
   });
   const tileFor = id => {

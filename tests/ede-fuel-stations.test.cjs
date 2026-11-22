@@ -38,7 +38,7 @@ test('detailed fuel stations share their sign atlas and leave vehicle clearance 
     'three/tsl': { attribute, color, mix, smoothstep }, './building-collision.js': collision,
     './ede-fuel-sites.js': { EDE_FUEL_SITES: sites }, './terrain.js': { terrainHeightAt: () => 8 },
     './ede-fuel-prices.js': { ...fuelPrices, watchFuelBaseline(update) { updatePrices = update; } },
-    './tsl-materials.js': { cityUniforms: { uInteriorGlow: uniform(0) } },
+    './tsl-materials.js': { cityUniforms: { uInteriorGlow: uniform(0), uWindowLights: uniform(new THREE.Vector3()) } },
   }, globals: { document: { createElement: createCanvas } } });
   const [covered, open] = buildEdeFuelStations(sites, { live: true });
   const colliders = covered.userData.colliders;
@@ -81,10 +81,24 @@ test('fuel station replacements preserve the warehouse and exclude only verified
   const { EDE_DATA } = await import('../js/ede-geodata.js');
   const { EDE_FUEL_SITES, EDE_FUEL_FALLBACK_FOOTPRINTS } = await import('../js/ede-fuel-sites.js');
   const { landmarkBagExclusions } = await import('../js/ede-landmark-sites.js');
+  const { containsPlayablePoint } = await import('../js/ede-playable-boundary.js');
   const { polygonContains } = loadModule(read('building-collision.js'));
   const points = ring => Array.from({ length: ring.length / 2 }, (_, i) => ({ x: ring[2 * i], z: ring[2 * i + 1] }));
 
   const [west, north, east, south] = EDE_DATA.meta.bounds;
+  const added = ['n2765322949', 'n2761090387', 'n26866817', 'n13730420385', 'n13730420384', 'n1151393764', 'n848767429'];
+  assert.equal(EDE_FUEL_SITES.length, 27);
+  for (const id of added) {
+    const site = EDE_FUEL_SITES.find(row => row.id === id);
+    assert.ok(site, id);
+    assert.ok(containsPlayablePoint(site.x, site.z), site.name);
+    assert.ok(containsPlayablePoint(...site.pylon), site.name);
+    assert.equal(site.pumps.length, site.bays);
+    if (site.canopy !== false) {
+      const canopy = { outer: site.canopyRing.map(([x, z]) => ({ x, z })), holes: [] };
+      for (const [x, z] of site.pumps) assert.ok(polygonContains(canopy, x, z), site.name);
+    }
+  }
   assert.equal(new Set(EDE_FUEL_SITES.map(site => site.id)).size, EDE_FUEL_SITES.length);
   assert.deepEqual(EDE_FUEL_SITES.filter(site => site.north).map(site => site.name), ['Esso De Stroet', 'Esso De Tol', 'Esso Spelt']);
   for (const site of EDE_FUEL_SITES) {

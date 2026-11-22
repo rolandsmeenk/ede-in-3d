@@ -1,6 +1,6 @@
 import { EDE_DATA } from './ede-geodata.js';
 import { EDE_NORTH_RAIL, hasNorthRail } from './ede-north-rail-data.js';
-import { MOTOR } from './road-access.js';
+import { MOTOR } from './road-access.js?v=20261122-startup';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 
 const CELL = 48;
@@ -123,6 +123,26 @@ function stationRailExtensions(profiles) {
   return extensions;
 }
 
+function clippedRailProfile(profile, way) {
+  const spans = calculateSegments(profile);
+  const endpoint = (x, z) => {
+    let best, gap = Infinity;
+    for (const span of spans) {
+      const along = clamp((x - span.x) * span.dx + (z - span.z) * span.dz, 0, span.length);
+      const distance = (x - span.x - along * span.dx) ** 2 + (z - span.z - along * span.dz) ** 2;
+      if (distance >= gap) continue;
+      gap = distance;
+      best = { at: span.at + along, point: [x, z, span.y + along / span.length * (span.endY - span.y)] };
+    }
+    return best;
+  };
+  const ends = [endpoint(...way.pts.slice(0, 2)), endpoint(...way.pts.slice(-2))].sort((a, b) => a.at - b.at);
+  const [first, last] = ends;
+  const interior = spans.filter(span => span.at > first.at + 0.001 && span.at < last.at - 0.001)
+    .map(span => [span.x, span.z, span.y]);
+  return { ...profile, wayId: way.id, points: [first.point, ...interior, last.point] };
+}
+
 export function setEdeGrade(data) {
   if (hasNorthRail(EDE_DATA)) {
     const north = EDE_NORTH_RAIL;
@@ -202,7 +222,19 @@ export function setEdeGrade(data) {
     }
   }
   const nextCorridors = new Map(), nextCorridorSpans = new Map();
-  for (const profile of data.railCorridors || []) {
+  const clippedRails = new Map();
+  for (const way of EDE_DATA.railways.filter(way => way.municipalClip)) {
+    const id = way.osmId ?? way.id;
+    if (!clippedRails.has(id)) clippedRails.set(id, []);
+    clippedRails.get(id).push(way);
+  }
+  const railIds = new Set(EDE_DATA.railways.map(way => way.id));
+  const railProfilesForMap = (data.railCorridors ?? []).flatMap(profile => {
+    const parts = clippedRails.get(profile.wayId);
+    if (parts) return parts.map(way => clippedRailProfile(profile, way));
+    return railIds.has(profile.wayId) ? [profile] : [];
+  });
+  for (const profile of railProfilesForMap) {
     const sections = gradeSections({ ...profile, width: RAIL_BALLAST_WIDTH }, Infinity);
     nextCorridors.set(profile.wayId, { ...profile, sections });
     for (const span of calculateSegments(profile)) {

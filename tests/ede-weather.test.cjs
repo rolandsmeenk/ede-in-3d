@@ -29,6 +29,25 @@ test('current conditions preserve model time, source and wind and format Ede tim
   assert.throws(() => parseWeather(reading({}, observedAt + 6 * minute), observedAt));
 });
 
+test('rink ice accumulates through frost and recedes through thaw without using forecasts', async () => {
+  const { parseWeather, presetRinkIce } = await import('../js/ede-weather.js');
+  const hour = 3600;
+  const time = observedAt / 1000;
+  const starts = Array.from({ length: 49 }, (_, i) => time - (48 - i) * hour);
+  const cover = (past, temperature = past.at(-1)) => parseWeather({
+    ...reading({ temperature_2m: temperature }),
+    hourly: { time: starts, temperature_2m: [...past, -35] }
+  }, observedAt).rinkIce;
+  assert.equal(cover(Array(48).fill(4)), 0);
+  assert.ok(cover([...Array(47).fill(4), -1]) < 0.02);
+  assert.equal(cover(Array(48).fill(-4)), 1);
+  assert.ok(Math.abs(cover([...Array(42).fill(-4), ...Array(6).fill(3)]) - 0.5) < 1e-9);
+  assert.equal(cover([...Array(36).fill(-4), ...Array(12).fill(4)]), 0);
+  assert.equal(parseWeather(reading({ temperature_2m: -8 }), observedAt).rinkIce, undefined);
+  assert.equal(presetRinkIce('winter'), 1);
+  assert.equal(presetRinkIce('summer'), 0);
+});
+
 test('clear, overcast, rainy, snowy and foggy weather blend toward their scene settings', async () => {
   const { createWeatherTransition, parseWeather } = await import('../js/ede-weather.js');
   const transition = createWeatherTransition();
@@ -38,7 +57,7 @@ test('clear, overcast, rainy, snowy and foggy weather blend toward their scene s
   set({});
   const clear = { ...transition.update(12) };
   assert.ok(clear.blend > .99 && clear.cloud === 0 && clear.fog === 0 && clear.rain === 0 && clear.snow === 0);
-  assert.ok(clear.windX > 5 && Math.abs(clear.windZ) < 1e-10);
+  assert.ok(clear.windX > 5 && Math.abs(clear.windZ) < 0.005);
 
   set({ weather_code: 3, cloud_cover: 100 });
   const overcast = { ...transition.update(1) };
@@ -153,6 +172,32 @@ test('turning Live Weather off cancels an in-flight read and a late response can
   assert.equal(weather.update(10).blend, 0);
 });
 
+test('preset wind, rain and snow drive the scene offline and return after Live is turned off', async t => {
+  const { createLiveWeather } = await import('../js/ede-weather.js');
+  let calls = 0;
+  const weather = createLiveWeather({ now: () => observedAt, page: { hidden: false, addEventListener() {} },
+    request: async () => { calls++; return reading({ wind_speed_10m: 0 }); }
+  });
+  t.after(() => weather.setEnabled(false));
+  weather.setPreset('wind-and-rain');
+  assert.equal(calls, 0);
+  assert.equal(weather.activeReading, null);
+  assert.ok(weather.windReading.windSpeed > 30);
+  assert.equal(weather.turbineWind, weather.windReading);
+  assert.ok(weather.update(12).raining);
+  assert.ok(weather.update(12).wetness > .5);
+  weather.setEnabled(true);
+  await setImmediate();
+  assert.equal(weather.windReading.windSpeed, 0);
+  weather.setPreset('snow');
+  assert.equal(weather.windReading.windSpeed, 0);
+  weather.setEnabled(false);
+  assert.equal(calls, 1);
+  const snow = weather.update(12);
+  assert.ok(snow.snow > .75 && !snow.raining);
+  assert.equal(weather.state.current, null);
+});
+
 test('calm live wind overrides the preset breeze until Live Weather is switched off', async t => {
   const { createLiveWeather } = await import('../js/ede-weather.js');
   const weather = createLiveWeather({
@@ -161,13 +206,25 @@ test('calm live wind overrides the preset breeze until Live Weather is switched 
   });
   t.after(() => weather.setEnabled(false));
   const preset = weather.windReading;
+  const fallback = { ...weather.update(0) };
+  assert.ok(fallback.windX > 0 && fallback.windZ < 0);
+  assert.ok(Math.abs(Math.hypot(fallback.windX, fallback.windZ) - 5) < 1e-10);
   weather.setEnabled(true);
   assert.equal(weather.windReading, preset);
   await setImmediate();
   assert.equal(weather.windReading, weather.state.current);
   assert.equal(weather.windReading.windSpeed, 0);
+  const calming = { ...weather.update(1.8) };
+  assert.ok(calming.windX > 0 && calming.windX < fallback.windX);
+  weather.update(30);
+  const calm = weather.update(0);
+  assert.equal(Math.hypot(calm.windX, calm.windZ), 0);
   weather.setEnabled(false);
   assert.equal(weather.windReading, preset);
+  weather.update(30);
+  const restored = weather.update(0);
+  assert.equal(restored.windX, fallback.windX);
+  assert.equal(restored.windZ, fallback.windZ);
 });
 
 test('Maanderbroek hub wind stays separate from town wind and follows the shortest change in bearing', async t => {

@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { color, mix, texture } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ISLAND_BOUNDS, blockAt, EDE_DATA, nearestRoads, pointInPoly, waterAt } from './city-config.js';
+import { ISLAND_BOUNDS, blockAt, containsPlayablePoint, EDE_DATA, nearestRoads, pointInPoly, waterAt } from './city-config.js';
 import {
   createRoadSurfaceMaterial,
   createEdePavingMaterial,
@@ -18,7 +18,7 @@ import { getTerrain, terrainHeightAt } from './terrain.js';
 import { FRANKENENG_GAUGES, resolveFrankenengLevels } from './ede-water-levels.js';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { getRailCorridors, gradeCuts, gradeWayAt, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
-import { edeTreeSite } from './ede-tree-data.js';
+import { edeTreeSite } from './ede-tree-data.js?v=20261122-safari-cache';
 import { REEMST_TREES } from './ede-reemst-landmark-survey.js';
 import { LUNTEREN_STRUCTURES } from './ede-lunteren-survey.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
@@ -514,7 +514,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   if (treeInventory) {
     for (const source of [treeInventory, EDE_DATA.northTrees ?? []]) for (const tree of source) {
       const { x, z } = tree;
-      if (waterAt(x, z)) continue;
+      if (!containsPlayablePoint(x, z) || waterAt(x, z)) continue;
       const block = blockAt(x, z);
       if (block && !block.park && !block.sidewalk) continue;
       const verge = x > -2027 && x < -2013 ? WVEDE_TREE_POSITIONS.get(`${x}/${z}`) : undefined;
@@ -570,7 +570,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const outsideTown = (x, z) => baseBounds &&
     (x < baseBounds[0] || x > baseBounds[2] || z < baseBounds[1] || z > baseBounds[3]);
   const plantWoodlandTree = (x, z, gx, gz, extra) => {
-    if (inMiddelpunt(x, z) || nearbyTree(x, z) || waterAt(x, z)) return;
+    if (inMiddelpunt(x, z) || nearbyTree(x, z) || waterAt(x, z) || !containsPlayablePoint(x, z)) return;
     const fill = canopyDensity?.get(`${Math.floor(x / 200)}/${Math.floor(z / 200)}`);
     if (fill !== undefined && hash(gx, gz, extra ? 8 : 4) > fill) return;
     if (LANDMARK_EXCLUSIONS.some(b => x > b.minX - 4 && x < b.maxX + 4 && z > b.minZ - 4 && z < b.maxZ + 4)) return;
@@ -588,7 +588,8 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const beforeNorthernWoodland = parkTreeSites.length;
   for (const [x, z, height] of northernTreeSamples) {
     if (!Number.isFinite(x + z + height) || height < 4 || height > 40 ||
-        inMiddelpunt(x, z) || nearbyTree(x, z) || waterAt(x, z) || nearbyRailHeightAt(x, z, 6) !== undefined) continue;
+        inMiddelpunt(x, z) || nearbyTree(x, z) || waterAt(x, z) || nearbyRailHeightAt(x, z, 6) !== undefined
+        || !containsPlayablePoint(x, z)) continue;
     if (nearestRoads(x, z, 20).some(q => q.dist < q.road.w / 2 + 3)) continue;
     const block = blockAt(x, z);
     if (block && !block.park && !block.sidewalk) continue;

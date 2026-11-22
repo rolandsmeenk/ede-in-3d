@@ -366,7 +366,7 @@ def preserve_surface_ids(surface_source, previous):
                 row['bumpId'] = bump_ids[row['bumpId']]
 
 
-def build(sign_source, surface_source, graph, previous=None):
+def build(sign_source, surface_source, graph, previous=None, signs_only=False):
     paths = SegmentIndex(graph.paths, margin=24)
     signs, bumps, crossings = [], [], []
     bounds = graph.bounds
@@ -383,6 +383,9 @@ def build(sign_source, surface_source, graph, previous=None):
         if modes:
             sign['affectedModes'] = modes
         signs.append(finalize(sign, refs, reason))
+    if signs_only:
+        return {**surface_source, 'signs': signs,
+                'sources': {**surface_source['sources'], 'signs': sign_source.get('meta')}}
     for bump in sorted(filter(in_bounds, surface_source['bumps']), key=lambda f: f['id']):
         refs, reason = bump_links(bump, graph.index, paths)
         bumps.append(finalize(bump, refs, reason))
@@ -399,16 +402,19 @@ def main():
     parser.add_argument('surfaces', type=Path)
     parser.add_argument('--output', type=Path, default=ROOT / 'assets' / 'ede-street-features.json.gz')
     parser.add_argument('--previous', type=Path, help='Previously published JSON or gzip asset for stable surface IDs')
+    parser.add_argument('--signs-only', action='store_true', help='Refresh signs and retain reviewed bumps and crossings from an existing asset')
     args = parser.parse_args()
-    surfaces = json.loads(args.surfaces.read_bytes())
+    encoded = args.surfaces.read_bytes()
+    surfaces = json.loads(gzip.decompress(encoded) if args.surfaces.suffix == '.gz' else encoded)
     previous = None
     if args.previous:
         previous = args.previous.read_bytes()
         if args.previous.suffix == '.gz':
             previous = gzip.decompress(previous)
         previous = json.loads(previous)
-        preserve_surface_ids(surfaces, previous)
-    data = build(json.loads(args.signs.read_bytes()), surfaces, load_graph(street_features=True), previous)
+        if not args.signs_only:
+            preserve_surface_ids(surfaces, previous)
+    data = build(json.loads(args.signs.read_bytes()), surfaces, load_graph(street_features=True), previous, args.signs_only)
     encoded = (json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf-8')
     args.output.write_bytes(gzip.compress(encoded, mtime=0) if args.output.suffix == '.gz' else encoded)
     for key in ('signs', 'bumps', 'crossings'):

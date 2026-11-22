@@ -7,11 +7,11 @@ import json
 import math
 import re
 
-from shapely import STRtree, contains_xy, make_valid, points
+from shapely import STRtree, contains_xy, intersects_xy, make_valid, points, prepare
 from shapely.geometry import LineString, Polygon
 
 from ede_gis import Frame, source_crs
-from ede_map import ROOT, load_scene
+from ede_map import ROOT, load_playable_boundary, load_playable_scene, load_scene
 
 BGT, SURVEYED, MOR, ROADSIDE, AHN, PHENOLOGY = 1, 8, 16, 32, 64, 128
 UNKNOWN = 255
@@ -234,19 +234,36 @@ def coverage(sites):
             'phenology': sum(bool(t.sources & PHENOLOGY) for t in sites)}
 
 
-def expand(args, Tree, unpack_baseline, pack, classify):
+def expand(args, Tree, unpack_baseline, pack, classify, read_geojson, unique_trees, join):
     output = args.output or ROOT / 'assets/ede-trees-expanded.bin'
     if output.resolve() == args.baseline.resolve():
         raise ValueError('The expanded tree output must preserve the baseline asset')
-    scene = load_scene()
+    scene = load_playable_scene() if args.playable else load_scene()
     frame = Frame(scene['meta']['lonLatAffine'])
     base = unpack_baseline(args.baseline, frame)
     if pack(base) != args.baseline.read_bytes():
         raise ValueError('The expansion did not round-trip the baseline inventory')
     municipal = json.loads(args.mor.read_text())
     records = sorted(get_points(municipal, frame, scene['meta']['bounds']))
+    boundary = load_playable_boundary() if args.playable else None
+    if boundary is not None:
+        prepare(boundary)
+        records = [row for row in records if contains_xy(boundary, *row[2])]
+        base = [tree for tree in base if intersects_xy(boundary, *tree.world)]
     masks = spatial_masks(scene)
     baseline_counts = coverage(base)
+    bgt_count = 0
+    if args.playable and args.pdok:
+        raw_bgt = [(identity, rd, world) for rd, p, identity in read_geojson(args.pdok, 'Point')
+                   if p.get('plus_type', 'boom') == 'boom' and p.get('status', 'bestaand') == 'bestaand'
+                   and contains_xy(boundary, *(world := frame.rd_to_scene(*rd)))
+                   and not (scene['meta']['baseBounds'][0] <= world[0] <= scene['meta']['baseBounds'][2]
+                            and scene['meta']['baseBounds'][1] <= world[1] <= scene['meta']['baseBounds'][3])]
+        rejects = rejection_masks(raw_bgt, masks)
+        additions = unique_trees([Tree(rd, world, sources=BGT) for i, (_, rd, world) in enumerate(raw_bgt) if i not in rejects])
+        before = len(base)
+        join(base, additions, 1.2)
+        bgt_count = len(base) - before
     surveyed = next((tree for tree in base if tree.sources & SURVEYED and math.dist(tree.rd, VUUR_MOR) < 5.6), None)
     alias = next((i for i, (identity, rd, _) in enumerate(records)
                   if identity == 9775 and math.dist(rd, VUUR_MOR) < 0.5), None) if surveyed else None
@@ -312,19 +329,34 @@ def expand(args, Tree, unpack_baseline, pack, classify):
     base.extend(unique)
     province, provincial_rows = enrich_roadside(
         json.loads(args.roadside.read_text()), scene, frame, base, classify)
+    if boundary is not None:
+        base = [tree for tree in base if intersects_xy(boundary, *tree.world)]
     canopy_report, derived = {}, []
     if args.canopy:
         from ede_tree_canopy import enrich_canopy
         canopy_asset = output.with_name('ede-tree-canopy-v1.json')
         canopy_report, derived = enrich_canopy(args.canopy, canopy_asset, base, scene, frame, masks)
+    if args.preserve:
+        earlier = {tree.world: tree for tree in unpack_baseline(args.preserve, frame)}
+        for tree in base:
+            previous = earlier.get(tuple(round(v * 5) / 5 for v in tree.world))
+            if not previous:
+                continue
+            tree.height = tree.height or previous.height
+            tree.diameter = tree.diameter or previous.diameter
+            tree.crown_width = tree.crown_width or previous.crown_width
+            tree.season_group = tree.season_group or previous.season_group
+            if tree.species == UNKNOWN:
+                tree.species = previous.species
+            tree.sources |= previous.sources & (SURVEYED | AHN | PHENOLOGY)
     data = pack(base)
     output.write_bytes(data)
     summary = {
         'morSnapshot': municipal['timeStamp'], 'sourceRecords': len(municipal['features']), 'inBounds': len(records),
-        'mor': dict(counts), 'provincial': province, 'canopy': canopy_report,
+        'mor': dict(counts), 'provincial': province, 'canopy': canopy_report, 'outerBgtAdded': bgt_count,
         'coverageBefore': baseline_counts, 'coverageAfter': coverage(base),
         'asset': {'filename': output.name, 'bytes': len(data), 'sha256': sha256(data).hexdigest()},
-        'sourceHashes': {p.name: sha256(p.read_bytes()).hexdigest() for p in (args.baseline, args.mor, args.roadside)}
+        'sourceHashes': {p.name: sha256(p.read_bytes()).hexdigest() for p in (args.baseline, args.mor, args.roadside, args.pdok) if p}
     }
     if args.audit:
         args.audit.write_text(json.dumps({'summary': summary, 'morDecisions': decisions,

@@ -91,7 +91,7 @@ function classList() {
   };
 }
 
-function mapHarness(landmarks = [], teleportsById = {}) {
+function mapHarness(landmarks = [], teleportsById = {}, geo = {}) {
   const window = { ...eventTarget(), innerWidth: 200, innerHeight: 200 };
   const canvas = {
     ...eventTarget(), style: {}, clientWidth: 200, clientHeight: 200,
@@ -128,7 +128,7 @@ function mapHarness(landmarks = [], teleportsById = {}) {
   };
   const { NYCMapSystem } = loadModule(source, {
     globals: { window, document },
-    imports: { './nyc-geodata.js': { GEO: { frame: {} } }, './city-config.js': config }
+    imports: { './nyc-geodata.js': { GEO: geo }, './city-config.js': config }
   });
   const teleports = [], landmarkTeleports = [], toggles = [];
   const map = new NYCMapSystem({
@@ -199,6 +199,31 @@ test('a map tap finds the framed approach to a landmark outside the area menu', 
   h.pointer(h.canvas, 'pointerdown', 2, 113, 120);
   h.pointer(h.canvas, 'pointerup', 2, 113, 120);
   assert.deepEqual(h.teleports, [[1003, 2000]]);
+});
+
+test('the atlas omits hidden pins, search results and generic area labels', () => {
+  const mast = { id: 'mast', name: 'Zendmast', short: 'Zendmast', x: 1000, z: 2000, hideOnMap: true };
+  const area = { id: 'area', name: 'Village Centre', short: 'Village Centre', x: 1200, z: 2050, hideOnMap: true };
+  const church = { id: 'kerk', name: 'Church', short: 'Church', x: 700, z: 2350 };
+  const h = mapHarness([mast, area, church], { mast: { focus: mast }, area: { focus: area }, kerk: { focus: church } }, {
+    city: 'Ede', ede: { meta: { areas: [{ name: 'Neighbourhood', labelPoint: [450, 1500] }] },
+      parks: [{ name: 'Local park', kind: 'park', ring: [1240, 1700, 1260, 1700, 1260, 1720, 1240, 1720] }] },
+  });
+  const labels = [], circles = [];
+  const ctx = new Proxy({ canvas: { width: 200, height: 200 }, measureText: () => ({ width: 20 }),
+    fillText: label => labels.push(label), arc: (x, y) => circles.push([x, y]) }, {
+    get: (target, key) => target[key] ?? (() => {}),
+  });
+  Object.assign(h.map, { drawWorld() {}, drawRoadLabels() {}, drawScaleBar() {}, viewZoom: 0.1 });
+  h.map.renderFullMapStatic(ctx, { w: 200, h: 200, s: 0.1, screen() {},
+    toX: x => (x - 1000) * 0.1, toY: z => (z - 2000) * 0.1 });
+  assert.deepEqual(labels, ['LOCAL PARK', 'Church']);
+  assert.deepEqual(circles, [[-30, 35], [-30, 35]]);
+  assert.equal(h.map.scenicLandmarkAt(mast, { width: 200, height: 200 }), null);
+  h.map.search(area.name);
+  assert.equal(h.map.viewCenterX, 1000);
+  h.map.search(church.name);
+  assert.equal(h.map.viewCenterX, church.x);
 });
 
 for (const interruption of ['pointercancel', 'lostpointercapture', 'blur', 'hidden', 'close']) {

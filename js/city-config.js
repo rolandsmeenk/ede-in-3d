@@ -1,7 +1,8 @@
 import { EDE_MODELED_LANDMARKS, modeledLandmarkFootprints } from './ede-landmark-sites.js';
+import { containsPlayablePoint, constrainToPlayableArea } from './ede-playable-boundary.js';
 import { GEO } from './nyc-geodata.js';
 import { projectLonLatInto, unprojectScene } from './ede-scene-coordinates.js';
-import { FOOT } from './road-access.js';
+import { FOOT } from './road-access.js?v=20261122-startup';
 
 // Ede spatial adapter for mrdoob/slop-newyork's engine, via an irregular-city data path.
 // Legacy export names are retained as API aliases; all visible geography is Ede.
@@ -299,7 +300,7 @@ const NYC_LANDMARKS=[
  const {x,z}=site||projectLonLat(lon,lat);
  return {id,name,short,x,z,district,road,lon,lat};
 }).concat(EDE_DATA.meta.north ? NORTHERN_ARRIVALS.map(([id, name, road, from, to, focusHeight]) => ({
- id, name, short: name, road, district: 'Lunteren', mapScenic: true,
+ id, name, short: name, road, district: 'Lunteren', mapScenic: true, hideOnMap: true,
  ...projectLonLat(...to), approach: projectLonLat(...from), focusHeight, lon: to[0], lat: to[1],
 })) : []).concat(EDE_MODELED_LANDMARKS.map(site => ({
  ...site, short: site.name,
@@ -389,9 +390,9 @@ for(const lm of NYC_LANDMARKS){
  }
  if(!LANDMARK_SITES[lm.name])LANDMARK_SITES[lm.name]={x:lm.x,z:lm.z,w:60,d:60,h:20,ring:[]};
 }
-function getLocationLabel(x,z){
+function getLocationLabel(x,z,landmarks=NYC_LANDMARKS){
  let landmark = null, landmarkDistance = 100;
- for (const lm of NYC_LANDMARKS) {
+ for (const lm of landmarks) {
    const distance = Math.hypot(x - lm.x, z - lm.z);
    if (distance >= landmarkDistance) continue;
    landmark = lm;
@@ -432,6 +433,7 @@ function walkSignal(time, isAvenue) {
 }
 export {
   EDE_DATA, EDE_AREAS, toPts, projectLonLat, pointInPoly, waterAt, waterAtExact, nearestDrivingPoint, defaultSpawn, sidewalkAt,
+  containsPlayablePoint, constrainToPlayableArea,
   AVENUES,
   ALL_AVENUES,
   CENTRAL_PARK_BOUNDS,

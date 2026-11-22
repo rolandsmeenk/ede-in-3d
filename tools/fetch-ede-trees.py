@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 from urllib.parse import urlencode
 
-from ede_map import load_scene
+from ede_map import load_playable_scene, load_scene
 
 PDOK = 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/vegetatieobject_punt/items'
 EDE_WFS = 'https://geo.ede.nl/geoserver/Ede/wfs'
@@ -25,8 +25,9 @@ def fetch_json(url, **parameters):
     return json.loads(raw)
 
 
-def bounds():
-    return tuple(Decimal(str(value)) for value in load_scene()['meta']['geographicBounds'])
+def bounds(playable):
+    scene = load_playable_scene() if playable else load_scene()
+    return tuple(Decimal(str(value)) for value in scene['meta']['geographicBounds'])
 
 
 def fetch_pdok_tile(box, snapshot_date):
@@ -48,9 +49,9 @@ def fetch_pdok_tile(box, snapshot_date):
         page = fetch_json(next_page)
 
 
-def fetch_expansion(directory, snapshot_date):
+def fetch_expansion(directory, snapshot_date, playable=False):
     from ede_gis import Frame
-    meta = load_scene()['meta']
+    meta = (load_playable_scene() if playable else load_scene())['meta']
     frame = Frame(meta['lonLatAffine'])
     min_x, min_z, max_x, max_z = meta['bounds']
     corners = [frame.scene_to_rd(x, z) for x in (min_x, max_x) for z in (min_z, max_z)]
@@ -83,11 +84,12 @@ def main():
     parser.add_argument('--date', type=date.fromisoformat, required=True)
     parser.add_argument('--expansion-only', action='store_true',
                         help='Fetch the MOR and Gelderland snapshots for the expanded inventory')
+    parser.add_argument('--playable', action='store_true', help='Download across the expanded map envelope')
     args = parser.parse_args()
     if args.expansion_only:
-        fetch_expansion(args.directory, args.date)
+        fetch_expansion(args.directory, args.date, args.playable)
         return
-    south, west, north, east = bounds()
+    south, west, north, east = bounds(args.playable)
     tiles = 6
     xs = [west + (east - west) * i / tiles for i in range(tiles + 1)]
     ys = [south + (north - south) * i / tiles for i in range(tiles + 1)]

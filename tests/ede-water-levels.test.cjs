@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { setImmediate } = require('node:timers/promises');
 
 test('Frankeneng uses each gauge independently and falls back for invalid or stale values', async () => {
   const { resolveFrankenengLevels } = await import('../js/ede-water-levels.js');
@@ -24,4 +25,22 @@ test('Frankeneng uses each gauge independently and falls back for invalid or sta
   assert.deepEqual(resolveFrankenengLevels(layer, { features: [result.features[0]] }, now), [fallback[0], live[1]]);
   assert.deepEqual(resolveFrankenengLevels(layer, result, now + 45 * 60000), fallback);
   assert.deepEqual(resolveFrankenengLevels({ editingInfo: { dataLastEditDate: now + 360000 } }, result, now), fallback);
+});
+
+test('stopping the gauge watcher aborts both requests and ignores late results', async t => {
+  const { watchFrankenengLevels } = await import('../js/ede-water-levels.js');
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', (url, { signal }) => new Promise(resolve => requests.push({ signal, resolve })));
+  const page = new EventTarget();
+  const updates = [];
+  const stop = watchFrankenengLevels(value => updates.push(value), page);
+  t.after(stop);
+  assert.equal(requests.length, 2);
+  stop();
+  assert.ok(requests.every(({ signal }) => signal.aborted));
+  for (const { resolve } of requests) resolve({ ok: true, async json() { return {}; } });
+  await setImmediate();
+  page.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(requests.length, 2);
+  assert.deepEqual(updates, []);
 });

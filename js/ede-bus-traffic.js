@@ -1,7 +1,7 @@
 import { fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
-import { roadEdgeKey } from './road-network.js?v=20261121-hospital-approaches';
+import { roadEdgeKey } from './road-network.js?v=20261122-startup';
 import { busProgressAt } from './ede-bus-schedule.js';
-import { BUS } from './road-access.js';
+import { BUS } from './road-access.js?v=20261122-startup';
 import { EDE_TURN_RESTRICTIONS } from './ede-turn-restrictions.js';
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));

@@ -15,12 +15,13 @@ import math
 from pathlib import Path
 import subprocess
 from urllib.parse import urlencode
+import warnings
 
 from shapely import STRtree, make_valid, orient_polygons, set_precision, union_all
 from shapely.affinity import affine_transform
-from shapely.geometry import LineString, Polygon, box, shape
+from shapely.geometry import LineString, Polygon, shape
 
-from ede_map import load_scene
+from ede_map import load_playable_boundary, load_playable_scene
 from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,7 @@ COLLECTIONS = (
 )
 WALL_WIDTHS = {'geluidsscherm': 0.32, 'keermuur': 0.45, 'damwand': 0.34, 'kademuur': 0.45, 'muur': 0.36}
 CIVIL_OWNERS = {'L0002', 'L0004', 'P0025'}  # Rijkswaterstaat, ProRail, Gelderland
+SMALL_WIND_TURBINE = 'G0228.21950daf66f24cff8e1cecb19522613c'
 
 
 @dataclass
@@ -184,7 +186,7 @@ def connected(records, distance):
                      union_all([r.geometry for r in group]), all(r.estimated_type for r in group))
 
 
-def crossing_axis(geometry, routes):
+def crossing_axis(geometry, routes, area):
     search = geometry.buffer(0.8)
     matches = [(routes.geometries[i].intersection(search).length, int(i))
                for i in routes.query(search, predicate='intersects')]
@@ -203,8 +205,13 @@ def crossing_axis(geometry, routes):
         return None
     ux, uz = dx / length, dz / length
     projection = [(x - center.x) * ux + (z - center.y) * uz for x, z in geometry.convex_hull.exterior.coords]
-    return [round(v, 2) for t in [min(projection), max(projection)] for v in
-            (center.x + t * ux, center.y + t * uz)]
+    axis = LineString([(center.x + t * ux, center.y + t * uz) for t in [min(projection), max(projection)]])
+    clipped = axis.intersection(area)
+    parts = [clipped] if clipped.geom_type == 'LineString' else list(getattr(clipped, 'geoms', []))
+    longest = max((part for part in parts if part.geom_type == 'LineString'), key=lambda part: part.length, default=None)
+    if longest is None or longest.is_empty:
+        return None
+    return [round(v, 2) for point in (longest.coords[0], longest.coords[-1]) for v in point]
 
 
 def encode(record):
@@ -219,7 +226,15 @@ def encode(record):
     if record.estimated_type:
         result['estimatedType'] = True
     if record.kind == 'pylon':
-        extent = record.geometry.convex_hull.minimum_rotated_rectangle
+        hull = record.geometry.convex_hull
+        extent = hull
+        if hull.geom_type == 'Polygon':
+            with warnings.catch_warnings():
+                warnings.filterwarnings('error', 'invalid value encountered in oriented_envelope', RuntimeWarning)
+                try:
+                    extent = hull.minimum_rotated_rectangle
+                except RuntimeWarning:
+                    extent = hull.envelope
         center = extent.centroid
         if extent.geom_type == 'Polygon':
             corners = list(extent.exterior.coords)[:-1]
@@ -230,12 +245,15 @@ def encode(record):
         else:
             span, base, angle = max(3.5, extent.length), max(3.5, extent.length), 0
         result['tower'] = [round(v, 2) for v in (center.x, center.y, span, base, angle)]
+    if record.kind == 'turbine' and SMALL_WIND_TURBINE in record.ids:
+        # The local AHN surface is about 6 m above ground. Hub and rotor dimensions are estimates.
+        result['hubHeight'] = 6
     return result
 
 
 def build(scene, directory, day):
     affine = scene['meta']['lonLatAffine']
-    area = box(*scene['meta']['bounds'])
+    area = load_playable_boundary()
     road_features = [r for r in [*scene['roads'], *scene['railways']] if not r.get('tunnel') and len(r['pts']) >= 4]
     bridge_routes = STRtree([LineString(pairs(r['pts'])) for r in road_features if r.get('bridge')])
     corridor = STRtree([LineString(pairs(r['pts'])).buffer(
@@ -292,7 +310,7 @@ def build(scene, directory, day):
             item = encode(record)
             if item:
                 if kind == 'deck':
-                    item['axis'] = crossing_axis(record.geometry, bridge_routes)
+                    item['axis'] = crossing_axis(record.geometry, bridge_routes, area)
                 items.append(item)
 
     decks = [item for item in items if item['kind'] == 'deck']
@@ -312,12 +330,13 @@ def build(scene, directory, day):
     return {
         'version': 1,
         'source': {'url': f'{API}/collections?f=html', 'license': 'CC0 1.0', 'date': str(day),
+                   'municipality': scene['meta']['municipality']['id'], 'geographicBounds': scene['meta']['geographicBounds'],
                    'collections': source_counts, 'sha256': source_hashes},
         'uncertainty': {
             'elevation': 'AHN DTM ground, inferred structure heights unless externally documented',
             'decks': 'Untyped raised bridge components are treated as decks; untyped ground pieces are excluded',
             'walls': 'BGT civil muur is generic wall; only mapped keermuur, damwand and kademuur are classified as retaining',
-            'turbines': 'Maanderbroek Siemens SWT-3.2-101, 99.5 m hub and 101 m rotor diameter',
+            'turbines': 'Maanderbroek Siemens SWT-3.2-101, 99.5 m hub and 101 m rotor. Small Lunteren turbine model scaled from AHN.',
             'turbineDimensionsSource': 'https://verwaard-bv.nl/raedthuys-windpark-a30-a12-maanderbroek/',
         },
         'counts': dict(sorted(counts.items())), 'omitted': dict(sorted(omitted.items())), 'structures': items,
@@ -331,7 +350,7 @@ def main():
     parser.add_argument('--fetch', action='store_true')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-bgt.json')
     args = parser.parse_args()
-    scene = load_scene()
+    scene = load_playable_scene()
     if args.fetch:
         snapshot(args.directory, scene, args.date)
     result = build(scene, args.directory, args.date)

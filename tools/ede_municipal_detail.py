@@ -12,8 +12,8 @@ import subprocess
 from urllib.parse import urlencode
 from xml.etree import ElementTree
 
-from shapely import STRtree
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely import STRtree, prepare
+from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import nearest_points
 
 from ede_gis import Frame, source_crs
@@ -101,7 +101,7 @@ def fetch_access_tiles(directory, geographic_bounds):
     (directory / 'access.json').write_text(json.dumps(access, separators=(',', ':')) + '\n')
 
 
-def points(data, kind, frame, bounds):
+def points(data, kind, frame, boundary):
     layer = LAYERS[kind]
     if (data.get('type') != 'FeatureCollection' or source_crs(data).to_epsg() not in {NATIVE_CRS[kind], 28992}
             or data.get('numberMatched') != len(data['features']) or not data.get('timeStamp')):
@@ -120,7 +120,7 @@ def points(data, kind, frame, bounds):
             raise ValueError(f'Unexpected RD coordinate or stable identifier: {row}')
         seen.add(key)
         x, z = frame.rd_to_scene(*coords)
-        if bounds[0] <= x <= bounds[2] and bounds[1] <= z <= bounds[3]:
+        if boundary.covers(Point(x, z)):
             result.append({'id': key, 'rd': coords, 'position': (x, z), 'kvid': identity})
     return sorted(result, key=lambda row: row['kvid'])
 
@@ -143,19 +143,22 @@ def walk_obstacles(directory, frame, scene, detail, evidence):
     obstacles = defaultdict(list)
     supporting, parking = [], []
     walking_lines, road_lines = [], []
-    asphalt = read_json(ROOT / 'assets/ede-road-surfaces.json.gz')
-    for road in asphalt['surfaces']:
-        kind = road['function']
-        shapes = [detail['flat_polygon'](outer, holes) for outer, *holes in road['polygons']]
-        if road['layer']:
-            obstacles['ambiguous-elevation'].extend(shapes)
-        elif kind.startswith('rijbaan ') or kind in MOTOR_PAVEMENT | {'fietspad'}:
-            obstacles['vehicle-or-cycle-paving'].extend(shapes)
-        else:
-            supporting.extend(shape for shape in shapes if not shape.is_empty)
-            if kind == 'parkeervlak':
-                parking.extend(shapes)
-    covered = asphalt['covered']
+    covered = defaultdict(set)
+    for file in ('ede-road-surfaces', 'ede-corridor-paving', 'ede-north-paving'):
+        asphalt = read_json(ROOT / f'assets/{file}.json.gz')
+        for way, indices in asphalt['covered'].items():
+            covered[way].update(indices)
+        for road in asphalt['surfaces']:
+            kind = road['function']
+            shapes = [detail['flat_polygon'](outer, holes) for outer, *holes in road['polygons']]
+            if road['layer']:
+                obstacles['ambiguous-elevation'].extend(shapes)
+            elif kind.startswith('rijbaan ') or kind in MOTOR_PAVEMENT | {'fietspad'}:
+                obstacles['vehicle-or-cycle-paving'].extend(shapes)
+            else:
+                supporting.extend(shape for shape in shapes if not shape.is_empty)
+                if kind == 'parkeervlak':
+                    parking.extend(shapes)
     for road in scene['roads']:
         mode = road['modes'][0] | road['modes'][1]
         if not mode:
@@ -202,6 +205,8 @@ def walk_obstacles(directory, frame, scene, detail, evidence):
         access_source = {'date': access.get('osm3s', {}).get('timestamp_osm_base') or access.get('retrieved'),
                          'url': access.get('source', 'https://overpass-api.de/api/interpreter'),
                          'nodes': len(access['elements'])}
+        if 'coverage' in access:
+            access_source['coverage'] = access['coverage']
         for node in access['elements']:
             tags = node.get('tags', {})
             if tags.get('layer', '0') != '0':
@@ -310,13 +315,13 @@ def outline_matches(plays, scene, survey, detail):
     return matches, len(parks)
 
 
-def bake(directory, scene, base_asset, detail, acv_profiles, survey, bin_profiles):
-    bounds = scene['meta']['bounds']
+def bake(directory, scene, boundary, base_asset, detail, acv_profiles, survey, bin_profiles):
+    prepare(boundary)
     frame = Frame(scene['meta']['lonLatAffine'])
     data = {kind: read_json(directory / f'{layer}.json') for kind, layer in LAYERS.items()}
-    rows = {kind: points(document, kind, frame, bounds) for kind, document in data.items()}
+    rows = {kind: points(document, kind, frame, boundary) for kind, document in data.items()}
     play_sites, outline_count = outline_matches(rows['playSite'], scene, survey, detail)
-    evidence = detail['build_evidence'](scene, box(*bounds).buffer(15), tree_path=ROOT / 'assets/ede-trees-expanded.bin')
+    evidence = detail['build_evidence'](scene, boundary.buffer(15), tree_path=ROOT / 'assets/ede-trees-expanded.bin')
     indexes = walk_obstacles(directory, frame, scene, detail, evidence)
 
     old = base_asset['features']
@@ -395,7 +400,10 @@ def bake(directory, scene, base_asset, detail, acv_profiles, survey, bin_profile
             audit.update(details)
             if placement_data:
                 hull = footprint(Point(placement_data['position']), placement_data['angle'], dims[0] + .10, dims[1] + .10)
-                if any(hull.intersects(other) for other in occupied):
+                if not boundary.covers(hull):
+                    placement_data = None
+                    audit['reasons'] = ['outside-playable-boundary']
+                elif any(hull.intersects(other) for other in occupied):
                     placement_data = None
                     audit['reasons'] = ['municipal-fixture-clearance']
                 else:

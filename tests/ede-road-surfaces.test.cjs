@@ -121,3 +121,15 @@ test('roadside pole clearance respects ground BGT road, cycle and driveway polyg
   assert.deepEqual([2, 12, 22, 32, 42].map(x => isEdeTrafficPavement(x, 2)),
     [true, true, true, false, false]);
 });
+
+
+test('paving coverage keeps segment indices shared by the core and outer surveys', async t => {
+  const { loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
+  t.mock.method(globalThis, 'fetch', async url => {
+    if (url.pathname.endsWith('/ede-corridor-paving.json.gz')) return new Response(null, { status: 404 });
+    const indices = url.pathname.endsWith('/ede-north-paving.json.gz') ? [1, 2] : [0, 1];
+    return new Response(JSON.stringify({ version: 1, covered: { w1: indices }, surfaces: [] }));
+  });
+  const result = await loadEdeRoadSurfaces({ north: true });
+  assert.deepEqual(result.covered.w1, [0, 1, 2]);
+});

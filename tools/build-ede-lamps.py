@@ -17,13 +17,14 @@ from urllib.parse import urlencode
 from shapely.geometry import Point, Polygon
 
 from ede_gis import Frame, source_crs
-from ede_map import load_scene
+from ede_map import load_playable_boundary, load_playable_scene
 from ede_traffic_geometry import Segment, SegmentIndex
 
 ROOT = Path(__file__).resolve().parents[1]
 PDOK = 'https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal/items'
 RWS = 'https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer/6'
-RECORD = struct.Struct('<hhhHhHBb')
+RECORD_V2 = struct.Struct('<hhhHhHBb')
+RECORD = struct.Struct('<iihHhHBb')
 POORT = (-1450, 3450, -1370, 3530)
 
 
@@ -38,9 +39,10 @@ def write(path, data):
     tmp.replace(path)
 
 
-def bgt_tile(bounds):
+def bgt_tile(bounds, day):
     url = PDOK + '?' + urlencode({'bbox': ','.join(map(str, bounds)), 'limit': 1000,
-                                  'f': 'json', 'plus_type': 'lichtmast'})
+                                  'f': 'json', 'plus_type': 'lichtmast',
+                                  'datetime': f'{day}T00:00:00Z'})
     seen = set()
     rows = []
     crs = None
@@ -67,15 +69,15 @@ def bgt_tile(bounds):
     return crs, rows
 
 
-def fetch_bgt(bounds):
+def fetch_bgt(bounds, day):
     south, west, north, east = bounds
-    mid_x, mid_y = (west + east) / 2, (south + north) / 2
-    boxes = [(a, c, b, d) for a, b in ((west, mid_x), (mid_x, east))
-             for c, d in ((south, mid_y), (mid_y, north))]
+    xs = [west + (east - west) * i / 6 for i in range(7)]
+    ys = [south + (north - south) * i / 6 for i in range(7)]
+    boxes = [(a, c, b, d) for a, b in zip(xs, xs[1:]) for c, d in zip(ys, ys[1:])]
     latest = {}
     crs = None
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        for page_crs, rows in pool.map(bgt_tile, boxes):
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for page_crs, rows in pool.map(lambda tile: bgt_tile(tile, day), boxes):
             if crs is not None and page_crs != crs:
                 raise ValueError('PDOK returned different pole coordinates CRS by tile')
             crs = page_crs
@@ -84,7 +86,7 @@ def fetch_bgt(bounds):
                     latest[row[0]] = row
     if not latest:
         raise ValueError('PDOK returned no active lamp posts in Ede')
-    return {'date': date.today().isoformat(), 'source': PDOK, 'horizontalCrs': crs.to_string(),
+    return {'date': str(day), 'source': PDOK, 'horizontalCrs': crs.to_string(),
             'rows': sorted(latest.values())}
 
 
@@ -100,8 +102,10 @@ def projection(edge, x, z):
 
 class LampSurfaces:
     def __init__(self, scene, frame):
-        self.bounds = scene['meta']['bounds']
-        self.terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']()
+        self.area = load_playable_boundary()
+        terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']
+        self.terrain = terrain()
+        self.expansion = terrain(ROOT / 'assets/ede-terrain-tiles/collision.bin')
         grade = read(ROOT / 'assets/ede-grade.json')
         corrections = read(ROOT / 'assets/ede-ahn-surfaces.json')
         self.nap = grade['datumNAP']
@@ -142,8 +146,23 @@ class LampSurfaces:
                    for edge in self.corridor.near(easting, northing))
 
     def terrain_at(self, x, z):
-        x0, z0, x1, z1 = self.bounds
-        return self.terrain.at((max(x0, min(x1, x)), max(z0, min(z1, z))))
+        town = self.terrain
+        east = town.x + town.step * (town.columns - 1)
+        south = town.z + town.step * (town.rows - 1)
+        edge_x = max(town.x, min(east, x))
+        edge_z = max(town.z, min(south, z))
+        offset = math.hypot(x - edge_x, z - edge_z)
+        if offset == 0:
+            return town.at((min(east - 1e-8, x), min(south - 1e-8, z)))
+        y = self.expansion.at((x, z))
+        if offset < 5:
+            old_edge = town.at((min(east - 1e-8, edge_x), min(south - 1e-8, edge_z)))
+            y += (1 - offset / 5) * (old_edge - self.expansion.at((edge_x, edge_z)))
+        return y
+
+    def contains_pole(self, x, z):
+        # The renderer reconstructs coordinates at 20 cm spacing.
+        return self.area.covers(Point(round(x * 5) / 5, round(z * 5) / 5))
 
     def height(self, hit, x, z):
         if hit is None:
@@ -227,8 +246,7 @@ def read_gis(path, frame, surfaces):
             continue
         rd = g['x'], g['y']
         x, z = frame.rd_to_scene(*rd)
-        x0, z0, x1, z1 = surfaces.bounds
-        if not (x0 <= x <= x1 and z0 <= z <= z1 and surfaces.in_corridor(*rd)):
+        if not (surfaces.contains_pole(x, z) and surfaces.in_corridor(*rd)):
             counts['outsideCorridor'] += 1
             continue
         out.append({'id': str(p.get('globalid') or p['objectid']), 'objectId': p['objectid'],
@@ -248,10 +266,23 @@ def encode(rows, datum):
         packed.append(RECORD.pack(round(r['x'] * 5), round(r['z'] * 5), round((r['base'] - datum) * 100),
                                   round((r['angle'] % math.tau) * 65536 / math.tau) % 65536,
                                   round((r['target'] - datum) * 100), round(r['height'] * 100), flags, r['level']))
-    return b'EDL2' + struct.pack('<I', len(packed)) + b''.join(packed)
+    return b'EDL3' + struct.pack('<I', len(packed)) + b''.join(packed)
 
 
-def bake(scene, snapshot, gis_path):
+def retain_core(payload, path, bounds):
+    def rows(raw):
+        fmt = {b'EDL2': RECORD_V2, b'EDL3': RECORD}[raw[:4]]
+        return fmt.iter_unpack(raw[8:])
+
+    west, north, east, south = bounds
+    inside = lambda row: west <= row[0] / 5 <= east and north <= row[1] / 5 <= south
+    original = [row for row in rows(gzip.decompress(path.read_bytes())) if inside(row)]
+    expanded = [row for row in rows(payload) if not inside(row)]
+    kept = sorted([*original, *expanded], key=lambda row: (row[0], row[1], row[-1]))
+    return b'EDL3' + struct.pack('<I', len(kept)) + b''.join(RECORD.pack(*row) for row in kept), len(original)
+
+
+def bake(scene, snapshot, gis_path, core_path=None):
     frame = Frame(scene['meta']['lonLatAffine'])
     surfaces = LampSurfaces(scene, frame)
     official, counts, gis_date = read_gis(gis_path, frame, surfaces) if gis_path else ([], Counter(), None)
@@ -266,7 +297,9 @@ def bake(scene, snapshot, gis_path):
     source_rows = []
     for identity, version, level, x, y, updated in snapshot['rows']:
         rd = frame.to_rd(x, y, crs, axis_order='xy')
-        source_rows.append((identity, version, level, *frame.rd_to_scene(*rd), updated, rd))
+        sx, sz = frame.rd_to_scene(*rd)
+        if surfaces.contains_pole(sx, sz):
+            source_rows.append((identity, version, level, sx, sz, updated, rd))
 
     def add(row, candidates, native=False):
         identity, version, level, x, z, updated, _ = row
@@ -338,24 +371,32 @@ def bake(scene, snapshot, gis_path):
             counts['unplaced1gis'] += 1
             continue
         add((g['id'], None, g['level'], g['x'], g['z'], g['date'], g['rd']), [(0, g)], native=True)
-    review['counts'] = {**counts, 'BGT duplicate placements': len(review['duplicates']), 'rendered': len(poles)}
-    return gzip.compress(encode(poles, surfaces.nap), mtime=0), review
+    payload = encode(poles, surfaces.nap)
+    if core_path:
+        payload, core = retain_core(payload, core_path, scene['meta']['baseBounds'])
+        counts['retainedCore'] = core
+    review['municipality'] = scene['meta']['municipality']['id']
+    review['counts'] = {**counts, 'BGT duplicate placements': len(review['duplicates']),
+                        'rendered': struct.unpack_from('<I', payload, 4)[0]}
+    return gzip.compress(payload, mtime=0), review
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bgt', type=Path, help='Read a downloaded BGT lamp snapshot')
+    parser.add_argument('--date', type=date.fromisoformat, default=date.today(), help='Date of the PDOK snapshot to fetch')
     parser.add_argument('--save-bgt', type=Path, help='Save the BGT lamp snapshot for offline refresh')
     parser.add_argument('--gis', type=Path, help='1GIS snapshot or ArcGIS layer 6 queried in RD New with Z')
+    parser.add_argument('--retain-core', type=Path, help='Keep baked positions and heights within the original source area')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-lamps.bin.gz')
     parser.add_argument('--report', type=Path, help='Detailed lamp source matching and Poortwachter audit')
     args = parser.parse_args()
-    scene = load_scene()
-    snapshot = read(args.bgt) if args.bgt else fetch_bgt(scene['meta']['geographicBounds'])
+    scene = load_playable_scene()
+    snapshot = read(args.bgt) if args.bgt else fetch_bgt(scene['meta']['geographicBounds'], args.date)
     if args.save_bgt:
         data = json.dumps(snapshot, separators=(',', ':')).encode()
         write(args.save_bgt, gzip.compress(data, mtime=0) if args.save_bgt.suffix == '.gz' else data)
-    asset, review = bake(scene, snapshot, args.gis)
+    asset, review = bake(scene, snapshot, args.gis, args.retain_core)
     write(args.output, asset)
     if args.report:
         report = (json.dumps(review, ensure_ascii=False, separators=(',', ':')) + '\n').encode()

@@ -14,7 +14,7 @@ from shapely.geometry.polygon import orient
 from shapely.ops import polygonize
 from shapely.strtree import STRtree
 
-from ede_map import ROOT, load_scene
+from ede_map import ROOT, load_playable_boundary, load_playable_scene, load_scene
 from ede_scene import SceneAffine
 
 
@@ -161,7 +161,7 @@ def excluded_as_indoor(tags, polygon, buildings):
 
 def build(paths, snapshot, scene):
     frame = SceneAffine(scene['meta']['lonLatAffine'])
-    bounds = box(*scene['meta']['bounds'])
+    bounds = load_playable_boundary() if scene['meta'].get('municipality') else box(*scene['meta']['bounds'])
     buildings = STRtree([
         make_valid(Polygon(unpack_ring(row['ring']), [unpack_ring(hole) for hole in row.get('holes', [])]))
         for row in scene['buildings'] if not row.get('part') and len(row['ring']) >= 6
@@ -253,8 +253,21 @@ def main():
     parser.add_argument('snapshot', nargs='+', type=Path, help='Overpass out geom JSON or complete tiled API XML map responses')
     parser.add_argument('--date', required=True, type=date.fromisoformat, help='Source snapshot date')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-sports.json')
+    parser.add_argument('--augment', type=Path, help='Preserve existing verified pitches and add previously unmapped OSM IDs')
     args = parser.parse_args()
-    data = build(args.snapshot, args.date.isoformat(), load_scene(include_shorelines=False))
+    scene = load_playable_scene(include_shorelines=False) if args.augment else load_scene(include_shorelines=False)
+    data = build(args.snapshot, args.date.isoformat(), scene)
+    if args.augment:
+        original = json.loads(args.augment.read_bytes())
+        boundary = load_playable_boundary().buffer(0.08)  # 10 cm packed coordinates.
+        existing = [p for p in original['pitches'] if boundary.covers(make_valid(Polygon(
+            unpack_ring(p['ring']), [unpack_ring(hole) for hole in p.get('holes', [])])))]
+        known = {p['id'] for p in existing}
+        additions = [p for p in data['pitches'] if p['id'] not in known]
+        data['pitches'] = [*existing, *additions]
+        data['counts'].update(pitches=len(data['pitches']), retained=len(existing), added=len(additions),
+                              bySport=dict(sorted(Counter(sport for p in data['pitches']
+                                                          for sport in p['sports'] or ['unspecified']).items())))
     args.output.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n')
     print(json.dumps(data['counts']))
 

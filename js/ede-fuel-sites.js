@@ -1,6 +1,6 @@
 // Reviewed Ede fuel stations in the Oude Kerk scene frame, in metres. Canopy rings are station-local.
-// Geometry: OpenStreetMap contributors (ODbL), 2026-11-20 official map snapshot,
-// and 2025/2026 PDOK aerial imagery for visible forecourts. Operator listings confirm brands and types.
+// Geometry: OpenStreetMap contributors (ODbL) and 2025/2026 PDOK aerial imagery.
+// Shop replacements use matching BAG footprints. Operator listings confirm brands and fuel types where available.
 // Pump counts and clearances are estimates unless separately noted.
 // Bonnetstraat has two separate canopy wings. Radonstraat CNG uses an OSM point at a service depot.
 // Double-sided price pylons generally stand at the frontage, clear of the driving and walking surfaces.
@@ -26,6 +26,13 @@ const PYLONS = {
   n3124882893: [-4902.0, -4592.1, 0.08],
   n1001128866: [-2787.3, -3082.05, 0.40],
   n10819518524: [-4780.8, -6889.6, 0.60],
+  n2765322949: [-4180.18, -2017.33, 0.44],
+  n2761090387: [-4232.55, -2041.98, 0.44],
+  n26866817: [6805, -6384, -0.48],
+  n13730420385: [3309.45, -7507.92, 1.045],
+  n13730420384: [3117, -7428, -1.04],
+  n1151393764: [-6648, -225, -0.4],
+  n848767429: [1763, -2713, 0.8],
 };
 
 export const EDE_FUEL_SITES = [
@@ -98,13 +105,51 @@ export const EDE_FUEL_SITES = [
     width: 10.06, length: 13.39, bays: 3, pumpAxis: 'x', pumps: [[-3, 0], [0, 0], [3, 0]], clearance: 4.3,
     canopyOsmId: 'w126810513', canopyRing: [[5.03, -6.69], [-4.98, -6.51], [-5.03, 6.69], [5.01, 6.63]],
     selfService: true, north: true },
+  // https://ok.nl/tankstations/ok-de-poel/
+  { id: 'n2765322949', name: 'OK De Poel', brand: 'OK', x: -4123.50, z: -1969.50, heading: 0.44370,
+    width: 39.94, length: 8.86, clearance: 4.9, pumpAxis: 'x', bays: 5, truck: true,
+    pumps: [[-15, 0], [0, 0], [5, 0], [10, 0], [15, 0]], fuels: ['e10', 'diesel', 'lpg'],
+    canopyOsmId: 'w664896113', canopyRing: [[-19.97, -4.43], [19.97, -4.43], [19.97, 4.43], [-19.97, 4.43]],
+    shop: { x: -4127.16, z: -1995.5, heading: 0.43804, width: 24.14, length: 15.08, height: 3.9,
+      osmId: 'w271582259', bagId: '0228100000071596', wordmark: 'OK Shop' } },
+  // https://www.circlek.nl/station/de-veenen
+  { id: 'n2761090387', name: 'TotalEnergies De Veenen', brand: 'TotalEnergies', x: -4242.48, z: -2005.90, heading: 0.43087,
+    width: 39.08, length: 8.78, clearance: 4.9, pumpAxis: 'x', bays: 5, truck: true,
+    pumps: [[-16, 0], [-12, 0], [-8, 0], [-4, 0], [0, 0]], fuels: ['e10', 'diesel', 'lpg'],
+    canopyOsmId: 'w271150753', canopyRing: [[-19.53, 4.39], [-19.54, -4.39], [19.54, -4.39], [19.54, 4.39]],
+    shop: { x: -4237.88, z: -1977.46, heading: 3.58689, width: 23.98, length: 15.49, height: 3.9,
+      osmId: 'w271151522', bagId: '0228100000069251', wordmark: 'Café Bonjour' } },
+  // https://www.tinq.nl/tankstations/otterlo-harskamperweg
+  // The current canopy is visible in 2026 PDOK imagery after demolition of the adjoining shop.
+  { id: 'n26866817', name: 'TinQ Otterlo', brand: 'TinQ', x: 6794.51, z: -6388.68, heading: -0.47506,
+    width: 9.95, length: 12.75, bays: 2, clearance: 4.4, selfService: true,
+    pumps: [[0, -3.2], [0, 3.2]], canopyRing: [[-4.83, -6.28], [5.11, -6.28], [4.52, 6.08], [-4.8, 6.47]] },
+  // https://avia.nl/tankstations/avia-wekerom
+  { id: 'n13730420385', name: 'AVIA Wekerom', brand: 'AVIA', x: 3298.94, z: -7516.50, heading: 1.045,
+    width: 7.69, length: 10.57, bays: 2, clearance: 4.3, selfService: true, pumps: [[0, -3.35], [0, 3.35]],
+    canopyRing: [[3.87, -5.21], [3.87, 5.36], [-3.84, 5.18], [-3.93, -5.34]] },
+  // https://www.openstreetmap.org/node/13730420384
+  { id: 'n13730420384', name: 'Autofood Wekerom', brand: 'Autofood', x: 3100.20, z: -7421.42, heading: 0.53,
+    width: 3.5, length: 5, canopy: false, bays: 1, pumpAxis: 'x', pumps: [[0, 0]], selfService: true },
+  // https://www.tinq.nl/tankstations/de-klomp-de-klomp
+  { id: 'n1151393764', name: 'TinQ De Klomp', brand: 'TinQ', x: -6656.16, z: -214.75, heading: -0.107,
+    width: 9.46, length: 15.92, clearance: 4.6, pumpAxis: 'x', bays: 2, selfService: true, fuels: ['e10', 'diesel', 'lpg'],
+    pumps: [[-2.2, 2.7], [2, 2.7]], canopyOsmId: 'w1390055336',
+    canopyRing: [[-4.71, -7.81], [4.51, -7.96], [4.73, -0.31], [4.63, 7.94], [-4.73, 7.96], [-4.71, -1.53]] },
+  // https://www.circlek.nl/station/ede-inz-de-driesprong
+  { id: 'n848767429', name: 'TotalEnergies De Driesprong', brand: 'TotalEnergies', x: 1784.48, z: -2723.77, heading: 2.373,
+    width: 10.39, length: 32.89, clearance: 4.6, bays: 3, fuels: ['e10', 'diesel', 'lpg'],
+    pumps: [[-2.2, -10], [-2.2, -1], [-2.2, 8]], canopyOsmId: 'w1138003361',
+    canopyRing: [[4.09, 16.44], [-5.2, 16.13], [-4.09, -16.44], [1.33, -16.26], [5.2, -16.13], [4.23, 12.42]],
+    shop: { x: 1801.52, z: -2737.82, heading: -0.809, width: 10.65, length: 11.99, height: 3.7,
+      osmId: 'w271706083', bagId: '0228100000071303', wordmark: 'Circle K' } },
 ].map(site => {
   const [x, z, pylonHeading] = PYLONS[site.id];
   const priceProfile = site.north ? 'lunteren'
     : ['TinQ', 'Tango', 'SuperTank'].includes(site.brand) || site.id === 'n10060498714' ? 'discount' : 'local';
-  const fuels = site.id === 'n11658184817' ? ['cng']
+  const fuels = site.fuels ?? (site.id === 'n11658184817' ? ['cng']
     : site.truck && site.id !== 'argos-marconistraat-11' && !site.north ? ['diesel']
-    : site.north || ['n2761384978', 'n269785004'].includes(site.id) ? ['e10', 'diesel', 'lpg'] : ['e10', 'diesel'];
+    : site.north || ['n2761384978', 'n269785004'].includes(site.id) ? ['e10', 'diesel', 'lpg'] : ['e10', 'diesel']);
   return { ...site, pylon: [x, z], pylonHeading, priceProfile, fuels };
 });
 

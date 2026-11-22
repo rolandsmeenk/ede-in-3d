@@ -30,6 +30,7 @@ import {
   waterAt,
   roadCrossesWater,
   blockAt,
+  constrainToPlayableArea,
   nearestDrivingPoint
 } from './city-config.js';
 
@@ -78,20 +79,18 @@ const MAP = {
   halo: 'rgba(8, 11, 15, 0.9)'
 };
 
+const MAP_LANDMARKS = (NYC_LANDMARKS || []).filter(l => !l.hideOnMap);
 // Landmarks modelled by landmarks.js on their real OpenStreetMap lots (outlined in amber)
-const MODELLED_LANDMARKS = (NYC_LANDMARKS || []).map(l => l.name);
+const MODELLED_LANDMARKS = MAP_LANDMARKS.map(l => l.name);
 
 // Labels use the same east/south metre frame as the street network.
-const AREA_LABELS = [['EDE CENTRUM', 0, 110, 0]];
-for (const { name, labelPoint } of GEO.ede?.meta.areas || []) {
-  AREA_LABELS.push([name.toLocaleUpperCase('nl-NL'), ...labelPoint, 0]);
-}
+const PARK_LABELS = [];
 for (const { name, kind, ring } of GEO.ede?.parks || []) {
   if (!name || kind !== 'park') continue;
   const xs = ring.filter((_, i) => i % 2 === 0);
   const zs = ring.filter((_, i) => i % 2 === 1);
-  AREA_LABELS.push([name.toLocaleUpperCase('nl-NL'),
-    (Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2, 2]);
+  PARK_LABELS.push([name.toLocaleUpperCase('nl-NL'),
+    (Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...zs) + Math.max(...zs)) / 2]);
 }
 
 // Shorter map names for a few real street names
@@ -231,7 +230,9 @@ function mapLayers() {
 
   // Manhattan inside its bulkhead line, and its piers
   L.manhattan = new Path2D();
-  addRing(L.manhattan, MANHATTAN_COASTLINE);
+  const municipal = GEO.ede?.meta.playableBoundary;
+  if (municipal) for (const polygon of municipal) for (const ring of polygon) addRing(L.manhattan, ring);
+  else addRing(L.manhattan, MANHATTAN_COASTLINE);
   L.piers = new Path2D();
   for (const p of WATERFRONT_PIERS) if (p.ring) addRing(L.piers, p.ring);
 
@@ -575,7 +576,7 @@ class NYCMapSystem {
     this.searchPath = null;
     this.textWidths = new Map();
     // Start with Ede's central landmark as the active GPS waypoint.
-    const centre = NYC_LANDMARKS[0] || { x: 0, z: 0, name: 'Oude Kerk' };
+    const centre = MAP_LANDMARKS[0] || { x: 0, z: 0, name: 'Oude Kerk' };
     this.waypoint = { x: centre.x, z: centre.z, name: centre.name };
 
     // Street names measured before the web font arrived would be spaced for the fallback font: measure & draw again
@@ -689,7 +690,7 @@ class NYCMapSystem {
             const landmark = this.scenicLandmarkAt(wPos, rect);
             this.elHoverInfo.textContent = landmark
               ? `${landmark.name} · Click to teleport to the approach`
-              : `${getLocationLabel(wPos.x, wPos.z)} · Click to teleport here`;
+              : `${getLocationLabel(wPos.x, wPos.z, MAP_LANDMARKS)} · Click to teleport here`;
           }
         }
       });
@@ -714,7 +715,7 @@ class NYCMapSystem {
             this.waypoint = {
               x: wPos.x,
               z: wPos.z,
-              name: getLocationLabel(wPos.x, wPos.z)
+              name: getLocationLabel(wPos.x, wPos.z, MAP_LANDMARKS)
             };
             if (this.onTeleport) {
               this.onTeleport(wPos.x, wPos.z);
@@ -758,7 +759,7 @@ class NYCMapSystem {
     this.searchHighlight = q;
     this.searchPath = null;
     if (q.length > 0) {
-      const lmMatch = NYC_LANDMARKS.find((l) => l.name.toLowerCase().includes(q) || l.short.toLowerCase().includes(q));
+      const lmMatch = MAP_LANDMARKS.find((l) => l.name.toLowerCase().includes(q) || l.short.toLowerCase().includes(q));
       const roads = ROAD_LABELS.filter((l) => l.lower.includes(q) || l.raw.includes(q));
       if (roads.length) {
         this.searchPath = new Path2D();
@@ -850,7 +851,7 @@ class NYCMapSystem {
     if (!this.onLandmark) return null;
     let closest = null;
     let bestDistance = 6;
-    for (const landmark of NYC_LANDMARKS) {
+    for (const landmark of MAP_LANDMARKS) {
       const { x, z } = landmark;
       if (Math.abs(x - this.viewCenterX) * this.viewZoom > width * 0.48 ||
           Math.abs(z - this.viewCenterZ) * this.viewZoom > height * 0.48) continue;
@@ -869,7 +870,8 @@ class NYCMapSystem {
   clampToManhattan(p) {
     const z = Math.max(ISLAND_BOUNDS.minZ + 25, Math.min(ISLAND_BOUNDS.maxZ - 25, p.z));
     const shore = getIslandBoundsAtZ(z);
-    const result={ x: Math.max(shore.westX + 12, Math.min(shore.eastX - 12, p.x)), z };
+    const x = Math.max(shore.westX + 12, Math.min(shore.eastX - 12, p.x));
+    const result = constrainToPlayableArea?.(x, z) ?? { x, z };
     if(GEO.city === 'Ede'){
       const block=blockAt(result.x,result.z);
       if(waterAt(result.x,result.z)||(block&&!block.sidewalk&&!block.park)){
@@ -900,7 +902,7 @@ class NYCMapSystem {
     const px = (n) => n / s; // screen pixels -> metres (line widths)
     v.world(ctx);
     ctx.save();
-    if (GEO.city === 'Ede') ctx.clip(L.manhattan);
+    if (GEO.city === 'Ede') ctx.clip(L.manhattan, 'evenodd');
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
@@ -1142,7 +1144,7 @@ class NYCMapSystem {
     const scale = this.miniScale;
 
     if (this.elMiniStreet) {
-      const label = getLocationLabel(px, pz);
+      const label = getLocationLabel(px, pz, MAP_LANDMARKS);
       if (label !== this.miniStreetText) {
         this.miniStreetText = label;
         this.elMiniStreet.textContent = label;
@@ -1212,7 +1214,7 @@ class NYCMapSystem {
     }
 
     // Landmark blips
-    for (const lm of NYC_LANDMARKS) {
+    for (const lm of MAP_LANDMARKS) {
       const lx = toX(lm.x);
       const ly = toY(lm.z);
       if (Math.abs(lx) < w * 0.48 && Math.abs(ly) < h * 0.48) {
@@ -1265,7 +1267,7 @@ class NYCMapSystem {
 
     const ent = this.controllerManager.getActiveEntity();
     if (this.elPlayerInfo) {
-      const text = `You are at ${getLocationLabel(ent.position.x, ent.position.z)}`;
+      const text = `You are at ${getLocationLabel(ent.position.x, ent.position.z, MAP_LANDMARKS)}`;
       if (text !== this.playerInfoText) {
         this.playerInfoText = text;
         this.elPlayerInfo.textContent = text;
@@ -1343,7 +1345,7 @@ class NYCMapSystem {
     ctx.font = `700 11px ${FONT}`;
     const placed = [];
     const pins = [];
-    for (const lm of NYC_LANDMARKS) {
+    for (const lm of MAP_LANDMARKS) {
       const lx = toX(lm.x);
       const ly = toY(lm.z);
       if (Math.abs(lx) > w * 0.48 || Math.abs(ly) > h * 0.48) continue;
@@ -1355,42 +1357,25 @@ class NYCMapSystem {
       pins.push({ lm, lx, ly, showLabel });
     }
 
-    // 4. Borough, waterway & neighbourhood watermark titles (wherever they fit), letter-spaced like a printed atlas
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const tracking = 'letterSpacing' in ctx;
-    for (const [label, x, z, kind] of AREA_LABELS) {
-      if (kind === 0 && s > (GEO.city === 'Ede' ? 0.16 : 0.07)) continue;
-      if (kind === 2 && (s < 0.035 || s > 1.2)) continue;
-      const dx = toX(x);
-      const dy = toY(z);
-      if (Math.abs(dx) > w * 0.47 || Math.abs(dy) > h * 0.47) continue;
-      if (kind === 0) {
-        ctx.font = `700 15px ${FONT}`;
-        ctx.fillStyle = 'rgba(168, 178, 192, 0.5)';
-        if (tracking) ctx.letterSpacing = '3px';
-      } else if (kind === 1) {
-        ctx.font = `italic 500 12px ${FONT}`;
-        ctx.fillStyle = 'rgba(112, 168, 214, 0.55)';
-        if (tracking) ctx.letterSpacing = '1.5px';
-      } else {
-        ctx.font = `700 10.5px ${FONT}`;
-        ctx.fillStyle = 'rgba(168, 178, 192, 0.46)';
-        if (tracking) ctx.letterSpacing = '1.8px';
-      }
-      const half = this.textWidth(ctx, label) * 0.5 + 4;
-      // District representative points often coincide with a destination pin.
-      // Try a small screen-space offset so the city overview keeps both labels.
-      const offsets = kind === 0 ? [0, -24, 24, -42, 42] : [0];
-      for (const offset of offsets) {
-        const labelY = dy + offset, box = [dx - half, labelY - 8, dx + half, labelY + 8];
-        if (box[0] < -w * 0.48 || box[2] > w * 0.48 || Math.abs(labelY) > h * 0.47 || overlaps(placed, box)) continue;
+    // 4. Named parks
+    if (s >= 0.035 && s <= 1.2) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `700 10.5px ${FONT}`;
+      ctx.fillStyle = 'rgba(168, 178, 192, 0.46)';
+      const tracking = 'letterSpacing' in ctx;
+      if (tracking) ctx.letterSpacing = '1.8px';
+      for (const [label, x, z] of PARK_LABELS) {
+        const dx = toX(x), dy = toY(z);
+        if (Math.abs(dx) > w * 0.47 || Math.abs(dy) > h * 0.47) continue;
+        const half = this.textWidth(ctx, label) * 0.5 + 4;
+        const box = [dx - half, dy - 8, dx + half, dy + 8];
+        if (box[0] < -w * 0.48 || box[2] > w * 0.48 || overlaps(placed, box)) continue;
         placed.push(box);
-        ctx.fillText(label, dx, labelY);
-        break;
+        ctx.fillText(label, dx, dy);
       }
+      if (tracking) ctx.letterSpacing = '0px';
     }
-    if (tracking) ctx.letterSpacing = '0px';
     ctx.textBaseline = 'alphabetic';
 
     // 5. Street & Avenue names along their real course (collision-free at all zoom levels)

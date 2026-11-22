@@ -133,7 +133,8 @@ async function terrainRenderer() {
   const filename = path.resolve(__dirname, '../js/ede-terrain-tiles.js');
   const tiles = loadModule(readFileSync(filename, 'utf8'), { filename, imports: {
     'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
-    './tsl-materials.js': {}, './terrain.js': { ...terrain, expansionSeamOffset: () => 0 },
+    './tsl-materials.js': {}, './ede-playable-boundary.js': {},
+    './terrain.js': { ...terrain, expansionSeamOffset: () => 0 },
   } });
   return { three, terrain, ...tiles };
 }
@@ -191,6 +192,24 @@ test('skirts stop at the retained town boundary within a tile edge segment', asy
   assert.ok(hits(1));
   assert.equal(hits(3), 0);
   assert.ok(hits(4.5));
+});
+
+test('both terrain resolutions follow the municipal edge and retain holes', async () => {
+  const { three, tileGeometry, triangulateTerrainBoundary } = await terrainRenderer();
+  const boundary = triangulateTerrainBoundary([[
+    [2.3, 0, 10, 0, 10, 10, 2.3, 10], [5.1, 4.1, 5.1, 6.2, 7.4, 6.2, 7.4, 4.1],
+  ]]);
+  const tile = { bounds: [0, 0, 10, 10], skirts: [3, 3, 3, 3], boundary };
+  const town = { minX: -10, minZ: -10, maxX: -5, maxZ: -5 };
+  for (const side of [13, 51]) {
+    const mesh = new three.Mesh(tileGeometry(new ArrayBuffer(side * side * 5), tile, town, { napOrigin: 0 }, side));
+    const hits = (x, z) => new three.Raycaster(new three.Vector3(x, 5, z), new three.Vector3(0, -1, 0))
+      .intersectObject(mesh).length;
+    assert.equal(hits(2.29, 3), 0);
+    assert.ok(hits(2.31, 3));
+    assert.equal(hits(5.11, 5), 0);
+    assert.ok(hits(5.09, 5));
+  }
 });
 
 test('canopy mesh payloads share exact top heights along equal-resolution tile seams', () => {
@@ -255,7 +274,7 @@ test('canopy walls reach the ground along connected crowns and leave continued t
     .replace('export async function loadForestCanopy', 'async function loadForestCanopy');
   const { canopyGeometry } = loadModule(source, { filename, globals: { URL }, imports: {
     'three/webgpu': three, 'three/tsl': {}, './ede-scene-coordinates.js': { SCENE_NAP_ORIGIN: 0 },
-    './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {},
+    './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {}, './ede-playable-boundary.js': {},
   } });
   const buffer = new ArrayBuffer(2500 + 51 * 51 * 2);
   const mask = new Uint8Array(buffer, 0, 2500);
@@ -265,8 +284,9 @@ test('canopy walls reach the ground along connected crowns and leave continued t
     bounds: [0, 0, 500, 500], step: 10, neighborMask: [0, 0, 0, 2 ** 10],
   }).geometry);
   const hits = (origin, direction) =>
-    new three.Raycaster(new three.Vector3(...origin), new three.Vector3(...direction), 0, 4).intersectObject(mesh);
-  assert.ok(hits([15, 7, 98], [0, 0, 1]).length, 'an outer edge rises to the measured crown');
+    new three.Raycaster(new three.Vector3(...origin), new three.Vector3(...direction), 0, 7).intersectObject(mesh);
+  const edge = hits([15, 7, 98], [0, 0, 1])[0];
+  assert.ok(edge && edge.point.z > 100, 'the forest side curves inward toward its base');
   assert.equal(hits([15, 4, 98], [0, 0, 1]).length, 0, 'the edge follows the ground elevation');
   assert.equal(hits([-2, 7, 105], [1, 0, 0]).length, 0, 'a forest crossing the cell edge has no internal wall');
   assert.equal(hits([205, 7, 198], [0, 0, 1]).length, 0, 'isolated crowns stay out of the forest walls');

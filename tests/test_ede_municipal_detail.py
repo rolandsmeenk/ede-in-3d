@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 
 from shapely import STRtree
-from shapely.geometry import LineString, Point, box
+from shapely.geometry import LineString, Point, Polygon, box
 
 TOOLS = Path(__file__).resolve().parents[1] / 'tools'
 sys.path.insert(0, str(TOOLS))
@@ -20,16 +20,18 @@ class MunicipalDetailTest(unittest.TestCase):
             'geometry': {'type': 'Point', 'coordinates': [e, 450010]}
         }
         data = {
-            'type': 'FeatureCollection', 'numberMatched': 3, 'timeStamp': '2026-11-20T12:08:31Z',
+            'type': 'FeatureCollection', 'numberMatched': 4, 'timeStamp': '2026-11-20T12:08:31Z',
             'crs': {'properties': {'name': 'urn:ogc:def:crs:EPSG::4326'}},
-            'features': [feature(4, 173010), feature(2, 173010), feature(8, 173021)]
+            'features': [feature(4, 173010), feature(2, 173010), feature(8, 173021), feature(9, 173015)]
         }
-        records = points(data, 'container', frame, (0, 0, 20, 20))
+        boundary = Polygon([(0, 0), (20, 0), (20, 20), (0, 20)],
+                           [[(13, 5), (18, 5), (18, 15), (13, 15)]])
+        records = points(data, 'container', frame, boundary)
         self.assertEqual([r['id'] for r in records], ['mor_acv_containers.2', 'mor_acv_containers.4'])
         self.assertEqual(grouped(records), [records])
         data['features'][0]['geometry']['coordinates'] = [5.66, 52.04]
         with self.assertRaisesRegex(ValueError, 'Unexpected RD'):
-            points(data, 'container', frame, (0, 0, 20, 20))
+            points(data, 'container', frame, boundary)
 
     def test_footway_adjustment_stays_on_support_and_never_moves_a_lane_conflict(self):
         line = LineString([(0, -2), (0, 2)])

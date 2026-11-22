@@ -89,3 +89,16 @@ test('window schedules use Amsterdam time and unwind gradually after the evening
   assert.equal(windowLightKey({ id: 'w1', kind: 'house' }), windowLightKey({ id: 'w1', bagUse: 'home' }, 30, 12));
   assert.equal(windowLightKey({ id: 'w2', kind: 'shed' }), 0);
 });
+
+test('window emission is off in both daylight presets and fades in after sunset in Live Time', async () => {
+  const { liveWindowLights, PRESET_WINDOW_LIGHTS } = await import('../js/ede-window-lights.js');
+  assert.deepEqual(PRESET_WINDOW_LIGHTS.golden, [0, 0, 0]);
+  assert.deepEqual(PRESET_WINDOW_LIGHTS.midday, [0, 0, 0]);
+  assert.ok(PRESET_WINDOW_LIGHTS.twilight.every(level => level > 0));
+  assert.ok(PRESET_WINDOW_LIGHTS.midnight.every(level => level > 0));
+  const date = new Date('2026-11-19T16:00:00Z');
+  for (const elevation of [7, 2, 0, -0.83]) assert.deepEqual(liveWindowLights(date, elevation), [0, 0, 0]);
+  const dusk = liveWindowLights(date, -2);
+  const night = liveWindowLights(date, -4);
+  assert.ok(dusk.every((level, i) => level > 0 && level < night[i]));
+});

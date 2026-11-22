@@ -6,31 +6,46 @@ const { gunzipSync } = require('node:zlib');
 
 const packed = file => JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets', file))));
 
-test('Lunteren extends north without reindexing Ede and the first expansion', async () => {
+test('the northern map keeps surviving OSM IDs and valid graph links after municipal clipping', async () => {
   const { EDE_DATA: map } = await import('../js/ede-geodata.js');
   const base = packed('ede-map-v1.json.gz');
   const corridors = packed('ede-corridors-v1.json.gz');
   const north = packed('ede-north-v1.json.gz');
+  const boundary = packed('ede-municipality-v1.json.gz');
   assert.ok(map.meta.north);
   assert.deepEqual(map.meta.geographicBounds, [52.012, 5.565, 52.115, 5.805]);
   assert.deepEqual(map.meta.baseBounds, base.meta.bounds);
   for (const key of ['roads', 'buildings']) {
-    const originalIds = [...base[key], ...corridors[key]].map(row => row.id);
-    assert.deepEqual(map[key].slice(0, originalIds.length).map(row => row.id), originalIds);
+    const changes = new Map(boundary.layers[key].changes);
+    const retained = [...base[key], ...corridors[key], ...north[key]].flatMap((row, index) => changes.get(index) ?? [row]);
+    assert.deepEqual(map[key].map(row => row.id), retained.map(row => row.id));
     assert.equal(new Set(map[key].map(row => row.id)).size, map[key].length);
   }
   for (const key of ['roadGraph', 'activeGraph']) {
-    for (const field of ['nodes', 'links', 'names']) {
-      const prefix = [...base[key][field], ...corridors[key][field]];
-      assert.deepEqual(map[key][field].slice(0, prefix.length), prefix, key + '.' + field);
-    }
-    const { nodes, names } = map[key];
-    for (const [a, b, name, , , , , road] of north[key].links) {
+    const { nodes, names, links } = map[key];
+    assert.deepEqual(names, [...base[key].names, ...corridors[key].names, ...north[key].names]);
+    for (const [a, b, name, , , , , road] of links) {
       assert.ok(a >= 0 && a * 2 < nodes.length);
       assert.ok(b >= 0 && b * 2 < nodes.length);
       assert.ok(name >= 0 && name < names.length);
-      assert.ok(road >= north.base.roads && road < map.roads.length);
+      assert.ok(map.roads[road]);
     }
+  }
+});
+
+test('the official Ede outline excludes Veenendaal but includes De Klomp and Wekerom', async () => {
+  const { EDE_DATA: map } = await import('../js/ede-geodata.js');
+  const { projectLonLat, TELEPORT_LOCATIONS } = await import('../js/city-config.js');
+  const { containsPlayablePoint, constrainToPlayableArea } = await import('../js/ede-playable-boundary.js');
+  assert.equal(map.meta.municipality.id, 'GM0228');
+  const west = projectLonLat(5.57, 52.032);
+  assert.equal(containsPlayablePoint(west.x, west.z), false);
+  assert.ok(!map.parks.some(park => park.name === 'Evenemententerrein Veenendaal'));
+  const edge = constrainToPlayableArea(west.x, west.z);
+  assert.ok(containsPlayablePoint(edge.x, edge.z));
+  for (const id of ['veenendaal-de-klomp', 'station-lunteren', 'kulturhus-wekerom']) {
+    const { x, z } = TELEPORT_LOCATIONS[id];
+    assert.ok(containsPlayablePoint(x, z), id);
   }
 });
 

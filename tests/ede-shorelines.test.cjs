@@ -13,18 +13,21 @@ test('the corrected shoreline is shared by map layers, park geometry and movemen
   const { water, land } = asset('ede-shorelines.json.gz');
   const original = asset('ede-map-v1.json.gz');
   const activeWater = [...water.filter(({ id }) => id !== 'water171'), FRANKENENG_DOWNSTREAM];
-  assert.deepEqual(EDE_DATA.water.slice(0, activeWater.length), activeWater);
+  const changes = new Map(asset('ede-municipality-v1.json.gz').layers.water.changes);
+  const playableWater = activeWater.flatMap(row => changes.get(row.id) ?? [row]);
+  assert.deepEqual(EDE_DATA.water.slice(0, playableWater.length), playableWater);
   assert.equal(EDE_DATA.meta.counts.water, EDE_DATA.water.length);
-  assert.ok(EDE_DATA.water.slice(activeWater.length).every(feature => /^(?:corridor|north)-water/.test(feature.id)));
+  assert.ok(EDE_DATA.water.slice(playableWater.length).every(feature => /^(?:corridor|north)-water/.test(feature.id)));
   assert.equal(waterAtExact(-3458, 783), false);
   assert.equal(waterAt(-3458, 783), false);
   assert.equal(GEO.centralPark.water, EDE_DATA.water);
   for (const key of ['roadGraph', 'activeGraph']) {
-    for (const field of ['nodes', 'links', 'names']) {
-      assert.deepEqual(EDE_DATA[key][field].slice(0, original[key][field].length), original[key][field]);
-    }
+    const { nodes, names, controls } = EDE_DATA[key];
+    assert.deepEqual(names.slice(0, original[key].names.length), original[key].names);
+    const retainedControls = new Map(Object.entries(controls ?? {}).map(([id, control]) =>
+      [nodes.slice(2 * id, 2 * id + 2).join(','), control]));
     for (const [node, control] of Object.entries(original[key].controls ?? {})) {
-      assert.deepEqual(EDE_DATA[key].controls[node], control);
+      assert.deepEqual(retainedControls.get(original[key].nodes.slice(2 * node, 2 * node + 2).join(',')), control);
     }
   }
   assert.ok(land.parks.some(([, , fragments]) => fragments.length > 1));

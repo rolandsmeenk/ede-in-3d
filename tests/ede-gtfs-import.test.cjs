@@ -31,16 +31,19 @@ with ZipFile(BytesIO(), 'w') as feed:
           [('weekday', 1, 1, 1, 1, 1, 0, 0, 20261116, 20261122)])
     table('calendar_dates', 'service_id date exception_type', [('weekday', 20261117, 2), ('weekday', 20261121, 1)])
     table('shapes', 'shape_id shape_pt_sequence shape_pt_lon shape_pt_lat shape_dist_traveled',
-          [('7', 2, 40, 0, 200), ('7', 1, 0, 0, 100)])
+          [('7', 2, 40, 0, 200), ('7', 1, 0, 0, 100), ('8', 1, 0, 0, 100), ('8', 2, 40, 0, 200)])
     table('stops', 'stop_id stop_name platform_code stop_lon stop_lat',
           [('A', 'Stop, A', 'G', 20, 1), ('B', 'Stop B', '', 40, 0)])
     table('stop_times', 'trip_id stop_sequence stop_id arrival_time departure_time shape_dist_traveled', [
-        call for route, _, _ in routes for call in [
+        call for route, _, _ in [*routes, ('9', 'ARR', '1')] for call in [
             (route, 8 if route == '162158' else 2, 'B', '25:04:21', '25:04:21', 200),
             (route, 1, 'A', '25:04:04', '25:04:05', 150),
         ]
     ])
-    data = module['import_feed'](feed, lambda x, z: (float(x), float(z)))
+    project = lambda x, z: (float(x), float(z))
+    data = module['import_feed'](feed, project)
+    expanded = module['import_feed'](feed, project, [[[10, -5, 30, -5, 30, 5, 10, 5]]])
+    assert any(v['routeId'] == '9' for v in expanded['variants'])
 
 assert [v['routeId'] for v in data['variants']] == [route for route, _, _ in routes]
 assert data['services'] == [f'2026-11-{day}' for day in (16, 18, 19, 20, 21)]

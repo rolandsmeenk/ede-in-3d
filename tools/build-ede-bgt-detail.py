@@ -244,12 +244,13 @@ def flat_polygon(outer, holes=()):
 def tree_positions(path):
     data = path.read_bytes()
     version, count = struct.unpack_from('<4sI', data)
-    if version not in {b'EDT1', b'EDT2', b'EDT3'}:
+    if version not in {b'EDT1', b'EDT2', b'EDT3', b'EDT4'}:
         raise ValueError(f'Unrecognized Ede tree inventory: {path}')
+    record = struct.Struct('<iiHBBB' if version == b'EDT4' else '<hhHBBB')
     offset = 8
     for _ in range(count):
-        x, z, _, _, _, flags = struct.unpack_from('<hhHBBB', data, offset)
-        offset += 9 + bool(flags & 72) + bool(flags & 128)
+        x, z, _, _, _, flags = record.unpack_from(data, offset)
+        offset += record.size + bool(flags & 72) + bool(flags & 128)
         yield Point(x / 5, z / 5)
     if offset != len(data):
         raise ValueError(f'Invalid Ede tree inventory length: {path}')
@@ -293,6 +294,8 @@ def build_evidence(scene, area, *, tree_path=ROOT / 'assets/ede-trees.bin'):
     stops = {}
     for variant in json.loads((ROOT / 'assets/ede-bus-routes.json').read_bytes())['variants']:
         for stop in variant['stops']:
+            if not ('x' in stop and 'z' in stop):
+                continue
             point = Point(stop['x'], stop['z'])
             if area.covers(point):
                 stops.setdefault(stop['id'], point)
@@ -316,9 +319,10 @@ def build_evidence(scene, area, *, tree_path=ROOT / 'assets/ede-trees.bin'):
     trees = [Point(t['x'], t['z']) for t in scene['trees']]
     trees.extend(tree_positions(tree_path))
     lamp_data = gzip.decompress((ROOT / 'assets/ede-lamps.bin.gz').read_bytes())
-    if lamp_data[:4] != b'EDL2':
+    lamp_format = {b'EDL2': '<hhhHhHBb', b'EDL3': '<iihHhHBb'}.get(lamp_data[:4])
+    if lamp_format is None:
         raise ValueError('Unrecognized Ede lamp inventory')
-    lamps = [Point(x / 5, z / 5) for x, z, _, _, _, _, _, level in struct.iter_unpack('<hhhHhHBb', lamp_data[8:])
+    lamps = [Point(x / 5, z / 5) for x, z, _, _, _, _, _, level in struct.iter_unpack(lamp_format, lamp_data[8:])
              if level == 0]
     building_polygons = []
     for record in scene['buildings']:
@@ -958,13 +962,18 @@ def main():
 
     if args.municipal_snapshot:
         import ede_municipal_detail as municipal
+        from ede_map import load_playable_boundary, load_playable_scene
+
+        playable = load_playable_scene()
+        boundary = load_playable_boundary()
         if args.fetch:
-            municipal.fetch(args.municipal_snapshot, scene['meta']['geographicBounds'])
+            municipal.fetch(args.municipal_snapshot, playable['meta']['geographicBounds'])
         base = municipal.read_json(args.output)
         profiles = municipal.read_json(args.acv_profile) if args.acv_profile.is_file() else {}
         survey = municipal.read_json(args.playground_survey) if args.playground_survey.is_file() else {}
         bins = municipal.read_json(args.bin_profile) if args.bin_profile.is_file() else {}
-        municipal_asset, audit = municipal.bake(args.municipal_snapshot, scene, base, globals(), profiles, survey, bins)
+        municipal_asset, audit = municipal.bake(
+            args.municipal_snapshot, playable, boundary, base, globals(), profiles, survey, bins)
         write_json(args.municipal_output, municipal_asset)
         write_json(args.municipal_review, audit)
         print(f"Ede municipal detail: {len(municipal_asset['features'])} placements, {len(audit['playSites'])} play sites")

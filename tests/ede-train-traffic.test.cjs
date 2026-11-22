@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const timetable = require('../assets/ede-train-timetable.json');
 
-const date = '2026-11-19';
+const date = timetable.dates.find(day => [1, 2, 3, 4, 5].includes(new Date(day).getUTCDay()));
 const dateIndex = timetable.dates.indexOf(date);
 const isOperating = trip => timetable.calendars[trip.calendar].includes(dateIndex);
 const wag = 'ede-wageningen', centrum = 'ede-centrum';
@@ -118,12 +118,12 @@ test('RS34 holds its updated dwell, turns at the same berth and honours cancella
 
 test('a matching overnight service keeps its service date and unknown GPS retires after its prediction window', async () => {
   const { createEdeTrainSchedule } = await import('../js/ede-train-schedule.js');
-  const { serviceEpoch } = await import('../js/ede-transit-time.js');
+  const { serviceEpoch, shiftDate } = await import('../js/ede-transit-time.js');
   const n = localTrips.find(trip => trip.operator === 'NS' && trip.direction === 1);
   const overnight = { ...n, calendar: 0, stops: n.stops.map(stop => ({
     ...stop, arrival: stop.arrival + 15 * 3600, departure: stop.departure + 15 * 3600
   })) };
-  const newAsset = { ...timetable, dates: [date,'2026-11-20'], calendars: [[0]], trips: [overnight] };
+  const newAsset = { ...timetable, dates: [date, shiftDate(date, 1)], calendars: [[0]], trips: [overnight] };
   const source = createEdeTrainSchedule(newAsset);
   const at = serviceEpoch(date) + findStop(overnight,wag).arrival;
   assert.equal(source.lookup({ operator: 'NS', number: n.number }, at).date, date);

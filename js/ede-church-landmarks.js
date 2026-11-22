@@ -5,6 +5,7 @@ import { CivicBatch, civicSigns, makeGroup, polygonNormal, wallExtent, facePanel
 import { terrainHeightAt } from './terrain.js';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { createWindVane } from './ede-wind-props.js';
+import { addClockDetails, addRoundClock } from './ede-clock-model.js';
 
 // 3DBAG LoD 2.2, transformed to the Oude Kerk scene grid. Point heights in these
 // surveys retain NAP. AHN DSM supplies the tips that LoD 2.2 misses.
@@ -1258,15 +1259,8 @@ function churchWindowRow(batch, wall, kind, threshold, bays, minU, maxU) {
 }
 
 function churchClock(batch, wall, u, nap, size) {
-  circle(batch, wall, u, nap, size + 0.05, 0x737164, 0.055);
-  circle(batch, wall, u, nap, size, 0x242d2e, 0.076);
-  for (let i = 0; i < 12; i++) {
-    const x = Math.cos(i * Math.PI / 6), y = Math.sin(i * Math.PI / 6);
-    bar(batch, wall, [u + x * size * 0.81, nap + y * size * 0.81],
-      [u + x * size * 0.91, nap + y * size * 0.91], 0.044, 0xe4d6ab, 0.093);
-  }
-  bar(batch, wall, [u, nap], [u - size * 0.30, nap + size * 0.23], 0.050, 0xe4d6ab, 0.101);
-  bar(batch, wall, [u, nap], [u + size * 0.39, nap + size * 0.55], 0.031, 0xe4d6ab, 0.101);
+  return addRoundClock(batch, (x, y, depth) => point(wall, u + x, nap + y, 0.076 + depth), size,
+    0x242d2e, 0xe4d6ab, 0x737164);
 }
 
 function emmausEaves(batch, roof, segments) {
@@ -1401,20 +1395,24 @@ function createEmmausChurch(site, survey, style) {
 }
 
 const churchExteriorTools = {
-  arch, bar, churchClock, cross, door, panel, point, rect, spindle, steps, windowBand,
+  arch, bar, cross, door, panel, point, rect, spindle, steps, windowBand,
 };
 
 export function createAdditionalChurch(site, survey, style) {
   if (site.id === 'emmaus') return createEmmausChurch(site, survey, style);
+  const clocks = [];
   if (style.facade) {
     const walls = new Map(surveyWalls(survey, 0.95).map(wall => [wall.faceIndex, wall]));
     const group = church(site.name, survey, style, batch =>
       style.silhouette?.(batch, walls, churchExteriorTools));
     group.userData.colliders[0].maxY = group.children[0].geometry.boundingBox.max.y;
     const details = new CivicBatch();
-    style.facade(details, walls, churchExteriorTools);
+    style.facade(details, walls, {
+      ...churchExteriorTools, churchClock: (...args) => clocks.push(churchClock(...args)),
+    });
     const exterior = makeGroup(`${site.name} exterior detail`, details, []);
     exterior.userData.nearDetail = 175;
+    addClockDetails(exterior, clocks);
     group.add(exterior);
     return group;
   }
@@ -1523,7 +1521,7 @@ export function createAdditionalChurch(site, survey, style) {
         rect(batch, wall, 0, width, y - 0.75, y + 0.42, LOUVER, 0.055);
         for (let i = 0; i < 5; i++) rect(batch, wall, 0, width * 0.95, y - 0.61 + i * 0.20,
           y - 0.57 + i * 0.20, FRAME, 0.076);
-        if (style.clock && wall.cap - threshold > 7) churchClock(batch, wall, 0, y + 1.36, 0.51);
+        if (style.clock && wall.cap - threshold > 7) clocks.push(churchClock(batch, wall, 0, y + 1.36, 0.51));
       }
     }
     if (style.spire) {
@@ -1556,6 +1554,7 @@ export function createAdditionalChurch(site, survey, style) {
       cross(batch, x, z, nap - 0.02, style.finial, style.finialTint ?? style.trim ?? 0x636b59);
     }
   });
+  addClockDetails(group, clocks);
   if (site.id === 'lutherse-kerk') {
     const [x, , z, , top, tint] = style.spire;
     group.add(createWindVane('Lutherse Kerk swan vane', x, top - SCENE_NAP_ORIGIN + 0.13, z, [

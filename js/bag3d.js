@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GEO } from './nyc-geodata.js';
 import { projectLonLatInto } from './ede-scene-coordinates.js';
+import { playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
 import { BLOCKS } from './city-config.js';
 import { polygonContains } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
@@ -93,7 +94,8 @@ function terrainCullingBounds(bounds) {
 }
 
 // Transform accumulation crosses external tilesets, whose URIs resolve from their own catalogue.
-async function selectTileRecords({ minX = MIN_X, maxX = MAX_X, minZ = MIN_Z, maxZ = MAX_Z, margin = 60, fetchJson } = {}) {
+async function selectTileRecords({ minX = MIN_X, maxX = MAX_X, minZ = MIN_Z, maxZ = MAX_Z, margin = 60, fetchJson,
+  boundary = false } = {}) {
   const getJson = fetchJson || (async url => {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${url}: ${response.status}`);
@@ -108,6 +110,7 @@ async function selectTileRecords({ minX = MIN_X, maxX = MAX_X, minZ = MIN_Z, max
     const pad = ((bounds.max.x - bounds.min.x) ** 2 + (bounds.max.z - bounds.min.z) ** 2) / WGS84_A;
     if (bounds.max.x + pad < minX - margin || bounds.min.x - pad > maxX + margin
         || bounds.max.z + pad < minZ - margin || bounds.min.z - pad > maxZ + margin) return;
+    if (boundary && !playableBoundsOverlap(bounds.min.x - pad, bounds.min.z - pad, bounds.max.x + pad, bounds.max.z + pad)) return;
     if (node.children?.length) {
       for (const child of node.children) visit(child, baseUrl, transform);
       return;
@@ -417,7 +420,7 @@ export function bakeTile(...args) {
   return finishBagWork(bakeTileChunks(...args));
 }
 
-function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, yearTables, project) {
+function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, yearTables, project, limitToMunicipality) {
   const geometries = [];
   const useAerial = getAerialColors();
   mappedRoofs ??= mappedRoofIndex();
@@ -455,7 +458,7 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
         const seed = fid ? Math.round(fid.getX(i)) : 0;
         const y = positions[i * 3 + 1];
         baseByBuilding.set(seed, Math.min(baseByBuilding.get(seed) ?? Infinity, y));
-        if (fid) {
+        if (fid || limitToMunicipality) {
           const x = positions[i * 3], z = positions[i * 3 + 2];
           const bounds = extents.get(seed);
           if (bounds) {
@@ -473,15 +476,20 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
         else c.setHSL(0.08 + s * 0.05, 0.08, 0.40 + s * 0.15);
         colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
       }
-      const facades = new Map(), roofColors = new Map(), sheds = new Set();
+      const facades = new Map(), roofColors = new Map(), omitted = new Set();
       for (const [seed, { minX, maxX, minZ, maxZ, top }] of extents) {
+        if (limitToMunicipality && !playableBoundsCovered(minX, minZ, maxX, maxZ)) {
+          omitted.add(seed);
+          continue;
+        }
+        if (!fid) continue;
         const x = (minX + maxX) / 2, z = (minZ + maxZ) / 2;
         // Require the whole BAG footprint to fit so an adjoining house keeps its own mesh.
         const footprint = mappedRoofAt(x, z);
         if (isEdeShed(footprint?.source, footprint?.area)
           && minX >= footprint.minX - 0.8 && maxX <= footprint.maxX + 0.8
           && minZ >= footprint.minZ - 0.8 && maxZ <= footprint.maxZ + 0.8) {
-          sheds.add(seed);
+          omitted.add(seed);
           continue;
         }
         const year = years?.[seed] || footprint?.source?.buildYear;
@@ -491,10 +499,11 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
         if (style?.roofColor) roofColors.set(seed, c.setHex(style.roofColor).toArray());
       }
       let kept;
-      if (fid && (excluded?.size || sheds.size)) {
+      if (!fid && omitted.has(0)) continue;
+      if (fid && (excluded?.size || omitted.size)) {
         const omit = i => {
           const seed = Math.round(fid.getX(i));
-          return excluded?.has(seed) || sheds.has(seed);
+          return excluded?.has(seed) || omitted.has(seed);
         };
         const srcCount = src.index?.count ?? count;
         kept = [];
@@ -743,7 +752,10 @@ async function bagGeometry(gltf, facades, tile, stillWanted = () => true, pacing
     const exclusions = excluded.size ? await readBagFacadeFeatures(gltf, excluded) : null;
     const years = await readBagBuildYears(gltf).catch(() => []);
     const matrix = gltfToEcefMatrix(tile.transform);
-    const work = bakeTileChunks(gltf, matrix, atlas ? features : null, atlas, bases, exclusions, years, projectBagVertex);
+    const { min, max } = tile.bounds;
+    const limitToMunicipality = !playableBoundsCovered(min.x, min.z, max.x, max.z);
+    const work = bakeTileChunks(gltf, matrix, atlas ? features : null, atlas, bases, exclusions, years, projectBagVertex,
+      limitToMunicipality);
     const geometries = pacing ? await finishBagWorkIncrementally(work, stillWanted, pacing) : finishBagWork(work);
     if (!geometries) {
       disposeFacadeAtlas(atlas);
@@ -795,7 +807,7 @@ function addBagGeometry(group, geometries, material, detailedMaterial) {
 
 export async function loadBagBuildings(scene, { onProgress, concurrency = 4, fetchJson, loader, replacementBagIds } = {}) {
   const [tiles, facades] = await Promise.all([
-    selectTileRecords({ fetchJson }),
+    selectTileRecords({ fetchJson, boundary: true }),
     loadEdeFacades().catch(error => {
       console.warn('[facades] using procedural walls:', error.message);
       return null;
@@ -886,7 +898,7 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
   function requestCatalogue() {
     if (catalogueRequested) return;
     catalogueRequested = true;
-    selectTileRecords({ fetchJson }).then(value => {
+    selectTileRecords({ fetchJson, boundary: true }).then(value => {
       if (disposed) return;
       tiles = value;
       stats.catalogue = value.length;

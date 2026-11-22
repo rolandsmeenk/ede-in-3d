@@ -16,25 +16,47 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 
 | Feature | Count or coverage |
 | --- | ---: |
-| Map extent | 16.4 × 11.5 km |
+| Playable area inside Gemeente Ede | 179 km² |
 | Teleport menu areas | 14 |
 | Custom landmark models | 252 |
-| Building footprints in the base map | 44,844 |
-| Street litter bins | 555 |
-| Waste collection sites | 395 |
-| Mapped playground outlines | 119 |
-| Municipal play-site locations | 218 |
+| Mapped building footprints | 60,950 |
+| Street litter bins | 663 |
+| Waste collection sites | 438 |
+| Mapped playground outlines | 144 |
+| Municipal play-site locations | 254 |
 | Playgrounds with surveyed equipment | 2 |
-| Outdoor sports pitches, courts and tracks | 169 |
-| Mapped traffic-light locations | 251 |
-| Lamp posts | 15,241 |
-| Mapped tree records in the default inventory | 70,124 |
-| Trees placed in the default map | 185,045 |
-| Mapped roads and paths | 2,583 km |
-| Mapped railway tracks | 45 km |
+| Outdoor sports pitches, courts and tracks | 262 |
+| Timetable bus-stop records | 248 |
+| Rendered bus-stop signs | 218 |
+| Bus stops with generated boarding areas | 109 |
+| Bus shelters | 62 |
+| Mapped traffic-light locations | 293 |
+| Lamp posts | 18,300 |
+| Mapped tree records in the default inventory | 104,141 |
+| Mapped roads and paths | 2,305 km |
+| Mapped railway tracks | 38 km |
 | Modeled parking spaces | 18,193 |
 
-Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 248 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. The placed tree total includes procedural woodland and estimated stems from the northern canopy survey. It counts trees after clearance checks. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Map data and sources](docs/map-and-assets.md)
+Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 248 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. The tree inventory counts imported trunks before clearance checks and procedural woodland. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Municipal coverage and sources](docs/map-and-assets.md#municipal-coverage)
+
+Bus-stop signs combine timetable records that share a boarding point. The shelter count includes 61 generated shelters and one surveyed model. [Bus-stop models and sources](docs/map-and-assets.md#bus-stop-design-references)
+
+### Outdoor sports areas by type
+
+The expanded map adds 93 outdoor sports areas. Across the full map, 147 areas get sport-specific layouts and 115 show the playing surface only.
+
+| Sport or use | Mapped areas | Sport or use | Mapped areas |
+| --- | ---: | --- | ---: |
+| Equestrian | 89 | Baseball and softball | 3 |
+| Football | 61 | Field hockey | 3 |
+| Tennis | 45 | Padel | 3 |
+| Basketball | 22 | Korfball | 2 |
+| Athletics | 19 | Pickleball | 2 |
+| Table tennis | 5 | Boules | 1 |
+| Multi-sport | 4 | Ice skating | 1 |
+| Skateboarding | 4 | Unspecified | 2 |
+
+Four courts count toward both football and basketball. [Bundled sports inventory](assets/ede-sports.json)
 
 ## Screenshots
 
@@ -56,7 +78,7 @@ Counts come from the bundled map, placement assets and landmark registry. The la
 
 ## See Ede in a different light
 
-Choose Golden Hour, Midday, Blue Hour or Night, or switch to **Live Time** to follow the sun in Ede. Turn on **Live Weather** with any lighting setting to bring in local clouds, rain, snow or fog.
+Open **Environment** and choose **Live** to follow Ede’s local clock, seasons, weather and Frankeneng water levels. In **Preset**, set the time of day, season and weather yourself. Try a windy autumn rain, a snowy winter night or summer on the purple heath. [Environment and data sources](docs/simulation.md#environment)
 
 ## Documentation
 
