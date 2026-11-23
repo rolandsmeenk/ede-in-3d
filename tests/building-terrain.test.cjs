@@ -45,24 +45,33 @@ class Vector3 {
 
 function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {},
   facadeStyle = () => null, isEdeShed = () => false, globals = {}, meta = {}, landmarks = {}, boundary = {} } = {}) {
+  const threeStub = three ?? {
+    BufferGeometry, BufferAttribute, Vector3,
+    Matrix4: class { multiplyMatrices() { return this; } },
+    Matrix3: class { getNormalMatrix() { return this; } },
+    Color: class { setHSL() { this.r = this.g = this.b = 0.5; } }
+  };
+  const coordinates = loadModule(read('ede-scene-coordinates.js'));
+  const projection = loadModule(read('bag3d-projection.js'), {
+    imports: { '../vendor/three/build/three.core.js': threeStub, './ede-scene-coordinates.js': coordinates }
+  });
+  const collision = loadModule(read('building-collision.js'));
+  const coverage = loadModule(read('bag3d-coverage.js'), { imports: { './building-collision.js': collision } });
   return loadModule(read('bag3d.js').replaceAll('export async function', 'async function'), {
     globals,
     imports: {
-      'three/webgpu': three ?? {
-        BufferGeometry, BufferAttribute, Vector3,
-        Matrix4: class { multiplyMatrices() { return this; } },
-        Matrix3: class { getNormalMatrix() { return this; } },
-        Color: class { setHSL() { this.r = this.g = this.b = 0.5; } }
-      },
+      'three/webgpu': threeStub,
       'three/tsl': {},
       'three/addons/loaders/GLTFLoader.js': {},
       'three/addons/libs/meshopt_decoder.module.js': {},
-      './ede-scene-coordinates.js': loadModule(read('ede-scene-coordinates.js')),
+      './bag3d-projection.js': projection,
+      './bag3d-coverage.js': coverage,
+      './bag3d-worker-client.js': { createBagWorker: () => ({ project() {}, bakeAtlas() {}, matchCoverage() {}, cancel() {}, dispose() {} }) },
       './ede-bag-exterior.js': { loadBagBoundaryOwnership: async () => null },
       './ede-playable-boundary.js': { playableBoundsCovered: () => true, playableBoundsOverlap: () => true, ...boundary },
       './nyc-geodata.js': { GEO: { ede: { meta: { bounds: [0, 0, 30, 30], ...meta } } } },
       './city-config.js': { BLOCKS: blocks },
-      './building-collision.js': loadModule(read('building-collision.js')),
+      './building-collision.js': collision,
       './terrain.js': { terrainHeightAt: (x) => 10 + x / 2 },
       './ede-grade.js': { buildingPassageCuts: () => [], ...grade },
       './ede-building-bases.js': { EDE_BUILDING_BASES: [] },

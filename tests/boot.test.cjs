@@ -45,7 +45,7 @@ test('native module entry and imports share canonical preloaded URLs on GitHub P
     assert.ok(!urls.has(specifier), `the old URL is not preloaded: ${specifier}`);
   }
   for (const src of links) {
-    assert.match(src, /^\.\/js\/[\w-]+\.js(?:\?v=[\w-]+)?$/, 'each preload addresses a local module');
+    assert.match(src, /^\.\/(?:js\/[\w-]+\.js|vendor\/three\/build\/three\.core\.js)(?:\?v=[\w-]+)?$/, 'each preload addresses a local module');
     const source = readFileSync(join(__dirname, '..', src.split('?')[0]), 'utf8');
     const imports = src === entries[0][1]
       ? /\bimport\(['"](\.[^'"]+)['"]\)/g

@@ -91,6 +91,8 @@ test('signal clearance uses the mapped carriageway holes and each level independ
   const { overlapsEdeTravelPavement: overlaps } = loadModule(geometrySource, {
     imports: {
       'three/webgpu': {}, './terrain.js': {}, './ede-grade.js': {}, './ede-road-surfaces.js': roadSurfaces,
+      './ede-road-cell-query.js': await import('../js/ede-road-cell-query.js'),
+      './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js'),
       './city-config.js': { EDE_DATA: { roads: [{ id: 'r', kind: 'residential', width: 6, pts: [20, 0, 32, 0] }] } },
     },
   });
@@ -107,7 +109,7 @@ async function loadSignalModels() {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const { loadModule } = require('./helpers/module.cjs');
   const source = file => readFileSync(join(__dirname, '..', file), 'utf8');
-  const utils = loadModule(source('vendor/three/examples/jsm/utils/BufferGeometryUtils.js'), { imports: { three: THREE } });
+  const utils = loadModule(source('vendor/three/examples/jsm/utils/BufferGeometryUtils.js'), { imports: { '../../../build/three.core.js': THREE } });
   const models = loadModule(source('js/ede-signal-models.js'), {
     globals: { Float32Array },
     imports: { 'three/webgpu': THREE, 'three/addons/utils/BufferGeometryUtils.js': utils },

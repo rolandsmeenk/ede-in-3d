@@ -5,16 +5,13 @@ import { createCoverageIndex, edeCoverage } from './ede-coverage.js';
 import { playableBoundary, playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
 import { cityUniforms, heathBloomColor, sampleEdeLandCover } from './tsl-materials.js';
 import { expansionSeamOffset, getExpansionTerrain, getTerrain, sampleTerrain } from './terrain.js';
+import { buildTerrainGeometry, restoreLandscapeGeometry, SIDE } from './ede-landscape-geometry.js';
+import { runLandscapeJob } from './ede-landscape-jobs.js';
 
-const SIDE = 51;
 const OVERVIEW_SIDE = 13;
 const MAX_LOADS = 4;
 const MAX_GEOMETRY_BYTES = 40 * 1024 * 1024;
 const MAX_ACTIVE_TILES = 112;
-const linear = Float32Array.from({ length: 256 }, (_, i) => THREE.ColorManagement.convert(
-  new THREE.Color().setScalar(i / 255), THREE.SRGBColorSpace, THREE.LinearSRGBColorSpace
-).r);
-
 // An overview can be coarser than its baked root. Bound its edge error
 // against the 5 m field at both sets of interpolation knots.
 function overviewEdgeError(sample, start, end, step) {
@@ -90,228 +87,7 @@ function overlap(a, b) {
 }
 
 export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
-  if (bytes.byteLength !== side * side * 5) throw new Error('Invalid AHN terrain tile size');
-  const view = new DataView(bytes);
-  const [minX, minZ, maxX, maxZ] = tile.bounds;
-  const bakeLinear = side === SIDE;
-  const detail = bakeLinear ? tile.detail : null;
-  if (detail) side = (maxX - minX) / detail.step + 1;
-  const step = (maxX - minX) / (side - 1);
-  const positions = [], colors = [], indices = [];
-  const decodeColor = value => bakeLinear ? Math.round(linear[value] * 255) : value;
-  function vertex(x, y, z, r, g, b) {
-    const index = positions.length / 3;
-    positions.push(x, y - 0.025, z);
-    colors.push(r, g, b, 255);
-    return index;
-  }
-  if (detail) {
-    // Match the existing aerial palette and triangle interpolation at tile edges.
-    const ratio = (SIDE - 1) / (side - 1);
-    const start = (minZ - detail.minZ) / step * detail.columns + (minX - detail.minX) / step;
-    const colorAt = (index, band) => decodeColor(view.getUint8(index * 5 + band));
-    for (let z = 0; z < side; z++) for (let x = 0; x < side; x++) {
-      const cx = Math.min(SIDE - 2, Math.floor(x * ratio)), cz = Math.min(SIDE - 2, Math.floor(z * ratio));
-      const u = x * ratio - cx, v = z * ratio - cz;
-      const index = cz * SIDE + cx;
-      const color = band => {
-        const b = colorAt(index + 1, band), c = colorAt(index + SIDE, band);
-        const fromLower = u + v <= 1;
-        const a = colorAt(fromLower ? index : index + SIDE + 1, band);
-        return Math.round(fromLower ? a + (b - a) * u + (c - a) * v : a + (c - a) * (1 - u) + (b - a) * (1 - v));
-      };
-      vertex(minX + x * step, detail.heights[start + z * detail.columns + x], minZ + z * step, color(2), color(3), color(4));
-    }
-  } else {
-    for (let z = 0, i = 0; z < side; z++) for (let x = 0; x < side; x++, i += 5) {
-      const worldX = minX + x * step, worldZ = minZ + z * step;
-      const elevation = (view.getInt16(i, true) - Math.round(field.napOrigin * 100)) / 100;
-      vertex(worldX, elevation + expansionSeamOffset(worldX, worldZ),
-        worldZ, decodeColor(view.getUint8(i + 2)),
-        decodeColor(view.getUint8(i + 3)), decodeColor(view.getUint8(i + 4)));
-    }
-  }
-
-  const pointAt = i => [positions[i * 3], positions[i * 3 + 1] + 0.025, positions[i * 3 + 2],
-    colors[i * 4], colors[i * 4 + 1], colors[i * 4 + 2]];
-
-  // Boundary tiles intersect a triangulation of the municipality. Using the same polygon for
-  // the overview and every tile level keeps the edge fixed while height and colour refine.
-  const binsPerSide = 8;
-  const binSize = (maxX - minX) / binsPerSide;
-  const bins = tile.boundary && Array.from({ length: binsPerSide ** 2 }, (_, i) => {
-    const x = minX + i % binsPerSide * binSize, z = minZ + Math.floor(i / binsPerSide) * binSize;
-    const bounds = [x, z, x + binSize + step, z + binSize + step];
-    const parts = tile.boundary.parts.filter(part => overlap(bounds, part.bounds));
-    const edges = tile.boundary.edges.filter(edge => overlap(bounds, edge));
-    return { parts, edges, inside: !edges.length && parts.some(({ planes }) => planes.every(([a, b, c]) => a * x + b * z + c >= 0)) };
-  });
-  const binAt = (value, origin) => Math.max(0, Math.min(binsPerSide - 1, Math.floor((value - origin) / binSize)));
-  function addTriangle(a, b, c) {
-    if (!bins) {
-      indices.push(a, b, c);
-      return;
-    }
-    const west = Math.min(positions[a * 3], positions[b * 3], positions[c * 3]);
-    const north = Math.min(positions[a * 3 + 2], positions[b * 3 + 2], positions[c * 3 + 2]);
-    const bin = bins[binAt(west, minX) + binAt(north, minZ) * binsPerSide];
-    if (!bin.edges.length) {
-      if (bin.inside) indices.push(a, b, c);
-      return;
-    }
-    const east = Math.max(positions[a * 3], positions[b * 3], positions[c * 3]);
-    const south = Math.max(positions[a * 3 + 2], positions[b * 3 + 2], positions[c * 3 + 2]);
-    const bounds = [west, north, east, south];
-    if (!bin.edges.some(edge => overlap(bounds, edge))) {
-      if (bin.parts.some(part => overlap(bounds, part.bounds) && part.planes.every(([x, z, offset]) =>
-        x * positions[a * 3] + z * positions[a * 3 + 2] + offset >= 0))) indices.push(a, b, c);
-      return;
-    }
-    const corners = [a, b, c];
-    const points = corners.map(pointAt);
-    for (const part of bin.parts) {
-      if (!overlap(bounds, part.bounds)) continue;
-      let fragment = points;
-      for (const [x, z, offset] of part.planes) {
-        const distance = p => x * p[0] + z * p[2] + offset;
-        if (fragment.every(p => distance(p) >= 0)) continue;
-        const clipped = [];
-        for (let i = 0; i < fragment.length; i++) {
-          const p = fragment[i], q = fragment[(i + 1) % fragment.length];
-          const dp = distance(p), dq = distance(q);
-          if (dp >= 0) clipped.push(p);
-          if ((dp < 0 && dq > 0) || (dp > 0 && dq < 0)) {
-            const t = dp / (dp - dq);
-            clipped.push(p.map((value, j) => value + (q[j] - value) * t));
-          }
-        }
-        fragment = clipped;
-        if (fragment.length < 3) break;
-      }
-      if (fragment === points) {
-        indices.push(a, b, c);
-        return;
-      }
-      if (fragment.length < 3) continue;
-      const clipped = fragment.map(point => {
-        const original = points.indexOf(point);
-        if (original >= 0) return corners[original];
-        const [x, y, z, r, g, b] = point;
-        return vertex(x, y, z, Math.round(r), Math.round(g), Math.round(b));
-      });
-      for (let i = 1; i + 1 < clipped.length; i++) indices.push(clipped[0], clipped[i], clipped[i + 1]);
-    }
-  }
-
-  // The retained town rectangle owns its original grid and surveyed grades.
-  const insideLegacy = (x, z) => x > legacy.minX && x < legacy.maxX && z > legacy.minZ && z < legacy.maxZ;
-  const trim = minX < legacy.maxX && maxX > legacy.minX && minZ < legacy.maxZ && maxZ > legacy.minZ;
-  const clip = (polygon, axis, edge, direction) => {
-    const out = [];
-    for (let i = 0; i < polygon.length; i++) {
-      const a = polygon[i], b = polygon[(i + 1) % polygon.length];
-      const da = (a[axis] - edge) * direction, db = (b[axis] - edge) * direction;
-      if (da >= 0) out.push(a);
-      if ((da < 0) !== (db < 0)) {
-        const t = da / (da - db);
-        out.push(a.map((value, j) => value + (b[j] - value) * t));
-      }
-    }
-    return out;
-  };
-  const planes = [[0, legacy.minX, 1], [0, legacy.maxX, -1], [2, legacy.minZ, 1], [2, legacy.maxZ, -1]];
-  const edgeVertex = ([x, y, z, r, g, b]) => {
-    if (x >= legacy.minX && x <= legacy.maxX && z >= legacy.minZ && z <= legacy.maxZ) {
-      y = sampleTerrain(legacy, x, z);
-    }
-    return vertex(x, y, z, Math.round(r), Math.round(g), Math.round(b));
-  };
-  function triangle(a, b, c) {
-    if (!trim) {
-      addTriangle(a, b, c);
-      return;
-    }
-    const points = [a, b, c].map(pointAt);
-    const outsideLegacy = planes.some(([axis, edge, sign]) => points.every(p => (p[axis] - edge) * sign <= 0));
-    if (outsideLegacy) {
-      addTriangle(a, b, c);
-      return;
-    }
-    if (points.every(([x, , z]) => insideLegacy(x, z))) return;
-    let inside = points;
-    for (const [axis, edge, direction] of planes) {
-      const outside = clip(inside, axis, edge, -direction);
-      if (outside.length >= 3) {
-        const vertices = outside.map(edgeVertex);
-        for (let i = 1; i + 1 < vertices.length; i++) addTriangle(vertices[0], vertices[i], vertices[i + 1]);
-      }
-      inside = clip(inside, axis, edge, direction);
-      if (inside.length < 3) break;
-    }
-  }
-  for (let z = 0; z < side - 1; z++) for (let x = 0; x < side - 1; x++) {
-    const a = z * side + x;
-    triangle(a, a + side, a + 1);
-    triangle(a + 1, a + side, a + side + 1);
-  }
-
-  // Skirt faces point toward the lower neighbour. Separate vertices keep
-  // their normals out of the top surface shading.
-  const perimeter = [
-    Array.from({ length: side }, (_, i) => i),
-    Array.from({ length: side }, (_, i) => i * side + side - 1),
-    Array.from({ length: side }, (_, i) => side * side - 1 - i),
-    Array.from({ length: side }, (_, i) => (side - 1 - i) * side),
-  ];
-  for (const [edgeIndex, edge] of perimeter.entries()) {
-    const depth = tile.skirts[edgeIndex], axis = edgeIndex % 2 === 0 ? 0 : 2;
-    const fixed = pointAt(edge[0])[2 - axis];
-    const [start, end] = axis === 0 ? [legacy.minX, legacy.maxX] : [legacy.minZ, legacy.maxZ];
-    const clipToTown = axis === 0 ? fixed > legacy.minZ && fixed < legacy.maxZ
-      : fixed > legacy.minX && fixed < legacy.maxX;
-    let lastPoint, lastPair;
-    const addPair = ([x, y, z, r, g, b]) =>
-      [vertex(x, y, z, r, g, b), vertex(x, y - depth, z, r, g, b)];
-    function addSkirt(a, b) {
-      if (a[axis] === b[axis]) return;
-      const [topA, downA] = a[axis] === lastPoint ? lastPair : addPair(a);
-      const [topB, downB] = addPair(b);
-      addTriangle(topA, topB, downA);
-      addTriangle(downA, topB, downB);
-      lastPoint = b[axis];
-      lastPair = [topB, downB];
-    }
-    for (let i = 1; i < side; i++) {
-      const a = pointAt(edge[i - 1]), b = pointAt(edge[i]);
-      if (!clipToTown || Math.max(a[axis], b[axis]) <= start || Math.min(a[axis], b[axis]) >= end) {
-        addSkirt(a, b);
-        continue;
-      }
-      const clipEdge = (a, b, limit) => {
-        const t = (limit - a[axis]) / (b[axis] - a[axis]);
-        const point = a.map((value, j) => value + t * (b[j] - value));
-        point[axis] = limit;
-        point[1] = sampleTerrain(legacy, point[0], point[2]);
-        return point;
-      };
-      if (a[axis] < start || a[axis] > end) addSkirt(a, clipEdge(a, b, a[axis] < start ? start : end));
-      if (b[axis] < start || b[axis] > end) addSkirt(clipEdge(b, a, b[axis] < start ? start : end), b);
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Uint8BufferAttribute(colors, 4, true));
-  const uv = new Float32Array(positions.length / 3 * 2);
-  for (let i = 0; i < uv.length / 2; i++) {
-    uv[i * 2] = positions[i * 3];
-    uv[i * 2 + 1] = -positions[i * 3 + 2];
-  }
-  geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return geometry;
+  return buildTerrainGeometry(bytes, tile, legacy, field, expansionSeamOffset, side);
 }
 
 export function createTerrainTiles(scene, heath, fringeLandCover) {
@@ -371,23 +147,38 @@ export function createTerrainTiles(scene, heath, fringeLandCover) {
   const stats = { residentBytes: 0, peakResidentBytes: 0, visible: 0, loading: 0, drawCalls: 0, triangles: 0,
     collisionBytes: field.heights.byteLength + (detail?.heights.byteLength ?? 0),
     overviewBytes: (overviewField?.heights.byteLength ?? 0) + (rootSamples?.byteLength ?? 0) };
-  const resident = new Set(), shown = new Set(), ready = [];
+  const resident = new Set(), shown = new Set(), ready = [], loading = new Map();
   let pending = 0, stamp = 0;
   function countDraw(_renderer, _scene, _camera, geometry) {
     stats.drawCalls++;
     stats.triangles += geometry.index.count / 3;
   }
+  function finish(node) {
+    loading.delete(node);
+    node.loading = false;
+    pending--;
+  }
+
   function queue(node, now) {
     if (node.mesh || node.loading || node.retry > now || pending >= MAX_LOADS) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    loading.set(node, controller);
     node.loading = true;
     pending++;
-    fetch(new URL(`${node.id}.bin?v=20261123-municipal`, directory)).then(response => {
+    fetch(new URL(`${node.id}.bin?v=20261123-municipal`, directory), { signal }).then(response => {
       if (!response.ok) throw new Error(`AHN tile HTTP ${response.status}`);
       return response.arrayBuffer();
-    }).then(buffer => ready.push({ node, buffer })).catch(error => {
+    }).then(async buffer => {
+      if (signal.aborted) return;
+      const { bounds, skirts, boundary } = node;
+      const result = typeof Worker === 'undefined' ? null : await runLandscapeJob('terrain', buffer,
+        { bounds, skirts, boundary, detail: Boolean(node.detail) }, bounds, signal);
+      if (!signal.aborted) ready.push({ node, buffer: result ? null : buffer, result, signal });
+    }).catch(error => {
+      if (signal.aborted) return;
       node.retry = performance.now() + 4000;
-      node.loading = false;
-      pending--;
+      finish(node);
       console.warn('[AHN terrain tile]', node.id, error);
     });
   }
@@ -413,15 +204,13 @@ export function createTerrainTiles(scene, heath, fringeLandCover) {
     node.overview.onBeforeRender = countDraw;
     group.add(node.overview);
   }
-  // The coarse roots stay available across camera jumps and after mesh eviction.
-  if (rootHeights) for (const node of roots) overview(node);
-
   function upload() {
+    while (ready[0]?.signal.aborted) ready.shift();
     const job = ready.shift();
     if (!job) return;
-    const { node, buffer } = job;
+    const { node, buffer, result } = job;
     try {
-      const geometry = tileGeometry(buffer, node, legacy, field);
+      const geometry = result ? restoreLandscapeGeometry(result.mesh) : tileGeometry(buffer, node, legacy, field);
       const mesh = new THREE.Mesh(geometry, tileMaterial(node));
       mesh.receiveShadow = true;
       mesh.onBeforeRender = countDraw;
@@ -445,8 +234,7 @@ export function createTerrainTiles(scene, heath, fringeLandCover) {
       node.retry = performance.now() + 4000;
       console.warn('[AHN terrain tile]', node.id, error);
     } finally {
-      node.loading = false;
-      pending--;
+      finish(node);
     }
   }
 
@@ -454,12 +242,12 @@ export function createTerrainTiles(scene, heath, fringeLandCover) {
     Math.max(bounds[1] - z, 0, z - bounds[3]));
   function update(camera, viewportHeight) {
     stats.drawCalls = stats.triangles = 0;
-    upload();
     stamp++;
     camera.updateMatrixWorld();
     cameraMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(cameraMatrix, camera.coordinateSystem, camera.reversedDepth);
     const { x, y, z } = camera.position;
+    if (Math.hypot(x - lastCamera.x, z - lastCamera.z) < 500) upload();
     const advanceX = THREE.MathUtils.clamp((x - lastCamera.x) * 14, -150, 150);
     const advanceZ = THREE.MathUtils.clamp((z - lastCamera.z) * 14, -150, 150);
     lastCamera.copy(camera.position);
@@ -485,7 +273,8 @@ export function createTerrainTiles(scene, heath, fringeLandCover) {
       if (!node.mesh) {
         desire(node, horizontal);
         if (root && visible) {
-          if (createOverview && !node.overview) {
+          // Buffered roots can draw immediately after camera jumps and survive detail eviction.
+          if ((rootHeights || createOverview) && !node.overview) {
             overview(node);
             createOverview = false;
           }
@@ -509,6 +298,11 @@ export function createTerrainTiles(scene, heath, fringeLandCover) {
       if (visible) next.add(node);
     }
     for (const root of [...roots].sort((a, b) => score(a) - score(b))) visit(root, true);
+    for (const [node, controller] of loading) {
+      if (node.used === stamp) continue;
+      controller.abort();
+      finish(node);
+    }
     for (const [node] of [...wanted].sort((a, b) => a[1] - b[1])) {
       if (pending >= MAX_LOADS) break;
       queue(node, now);

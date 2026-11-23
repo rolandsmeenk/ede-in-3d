@@ -162,6 +162,8 @@ async function terrainRenderer() {
   const terrain = await import('../js/terrain.js');
   const filename = path.resolve(__dirname, '../js/ede-terrain-tiles.js');
   const tiles = loadModule(readFileSync(filename, 'utf8'), { filename, imports: {
+    './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
+    './ede-landscape-jobs.js': {},
     'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
     './tsl-materials.js': {}, './ede-playable-boundary.js': {}, './ede-coverage.js': {},
     './terrain.js': { ...terrain, expansionSeamOffset: () => 0 },
@@ -176,13 +178,19 @@ test('buffered roots draw immediately after camera jumps while detail fetches wa
   ]);
   mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
   await terrain.loadTerrain({ expanded: true });
-  let pending = 0;
-  const fetchTile = () => { pending++; return new Promise(() => {}); };
+  let pending = 0, canceled = 0;
+  const fetchTile = (_url, { signal }) => {
+    pending++;
+    signal.addEventListener('abort', () => { pending--; canceled++; });
+    return new Promise(() => {});
+  };
   const filename = path.resolve(__dirname, '../js/ede-terrain-tiles.js');
   const { createTerrainTiles } = loadModule(readFileSync(filename, 'utf8'), {
-    filename, globals: { URL, performance, fetch: fetchTile },
+    filename, globals: { URL, AbortController, performance, fetch: fetchTile },
     imports: {
-      'three/webgpu': three, 'three/tsl': tsl, './aerial-colors.js': { sampleGroundColor: () => false },
+      './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
+    './ede-landscape-jobs.js': {},
+    'three/webgpu': three, 'three/tsl': tsl, './aerial-colors.js': { sampleGroundColor: () => false },
       './tsl-materials.js': { heathBloomColor: color => color, cityUniforms: { uRoadWetness: tsl.float(0) } },
       './ede-playable-boundary.js': {}, './ede-coverage.js': coverage, './terrain.js': terrain,
     },
@@ -207,6 +215,7 @@ test('buffered roots draw immediately after camera jumps while detail fetches wa
     assert.ok(renderer.stats.triangles >= visible.length);
   }
   assert.equal(pending, 4);
+  assert.ok(canceled > 0, 'camera jumps abandon stale tile requests');
 });
 
 test('the finer tile skirt reaches below a much coarser neighbour and faces the gap', async () => {
@@ -371,6 +380,8 @@ test('canopy walls reach the ground along connected crowns and leave continued t
   const source = readFileSync(filename, 'utf8').replaceAll('import.meta.url', JSON.stringify(pathToFileURL(filename).href))
     .replace('export async function loadForestCanopy', 'async function loadForestCanopy');
   const { canopyGeometry } = loadModule(source, { filename, globals: { URL }, imports: {
+    './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
+    './ede-landscape-jobs.js': {},
     'three/webgpu': three, 'three/tsl': {}, './ede-scene-coordinates.js': { SCENE_NAP_ORIGIN: 0 },
     './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {},
     './ede-playable-boundary.js': {

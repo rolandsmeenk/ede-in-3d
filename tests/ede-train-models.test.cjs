@@ -8,7 +8,7 @@ test('train bodies fit their runs and the bogies sit on the rails', async () => 
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const { TRAIN_CONSISTS } = await import('../js/ede-train-traffic.js');
   const source = file => readFileSync(join(__dirname, '..', file), 'utf8');
-  const utils = loadModule(source('vendor/three/examples/jsm/utils/BufferGeometryUtils.js'), { imports: { three: THREE } });
+  const utils = loadModule(source('vendor/three/examples/jsm/utils/BufferGeometryUtils.js'), { imports: { '../../../build/three.core.js': THREE } });
   const { makeTrainModels } = loadModule(source('js/ede-train-models.js'), {
     globals: { Float32Array },
     imports: {

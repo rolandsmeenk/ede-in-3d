@@ -25,13 +25,15 @@ async function models(globals = {}) {
   return { three, ...loadModule(code, {
     filename: canopyFile,
     imports: {
+      './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
+      './ede-landscape-jobs.js': {},
       'three/webgpu': three, 'three/tsl': tsl,
       './ede-scene-coordinates.js': { SCENE_NAP_ORIGIN: 22.54 },
       './ede-playable-boundary.js': { playableBoundsCovered: () => true },
       './terrain.js': { terrainHeightAt: () => 0 },
       './tree-seasons.js': {},
     },
-    globals: { URL, canopyUrl: pathToFileURL(canopyFile), ...globals },
+    globals: { URL, AbortController, canopyUrl: pathToFileURL(canopyFile), ...globals },
   }) };
 }
 

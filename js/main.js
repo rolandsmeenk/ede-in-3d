@@ -1169,7 +1169,9 @@ export async function initApp() {
 
   cameraSystem.update(0, 0);
   await showLoadingStage('Building paving near your starting point...');
-  while (cityGrid.pavingTiles.update(cameraSystem.camera.position, 140)) await nextTask();
+  while (cityGrid.pavingTiles.update(cameraSystem.camera.position, 140)) {
+    await (cityGrid.pavingTiles.pendingWork() ?? nextTask());
+  }
   if (EDE_DATA.meta.fullMunicipality) expansionCulling?.update(cameraSystem.camera);
   markInit('local paving');
 

@@ -192,7 +192,9 @@ test('the whole rail network stays continuous and the Valleilijn mesh follows th
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const source = await readFile(path.join(__dirname, '../js/ede-geometry.js'), 'utf8');
   const { edeRailStrip } = loadModule(source.replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
-    imports: { 'three/webgpu': THREE, './city-config.js': { EDE_DATA }, './terrain.js': terrain, './ede-road-surfaces.js': {}, './ede-grade.js': gradeAPI }
+    imports: { 'three/webgpu': THREE, './city-config.js': { EDE_DATA }, './terrain.js': terrain, './ede-road-surfaces.js': {}, './ede-grade.js': gradeAPI,
+      './ede-road-cell-query.js': await import('../js/ede-road-cell-query.js'),
+      './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js') }
   });
   const wayId = 'w431533902';
   const { sections } = corridors.get(wayId);

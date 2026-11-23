@@ -14,13 +14,23 @@
         "three/webgpu": "./vendor/three/build/three.webgpu.js",
         "three/tsl": "./vendor/three/build/three.tsl.js",
         "three/addons/": "./vendor/three/examples/jsm/",
-        "./js/bag3d.js": "./js/bag3d.js?v=20261123-municipal",
+        "three/addons/libs/meshopt_decoder.module.js": "./vendor/three/examples/jsm/libs/meshopt_decoder.module.js?v=20261124-workers",
+        "three/addons/utils/BufferGeometryUtils.js": "./vendor/three/examples/jsm/utils/BufferGeometryUtils.js?v=20261124-workers",
+        "./js/ede-geometry.js": "./js/ede-geometry.js?v=20261124-workers",
+        "./js/ede-grade.js": "./js/ede-grade.js?v=20261124-workers",
+        "./js/aerial-colors.js": "./js/aerial-colors.js?v=20261124-workers",
+        "./js/ede-paving-tiles.js": "./js/ede-paving-tiles.js?v=20261124-workers",
+        "./js/ede-asphalt-lanes.js": "./js/ede-asphalt-lanes.js?v=20261124-workers",
+        "./js/ede-coverage.js": "./js/ede-coverage.js?v=20261124-workers",
+        "./js/ede-facade-material.js": "./js/ede-facade-material.js?v=20261124-workers",
+        "./js/bag3d-worker-client.js": "./js/bag3d-worker-client.js?v=20261124-coverage",
+        "./js/bag3d.js": "./js/bag3d.js?v=20261124-coverage",
         "./js/city-config.js": "./js/city-config.js?v=20261123-municipal",
-        "./js/city-grid.js": "./js/city-grid.js?v=20261123-startup-memory",
+        "./js/city-grid.js": "./js/city-grid.js?v=20261124-workers",
         "./js/controllers.js?v=20261122-municipal-coverage": "./js/controllers.js?v=20261123-municipal",
         "./js/ede-bus-schedule.js": "./js/ede-bus-schedule.js?v=20261123-harderwijkerweg",
         "./js/ede-detail.js?v=20261122-truecolor-signs": "./js/ede-detail.js?v=20261123-municipal",
-        "./js/ede-forest-canopy.js": "./js/ede-forest-canopy.js?v=20261123-municipal",
+        "./js/ede-forest-canopy.js": "./js/ede-forest-canopy.js?v=20261124-workers",
         "./js/ede-geodata.js": "./js/ede-geodata.js?v=20261123-municipal",
         "./js/ede-landmark-sites.js": "./js/ede-landmark-sites.js?v=20261123-municipal",
         "./js/ede-north-rail-data.js": "./js/ede-north-rail-data.js?v=20261123-municipal",
@@ -29,7 +39,7 @@
         "./js/ede-outer-memorials.js": "./js/ede-outer-memorials.js?v=20261123-municipal",
         "./js/ede-playable-boundary.js": "./js/ede-playable-boundary.js?v=20261123-municipal",
         "./js/ede-road-surfaces.js": "./js/ede-road-surfaces.js?v=20261123-municipal",
-        "./js/ede-terrain-tiles.js": "./js/ede-terrain-tiles.js?v=20261123-municipal",
+        "./js/ede-terrain-tiles.js": "./js/ede-terrain-tiles.js?v=20261124-workers",
         "./js/ede-town-memorial-sites.js": "./js/ede-town-memorial-sites.js?v=20261123-municipal",
         "./js/ede-town-memorials.js": "./js/ede-town-memorials.js?v=20261123-municipal",
         "./js/ede-train-schedule.js": "./js/ede-train-schedule.js?v=20261123-municipal",
@@ -37,7 +47,7 @@
         "./js/ede-tree-data.js?v=20261122-safari-cache": "./js/ede-tree-data.js?v=20261123-municipal",
         "./js/landmarks.js": "./js/landmarks.js?v=20261123-municipal",
         "./js/nyc-map.js?v=20261122-municipal-coverage": "./js/nyc-map.js?v=20261123-municipal",
-        "./js/terrain.js": "./js/terrain.js?v=20261123-municipal",
+        "./js/terrain.js": "./js/terrain.js?v=20261124-workers",
         "./js/road-network.js?v=20261122-startup": "./js/road-network.js?v=20261123-narrow-road-junctions",
         "./js/ede-lane-geometry.js": "./js/ede-lane-geometry.js?v=20261123-harderwijkerweg-fit",
         "./js/ede-road-traffic.js?v=20261122-p2000": "./js/ede-road-traffic.js?v=20261123-harderwijkerweg",
@@ -47,6 +57,20 @@
     }
   </script>
   <!-- Preload the resolved module URLs before stylesheets. -->
+  <link rel="modulepreload" href="./js/ede-aerial-sampling.js" />
+  <link rel="modulepreload" href="./js/ede-asphalt-attributes.js" />
+  <link rel="modulepreload" href="./js/ede-boundary-index.js" />
+  <link rel="modulepreload" href="./js/ede-grade-query.js" />
+  <link rel="modulepreload" href="./vendor/three/build/three.core.js" />
+  <link rel="modulepreload" href="./js/ede-landscape-geometry.js" />
+  <link rel="modulepreload" href="./js/ede-landscape-jobs.js" />
+  <link rel="modulepreload" href="./js/ede-paving-client.js" />
+  <link rel="modulepreload" href="./js/ede-road-cell-query.js" />
+  <link rel="modulepreload" href="./js/ede-surface-geometry.js" />
+  <link rel="modulepreload" href="./js/bag3d-coverage.js" />
+  <link rel="modulepreload" href="./js/bag3d-projection.js" />
+  <link rel="modulepreload" href="./js/bag3d-worker-client.js?v=20261124-coverage" />
+  <link rel="modulepreload" href="./js/ede-facade-atlas.js" />
   <link rel="preload" href="./assets/ede-map-v1.json.gz" as="fetch" crossorigin />
   <link rel="modulepreload" href="./js/ede-geodata.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-water-levels.js" />
@@ -62,7 +86,7 @@
   <link rel="modulepreload" href="./js/ede-scene-coordinates.js" />
   <link rel="modulepreload" href="./js/ede-road-tags.js" />
   <link rel="modulepreload" href="./js/nyc-geodata.js" />
-  <link rel="modulepreload" href="./js/ede-geometry.js" />
+  <link rel="modulepreload" href="./js/ede-geometry.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/ede-sports.js?v=20261122-rink-ice" />
   <link rel="modulepreload" href="./js/ede-sport-fit.js" />
   <link rel="modulepreload" href="./js/ede-sport-layouts.js" />
@@ -117,11 +141,11 @@
   <link rel="modulepreload" href="./js/ede-modern-neighborhood-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-zuiderpoort-survey.js" />
   <link rel="modulepreload" href="./js/ede-zuiderpoort-landmark.js" />
-  <link rel="modulepreload" href="./js/ede-forest-canopy.js?v=20261123-municipal" />
-  <link rel="modulepreload" href="./js/ede-terrain-tiles.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-forest-canopy.js?v=20261124-workers" />
+  <link rel="modulepreload" href="./js/ede-terrain-tiles.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/ede-heath.js" />
-  <link rel="modulepreload" href="./js/terrain.js?v=20261123-municipal" />
-  <link rel="modulepreload" href="./js/ede-grade.js" />
+  <link rel="modulepreload" href="./js/terrain.js?v=20261124-workers" />
+  <link rel="modulepreload" href="./js/ede-grade.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/ede-grade-world.js" />
   <link rel="modulepreload" href="./js/ede-bgt-world.js" />
   <link rel="modulepreload" href="./js/ede-fuel-sites.js" />
@@ -129,7 +153,7 @@
   <link rel="modulepreload" href="./js/ede-fuel-prices.js" />
   <link rel="modulepreload" href="./js/ede-detail.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-playground-equipment.js" />
-  <link rel="modulepreload" href="./js/aerial-colors.js" />
+  <link rel="modulepreload" href="./js/aerial-colors.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/city-config.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/tsl-materials.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/trees.js" />
@@ -179,8 +203,8 @@
   <link rel="modulepreload" href="./js/ede-weather.js?v=20261122-rink-ice" />
   <link rel="modulepreload" href="./js/weather-precipitation.js" />
   <link rel="modulepreload" href="./js/ede-kites.js" />
-  <link rel="modulepreload" href="./js/city-grid.js?v=20261123-startup-memory" />
-  <link rel="modulepreload" href="./js/ede-paving-tiles.js" />
+  <link rel="modulepreload" href="./js/city-grid.js?v=20261124-workers" />
+  <link rel="modulepreload" href="./js/ede-paving-tiles.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/buildings.js" />
   <link rel="modulepreload" href="./js/shop-signs.js" />
   <link rel="modulepreload" href="./js/passages.js" />
@@ -321,7 +345,7 @@
   <link rel="modulepreload" href="./js/ede-road-lanes.js" />
   <link rel="modulepreload" href="./js/ede-lane-geometry.js?v=20261123-harderwijkerweg-fit" />
   <link rel="modulepreload" href="./js/ede-road-surfaces.js?v=20261123-municipal" />
-  <link rel="modulepreload" href="./js/ede-asphalt-lanes.js" />
+  <link rel="modulepreload" href="./js/ede-asphalt-lanes.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/pedestrian-system.js" />
   <link rel="modulepreload" href="./js/pedestrian-routes.js" />
   <link rel="modulepreload" href="./js/controllers.js?v=20261123-municipal" />
@@ -336,15 +360,15 @@
   <link rel="modulepreload" href="./js/audio-sources.js?v=20261122-p2000" />
   <link rel="modulepreload" href="./js/audio-acoustics.js" />
   <link rel="modulepreload" href="./js/audio-system.js?v=20261122-p2000" />
-  <link rel="modulepreload" href="./js/bag3d.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/bag3d.js?v=20261124-coverage" />
   <link rel="modulepreload" href="./js/ede-bag-exterior.js" />
-  <link rel="modulepreload" href="./js/ede-coverage.js" />
+  <link rel="modulepreload" href="./js/ede-coverage.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/ede-facades.js" />
   <link rel="modulepreload" href="./js/ede-neighbourhood-facades.js" />
-  <link rel="modulepreload" href="./js/ede-facade-material.js" />
-  <link rel="modulepreload" href="./js/main.js?v=20261123-startup-memory" />
-  <link rel="modulepreload" href="./js/startup.js?v=20261123-startup-memory" />
-  <script type="module" src="./js/startup.js?v=20261123-startup-memory"></script>
+  <link rel="modulepreload" href="./js/ede-facade-material.js?v=20261124-workers" />
+  <link rel="modulepreload" href="./js/main.js?v=20261124-workers" />
+  <link rel="modulepreload" href="./js/startup.js?v=20261124-workers" />
+  <script type="module" src="./js/startup.js?v=20261124-workers"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

@@ -1,4 +1,4 @@
-import('./main.js?v=20261123-startup-memory')
+import('./main.js?v=20261124-workers')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

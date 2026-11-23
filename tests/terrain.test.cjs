@@ -19,7 +19,8 @@ test('the built AHN asset covers Ede and retains metres relative to Oude Kerk', 
 });
 
 test('the theatre, motorway and cycling patches stitch into the 12 m AHN grid', async ({ mock }) => {
-  const { loadTerrain, getTerrainPatch, getTerrainPatches, sampleTerrain, terrainHeightAt } = await import('../js/terrain.js');
+  const { loadTerrain, getTerrainPatch, getTerrainPatches, sampleTerrain, terrainHeightAt,
+    captureTerrainContext, createTerrainSampler } = await import('../js/terrain.js');
   mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
   const coarse = await loadTerrain();
   const { WVEDE_CIRCUIT } = await import('../js/ede-wvede-circuit-survey.js');
@@ -40,6 +41,11 @@ test('the theatre, motorway and cycling patches stitch into the 12 m AHN grid', 
   }
   for (const [x, z] of WVEDE_CIRCUIT) assert.equal(getTerrainPatch(x, z), cyclingCircuit);
   assert.ok(terrainHeightAt(476, 651) - terrainHeightAt(476, 627) > 8);
+  const local = createTerrainSampler(captureTerrainContext([451, 599, 490, 683]));
+  assert.ok(local.getTerrainPatch(476, 648).heights instanceof Float64Array);
+  for (const [x, z] of [[476.1, 627.2], [476.4, 651.6], [481.3, 664.9]]) {
+    assert.equal(local.terrainHeightAt(x, z), terrainHeightAt(x, z));
+  }
   for (const [x, z] of [[-2500, 3120], [-2300, 3200], [-1900, 3333]]) {
     assert.equal(getTerrainPatch(x, z), embankment);
     assert.ok(terrainHeightAt(x, z) - terrainHeightAt(x, z + 36) > 8);
@@ -79,6 +85,8 @@ test('draped faces keep their offset across terrain cells and both sides of the 
       './city-config.js': {},
       './terrain.js': { getTerrain: () => terrain, getTerrainPatch: () => null, terrainHeightAt: heightAt },
       './ede-road-surfaces.js': {},
+      './ede-road-cell-query.js': {},
+      './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js'),
       './ede-grade.js': {}
     }
   });
@@ -140,7 +148,11 @@ test('surveyed station footway shares a continuous grade with pavement in both d
   }
   const source = readFileSync(path.join(__dirname, '../js/ede-geometry.js'), 'utf8');
   const geometry = loadModule(source.replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
-    imports: { 'three/webgpu': THREE, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {}, './ede-grade.js': grade },
+    imports: {
+      'three/webgpu': THREE, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {},
+      './ede-road-cell-query.js': {}, './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js'),
+      './ede-grade.js': grade,
+    },
   });
   const asPoint = ([x, z]) => ({x, z});
   const input = geometry.edeStrip(asPoint(point(-2)), asPoint(point(length + 2)), 1.5, 0.055);
@@ -211,6 +223,8 @@ test('the Ginkelse Heide detail resolves both sand areas with continuous terrain
 
   const { tileGeometry } = loadModule(readFileSync(path.join(root, 'js/ede-terrain-tiles.js'), 'utf8'), {
     imports: {
+      './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
+      './ede-landscape-jobs.js': {},
       'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
       './tsl-materials.js': {}, './ede-playable-boundary.js': {}, './ede-coverage.js': {}, './terrain.js': terrain,
     },
@@ -235,7 +249,11 @@ test('the Ginkelse Heide detail resolves both sand areas with continuous terrain
 
   const source = readFileSync(path.join(root, 'js/ede-geometry.js'), 'utf8');
   const { drapeEdeSurface } = loadModule(source.replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
-    imports: { 'three/webgpu': three, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {}, './ede-grade.js': {} },
+    imports: {
+      'three/webgpu': three, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {},
+      './ede-road-cell-query.js': {}, './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js'),
+      './ede-grade.js': {},
+    },
   });
   const pathGeometry = new three.BufferGeometry();
   const lift = 0.06;

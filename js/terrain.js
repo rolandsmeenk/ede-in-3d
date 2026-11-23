@@ -156,8 +156,9 @@ export function sampleTerrain(field, x, z) {
   const cz = Math.max(0, Math.min(rows - 1, (z - minZ) / step));
   const col = Math.min(columns - 2, Math.floor(cx)), row = Math.min(rows - 2, Math.floor(cz));
   const u = cx - col, v = cz - row;
-  const i = row * columns + col;
-  const a = heights[i], b = heights[i + 1], c = heights[i + columns], d = heights[i + columns + 1];
+  const stride = field.stride ?? columns;
+  const i = (row - (field.rowOffset ?? 0)) * stride + col - (field.columnOffset ?? 0);
+  const a = heights[i], b = heights[i + 1], c = heights[i + stride], d = heights[i + stride + 1];
   // Same diagonal as the terrain mesh, so physics and rendered ground coincide.
   const height = u + v <= 1 ? a + (b - a) * u + (c - a) * v
     : d + (c - d) * (1 - u) + (b - d) * (1 - v);
@@ -166,33 +167,80 @@ export function sampleTerrain(field, x, z) {
 
 export const getTerrainPatches = () => patches;
 
-export function getTerrainPatch(x, z) {
-  for (const patch of patches) {
+export function getTerrainPatch(x, z, candidates = patches) {
+  for (const patch of candidates) {
     if (x >= patch.minX && x < patch.maxX && z >= patch.minZ && z < patch.maxZ) return patch;
   }
 }
 
-export function expansionSeamOffset(x, z) {
-  const field = expansion?.field;
+export function expansionSeamOffset(x, z, town = terrain, field = expansion?.field) {
   if (!field) return 0;
-  const edgeX = Math.max(terrain.minX, Math.min(terrain.maxX, x));
-  const edgeZ = Math.max(terrain.minZ, Math.min(terrain.maxZ, z));
+  const edgeX = Math.max(town.minX, Math.min(town.maxX, x));
+  const edgeZ = Math.max(town.minZ, Math.min(town.maxZ, z));
   const blend = Math.max(0, 1 - Math.hypot(x - edgeX, z - edgeZ) / 5);
-  return blend ? blend * (sampleTerrain(terrain, edgeX, edgeZ) - sampleTerrain(field, edgeX, edgeZ)) : 0;
+  return blend ? blend * (sampleTerrain(town, edgeX, edgeZ) - sampleTerrain(field, edgeX, edgeZ)) : 0;
 }
 
-export function getExpansionTerrainPatch(x, z) {
-  const detail = expansion?.detail;
+export function getExpansionTerrainPatch(x, z, detail = expansion?.detail) {
   if (detail && x >= detail.minX && x < detail.maxX && z >= detail.minZ && z < detail.maxZ) return detail;
 }
 
-export function terrainHeightAt(x, z) {
-  const field = expansion?.field;
-  if (field && (x < terrain.minX || x > terrain.maxX || z < terrain.minZ || z > terrain.maxZ)) {
-    const detail = getExpansionTerrainPatch(x, z);
+export function terrainHeightAt(x, z, context) {
+  const town = context ? context.terrain : terrain;
+  const localPatches = context ? context.patches : patches;
+  const localExpansion = context ? context.expansion : expansion;
+  const field = localExpansion?.field;
+  if (field && (x < town.minX || x > town.maxX || z < town.minZ || z > town.maxZ)) {
+    const detail = getExpansionTerrainPatch(x, z, localExpansion.detail ?? null);
     if (detail) return sampleTerrain(detail, x, z);
-    const sampler = expansion.overviewField && !coversBounds(field, [x, z, x, z]) ? expansion.overviewField : field;
-    return sampleTerrain(sampler, x, z) + expansionSeamOffset(x, z);
+    const sampler = localExpansion.overviewField && !coversBounds(field, [x, z, x, z]) ? localExpansion.overviewField : field;
+    return sampleTerrain(sampler, x, z) + expansionSeamOffset(x, z, town, field);
   }
-  return sampleTerrain(getTerrainPatch(x, z) ?? terrain, x, z);
+  return sampleTerrain(getTerrainPatch(x, z, localPatches) ?? town, x, z);
+}
+
+function cropTerrain(field, [west, north, east, south]) {
+  if (!field) return null;
+  const { columns, rows, minX, minZ, step, heights } = field;
+  const start = (value, origin, count) => Math.min(count - 2, Math.max(0, Math.floor((value - origin) / step)));
+  const end = (value, origin, count) => start(value, origin, count) + 1;
+  const columnOffset = start(west, minX, columns), rowOffset = start(north, minZ, rows);
+  const columnEnd = end(east, minX, columns), rowEnd = end(south, minZ, rows);
+  const stride = columnEnd - columnOffset + 1;
+  const plain = Array.isArray(heights);
+  const HeightArray = plain ? Float64Array : heights.constructor;
+  const local = new HeightArray(stride * (rowEnd - rowOffset + 1));
+  for (let row = rowOffset; row <= rowEnd; row++) {
+    const index = row * columns + columnOffset;
+    const samples = plain ? heights.slice(index, index + stride) : heights.subarray(index, index + stride);
+    local.set(samples, (row - rowOffset) * stride);
+  }
+  return { ...field, columnOffset, rowOffset, stride, heights: local };
+}
+
+export function captureTerrainContext(bounds) {
+  const [west, north, east, south] = bounds;
+  const seamBounds = [west - 5, north - 5, east + 5, south + 5];
+  const overlaps = field => field && field.minX <= east && field.maxX >= west && field.minZ <= south && field.maxZ >= north;
+  return {
+    terrain: cropTerrain(terrain, seamBounds),
+    patches: patches.filter(overlaps).map(patch => cropTerrain(patch, bounds)),
+    expansion: expansion ? {
+      field: cropTerrain(expansion.field, seamBounds),
+      detail: overlaps(expansion.detail) ? cropTerrain(expansion.detail, bounds) : null,
+      overviewField: cropTerrain(expansion.overviewField, bounds),
+    } : null,
+  };
+}
+
+export function createTerrainSampler(context) {
+  const { terrain: town, patches: localPatches, expansion: localExpansion } = context;
+  return {
+    getTerrain: () => town,
+    getExpansionTerrain: () => localExpansion,
+    getTerrainPatch: (x, z) => getTerrainPatch(x, z, localPatches),
+    getExpansionTerrainPatch: (x, z) => getExpansionTerrainPatch(x, z, localExpansion?.detail ?? null),
+    terrainHeightAt: (x, z) => terrainHeightAt(x, z, context),
+    expansionSeamOffset: (x, z) => expansionSeamOffset(x, z, town, localExpansion?.field ?? null),
+  };
 }

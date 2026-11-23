@@ -90,9 +90,21 @@ var MeshoptDecoder = (function () {
 		worker.object.onmessage = function (event) {
 			var data = event.data;
 
+			if (!worker.requests[data.id]) return;
 			worker.pending -= data.count;
 			worker.requests[data.id][data.action](data.value);
 			delete worker.requests[data.id];
+		};
+
+		// Ede: a blocked worker can fail asynchronously after construction.
+		worker.object.onerror = worker.object.onmessageerror = function () {
+			var index = workers.indexOf(worker);
+			if (index !== -1) workers.splice(index, 1);
+			worker.object.terminate();
+			for (var id in worker.requests) {
+				worker.requests[id].retry();
+				delete worker.requests[id];
+			}
 		};
 
 		return worker;
@@ -103,7 +115,7 @@ var MeshoptDecoder = (function () {
 			'self.ready = WebAssembly.instantiate(new Uint8Array([' +
 			new Uint8Array(wasm) +
 			']), {})' +
-			'.then(function(result) { result.instance.exports.__wasm_call_ctors(); return result.instance; });' +
+			'.then(function(result) { result.instance.exports.__wasm_call_ctors(); return result.instance; }).catch(function(error) { setTimeout(function() { throw error; }, 0); });' +
 			'self.onmessage = ' +
 			workerProcess.name +
 			';' +
@@ -113,17 +125,27 @@ var MeshoptDecoder = (function () {
 		var blob = new Blob([source], { type: 'text/javascript' });
 		var url = URL.createObjectURL(blob);
 
-		for (var i = workers.length; i < count; ++i) {
-			workers[i] = createWorker(url);
+		try {
+			for (var i = workers.length; i < count; ++i) {
+				workers[i] = createWorker(url);
+			}
+
+			for (var i = count; i < workers.length; ++i) {
+				workers[i].object.postMessage({});
+			}
+
+			workers.length = count;
+		} finally {
+			URL.revokeObjectURL(url);
 		}
+	}
 
-		for (var i = count; i < workers.length; ++i) {
-			workers[i].object.postMessage({});
-		}
-
-		workers.length = count;
-
-		URL.revokeObjectURL(url);
+	function decodeInline(count, size, source, mode, filter) {
+		return ready.then(function () {
+			var target = new Uint8Array(count * size);
+			decode(instance, instance.exports[mode], target, count, size, source, instance.exports[filter]);
+			return target;
+		});
 	}
 
 	function decodeWorker(count, size, source, mode, filter) {
@@ -140,8 +162,16 @@ var MeshoptDecoder = (function () {
 			var id = ++requestId;
 
 			worker.pending += count;
-			worker.requests[id] = { resolve: resolve, reject: reject };
-			worker.object.postMessage({ id: id, count: count, size: size, source: data, mode: mode, filter: filter }, [data.buffer]);
+			function retry() {
+				decodeInline(count, size, source, mode, filter).then(resolve, reject);
+			}
+
+			worker.requests[id] = { resolve: resolve, reject: reject, retry: retry };
+			try {
+				worker.object.postMessage({ id: id, count: count, size: size, source: data, mode: mode, filter: filter }, [data.buffer]);
+			} catch (error) {
+				worker.object.onerror();
+			}
 		});
 	}
 
@@ -184,11 +214,7 @@ var MeshoptDecoder = (function () {
 				return decodeWorker(count, size, source, decoders[mode], filters[filter]);
 			}
 
-			return ready.then(function () {
-				var target = new Uint8Array(count * size);
-				decode(instance, instance.exports[decoders[mode]], target, count, size, source, instance.exports[filters[filter]]);
-				return target;
-			});
+			return decodeInline(count, size, source, decoders[mode], filters[filter]);
 		},
 	};
 })();

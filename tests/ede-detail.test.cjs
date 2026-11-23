@@ -14,7 +14,9 @@ async function fixture(grade = {}, fetch = globalThis.fetch, roadPavement = () =
   const imports = { 'three/webgpu': THREE };
   const geometry = loadModule(source('ede-geometry.js').replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
     imports: { ...imports, './city-config.js': { EDE_DATA: { roads: [] } }, './ede-road-surfaces.js': { isEdeTrafficPavement: roadPavement },
-      './terrain.js': { getTerrain: () => null }, './ede-grade.js': {} }
+      './terrain.js': { getTerrain: () => null }, './ede-grade.js': {},
+      './ede-road-cell-query.js': await import('../js/ede-road-cell-query.js'),
+      './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js') }
   });
   const detail = source('ede-detail.js')
     .replace('export async function loadEdeDetail', 'async function loadEdeDetail')

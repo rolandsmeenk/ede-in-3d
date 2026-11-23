@@ -13,17 +13,19 @@ import {
   createParkPavingMaterial
 } from './tsl-materials.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
-import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeGeometryGroups, edeTerrainGeometries, edeWaterBanks, edeWaterCut, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
-import { getTerrain, terrainHeightAt } from './terrain.js';
+import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeRoadCells, edeGeometryGroups, edeTerrainGeometries, edeWaterBanks, edeWaterCut, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
+import { captureTerrainContext, getTerrain, terrainHeightAt } from './terrain.js';
 import { FRANKENENG_GAUGES, resolveFrankenengLevels } from './ede-water-levels.js';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
-import { getRailCorridors, gradeCuts, gradeWayAt, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
+import { getRailCorridors, gradeCuts, gradeWayAt, localGradeSurface, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
 import { edeTreeSite } from './ede-tree-data.js?v=20261122-safari-cache';
 import { REEMST_TREES } from './ede-reemst-landmark-survey.js';
 import { LUNTEREN_STRUCTURES } from './ede-lunteren-survey.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
-import { addAsphaltLanes } from './ede-asphalt-lanes.js';
+import { addAsphaltLanes, describePavingLane } from './ede-asphalt-lanes.js';
 import { createPavingTiles } from './ede-paving-tiles.js';
+import { createPavingWorker } from './ede-paving-client.js';
+import { captureGroundColor } from './ede-aerial-sampling.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
 import { EDE_MTB_WAYS } from './ede-active-travel.js';
 
@@ -113,7 +115,38 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const polygon = (ring, holes, y, wayId) => drapeEdeSurface(edePolygonGeometry(ring, holes, y), true, wayId);
   const strip = (a, b, half, y, offset, wayId) => drapeEdeSurface(edeStrip(a, b, half, y, offset), true, wayId);
   const collections = new Map();
-  const pavingTiles = createPavingTiles(scene, mergeCityBatches);
+  const pavingMaterials = { asphalt: roadMat, mapped: mappedPavingMat, path: pavingMat, sidewalk: sidewalkMat };
+  const pavingTiles = createPavingTiles(scene, mergeCityBatches, undefined, createPavingWorker(preparePavingTile), pavingMaterials);
+
+  function preparePavingTile(tile) {
+    const bounds = { minX: tile.minX - 0.01, minZ: tile.minZ - 0.01, maxX: tile.maxX + 0.01, maxZ: tile.maxZ + 0.01 };
+    const context = captureTerrainContext([bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ]);
+    const aerialColors = getAerialColors();
+    const ground = [captureGroundColor(aerialColors?.ground, bounds), captureGroundColor(aerialColors?.expansion, bounds)];
+    const sections = new Map();
+    function describe(segment) {
+      if (!sections.has(segment)) sections.set(segment, describePavingLane(segment));
+      return sections.get(segment);
+    }
+    const roads = new Map();
+    if (tile.jobs.some(({ data }) => data.layer !== undefined)) {
+      for (const [key, segments] of edeRoadCells(bounds, 13)) roads.set(key, segments.map(describe));
+    }
+    const jobs = tile.jobs.map(({ data: { bounds: jobBounds, segment, ...data } }) => {
+      const local = data.wayId ? localGradeSurface(data.wayId) : localGradeSurface(null, jobBounds);
+      const cuts = gradeCuts(jobBounds, data.wayId).map(({ minX, minZ, maxX, maxZ, planes }) => ({ minX, minZ, maxX, maxZ, planes }));
+      const sample = [0, 0, 0];
+      const roadColor = segment && sampleRoadColor(segment.road.id, segment.segmentIndex, sample) ? sample : null;
+      return { ...data, cuts, local: local && {
+        minX: local.minX, minZ: local.minZ, maxX: local.maxX, maxZ: local.maxZ, planes: local.planes, spans: local.spans,
+      }, segment: segment && data.material === 'asphalt' ? describe(segment) : null, roadColor,
+      groundColor: !segment || (baseRoads && !baseRoads.has(segment.road.id)) };
+    });
+    const fields = [context.terrain, ...context.patches, context.expansion?.field, context.expansion?.detail, context.expansion?.overviewField];
+    const transfers = [...fields.map(field => field?.heights.buffer), ...ground.map(field => field?.data.buffer)].filter(Boolean);
+    return { input: { context, jobs, roads, ground }, transfers };
+  }
+
   const collect = (geometry, material, segment, trackLayer, target = collections) => {
     if (!geometry?.getAttribute('position')?.count) return;
     if (material === roadMat) geometry = addAsphaltLanes(geometry, segment, trackLayer);
@@ -240,7 +273,11 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
           bounds.minZ = Math.min(bounds.minZ, outer[i + 1]);
           bounds.maxZ = Math.max(bounds.maxZ, outer[i + 1]);
         }
-        pavingTiles.add(bounds, target => addSurveyedPaving(entry, target));
+        pavingTiles.add(bounds, target => addSurveyedPaving(entry, target), {
+          ...entry, bounds, rise: 0.065, style: EDE_PAVING_STYLE[material],
+          material: material === 'asphalt' ? 'asphalt' : 'mapped',
+          layer: material === 'asphalt' && motor ? 0 : undefined,
+        });
       } else addSurveyedPaving(entry);
       mappedPavingCount++;
     }
@@ -420,8 +457,14 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       };
       if (!material && kind === 'sidewalk') clippedSidewalkPieces += pieces.length;
       if (!material && kind === 'path') clippedPedestrianPieces += pieces.length;
-      if (EDE_DATA.meta.fullMunicipality) pavingTiles.add(surface.bounds, build);
-      else build(collections);
+      if (EDE_DATA.meta.fullMunicipality) {
+        const bounds = edeBounds(pieces.flat());
+        const cycleway = s.road.kind === 'cycleway';
+        const batch = material ? material === 'asphalt' ? 'asphalt' : 'mapped' : kind === 'road' ? 'asphalt' : kind;
+        pavingTiles.add(bounds, build, { bounds, pieces, rise: pavementHeight[kind], wayId: s.road.id,
+          material: batch, style: material ? EDE_PAVING_STYLE[material] : cycleway ? 0 : 2,
+          angle: Math.atan2(s.uz, s.ux), segment: material || kind === 'road' || kind === 'path' && cycleway ? s : null });
+      } else build(collections);
     }
     if (!isCarriageway(s)) continue;
     const nx = -s.uz, nz = s.ux;

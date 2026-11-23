@@ -9,7 +9,7 @@ const source = path => readFileSync(join(__dirname, '..', path), 'utf8');
 test('Ginkelse Heide kites use the local wind and lower their tethered sails in calm or strong gusts', async () => {
   const three = await import('../vendor/three/build/three.webgpu.js');
   const tsl = await import('../vendor/three/build/three.tsl.js');
-  const utils = loadModule(source('vendor/three/examples/jsm/utils/BufferGeometryUtils.js'), { imports: { three } });
+  const utils = loadModule(source('vendor/three/examples/jsm/utils/BufferGeometryUtils.js'), { imports: { '../../../build/three.core.js': three } });
   const pedestrians = loadModule(source('js/pedestrians.js'), { imports: {
     'three/webgpu': three, 'three/tsl': tsl, 'three/addons/utils/BufferGeometryUtils.js': utils
   } });

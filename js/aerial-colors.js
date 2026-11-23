@@ -1,11 +1,7 @@
+import { aerialLinear, samplePavingGround } from './ede-aerial-sampling.js';
 import { getExpansionTerrain } from './terrain.js';
 import { EDE_AERIAL_INPUTS } from './ede-geodata.js';
 
-// Byte RGB from the orthophoto is sRGB; the mesh attributes are linear.
-const linear = Float32Array.from({ length: 256 }, (_, byte) => {
-  const value = byte / 255;
-  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-});
 let aerial = null;
 
 export function decodeAerialPalette(buffer, buildings, roads) {
@@ -82,7 +78,7 @@ function samplePalette(index, out) {
   const offset = index * 3;
   const { colors } = aerial;
   if (!(colors[offset] || colors[offset + 1] || colors[offset + 2])) return false;
-  for (let i = 0; i < 3; i++) out[i] = linear[colors[offset + i]];
+  for (let i = 0; i < 3; i++) out[i] = aerialLinear[colors[offset + i]];
   return true;
 }
 
@@ -97,23 +93,5 @@ export function sampleRoadColor(roadId, segmentIndex, out) {
 }
 
 export function sampleGroundColor(x, z, out) {
-  if (!aerial) return false;
-  let ground = aerial.ground;
-  let u = (x - ground.minX) / ground.step, v = (z - ground.minZ) / ground.step;
-  if (aerial.expansion && !(u >= 0 && v >= 0 && u <= ground.width - 1 && v <= ground.height - 1)) {
-    ground = aerial.expansion;
-    u = (x - ground.minX) / ground.step;
-    v = (z - ground.minZ) / ground.step;
-  }
-  const { width, height, data } = ground;
-  if (!(u >= 0 && v >= 0 && u <= width - 1 && v <= height - 1)) return false;
-  const col = Math.min(width - 2, Math.floor(u)), row = Math.min(height - 2, Math.floor(v));
-  const dx = u - col, dz = v - row;
-  const i = (row * width + col) * 4, stride = width * 4;
-  for (let j = 0; j < 3; j++) {
-    const top = linear[data[i + j]] * (1 - dx) + linear[data[i + 4 + j]] * dx;
-    const bottom = linear[data[i + stride + j]] * (1 - dx) + linear[data[i + stride + 4 + j]] * dx;
-    out[j] = top * (1 - dz) + bottom * dz;
-  }
-  return true;
+  return samplePavingGround(aerial?.ground, aerial?.expansion, x, z, out);
 }
