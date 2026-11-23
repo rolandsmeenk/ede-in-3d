@@ -44,6 +44,9 @@ const PRESERVED_ROUNDABOUTS = new Set([
   'w576317771', 'w1254176553', // Akulaan / Polar Bearsplein
   'w346967048', 'w1544860411', // Veenderweg / Klaphekweg
 ]);
+// Keep established narrow through roads anchored at junctions. Averaging their
+// endpoints with short side links can move traffic into adjacent cycle space.
+const PRESERVED_NARROW_ROADS = new Set(['Harderwijkerweg', 'Proosdijerveldweg', 'w6953286']);
 // Ede VRI 2 approach tapers from BGT motor pavement and PDOK lane markings.
 // Bands give the start coordinate, lane count, width and lateral shift towards the driver's right.
 const HOSPITAL_APPROACHES = {
@@ -382,12 +385,15 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
     const portalNodes = (rows) => rows.filter(l => l.road?.bridge || l.road?.tunnel).flatMap(l => [l.a, l.b]);
     const legacyPortals = new Set(portalNodes(links.filter(l => !l.extension)));
     const portals = new Set(portalNodes(links));
-    const ringNodes = new Set();
+    const preservedJunctions = new Set();
     const restrictedJunctions = new Set();
     for (const l of links) {
-      if (PRESERVED_ROUNDABOUTS.has(l.road?.id)) {
-        ringNodes.add(l.a);
-        ringNodes.add(l.b);
+      // Keep the through road aligned where short approaches cross the parallel cycleway.
+      if (PRESERVED_ROUNDABOUTS.has(l.road?.id) ||
+          (PRESERVED_NARROW_ROADS.has(l.road?.name) || PRESERVED_NARROW_ROADS.has(l.road?.id)) &&
+          ((l.modes[0] | l.modes[1]) & MOTOR)) {
+        preservedJunctions.add(l.a);
+        preservedJunctions.add(l.b);
       }
       l.osmStart = EDE_TURN_RESTRICTIONS.nodeAt(l.road?.id, pos[l.a].x, pos[l.a].z);
       l.osmEnd = EDE_TURN_RESTRICTIONS.nodeAt(l.road?.id, pos[l.b].x, pos[l.b].z);
@@ -397,7 +403,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
     for (const l of links) {
       const relevantPortals = l.extension ? portals : legacyPortals;
       if (relevantPortals.has(l.a) || relevantPortals.has(l.b)) l.keepShape = true;
-      if (ringNodes.has(l.a) || ringNodes.has(l.b)) l.keepShape = true;
+      if (preservedJunctions.has(l.a) || preservedJunctions.has(l.b)) l.keepShape = true;
       // New approach links may join a junction, but cannot move an existing fitted junction.
       if (l.extension && (l.a < legacyNodes || l.b < legacyNodes)) l.keepShape = true;
       if (!l.keepShape && l.len < 14) {
@@ -543,7 +549,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
       };
       const original = lanesOf(l);
       const roundabout = PRESERVED_ROUNDABOUTS.has(l.road?.id);
-      const narrowBend = l.road?.name === 'Proosdijerveldweg' || l.road?.id === 'w6953286';
+      const narrowBend = PRESERVED_NARROW_ROADS.has(l.road?.name) || PRESERVED_NARROW_ROADS.has(l.road?.id);
       // Small lateral errors send traffic over the curb on the reviewed town streets.
       const preserveCurve = roundabout || narrowBend || hospital || /^(motorway|trunk)(?:_link)?$/.test(l.road?.kind) || l.road?.id === 'w6850904';
       function addRun(start, end, from, to, source) {

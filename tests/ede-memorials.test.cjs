@@ -1,3 +1,4 @@
+const { gunzipSync } = require('node:zlib');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
@@ -12,7 +13,7 @@ test('memorials have registered map approaches and terrain-fitted geometry', asy
   const three = await import('../vendor/three/build/three.webgpu.js');
   const tsl = await import('../vendor/three/build/three.tsl.js');
   const { decodeTerrain, sampleTerrain } = await import('../js/terrain.js');
-  const bytes = readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin'));
+  const bytes = gunzipSync(readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin.gz')));
   const field = decodeTerrain(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   const terrain = { terrainHeightAt: (x, z) => sampleTerrain(field, x, z) };
   const civic = load('ede-civic-landmarks.js', {
@@ -24,7 +25,7 @@ test('memorials have registered map approaches and terrain-fitted geometry', asy
   const { EDE_MODELED_LANDMARKS, modeledLandmarkFootprints } = await import('../js/ede-landmark-sites.js');
   const { TELEPORT_LOCATIONS } = await import('../js/city-config.js');
   const ids = new Set();
-  for (const [zone, key, count] of [['paasberg', 'PAASBERG', 6], ['town', 'TOWN', 4], ['outer', 'OUTER', 8]]) {
+  for (const [zone, key, count] of [['paasberg', 'PAASBERG', 6], ['town', 'TOWN', 5], ['outer', 'OUTER', 9]]) {
     const sites = (await import(`../js/ede-${zone}-memorial-sites.js`))[`EDE_${key}_MEMORIALS`];
     const models = load(`ede-${zone}-memorials.js`, {
       'three/webgpu': three, './ede-civic-landmarks.js': civic, './terrain.js': terrain,

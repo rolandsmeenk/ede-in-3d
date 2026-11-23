@@ -48,9 +48,9 @@ async function readPacked(url, signal) {
     ? new Response(body.body.pipeThrough(new DecompressionStream('gzip'))) : body;
 }
 
-async function loadLandCover() {
+async function loadLandCover(file = 'ede-bgt-land.bin.gz') {
   try {
-    const response = await readPacked(new URL('../assets/ede-bgt-land.bin.gz', import.meta.url));
+    const response = await readPacked(new URL(`../assets/${file}`, import.meta.url));
     const bytes = await response.arrayBuffer();
     const header = new DataView(bytes);
     if (bytes.byteLength < 24 || header.getUint32(0, true) !== 0x314c4742) throw new Error('invalid land mask header');
@@ -79,7 +79,7 @@ async function loadLandCover() {
 
 export async function loadEdeDetail({
   bgt = true, motorway = true, directional = motorway, bgtStage = 'all', municipal = true,
-  parcels = false, utilities = false,
+  parcels = false, utilities = false, fringe = false,
 } = {}) {
   const files = { bgt: 'ede-bgt-detail', '1gis': 'ede-1gis-detail', nbd: 'ede-nbd-signs',
     municipal: 'ede-municipal-detail', parcel: 'ede-parcel-detail', utility: 'ede-utility-detail' };
@@ -89,7 +89,9 @@ export async function loadEdeDetail({
   const assetUrl = (source, extension) => new URL(`../assets/${files[source]}.${extension}`, import.meta.url);
   let nbdTexture, parcelTiles;
   const replacedBgt = new Set();
-  const land = bgt && bgtStage === 'all' ? loadLandCover() : null;
+  const fullBgt = bgt && bgtStage === 'all';
+  const land = fullBgt ? loadLandCover() : null;
+  const fringeLand = fullBgt && fringe ? loadLandCover('ede-fringe-land.bin.gz') : null;
   const assets = await Promise.all(requests.map(async source => {
     try {
       const asset = await (await readPacked(assetUrl(source, source === 'parcel' ? 'json.gz?v=20261121-map' : 'json.gz'))).json();
@@ -119,7 +121,7 @@ export async function loadEdeDetail({
   }));
   const features = assets.flat().filter(feature => feature.source !== 'bgt' || !replacedBgt.has(feature.id));
   return { features: features.filter(f => f.type !== 'marking'), markings: features.filter(f => f.type === 'marking'),
-    nbdTexture, parcelTiles, landCover: await land };
+    nbdTexture, parcelTiles, landCover: await land, fringeLandCover: await fringeLand };
 }
 
 function groundAt(feature, x, z, surveyY, height = 0) {

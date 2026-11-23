@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GEO } from './nyc-geodata.js';
 import { projectLonLatInto } from './ede-scene-coordinates.js';
+import { loadBagBoundaryOwnership } from './ede-bag-exterior.js';
 import { playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
 import { BLOCKS } from './city-config.js';
 import { polygonContains } from './building-collision.js';
@@ -420,7 +421,7 @@ export function bakeTile(...args) {
   return finishBagWork(bakeTileChunks(...args));
 }
 
-function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, yearTables, project, limitToMunicipality) {
+function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, yearTables, project, limitToMunicipality, ownershipTables) {
   const geometries = [];
   const useAerial = getAerialColors();
   mappedRoofs ??= mappedRoofIndex();
@@ -441,6 +442,7 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
       const normalMatrix = projectedNormalMatrix(full, pos, project);
       const count = pos.count;
       const excluded = exclusions && meshBagFacadeFeatures(gltf, o, exclusions);
+      const municipality = ownershipTables && meshBagFacadeFeatures(gltf, o, ownershipTables);
       const projected = bases?.projected.get(o);
       const positions = projected ?? new Float32Array(count * 3);
       const normals = new Float32Array(count * 3), colors = new Float32Array(count * 3);
@@ -478,7 +480,8 @@ function* bakeTileChunks(gltf, matrix, tables, atlas, baseTables, exclusions, ye
       }
       const facades = new Map(), roofColors = new Map(), omitted = new Set();
       for (const [seed, { minX, maxX, minZ, maxZ, top }] of extents) {
-        if (limitToMunicipality && !playableBoundsCovered(minX, minZ, maxX, maxZ)) {
+        const side = municipality?.get(seed);
+        if (side === -1 || (side !== 1 && limitToMunicipality && !playableBoundsCovered(minX, minZ, maxX, maxZ))) {
           omitted.add(seed);
           continue;
         }
@@ -754,8 +757,13 @@ async function bagGeometry(gltf, facades, tile, stillWanted = () => true, pacing
     const matrix = gltfToEcefMatrix(tile.transform);
     const { min, max } = tile.bounds;
     const limitToMunicipality = !playableBoundsCovered(min.x, min.z, max.x, max.z);
+    const ownership = limitToMunicipality ? await loadBagBoundaryOwnership().catch(error => {
+      console.warn('[bag3d] using boundary bounds for building ownership:', error.message);
+      return null;
+    }) : null;
+    const ownershipTables = ownership && await readBagFacadeFeatures(gltf, ownership);
     const work = bakeTileChunks(gltf, matrix, atlas ? features : null, atlas, bases, exclusions, years, projectBagVertex,
-      limitToMunicipality);
+      limitToMunicipality, ownershipTables);
     const geometries = pacing ? await finishBagWorkIncrementally(work, stillWanted, pacing) : finishBagWork(work);
     if (!geometries) {
       disposeFacadeAtlas(atlas);

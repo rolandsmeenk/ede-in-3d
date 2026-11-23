@@ -53,7 +53,7 @@ export function indexStreetFeatures(asset) {
 }
 
 export async function loadEdeStreetFeatures() {
-  const response = await fetch(new URL('../assets/ede-street-features.json.gz?v=20261121-roundabouts', import.meta.url));
+  const response = await fetch(new URL('../assets/ede-street-features.json.gz?v=20261123-harderwijkerweg', import.meta.url));
   if (!response.ok) throw new Error(`Ede street features returned HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   // Some servers apply Content-Encoding and the browser has already inflated the file.

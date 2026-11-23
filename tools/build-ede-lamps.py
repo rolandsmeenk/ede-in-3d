@@ -16,8 +16,10 @@ from urllib.parse import urlencode
 
 from shapely.geometry import Point, Polygon
 
+from ede_height_field import expansion_collision_path
 from ede_gis import Frame, source_crs
-from ede_map import load_playable_boundary, load_playable_scene
+from ede_map import load_coverage_polygon, load_playable_boundary, load_playable_scene
+from ede_scene import SceneAffine
 from ede_traffic_geometry import Segment, SegmentIndex
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,11 +103,11 @@ def projection(edge, x, z):
 
 
 class LampSurfaces:
-    def __init__(self, scene, frame):
-        self.area = load_playable_boundary()
+    def __init__(self, scene, frame, area=None):
+        self.area = load_playable_boundary() if area is None else area
         terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']
         self.terrain = terrain()
-        self.expansion = terrain(ROOT / 'assets/ede-terrain-tiles/collision.bin')
+        self.expansion = terrain(expansion_collision_path())
         grade = read(ROOT / 'assets/ede-grade.json')
         corrections = read(ROOT / 'assets/ede-ahn-surfaces.json')
         self.nap = grade['datumNAP']
@@ -269,22 +271,37 @@ def encode(rows, datum):
     return b'EDL3' + struct.pack('<I', len(packed)) + b''.join(packed)
 
 
-def retain_core(payload, path, bounds):
+def retain_baseline(payload, path, bounds, surfaces, municipal=False):
     def rows(raw):
         fmt = {b'EDL2': RECORD_V2, b'EDL3': RECORD}[raw[:4]]
         return fmt.iter_unpack(raw[8:])
 
     west, north, east, south = bounds
-    inside = lambda row: west <= row[0] / 5 <= east and north <= row[1] / 5 <= south
-    original = [row for row in rows(gzip.decompress(path.read_bytes())) if inside(row)]
-    expanded = [row for row in rows(payload) if not inside(row)]
-    kept = sorted([*original, *expanded], key=lambda row: (row[0], row[1], row[-1]))
-    return b'EDL3' + struct.pack('<I', len(kept)) + b''.join(RECORD.pack(*row) for row in kept), len(original)
+
+    def inside_core(row):
+        return west <= row[0] / 5 <= east and north <= row[1] / 5 <= south
+
+    def placement(row):
+        return row[0], row[1], row[-1]
+
+    retained = {}
+    counts = Counter()
+    for row in rows(gzip.decompress(path.read_bytes())):
+        core = inside_core(row)
+        if not municipal and (not (core or row[-2] & 0b110) or not surfaces.contains_pole(row[0] / 5, row[1] / 5)):
+            continue
+        retained[placement(row)] = row
+        counts['retainedMunicipality' if municipal else
+               'retainedCore' if core else 'retainedSurveyedOrFittedOutsideCore'] += 1
+    expanded = {placement(row): row for row in rows(payload) if not inside_core(row)}
+    expanded.update(retained)
+    merged = [expanded[key] for key in sorted(expanded)]
+    return b'EDL3' + struct.pack('<I', len(merged)) + b''.join(RECORD.pack(*row) for row in merged), counts
 
 
-def bake(scene, snapshot, gis_path, core_path=None):
+def bake(scene, snapshot, gis_path, baseline_path=None, exterior=None):
     frame = Frame(scene['meta']['lonLatAffine'])
-    surfaces = LampSurfaces(scene, frame)
+    surfaces = LampSurfaces(scene, frame, exterior)
     official, counts, gis_date = read_gis(gis_path, frame, surfaces) if gis_path else ([], Counter(), None)
     crs = source_crs(snapshot, default='OGC:CRS84')  # Older snapshots used the GeoJSON default.
     poles = []
@@ -372,9 +389,12 @@ def bake(scene, snapshot, gis_path, core_path=None):
             continue
         add((g['id'], None, g['level'], g['x'], g['z'], g['date'], g['rd']), [(0, g)], native=True)
     payload = encode(poles, surfaces.nap)
-    if core_path:
-        payload, core = retain_core(payload, core_path, scene['meta']['baseBounds'])
-        counts['retainedCore'] = core
+    if baseline_path:
+        payload, retained = retain_baseline(payload, baseline_path, scene['meta']['baseBounds'], surfaces, municipal=exterior is not None)
+        counts.update(retained)
+    rendered = {'renderedSurveyed': 2, 'renderedFitted': 4, 'renderedDoubleArm': 8}
+    for row in RECORD.iter_unpack(payload[8:]):
+        counts.update(label for label, bit in rendered.items() if row[-2] & bit)
     review['municipality'] = scene['meta']['municipality']['id']
     review['counts'] = {**counts, 'BGT duplicate placements': len(review['duplicates']),
                         'rendered': struct.unpack_from('<I', payload, 4)[0]}
@@ -387,16 +407,24 @@ def main():
     parser.add_argument('--date', type=date.fromisoformat, default=date.today(), help='Date of the PDOK snapshot to fetch')
     parser.add_argument('--save-bgt', type=Path, help='Save the BGT lamp snapshot for offline refresh')
     parser.add_argument('--gis', type=Path, help='1GIS snapshot or ArcGIS layer 6 queried in RD New with Z')
-    parser.add_argument('--retain-core', type=Path, help='Keep baked positions and heights within the original source area')
+    retain = parser.add_mutually_exclusive_group()
+    retain.add_argument('--retain-core', type=Path, help='Keep original core placements and surveyed or fitted placements elsewhere')
+    retain.add_argument('--retain-municipality', type=Path, help='Keep the existing municipal lamps and add source placements to the 500 m belt')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-lamps.bin.gz')
     parser.add_argument('--report', type=Path, help='Detailed lamp source matching and Poortwachter audit')
     args = parser.parse_args()
     scene = load_playable_scene()
-    snapshot = read(args.bgt) if args.bgt else fetch_bgt(scene['meta']['geographicBounds'], args.date)
+    bounds = scene['meta']['geographicBounds']
+    exterior = None
+    if args.retain_municipality:
+        exterior = load_coverage_polygon('buildingBoundary').difference(load_coverage_polygon('playableBoundary'))
+        west, south, east, north = SceneAffine(scene['meta']['lonLatAffine']).geographic_bounds(exterior.bounds)
+        bounds = [south, west, north, east]
+    snapshot = read(args.bgt) if args.bgt else fetch_bgt(bounds, args.date)
     if args.save_bgt:
         data = json.dumps(snapshot, separators=(',', ':')).encode()
         write(args.save_bgt, gzip.compress(data, mtime=0) if args.save_bgt.suffix == '.gz' else data)
-    asset, review = bake(scene, snapshot, args.gis, args.retain_core)
+    asset, review = bake(scene, snapshot, args.gis, args.retain_municipality or args.retain_core, exterior)
     write(args.output, asset)
     if args.report:
         report = (json.dumps(review, ensure_ascii=False, separators=(',', ':')) + '\n').encode()

@@ -55,4 +55,11 @@ EDE_BENCH_SCENARIOS=expansion EDE_BENCH_TRAFFIC=active EDE_BENCH_CACHE=cold \
   node tools/benchmark-ede.mjs /tmp/ede-expansion.json http://127.0.0.1:8000 9297 'perf=1'
 ```
 
+The municipality suite covers newly playable villages, the former cutoff, the eastern terrain edge and the Veenendaal building fringe. It reports one draw count and triangle count for the terrain each frame. Set `EDE_BENCH_BACKEND=webgl` to check fallback initialization and rendering.
+
+```sh
+EDE_BENCH_SCENARIOS=municipality-coverage EDE_BENCH_TRAFFIC=active EDE_BENCH_RUNS=1 \
+  node tools/benchmark-ede.mjs /tmp/ede-municipality.json http://127.0.0.1:8000 9297 'perf=1&quality=fast'
+```
+
 Use a second variant with `forestCanopy=off` to compare the individual-tree rendering.

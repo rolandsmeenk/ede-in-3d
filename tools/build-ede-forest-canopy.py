@@ -10,15 +10,16 @@ import math
 import re
 from pathlib import Path
 import subprocess
-import struct
 
 import numpy as np
 import rasterio
+from PIL import Image
 from rasterio.features import rasterize
 from rasterio.transform import from_origin
 from scipy.ndimage import map_coordinates
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiPolygon, Polygon
 
+from ede_height_field import expansion_collision_path, read_height_field
 from ede_gis import Frame
 from ede_map import load_scene
 from ede_raster import require_rd_raster
@@ -27,6 +28,7 @@ from ede_scene import SCENE_NAP_ORIGIN
 ROOT = Path(__file__).resolve().parents[1]
 WCS = 'https://service.pdok.nl/rws/ahn/wcs/v1_0'
 CANOPY = 'https://image.arcgisonline.nl/arcgis/rest/services/KEA/Monitoring_boomkroonbedekking/ImageServer'
+COVERAGE = ROOT / 'assets/ede-coverage-v1.json'
 CANOPY_YEAR = 2022  # AHN4. The 2024 slice returns empty coverage in Ede.
 SOURCE_SIZE, SOURCE_STEP = 2000, 2
 SAMPLE_STEP = 2.5
@@ -41,7 +43,7 @@ ROAD_CLASSES = {'motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', '
 def download(path, url, parameters, offline):
     if path.is_file() or offline:
         return
-    temporary = path.with_suffix('.part')
+    temporary = path.with_suffix(path.suffix + '.part')
     try:
         subprocess.run(['curl', '-fsSG', '--retry', '3', '--max-time', '90', url,
                         *[arg for key, value in parameters for arg in ('--data-urlencode', f'{key}={value}')],
@@ -73,7 +75,7 @@ def source_grids(bounds, cache, offline):
     dtm, dsm = [np.empty(shape, dtype=np.float32) for _ in range(2)]
     mask = np.empty(shape, dtype=bool)
     coordinates = [(x, y) for x in range(west, east, SOURCE_SIZE) for y in range(south, north, SOURCE_SIZE)]
-    with ThreadPoolExecutor(max_workers=6) as workers:
+    with ThreadPoolExecutor(max_workers=12) as workers:
         files = workers.map(lambda xy: source_tile(cache, *xy, offline), coordinates)
         for (x, y), paths in zip(coordinates, files):
             row, col = (north - y - SOURCE_SIZE) // SOURCE_STEP, (x - west) // SOURCE_STEP
@@ -156,7 +158,7 @@ def osm_corridors(elements, frame):
         yield LineString(path).buffer(halfwidth)
 
 
-def canopy_grid(crowns, bounds, terrain_bounds, step, corridors):
+def canopy_grid(crowns, bounds, terrain_bounds, step, corridors, coverage_polygon=None):
     stride = int(step / SAMPLE_STEP)
     rows, cols = (value // stride for value in crowns.shape)
     coverage = np.empty((rows, cols), dtype=np.uint8)
@@ -178,6 +180,11 @@ def canopy_grid(crowns, bounds, terrain_bounds, step, corridors):
     x, z = bounds[0] + step * np.arange(cols), bounds[1] + step * np.arange(rows)
     coverage[:, (x < terrain_bounds[0]) | (x + step > terrain_bounds[2])] = 0
     coverage[(z < terrain_bounds[1]) | (z + step > terrain_bounds[3]), :] = 0
+    if coverage_polygon is not None:
+        # Inset by half a cell's diagonal so every retained crown cell stays inside the terrain.
+        allowed = rasterize([coverage_polygon.buffer(-step / math.sqrt(2))], out_shape=(rows, cols),
+                            transform=from_origin(bounds[0], bounds[1], step, -step), dtype='uint8')
+        coverage[allowed == 0] = 0
     top[coverage == 0] = 0
     # Average the adjacent occupied quadrants. Compute globally so adjacent tiles
     # use identical edge vertices at the same resolution.
@@ -238,11 +245,8 @@ def northern_tree_samples(directory, cells, frame, terrain_path):
     _, north_edge = frame.lon_lat_to_scene(coverage['geographicBounds'][1], coverage['previousNorth'])
     points = [*north['arrivals'], [5.64806, 52.08292], [5.66632, 52.10760]]
     locations = [frame.lon_lat_to_scene(*point) for point in points]
-    raw = terrain_path.read_bytes()
-    magic, columns, rows, left, top, step, _ = struct.unpack_from('<III4f', raw)
-    if magic != 0x314E4841 or len(raw) != 28 + columns * rows * 2:
-        raise ValueError('Invalid terrain collision field for woodland trees')
-    terrain = np.frombuffer(raw, dtype='<i2', offset=28).reshape(rows, columns)
+    columns, rows, left, top, step, _, heights = read_height_field(terrain_path)
+    terrain = np.frombuffer(heights, dtype=np.int16).reshape(rows, columns)
     trees = []
     for cell in cells.values():
         west, north_z, east, south = cell['bounds']
@@ -273,7 +277,7 @@ def northern_tree_samples(directory, cells, frame, terrain_path):
     return trees
 
 
-def write_canopy(directory, bounds, grids, stats, retained=None, tree_samples=None):
+def write_canopy(directory, bounds, grids, stats, retained=None, tree_samples=None, buffered=False):
     min_x, min_z, _, _ = bounds
     cells = {} if retained is None else {cell['id']: cell for cell in retained['cells']}
     if retained is not None:
@@ -291,6 +295,8 @@ def write_canopy(directory, bounds, grids, stats, retained=None, tree_samples=No
                 height = vertices[row:row + CELLS + 1, col:col + CELLS + 1]
                 (directory / f'{name}.bin').write_bytes(area.tobytes() + height.tobytes())
                 cells[name] = dict(id=name, bounds=[x, z, x + size, z + size], step=step)
+                if buffered:
+                    cells[name]['maxY'] = int(height.max()) / 100 - SCENE_NAP_ORIGIN
                 if size == 1000:
                     children = [f'500_{x + dx}_{z + dz}' for dx in (0, 500) for dz in (0, 500)
                                 if f'500_{x + dx}_{z + dz}' in cells]
@@ -307,6 +313,13 @@ def write_canopy(directory, bounds, grids, stats, retained=None, tree_samples=No
     if retained is not None:
         source = {**retained['source'], 'north': stats}
     manifest = dict(version=1, napOrigin=SCENE_NAP_ORIGIN, cells=list(cells.values()), source=source)
+    if buffered:
+        manifest['version'] = 2
+        mask = grids[20][0] > 0
+        image = Image.fromarray(mask.astype('uint8'), 'P')
+        image.putpalette([0, 0, 0, 0x20, 0x29, 0x22])
+        image.save(directory / 'cover.png', transparency=0, optimize=True)
+        manifest['cover'] = dict(bounds=bounds, step=20)
     if tree_samples:
         manifest['northernTreeSamples'] = tree_samples(cells)
         print(f"{len(manifest['northernTreeSamples'])} estimated stems in measured northern crowns", flush=True)
@@ -323,12 +336,21 @@ def main():
     parser.add_argument('--terrain-manifest', type=Path, default=ROOT / 'assets/ede-terrain-tiles/manifest.json')
     parser.add_argument('--retain-existing', action='store_true',
                         help='Add northern cells and retain existing canopy away from their shared edge')
+    parser.add_argument('--coverage', type=Path, default=COVERAGE)
+    parser.add_argument('--fetch-only', action='store_true', help='Download source rasters without rebuilding assets')
     args = parser.parse_args()
     args.cache.mkdir(parents=True, exist_ok=True)
     args.output.mkdir(parents=True, exist_ok=True)
     scene = load_scene()
     frame = Frame(scene['meta']['lonLatAffine'])
-    terrain_bounds = json.loads(args.terrain_manifest.read_text())['bounds']
+    terrain_manifest = json.loads(args.terrain_manifest.read_text())
+    coverage = None
+    if terrain_manifest['version'] == 2:
+        rings = json.loads(args.coverage.read_text())['terrainBoundary']
+        coverage = MultiPolygon([Polygon(list(zip(polygon[0][::2], polygon[0][1::2])),
+                                         [list(zip(ring[::2], ring[1::2])) for ring in polygon[1:]])
+                                 for polygon in rings])
+    terrain_bounds = terrain_manifest['bounds']
     x0, z0, x1, z1 = terrain_bounds
     bounds = (math.floor(x0 / 500) * 500, math.floor(z0 / 500) * 500,
               math.ceil(x1 / 500) * 500, math.ceil(z1 / 500) * 500)
@@ -348,6 +370,13 @@ def main():
                  math.ceil((max(x) + 5) / SOURCE_SIZE) * SOURCE_SIZE,
                  math.ceil((max(y) + 5) / SOURCE_SIZE) * SOURCE_SIZE)
     print(f'Canopy coverage {bounds}; source cache {rd_bounds}', flush=True)
+    if args.fetch_only:
+        west, south, east, north = rd_bounds
+        locations = [(x, y) for x in range(west, east, SOURCE_SIZE) for y in range(south, north, SOURCE_SIZE)]
+        with ThreadPoolExecutor(max_workers=12) as workers:
+            for _ in workers.map(lambda xy: source_tile(args.cache, *xy, args.offline), locations):
+                pass
+        return
     crowns, stats = observed_crowns(frame, bounds, source_grids(rd_bounds, args.cache, args.offline), rd_bounds)
     corridors = []
     if retained is None:
@@ -362,11 +391,12 @@ def main():
         raw = args.osm_source.read_bytes()
         corridors.extend(osm_corridors(json.loads(raw)['elements'], frame))
         stats['corridorOsmSha256'] = sha256(raw).hexdigest()
-    grids = {step: canopy_grid(crowns, bounds, terrain_bounds, step, corridors) for step in STEPS}
+    grids = {step: canopy_grid(crowns, bounds, terrain_bounds, step, corridors, coverage) for step in STEPS}
     tree_samples = None
     if 'ede-north-v1Sha256' in stats:
-        tree_samples = lambda cells: northern_tree_samples(args.output, cells, frame, args.terrain_manifest.parent / 'collision.bin')
-    write_canopy(args.output, bounds, grids, stats, retained, tree_samples)
+        collision_path = expansion_collision_path(args.terrain_manifest.parent)
+        tree_samples = lambda cells: northern_tree_samples(args.output, cells, frame, collision_path)
+    write_canopy(args.output, bounds, grids, stats, retained, tree_samples, buffered=coverage is not None)
 
 
 if __name__ == '__main__':

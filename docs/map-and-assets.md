@@ -135,6 +135,27 @@ Six Akoesticum flagpoles follow the row visible in the 2026 PDOK aerial at the F
 
 The sports generator fits markings and equipment to 169 mapped outdoor playing areas. It uses OSM footprints, the Tesqua court survey, and PDOK imagery to orient the Moorfielders diamonds. Unsupported layouts retain a mapped playing surface. [Sports inventory and refresh command](../tools/data/ede-sports.sources.md)
 
+### Reusable farm buildings (Hallehuis and barn)
+
+The reusable farm building generator creates traditional Veluwe farm complexes consisting of a farmhouse (*voorhuis* / *woonhuis*) and barn (*achterhuis* / *schuur*), applied to the rural buildings marked `kind: "farm"` across Ede.
+
+| Site | Footprint and architectural reference |
+| --- | --- |
+| Boerderij Pothoven · De Brand, Bennekom | Rijksmonument 14460 (Lunterseweg 40, OSM `w271586553`, BAG `0228100000037083`). T-plan brick farmhouse with thatched wolfdak and green shutters, paired with the adjacent brick schuur (`w1328215895`, BAG `0228100000037057`). [RCE monument record](https://monumentenregister.cultureelerfgoed.nl/monumenten/14460) |
+| Boerderij Heuvelseweg, Doesburger Eng | OSM `w271719274`, BAG `0228100000051628`. Elongated brick farmhouse with half-hipped tile roof paired with the accompanying barn (`w271719200`, BAG `0228100000016620`). |
+| Boerderij Oud Willigerweg, Lunteren | OSM `w271892146`, BAG `0228100000024693`. Brick hallehuis farm with dark pan roof and adjacent companion outbuilding (`w271891537`). |
+| Boerderij Engelenhove, Kernhem | Rijksmonument (Kernhemseweg 6, OSM `w1463709461`). Middenlangsdeeltype hallehuis dating to 1756 with thatched roof, paired with brick schuur (`w1463709690`). |
+| Boerderij De Slijpkruik, Kernhem | Rijksmonument (Slijpkruikweg 54, OSM `w271548742`). Historical hallehuis near Kernhem dating back to 1359, paired with adjacent barn (`w271547213`). |
+| Boerderij Bouwhuis, Lunterseweg | OSM `w271587954`. Historic hallehuis along the northern Lunterseweg axis, paired with companion outbuilding (`w271587071`). |
+| Boerderij Kalverkamp, Lunterseweg | OSM `w271587817`. Veluwse farmhouse paired with companion outbuilding (`w271586880`). |
+| Memelinkhoeve, Meulunteren | OSM `w271890326`. Traditional farm complex in the rural northern Meulunteren landscape, paired with barn (`w271890674`). |
+| Roodselaar's Hoeve, Walderveen | OSM `w271591138`. Historic hallehuis farm complex in the northwest agricultural zone, paired with barn (`w271591466`). |
+
+Architectural details follow regional Gelderse Vallei and Veluwe hallehuis features documented at Concordia (RM 527721), Boerderij Hoekelum (RM 514052), and De Driehoek (RM 14451):
+- **Farmhouse (*voorhuis*):** Warm red-brown Veluwse brick walls textured via `createFacadeSurfaceTexture()`, cream sash windows with dark green panel shutters, brick plinth, and arched entrance doorways.
+- **Barn (*achterhuis / schuur*):** Timber/brick walls, segmented basket-arch cart doors (*deeldeuren*), cast-iron arched stable windows (*gietijzeren stalramen*), and upper hayloft hatch (*hooiluik*).
+- **Footprint integration:** Built from surveyed OSM/BAG footprints, anchoring to AHN terrain height, and registering replacement exclusions for both OSM ways and BAG IDs to avoid duplicate generic geometry.
+
 ## Refresh the Ede map
 
 Use Node.js 22 or later.
@@ -149,7 +170,7 @@ Rebuild the aerial palettes after refreshing the map so their records follow the
 Rebuild the bus routes after changing the road graph.
 See the [traffic data notes](../tools/data/ede-traffic-sources.md) for the WKD input and the access review.
 
-The roughly 7.4 × 5.4 km base extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas for the full 16.4 × 11.5 km landscape. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain. [Coordinate conversion and verification](../tools/data/ede-gis-unification.md)
+The roughly 7.4 × 5.4 km base extraction covers Ede’s built-up town. The coordinate origin is Oude Kerk. Use **Show all of Ede** in the street atlas to frame the municipality and surrounding scenery. Building geometry from 3DBAG is projected into the same coordinate system and seated on the AHN terrain. [Coordinate conversion and verification](../tools/data/ede-gis-unification.md)
 
 The Ginkelse Heide map pins frame the surveyed sheepfolds, Karin Colen’s open steel **Vensters op het Verleden** at its relocated site, and the **Huzarenmonument** by the Juffrouw Tok terrace. Vensters retains its 3D steel frames and concrete bases. A transparent texture based on the original design and a 2026 photograph by Rob Groendijk supplies the cutouts. The Huzarenmonument includes a modeled stone inscription. [Karin Colen’s designs and photographs](https://www.karincolen.nl/vensters) · [Sheepfold register](https://monumentenregister.cultureelerfgoed.nl/monumenten/14450) · [Vensters op het Verleden](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/4954/ede-vensters-op-het-verleden) · [Huzarenmonument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1303/ede-huzarenmonument)
 
@@ -157,9 +178,9 @@ The Ginkelse Heide map pins frame the surveyed sheepfolds, Karin Colen’s open 
 
 **Steakhouse Amadeus** at Driesprong uses its surveyed roof and footprint, with a timber veranda, roadside seating and the small Statue of Liberty at the frontage. The map arrival faces the entrance from the Otterloseweg footway. [Amadeus terraces](https://www.steakhouseamadeus.nl/restaurant-terrassen-ede/) · [Exterior photographs](https://www.atlasvanede.nl/verken/short-walks/parkeerterrein-rond-ede/kogelvangers-23)
 
-## Rebuild the outer routes and terrain
+## Earlier outer route and terrain rebuild
 
-The first expansion covers 5.565°–5.805° E and 52.012°–52.080° N. It adds detail along selected routes and at the arrivals near Doesburgermolen, Veenendaal-De Klomp, Ginkelse Heide, Boerderij Mossel and Planken Wambuis. The full map pins frame each custom exterior. The Ginkel arrivals include both historic sheepfolds, Juffrouw Tok and the Airborne Monument. [Schaapskudden and their locations](https://edeseschaapskudden.nl/schaapskudden/) · [Juffrouw Tok](https://www.juffrouwtok.nl/restaurants/ede) · [Airborne Monument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1310/ede-airborne-monument)
+The first expansion covered 5.565°–5.805° E and 52.012°–52.080° N. It added detail along selected routes and at the arrivals near Doesburgermolen, Veenendaal-De Klomp, Ginkelse Heide, Boerderij Mossel and Planken Wambuis. The full map pins frame each custom exterior. The Ginkel arrivals include both historic sheepfolds, Juffrouw Tok and the Airborne Monument. [Schaapskudden and their locations](https://edeseschaapskudden.nl/schaapskudden/) · [Juffrouw Tok](https://www.juffrouwtok.nl/restaurants/ede) · [Airborne Monument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1310/ede-airborne-monument)
 
 The core retains its 12 m ground and surveyed local patches. The outer quadtree samples the AHN ground model on a 5 m grid and keeps its coarser parents visible while finer tiles load. The meshes carry PDOK aerial colours and use the existing RD New conversion and 22.54 m NAP datum. Soft building tiles own complete buildings, including footprints that extend across a tile edge. The canopy uses the 2022 crown coverage slice because the 2024 slice returned empty in Ede. Measured AHN crown heights shape the canopy tops. The renderer traces and smooths the canopy outline from the coverage grid. Exposed edges roll down into an inward-tapered base. The canopy manifest records neighboring crown coverage so woodland continues across tile edges. Coarse and detailed tiles use a short dithered crossfade once the incoming tiles are ready. The transition to individual trees moves closer to the camera as it climbs. BGT woodland polygons contribute to the land-cover palette. [AHN ground and surface models](https://www.ahn.nl/dataroom) · [Canopy sources and terms](../tools/data/ede-tree-inventory.md)
 
@@ -170,13 +191,14 @@ bash tools/overpass.sh /tmp/ede-corridors.json tools/data/q_ede_corridors.overpa
 node tools/build-ede-geodata.mjs /tmp/ede-corridors.json --corridors
 uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' \
   python -B tools/build-ede-corridor-paving.py /tmp/ede-corridor-bgt --date 2026-11-21 --fetch
-uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with pillow --with scipy \
-  python -B tools/build-ede-terrain-tiles.py /tmp/ede-outer-raster
-uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with scipy --with shapely \
-  python -B tools/build-ede-forest-canopy.py /tmp/ede-outer-raster --osm-source /tmp/ede-corridors.json
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with pillow --with scipy --with shapely \
+  python -B tools/build-ede-terrain-tiles.py /tmp/ede-outer-raster --legacy-extent --output /tmp/ede-legacy-terrain
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with pillow --with scipy --with shapely \
+  python -B tools/build-ede-forest-canopy.py /tmp/ede-outer-raster --osm-source /tmp/ede-corridors.json \
+  --terrain-manifest /tmp/ede-legacy-terrain/manifest.json --output /tmp/ede-legacy-canopy
 ```
 
-Publish each tile directory with its manifest, payloads and the matching corridor overlay.
+These commands stage the historical rectangular terrain and canopy separately from the current municipality assets.
 
 ### Outer landmark exteriors
 
@@ -584,47 +606,57 @@ The bus-stop builder accepts `overrides` keyed by GTFS stop ID or Gelderland qua
 
 ## Lunteren and the northern landscape
 
-The northern boundary extends to 52.115° N. Use **Teleport → Lunteren** for Dorpsstraat and search the map for Station Lunteren, Middelpunt van Nederland and nearby landmarks such as De Koepel or De Hessenhut. The northern overlay includes the mapped buildings and tree points throughout its downloaded extent.
+The first northern expansion extended to 52.115° N. Use **Teleport → Lunteren** for Dorpsstraat and search the map for Station Lunteren, Middelpunt van Nederland and nearby landmarks such as De Koepel or De Hessenhut. The northern overlay includes the mapped buildings and tree points throughout its downloaded extent.
 
 The 22 November 2026 OSM overlay supplies 15,582 building footprints, 4,204 road and path ways and six railway ways before municipal clipping. The 5 m terrain quadtree and woodland canopy use the same Oude Kerk scene frame as the original 12 m town grid. Measured KEA crown coverage and AHN heights guide estimated stem positions around the northern arrivals. [OpenStreetMap](https://www.openstreetmap.org/copyright) · [BGT](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [AHN](https://www.ahn.nl/dataroom)
 
 ### Municipal coverage
 
-The playable area is the intersection of the existing map extent and Kadaster’s 2026 Gemeente Ede boundary (`GM0228`), about 179 km². Veenendaal is outside. De Klomp and its railway station lie inside Ede. The OSM bake cuts road and rail geometry at the municipality, retains source way IDs, and rebuilds graph indices for surviving links. Boundary tiles clip the terrain at every resolution, and 3DBAG queries are limited to tiles overlapping the playable outline. Building features whose extents straddle the boundary are excluded from the 3DBAG stream. [Kadaster Bestuurlijke Gebieden](https://www.pdok.nl/ogc-apis/-/article/bestuurlijke-gebieden)
+The official Ede outline follows Kadaster’s complete 2026 Gemeente Ede polygon (`GM0228`), 318.62 km² in RD New. The playable area extends another 500 m around the municipality, for 361.15 km² in RD New. Walking, cycling, driving and flying share the same outer limit, and an amber frame and label appear while the player is outside Ede. The 2D map shows both boundaries and the road and path network joins to the earlier map through shared OSM node IDs. [Kadaster Bestuurlijke Gebieden](https://www.pdok.nl/ogc-apis/-/article/bestuurlijke-gebieden)
 
-| Source | Result in the expanded map |
+The 2 km scenery buffer contains AHN terrain and measured woodland canopy, covering 491.16 km² including the municipality. The quadtree keeps 61 coarse roots available during camera jumps and streams 5 m detail up to the edge. The playable terrain and BAG collar use the same lossless centimetre samples for terrain and placement. Existing surveyed terrain patches use the Oude Kerk scene frame and 22.54 m NAP datum.
+
+Six additional landmark destinations now represent major sites across the municipality: Kröller-Müller Museum and Jachthuis Sint Hubertus in the Hoge Veluwe, Kijk & Luistermuseum and the Oude of Sint-Alexanderkerk in Bennekom, Monument Bart van Elstplantsoen in Bennekom, and Bevrijding op de Veluwe in Harskamp. The museum and church models are dedicated procedural silhouettes. The two memorials include their plinths, plaques and associated benches. [Kröller-Müller visitor map](https://www.krollermuller.nl/en/visit/maps) · [Kijk & Luistermuseum](https://www.bezoek-ede.nl/locaties/1605962757/kijk-luister-museum) · [Alexanderkerk record](https://www.monumentenregister.cultureelerfgoed.nl/monumenten/14474) · [Bart van Elstplantsoen memorial](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1301/bennekom-monument-in-het-bart-van-elstplantsoen) · [Harskamp liberation memorial](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1298/harskamp-bevrijding-op-de-veluwe)
+
+Jachthuis Sint Hubertus uses 3DBAG LoD 2.2 for the lodge, its courtyard outbuilding and the two lakeside pavilions. The surveyed shell reaches 74.13 m NAP, 34.76 m above its base. The courtyard approach is on the mapped visitor path. Window bays, brick trim, the entrance canopy, lakeside pergola and gable emblem are photo-based approximations. The two low lakeside walls follow the 2026 PDOK aerial and the existing east bank alignment. [Monument 530190](https://monumentenregister.cultureelerfgoed.nl/monumenten/530190) · [Park exterior reference](https://hogeveluwe.nl/en/nature-and-culture/culture/art-and-architecture-in-nature/jachthuis-sint-hubertus) · [Courtyard entrance photo](https://commons.wikimedia.org/wiki/File:Sint_Hubertus_Hoge_Veluwe_0022_-_Ingang_-_Entrance.jpg) · [3DBAG survey](https://api.3dbag.nl/collections/pand/items/NL.IMBAG.Pand.0228100000055990)
+
+Run `uv run --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-sint-hubertus.py /tmp/ede-sint-hubertus --fetch` to refresh the shell. Review the façade face assignments if the 3DBAG survey topology changes.
+
+The 500 m playable border has measured BGT paving, ground cover, water, structures and street fixtures. Its 2,124 added BGT water polygons supply both the rendered water and the movement checks. Complete gray BAG buildings use their mapped footprints for physical collision. A footprint with at least half its area in Ede receives interior treatment, and a selected gray building stays whole even if part of it crosses either boundary. The same BAG IDs and footprints drive both views. The 10,459 gray buildings include 8,512 with LoD 2.2 meshes and 645 with measured height fallbacks. The remaining 1,302 have 3 m placeholders. [BAG and 3DBAG bake sources](../assets/ede-bag-exterior/SOURCES.md)
+
+| Source | Result in the full map |
 | --- | --- |
-| OpenStreetMap | 60,950 building footprints, 16,197 road and path ways, 293 signal locations and 262 sports pitches, courts and tracks |
-| PDOK BGT paving | 13,853 surfaces in the refreshed expansion asset, including the 1,382 existing reviewed surfaces, plus 1,249 clipped corridor surfaces |
-| PDOK BGT structures and lighting | 649 structure placements and 18,300 lamps |
-| Ede WFS bins, ACV containers and play sites | 639 bins, 419 containers and 254 play-site records. Two sites have surveyed equipment, 79 match OSM outlines and 173 await layout evidence |
-| BGT, Ede and Gelderland trees | 104,141 imported trees, including 17,213 added from expanded BGT coverage |
-| NDW and BGT signs | 9,298 sign placements, 8,677 with standard faces |
-| Signal hardware and WKD speeds | 245 signal heads, 79 supports and 9,599 directed speed profiles, including 531 timed limits |
-| Rijkswaterstaat 1GIS | 4,112 motorway markings, barriers, gantries and hectometre markers |
-| OVapi bus GTFS | 29 route IDs, 186 variants and 248 stops. 236 stops have a boarding lane match |
-| OVapi rail GTFS | 2,582 trips serving the four playable stations |
-| Waterschap Vallei en Veluwe | 67 visible culvert mouths, 25 weirs and 357 bank-protection sections |
+| OpenStreetMap | 85,395 interior building footprints, 23,250 road and path ways across the playable area, 314 signal locations and 396 sports pitches, courts and tracks |
+| PDOK BGT paving | 27,804 outer municipal surfaces and 9,725 additional surfaces in the playable border |
+| PDOK BGT structures and lighting | 1,651 structure placements and 22,902 lamps, including 299 structures and 1,689 lamps in the border strip |
+| BGT, Ede and Gelderland trees | 127,213 imported trees, including 23,082 beyond the former map rectangle |
+| Signal hardware and WKD speeds | 249 signal heads and 13,404 directed speed profiles, including 707 timed limits |
+| Rijkswaterstaat 1GIS | 4,269 motorway markings, barriers, gantries and hectometre markers |
+| Parking | 26,543 spaces, 2,191 areas and 349 aisle ways |
+| BGT street detail and parcel scenery | 60,024 interior BGT placements, 13,617 in the border strip, and 119,038 parcel features |
+| Ede municipal inventories | 742 mapped bins, 483 containers and 287 play-site records |
+| NDW and OSM street features | 10,956 signs, 1,272 humps and tables, and 242 physical crossings |
+| OVapi bus GTFS | 29 route IDs, 184 variants and 339 stops. 322 stops have a boarding lane match |
+| OVapi rail GTFS | 2,497 trips serving the four playable stations |
+| Waterschap Vallei en Veluwe | 136 visible culvert mouths, 52 weirs and 567 bank-protection sections |
 
-Parking, parcel inference, detailed BGT hedges and furniture, and fine shoreline surveys still use their previous source coverage. WKD speed and sign inventories were refreshed, while speed bumps and pedestrian crossing observations retain their existing reviewed inventory. Existing fitted elevations, reviewed façade layouts and directional panel designs retain their site-specific evidence.
-
-Kulturhus Wekerom uses three flagpole placements fitted to PDOK aerial imagery and checked against exterior photos. BGT has a flagpole category and returned no local flagpoles at this site. Pole heights are estimated. [BGT pole inventory](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html) · [Kulturhus exterior photos](https://activast.nl/objecten/dorpsplein-1/)
-
-In a fresh local Chrome WebGPU run on Fast at 1120 × 700, the updated build reached its first playable frame in 22.9 seconds. The Wekerom view measured 16.7 ms p95 over 45 animation frames after teleporting. The earlier coverage check measured 33.4 ms p95 at Oude Kerk and 16.7 ms in Lunteren. These are spot checks of the 30 FPS target.
-
-Rebuild the OSM overlays first, then the municipal geometry filter, then the dependent assets. Use a local snapshot directory for each downloaded source and keep the existing reviewed north paving and tree inventory as seed inputs when refreshing them.
+Retain the reviewed source assets when refreshing the linked inventories. Start with dated Gelderland and Utrecht Geofabrik extracts and a local cache for the PDOK datasets.
 
 ```sh
 uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' \
-  python -B tools/build-ede-municipality.py /tmp/ede-GM0228.geojson --fetch
+  python -B tools/build-ede-municipality.py /tmp/ede-GM0228.geojson --fetch --coverage-only
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' --with osmium \
+  python -B tools/extract-ede-municipality-osm.py /tmp/ede-GM0228.geojson /tmp/ede-complete-osm.json gelderland.osm.pbf utrecht.osm.pbf
+node tools/build-ede-geodata.mjs /tmp/ede-complete-osm.json /tmp/ede-complete-source.json.gz /tmp/ede-wkd --complete
 uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' \
-  python -B tools/build-ede-corridor-paving.py /tmp/ede-municipal-paving --municipality \
-    --reviewed /tmp/previous-north-paving.json.gz --date 2026-11-22 --fetch
-uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' \
-  python -B tools/fetch-ede-trees.py /tmp/ede-municipal-trees --date 2026-11-22 --playable
-uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' \
-  python -B tools/fetch-ede-trees.py /tmp/ede-municipal-trees --date 2026-11-22 --playable --expansion-only
+  python -B tools/build-ede-municipality.py /tmp/ede-GM0228.geojson --scene /tmp/ede-complete-source.json.gz --fringe-water /tmp/bgt-fringe/waterdeel.geojson
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' --with rasterio --with pillow --with scipy \
+  python -B tools/build-ede-terrain-tiles.py /tmp/ede-outer-raster
+uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' --with rasterio --with pillow --with scipy \
+  python -B tools/build-ede-forest-canopy.py /tmp/ede-outer-raster --osm-source /tmp/ede-complete-osm.json
 ```
+
+Use the [WKD download](../tools/data/ede-traffic-sources.md) to populate the optional fourth compiler argument. Run the [municipality coverage benchmark](running.md#graphics-and-profiling) on Fast to check the startup and frame budgets, including terrain draw calls and geometry residency.
 
 The routes stay outside the temporary Goudsberg works fence. Walking trails in the fenced east of Wekeromse Zand retain pedestrian access and signed perimeter cycle routes remain usable. De Valouwe’s map arrival is on the permissive entrance track and a mapped blocked path closes in both directions. [Quarry closure](https://www.ede.nl/in-de-gemeente-ede/zandafgraving-goudsberg) · [Wekeromse Zand access](https://www.glk.nl/gebied/wekeromse-zand) · [De Valouwe walking route](https://www.geografischwandelen.nl/nat-ede/natuurgebieden-in-de-gemeente-ede/de-valouwe/ommetje-valouwe-west)
 
@@ -636,17 +668,18 @@ Search the map for **Uitkijktoren De Bult** and **Uitkijktoren Celtic Fields**. 
 
 The Lunteren art route includes Di tengah ombak, Lunters Vrouwtje, the Goudsberg arrow and viewer, De Bron at the station, and the waterline leading to De Meander. The memorials include the liberation bench and anniversary tile, the Kerkhoflaan boulder and De Keuenklep. Two Tegelroute panels sit at Nieuwe Erf. [Public art and memorial sources](../tools/data/ede-lunteren-art.sources.md)
 
-Start with a fresh cache for a new source date. Add `--offline` to the OSM, terrain and canopy commands to reuse downloaded data. The commands below refresh the complete outer terrain and canopy from their source data. To reproduce this release’s north-only additions, seed their output directories with the previous outer expansion and add `--retain-existing` to both bakes. That preserves the published terrain and canopy south of the new strip.
+Start with a fresh cache for a new source date. Add `--offline` to the OSM, terrain and canopy commands to reuse downloaded data. The commands below rebuild the earlier northern terrain rectangle and canopy. To reproduce the north-only additions, seed the legacy output directories with the previous outer expansion and add `--retain-existing` to both bakes. That preserves the published terrain and canopy south of the new strip.
 
 ```sh
 python3 -B tools/fetch-ede-north-osm.py /tmp/ede-north
 node tools/build-ede-geodata.mjs /tmp/ede-north/osm-north.json --north
 uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' \
   python -B tools/build-ede-corridor-paving.py /tmp/ede-north/paving --north --date 2026-11-22 --fetch
-uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with pillow --with scipy \
-  python -B tools/build-ede-terrain-tiles.py /tmp/ede-outer-raster
-uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with scipy --with shapely \
-  python -B tools/build-ede-forest-canopy.py /tmp/ede-outer-raster --osm-source /tmp/ede-north/osm-north.json
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with pillow --with scipy --with shapely \
+  python -B tools/build-ede-terrain-tiles.py /tmp/ede-outer-raster --legacy-extent --output /tmp/ede-legacy-terrain
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with pillow --with scipy --with shapely \
+  python -B tools/build-ede-forest-canopy.py /tmp/ede-outer-raster --osm-source /tmp/ede-north/osm-north.json \
+  --terrain-manifest /tmp/ede-legacy-terrain/manifest.json --output /tmp/ede-legacy-canopy
 uv run --python 3.12 --with pyproj==3.8.0 --with rasterio \
   python -B tools/build-ede-north-rail.py /tmp/ede-north/rail --osm /tmp/ede-north/osm-north.json --date 2026-11-22 --fetch
 uv run --python 3.12 --with pyproj==3.8.0 \

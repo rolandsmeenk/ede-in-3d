@@ -22,7 +22,7 @@ test('Lunteren church surveys replace their matching outlines and build finite b
   const three = await import('../vendor/three/build/three.webgpu.js');
   const tsl = await import('../vendor/three/build/three.tsl.js');
   const terrainModule = await import('../js/terrain.js');
-  const heights = readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin'));
+  const heights = gunzipSync(readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin.gz')));
   const field = terrainModule.decodeTerrain(heights.buffer.slice(heights.byteOffset, heights.byteOffset + heights.byteLength));
   const terrain = { terrainHeightAt: (x, z) => terrainModule.sampleTerrain(field, x, z) };
   const materials = { createFacadeSurfaceTexture: () => ({ texture: new three.DataTexture() }) };

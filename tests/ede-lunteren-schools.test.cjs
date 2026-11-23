@@ -12,7 +12,7 @@ test('Lunteren school models retain their surveyed envelopes and safe exterior v
   const three = await import('../vendor/three/build/three.webgpu.js');
   const tsl = await import('../vendor/three/build/three.tsl.js');
   const terrainModule = await import('../js/terrain.js');
-  const packed = file('assets/ede-terrain-tiles/collision.bin');
+  const packed = gunzipSync(file('assets/ede-terrain-tiles/collision.bin.gz'));
   const field = terrainModule.decodeTerrain(packed.buffer.slice(packed.byteOffset, packed.byteOffset + packed.byteLength));
   const terrainHeightAt = (x, z) => terrainModule.sampleTerrain(field, x, z);
   const terrain = { getTerrain: () => field, terrainHeightAt };

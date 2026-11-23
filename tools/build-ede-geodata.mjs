@@ -1,6 +1,6 @@
 // Generate the packed Ede map from tools/data/osm_ede.json (Overpass, query q_ede.overpassql).
 // Frame: 1 unit = 1 m, x = east, z = south, origin at the Oude Kerk (true north up, no grid rotation).
-// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.json.gz] [wkd-geojson-directory] [--corridors|--north]
+// usage: node tools/build-ede-geodata.mjs [osm_ede.json] [out.json.gz] [wkd-geojson-directory] [--corridors|--north|--complete]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,15 +12,17 @@ import { buildRoadTags, writeRoadTags } from './build-ede-road-tags.mjs';
 import { GOUDSBERG_FENCE, createNorthAccess } from './ede-north-access.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
-const switches = new Set(['--corridors', '--north']);
+const switches = new Set(['--corridors', '--north', '--complete']);
 const args = process.argv.slice(2).filter(argument => !switches.has(argument));
 const north = process.argv.includes('--north');
+const complete = process.argv.includes('--complete');
 const corridors = north || process.argv.includes('--corridors');
 const INPUT = args[0] || path.join(DIR, 'data', 'osm_ede.json');
 const MAP_ASSET = path.join(DIR, '..', 'assets', 'ede-map-v1.json.gz');
 const OUT = args[1] ? path.resolve(args[1]) : corridors
   ? path.join(DIR, '..', 'assets', north ? 'ede-north-v1.json.gz' : 'ede-corridors-v1.json.gz') : MAP_ASSET;
 if (corridors && OUT === MAP_ASSET) throw new Error('Corridors must use a separate overlay path');
+if (complete && (!args[1] || corridors || OUT === MAP_ASSET)) throw new Error('Complete coverage requires its own output path');
 if (!OUT.endsWith('.json.gz')) throw new Error('Expected a .json.gz map output path');
 const osm = JSON.parse(fs.readFileSync(INPUT, 'utf8'));
 if (!Array.isArray(osm.elements) || !osm.elements.length || osm.remark) throw new Error('Expected a complete Ede OpenStreetMap response');
@@ -32,7 +34,9 @@ const base = JSON.parse(gunzipSync(fs.readFileSync(MAP_ASSET)));
 const { lonLatAffine } = base.meta;
 const coverage = JSON.parse(fs.readFileSync(path.join(DIR, 'data', 'ede-outer-coverage.json'), 'utf8'));
 const [south, west, , east] = coverage.geographicBounds;
-const geographicBounds = north ? coverage.geographicBounds : corridors
+const geographicBounds = complete
+  ? JSON.parse(fs.readFileSync(path.join(DIR, '../assets/ede-coverage-v1.json'))).geographicBounds
+  : north ? coverage.geographicBounds : corridors
   ? [south, west, coverage.previousNorth, east] : base.meta.geographicBounds;
 if (north) {
   // Keep every graph and geometry index from the first expansion as the prefix.
@@ -184,7 +188,7 @@ function crossingControl(t) {
   return null;
 }
 const trees = [];
-const northAccess = north ? createNorthAccess(osm) : null;
+const northAccess = north || complete ? createNorthAccess(osm) : null;
 for (const e of osm.elements) {
   const t = northAccess?.(e) ?? e.tags ?? {};
   if (e.type === 'node') {
@@ -270,7 +274,7 @@ function buildGraph(ways, active = false) {
     if (!ids.has(id)) {
       ids.set(id, nodes.length / 2);
       nodes.push(r1(p[0]), r1(p[1]));
-      if (corridors) osmNodes.push(id);
+      if (corridors || complete) osmNodes.push(id);
     }
     return ids.get(id);
   };
@@ -292,7 +296,7 @@ function buildGraph(ways, active = false) {
       start = i;
     }
   }
-  return { nodes, links, names, ...(corridors && { osmNodes }), ...(active ? { controls: Object.fromEntries([...crossingNodes].filter(([id]) => ids.has(id)).map(([id, v]) => [ids.get(id), v])) } : {}) };
+  return { nodes, links, names, ...((corridors || complete) && { osmNodes }), ...(active ? { controls: Object.fromEntries([...crossingNodes].filter(([id]) => ids.has(id)).map(([id, v]) => [ids.get(id), v])) } : {}) };
 }
 const roadGraph = buildGraph(drivable);
 const activeGraph = buildGraph(activeTravel, true);
@@ -305,16 +309,16 @@ for (const e of osm.elements) {
   const t = e.tags || {};
   if (e.type === 'node') continue;
   const isWater = t.natural === 'water' || /^(riverbank|dock)$/.test(t.waterway || '');
-  const isPark = t.natural === 'wood' || north && /^(sand|bare_rock|scrub|grassland)$/.test(t.natural || '') || corridors && t.natural === 'heath' || /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green|forest)$/.test(t.landuse || '');
+  const isPark = t.natural === 'wood' || (north || complete) && /^(sand|bare_rock|scrub|grassland)$/.test(t.natural || '') || (corridors || complete) && t.natural === 'heath' || /^(park|garden|playground|pitch)$/.test(t.leisure || '') || /^(grass|recreation_ground|cemetery|village_green|forest)$/.test(t.landuse || '');
   const isSquare = t.place === 'square' || (t.highway === 'pedestrian' && t.area === 'yes');
   if (!isWater && !isPark && !isSquare) continue;
   if (isSquare && ['no', 'private', 'customers', 'permit'].includes(t.foot ?? t.access)) continue;
-  for (const p of polygons(e)) {
+  for (const [part, p] of polygons(e).entries()) {
     const ring = cleanRing(p.ring);
     const area = Math.abs(ringArea(ring));
     if (ring.length < 3 || area < 20 || corridors && area > 2_000_000) continue;
-    if (isWater) water.push({ id: `water${water.length}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: t.water || t.waterway || 'water' });
-    else (isSquare ? squares : parks).push({ id: `${e.type[0]}${e.id}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: isSquare ? 'square' : t.leisure || t.landuse || t.natural });
+    if (isWater) water.push({ id: complete ? `osm-water-${e.type[0]}${e.id}-${part}` : `water${water.length}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: t.water || t.waterway || 'water' });
+    else (isSquare ? squares : parks).push({ id: `${e.type[0]}${e.id}${complete && part ? '_' + part : ''}`, ring: flat(ring), holes: p.holes.map((h) => flat(cleanRing(h))), name: t.name || '', kind: isSquare ? 'square' : t.leisure || t.landuse || t.natural });
   }
 }
 
@@ -343,6 +347,12 @@ const AREAS = [
   ['Rietkampen', 5.63984, 52.02103],
   ['Bedrijventerrein', 5.61885, 52.03292]
 ].map(([name, lon, lat]) => ({ name, labelPoint: toWorld(lon, lat).map(r1) }));
+
+if (complete) for (const { type, tags, lon, lat } of osm.elements) {
+  if (type === 'node' && tags?.name && ['city', 'town', 'village', 'hamlet'].includes(tags.place)) {
+    AREAS.push({ name: tags.name, place: tags.place, labelPoint: toWorld(lon, lat).map(r1) });
+  }
+}
 
 const [s, w, n, e] = geographicBounds;
 const { x0, x1, z0, z1 } = bbox([toWorld(w, s), toWorld(w, n), toWorld(e, s), toWorld(e, n)]);
@@ -519,7 +529,10 @@ function corridorOverlay() {
 }
 
 const output = corridors ? corridorOverlay() : data;
-if (!corridors) {
+if (complete) {
+  data.meta.sourceDate = osm.osm3s?.timestamp_osm_base;
+  for (const road of roads) Object.assign(road, roadTags[road.id]);
+} else if (!corridors) {
   const roadTagDir = OUT === MAP_ASSET ? path.join(DIR, '..', 'js') : path.dirname(OUT);
   writeRoadTags(path.join(roadTagDir, 'ede-road-tags.js'), roadTags);
 }

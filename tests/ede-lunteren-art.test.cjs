@@ -1,3 +1,4 @@
+const { gunzipSync } = require('node:zlib');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
@@ -12,7 +13,7 @@ test('Lunteren artwork fits public approaches without replacing nearby buildings
   const three = await import('../vendor/three/build/three.webgpu.js');
   const tsl = await import('../vendor/three/build/three.tsl.js');
   const terrainModule = await import('../js/terrain.js');
-  const bytes = readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin'));
+  const bytes = gunzipSync(readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin.gz')));
   const field = terrainModule.decodeTerrain(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   const terrain = { terrainHeightAt: (x, z) => terrainModule.sampleTerrain(field, x, z) };
   const civic = load('ede-civic-landmarks.js', {

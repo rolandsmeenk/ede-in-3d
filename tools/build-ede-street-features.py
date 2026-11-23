@@ -11,6 +11,7 @@ import re
 
 from shapely.geometry import LineString, Point, Polygon
 
+from ede_map import load_playable_boundary
 from ede_traffic_geometry import SegmentIndex, load_graph, normalize_name
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -366,12 +367,15 @@ def preserve_surface_ids(surface_source, previous):
                 row['bumpId'] = bump_ids[row['bumpId']]
 
 
-def build(sign_source, surface_source, graph, previous=None, signs_only=False):
+def build(sign_source, surface_source, graph, previous=None, signs_only=False, boundary=None):
     paths = SegmentIndex(graph.paths, margin=24)
     signs, bumps, crossings = [], [], []
     bounds = graph.bounds
     previous_crossings = {feature['id']: feature for feature in previous['crossings']} if previous else {}
-    in_bounds = lambda f: bounds[0] <= f['x'] <= bounds[2] and bounds[1] <= f['z'] <= bounds[3]
+    def in_bounds(feature):
+        x, z = point(feature)
+        return bounds[0] <= x <= bounds[2] and bounds[1] <= z <= bounds[3] and (
+            boundary is None or boundary.covers(Point(x, z)))
     for sign in sorted(filter(in_bounds, sign_source['signs']), key=lambda f: f['id']):
         refs, reason = match_sign(sign, graph.index, paths)
         sign = dict(sign)
@@ -414,7 +418,8 @@ def main():
         previous = json.loads(previous)
         if not args.signs_only:
             preserve_surface_ids(surfaces, previous)
-    data = build(json.loads(args.signs.read_bytes()), surfaces, load_graph(street_features=True), previous, args.signs_only)
+    data = build(json.loads(args.signs.read_bytes()), surfaces, load_graph(street_features=True),
+                 previous, args.signs_only, load_playable_boundary())
     encoded = (json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\n').encode('utf-8')
     args.output.write_bytes(gzip.compress(encoded, mtime=0) if args.output.suffix == '.gz' else encoded)
     for key in ('signs', 'bumps', 'crossings'):

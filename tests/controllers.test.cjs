@@ -456,12 +456,13 @@ test('car turning, handbraking and impact recovery agree across display rates', 
   }
 });
 
-function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eastX: 500 }), terrainHeightAt, buildingPassageHeadingAt) {
+function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eastX: 500 }), terrainHeightAt, buildingPassageHeadingAt, boundaryConfig = {}) {
   const harness = keyboardHarness({
     ISLAND_BOUNDS: { minX: -500, maxX: 500, minZ: -500, maxZ: 500, sidewalkHeight: 0.22 },
     CENTRAL_PARK_BOUNDS: { minX: 1000, maxX: 1100, minZ: 1000, maxZ: 1100 },
     getIslandBoundsAtZ: shore,
-    blockAt: () => null
+    blockAt: () => null,
+    ...boundaryConfig
   }, terrainHeightAt, buildingPassageHeadingAt);
   const { controller } = harness;
   const position = (x = 0, y = 0, z = 0) => ({ x, y, z, copy(p) { this.x = p.x; this.y = p.y; this.z = p.z; } });
@@ -785,6 +786,57 @@ test('ground arrivals share movement shoreline limits while helicopters may rema
   heli.ent.position.y = 10;
   assert.deepEqual({ ...heli.controller.teleportActiveTo(0, 0) }, { x: 0, z: 0 });
   assert.equal(heli.ent.position.y, 92);
+});
+
+test('walking and helicopter movement and arrivals use the municipal outline and preserve holes', () => {
+  const playableBoundary = [[
+    [-500, -500, 500, -500, 500, 500, 20, 500, 20, 0, -20, 0, -20, 500, -500, 500],
+    [-50, -100, 50, -100, 50, -50, -50, -50]
+  ]];
+  const boundarySource = readFileSync(join(__dirname, '../js/ede-playable-boundary.js'), 'utf8');
+  const { containsPlayablePoint, constrainToPlayableArea } = loadModule(boundarySource, {
+    imports: { './ede-geodata.js': { EDE_DATA: { meta: { playableBoundary, baseBounds: [-200, -200, 200, 200] } } } }
+  });
+  assert.equal(containsPlayablePoint(0, -75), false, 'a core rectangle must not hide a boundary hole');
+  assert.equal(containsPlayablePoint(0, 100), false, 'a core rectangle must not hide a concavity');
+  for (const mode of ['person', 'helicopter']) {
+    const { controller, ent } = teleportHarness(mode, [], undefined, undefined, undefined,
+      { playableBoundary, constrainToPlayableArea });
+    const destination = controller.teleportActiveTo(-499, -499, 0);
+    assert.deepEqual({ ...destination }, { x: -499, z: -499 });
+    controller.resolveHorizontalCollision(ent.position, 0.48);
+    assert.deepEqual([ent.position.x, ent.position.z], [-499, -499]);
+    for (const [x, z] of [[0, -75], [0, 100], [-600, -650]]) {
+      assert.equal(containsPlayablePoint(x, z), false);
+      const arrived = controller.teleportActiveTo(x, z, 0);
+      assert.ok(containsPlayablePoint(arrived.x, arrived.z));
+      Object.assign(ent.position, { x, z });
+      controller.resolveHorizontalCollision(ent.position, 0.48);
+      assert.ok(containsPlayablePoint(ent.position.x, ent.position.z));
+    }
+  }
+});
+
+test('every mode can enter the 500 m collar and is constrained at its outer edge', () => {
+  const playableBoundary = [[[-500, -500, 500, -500, 500, 500, -500, 500]]];
+  const travelBoundary = [[[-1000, -1000, 1000, -1000, 1000, 1000, -1000, 1000]]];
+  const boundarySource = readFileSync(join(__dirname, '../js/ede-playable-boundary.js'), 'utf8');
+  const { containsPlayablePoint, containsTravelPoint, constrainToTravelArea } = loadModule(boundarySource, {
+    imports: { './ede-geodata.js': { EDE_DATA: { meta: { playableBoundary, travelBoundary } } } }
+  });
+  for (const mode of ['person', 'car', 'cyclist', 'cargobike', 'helicopter']) {
+    const { controller, ent } = teleportHarness(mode, [], undefined, undefined, undefined,
+      { playableBoundary, travelBoundary, constrainToTravelArea });
+    assert.deepEqual({ ...controller.teleportActiveTo(750, -600, 0) }, { x: 750, z: -600 });
+    assert.equal(containsPlayablePoint(ent.position.x, ent.position.z), false);
+    assert.equal(containsTravelPoint(ent.position.x, ent.position.z), true);
+    Object.assign(ent.position, { x: 1100, z: -600 });
+    controller.resolveHorizontalCollision(ent.position, 0.65);
+    assert.equal(containsTravelPoint(ent.position.x, ent.position.z), true, mode);
+    assert.ok(ent.position.x > 999 && ent.position.x <= 1000, mode);
+    assert.deepEqual({ ...controller.teleportActiveTo(400, -450, 0) }, { x: 400, z: -450 });
+    assert.equal(containsPlayablePoint(ent.position.x, ent.position.z), true);
+  }
 });
 
 test('a displaced pedestrian samples ground and resets its feet at the resolved destination', () => {

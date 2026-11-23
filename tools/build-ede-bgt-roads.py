@@ -284,7 +284,7 @@ def encode_surface_coverage(items, geometries):
             yield {**item, 'polygons': rings}
 
 
-def build_surfaces(scene, index, surfaces, tags, source, day):
+def build_surfaces(scene, index, surfaces, tags, source, day, *, include_rail=False):
     roads, lines = [], []
     for road in scene['roads']:
         raw_value = tags.get(road['id'])
@@ -297,10 +297,12 @@ def build_surfaces(scene, index, surfaces, tags, source, day):
     for polygon, (layer, kind, function, identity, props) in zip(index.geometries, surfaces):
         broad = props.get('fysiek_voorkomen')
         detail = props.get('plus_fysiek_voorkomen')
-        if (broad not in GENERIC_MATERIALS or props.get('in_onderzoek') in (True, 'true')
-                or function in {'spoorbaan', 'voetpad op trap'}):
+        rail = function == 'spoorbaan'
+        if (not (rail and include_rail or broad in GENERIC_MATERIALS)
+                or props.get('in_onderzoek') in (True, 'true') or function == 'voetpad op trap'
+                or rail and not include_rail):
             continue
-        material = DETAILED_MATERIALS.get(detail)
+        material = 'gravel' if rail else DETAILED_MATERIALS.get(detail)
         resolution = 'bgt-detail'
         osm_matches = None
         if not material:

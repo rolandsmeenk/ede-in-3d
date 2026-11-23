@@ -20,7 +20,7 @@ from shapely import STRtree, make_valid, orient_polygons, transform
 from shapely.geometry import LineString, Point, Polygon, box, mapping, shape
 
 from ede_gis import Frame, RD, SCENE_NAP_ORIGIN, source_crs, to_rd
-from ede_map import ROOT, load_scene
+from ede_map import ROOT, load_playable_boundary, load_playable_scene, load_scene
 from ede_municipal_detail import walk_obstacles
 
 LIANDER = 'https://services1.arcgis.com/v6W5HAVrpgSg3vts/arcgis/rest/services/Liander_Open_Data_Elektra/FeatureServer'
@@ -53,22 +53,25 @@ def json_response(url, params=None, **options):
     return data
 
 
-def pages(api, params):
+def pages(api, params, default_crs=None, **options):
     url = api + '?' + urlencode(params)
     visited = set()
     while url:
         if url in visited or urlsplit(url)._replace(query='', fragment='').geturl() != api:
             raise ValueError(f'Unexpected pagination from {api}')
         visited.add(url)
-        current = json_response(url)
-        crs = source_crs(current)
+        current = json_response(url, **options)
+        crs = source_crs(current, default=default_crs)
         for row in current['features']:
             yield row, crs
         url = next((link['href'] for link in current.get('links', []) if link['rel'] == 'next'), None)
 
 
 def geom_rd(raw, crs):
-    return make_valid(transform(shape(raw), partial(to_rd, crs=crs, axis_order='xy'), interleaved=False))
+    geometry = shape(raw)
+    if crs.to_epsg() != 28992:
+        geometry = transform(geometry, partial(to_rd, crs=crs, axis_order='xy'), interleaved=False)
+    return make_valid(geometry)
 
 
 def write_json(path, data):
@@ -86,23 +89,42 @@ def stations(layer, rd_bounds):
         'geometryType': 'esriGeometryEnvelope', 'inSR': '28992', 'outSR': '28992',
         'spatialRel': 'esriSpatialRelIntersects', 'outFields': 'OBJECTID', 'returnGeometry': 'true',
     }
-    page = json_response(f'{LIANDER}/{layer}/query', query)
-    if page.get('exceededTransferLimit'):
-        raise ValueError(f'Liander layer {layer} exceeded its record limit')
-    crs = source_crs(page)
-    return [(f"{layer}:{row['attributes']['OBJECTID']}",
-             *to_rd(row['geometry']['x'], row['geometry']['y'], crs, axis_order='xy'))
-            for row in page['features'] if row.get('geometry')]
-
-
-def bag_tile(bounds):
     rows = []
-    for row, crs in pages(BAG, {'f': 'json', 'bbox': ','.join(map(str, bounds)), 'limit': 1000}):
+    while True:
+        page = json_response(f'{LIANDER}/{layer}/query', {
+            **query, 'orderByFields': 'OBJECTID', 'resultOffset': len(rows),
+        })
+        crs = source_crs(page)
+        features = page['features']
+        rows.extend((f"{layer}:{row['attributes']['OBJECTID']}",
+                     *to_rd(row['geometry']['x'], row['geometry']['y'], crs, axis_order='xy'))
+                    if row.get('geometry') else None for row in features)
+        if not page.get('exceededTransferLimit'):
+            break
+        if not features:
+            raise ValueError(f'Empty page in Liander layer {layer}')
+    located = [row for row in rows if row]
+    if len({row[0] for row in located}) != len(located):
+        raise ValueError(f'Repeated station IDs in Liander layer {layer}')
+    return located
+
+
+def bag_tile(bounds, *, rd=False):
+    rows = []
+    parameters = {'f': 'json', 'bbox': ','.join(map(str, bounds)), 'limit': 1000}
+    tile = box(*bounds) if rd else None
+    if rd:
+        crs_uri = 'http://www.opengis.net/def/crs/EPSG/0/28992'
+        parameters.update({'bbox-crs': crs_uri, 'crs': crs_uri})
+    options = {'timeout': 10, 'attempts': 2} if rd else {}
+    for row, crs in pages(BAG, parameters, default_crs=RD if rd else None, **options):
         props = row['properties']
         if props.get('status') not in STANDING or not row.get('geometry'):
             continue
         polygon = geom_rd(row['geometry'], crs)
         if isinstance(polygon, Polygon):
+            if tile is not None and not tile.intersects(box(*polygon.bounds)):
+                raise ValueError('PDOK BAG returned a footprint outside the requested RD tile')
             rows.append((props['identificatie'], mapping(polygon)))
     return rows
 
@@ -113,6 +135,7 @@ def cabinets(bounds):
                                 'plus_type': 'elektrakast', 'limit': 1000}):
         p = row['properties']
         if (p.get('eind_registratie') is not None or p.get('eind_geldigheid') is not None
+                or p.get('status') not in (None, 'bestaand')
                 or p.get('plus_type') != 'elektrakast' or not row.get('geometry')):
             continue
         geom = geom_rd(row['geometry'], crs)
@@ -131,21 +154,56 @@ def osm_building_tags(candidates):
     return {"elements": rows}
 
 
-def snapshot(directory, nearby, day):
-    frame, bounds, rd_bounds = nearby
-    west, south, east, north = frame.geographic_bounds(bounds)
-    lon = [west + i * (east - west) / 6 for i in range(7)]
-    lat = [south + i * (north - south) / 5 for i in range(6)]
-    tiles = [(w, s, e, n) for w, e in zip(lon, lon[1:]) for s, n in zip(lat, lat[1:])]
+def snapshot(directory, frame, scene_bounds, playable, day, *, municipality=False, bag_cache=None):
+    rd_area = transform(playable, frame.scene_to_rd, interleaved=False)
+    west, south, east, north = frame.geographic_bounds(scene_bounds)
     directory.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(max_workers=8) as pool:
-        source = pool.map(partial(stations, rd_bounds=rd_bounds), (642, 643))
+        source = pool.map(partial(stations, rd_bounds=rd_area.bounds), (642, 643))
         cabinet_task = pool.submit(cabinets, (west, south, east, north))
-        station_rows = [row for rows in source for row in rows]
-        bag_rows = dict(pair for tile in pool.map(bag_tile, tiles) for pair in tile)
+        station_rows = [row for rows in source for row in rows if rd_area.covers(Point(*row[1:]))]
+        if municipality:
+            # Only BAG footprints within 0.8 m of a station can join. Fetch the
+            # source tiles needed for that test, including both sides of a tile edge.
+            size = 2000
+            origins = sorted({(math.floor(e / size) * size, math.floor(n / size) * size)
+                              for _, x, y in station_rows
+                              for e in (x - 0.8, x + 0.8) for n in (y - 0.8, y + 0.8)})
+
+            stations_by_area = STRtree([Point(*row[1:]) for row in station_rows])
+            print(f'{len(station_rows)} Liander station points across {len(origins)} BAG query cells', flush=True)
+
+            def query_bag(x, y, width):
+                try:
+                    return bag_tile((x, y, x + width, y + width), rd=True)
+                except OSError:
+                    if width <= 250:
+                        raise
+                    half = width // 2
+                    return [row for a in (x, x + half) for b in (y, y + half)
+                            if len(stations_by_area.query(box(a - .8, b - .8, a + half + .8, b + half + .8)))
+                            for row in query_bag(a, b, half)]
+
+            def read_bag(origin):
+                x, y = origin
+                cached = bag_cache and bag_cache / f'bag-rd-{x}-{y}.json.gz'
+                if cached and cached.exists():
+                    return read_json(cached)
+                target = directory / f'bag-rd-{x}-{y}.json.gz'
+                if not target.exists():
+                    rows = query_bag(x, y, size)
+                    write_json(target, rows)
+                return read_json(target)
+
+            bag_rows = dict(pair for tile in pool.map(read_bag, origins) for pair in tile)
+        else:
+            lon = [west + i * (east - west) / 6 for i in range(7)]
+            lat = [south + i * (north - south) / 5 for i in range(6)]
+            tiles = [(w, s, e, n) for w, e in zip(lon, lon[1:]) for s, n in zip(lat, lat[1:])]
+            bag_rows = dict(pair for tile in pool.map(bag_tile, tiles) for pair in tile)
         report = {
-            'date': day, 'horizontalCrs': RD, 'bounds': bounds, 'stations': station_rows,
-            'bag': bag_rows, 'cabinets': cabinet_task.result(),
+            'date': day, 'horizontalCrs': RD, 'bounds': scene_bounds, 'stations': station_rows,
+            'bag': bag_rows, 'cabinets': cabinet_task.result(), 'municipality': municipality,
         }
     if not station_rows or not bag_rows:
         raise ValueError('The station and BAG source snapshots must both contain data')
@@ -153,8 +211,7 @@ def snapshot(directory, nearby, day):
     print(f'Saved {len(station_rows)} station rows and {len(bag_rows)} BAG footprints', flush=True)
 
 
-def source_fitted_candidates(scene, frame, data):
-    playable = box(*scene['meta']['bounds'])
+def source_fitted_candidates(scene, frame, data, playable):
     bag_polygons = {bid: shape(raw) for bid, raw in data['bag'].items()}
     bag_ids = list(bag_polygons)
     bag_shapes = list(bag_polygons.values())
@@ -295,14 +352,17 @@ def cabinet_clearance(scene, frame, area, directory):
     return walk_obstacles(directory, frame, scene, detail, evidence)[0]
 
 
-def build(data, candidates, unresolved, frame, areas, review, directory, fetch_roofs, obstacles, osm_tags):
+def build(data, candidates, unresolved, frame, areas, review, directory, fetch_roofs, obstacles, osm_tags, retained):
     features, accepted = [], []
     withheld = set(review.get('withheld', []))
+    houses = {bid for bid in candidates if f'utility:{bid}' not in retained}
     with ThreadPoolExecutor(max_workers=6) as pool:
-        confirmed = [(bid, row) for bid, row in sorted(review['houses'].items()) if bid in candidates]
+        confirmed = [(bid, row) for bid, row in sorted(review['houses'].items()) if bid in houses]
         roofs = dict(zip((bid for bid, _ in confirmed),
                          pool.map(lambda bid: roof_height(directory, bid, fetch_roofs), (bid for bid, _ in confirmed))))
     for bid, candidate in candidates.items():
+        if bid not in houses:
+            continue
         evidence = review['houses'].get(bid)
         footprint = candidate['footprint']
         if evidence and evidence['center'] != [round(x, 1) for x in footprint.centroid.coords[0]]:
@@ -337,19 +397,28 @@ def build(data, candidates, unresolved, frame, areas, review, directory, fetch_r
             feature["door"] = [frontage, .28]
         features.append(feature)
         accepted.append({**feature, 'liander': candidate['stationIds'], 'imageryLayer': review['imageryLayer'],
-                         'reviewDate': review['date'], 'heightSource': '3DBAG NAP' if base is not None else 'estimated default',
+                         'reviewDate': evidence.get('date', review['date']), 'heightSource': '3DBAG NAP' if base is not None else 'estimated default',
                          'styleSource': evidence.get('styleSource', 'generic exterior'),
                          'cropBoundsRd': photo_bounds(footprint), 'osmBagRefVerified': tags.get('ref:bag') == bid,
                          **({'streetSource': evidence['streetSource']} if 'streetSource' in evidence else {})})
     for bid in sorted(set(review['houses']) - set(candidates)):
-        unresolved.append({'bagId': bid, 'reason': 'reviewed-footprint-no-longer-matches'})
+        if f'utility:{bid}' not in retained:
+            unresolved.append({'bagId': bid, 'reason': 'reviewed-footprint-no-longer-matches'})
+    utility_houses = [Polygon(row['polygon'], row['holes']) for row in [*retained.values(), *features]
+                      if row['type'] == 'utilityHouse']
+    obstacles['utility-house'] = STRtree(utility_houses)
     for bid, (x, y, level) in sorted(data['cabinets'].items()):
+        if f'elektrakast:{bid}' in retained:
+            continue
         sx, sz = frame.rd_to_scene(x, y)
         if not areas.covers(Point(sx, sz)) or level != 0:
             unresolved.append({'source': bid, 'reason': 'cabinet-outside-playable-or-elevated'})
             continue
         width, depth = .70, .35
         hull = box(sx - width / 2 - .04, sz - depth / 2 - .04, sx + width / 2 + .04, sz + depth / 2 + .04)
+        if not areas.covers(hull):
+            unresolved.append({'source': bid, 'reason': 'cabinet-crosses-map-edge'})
+            continue
         blocked = [name for name, index in obstacles.items() if len(index.query(hull, predicate="intersects"))]
         if blocked:
             unresolved.append({"source": bid, "reason": "cabinet-clearance", "obstacles": blocked})
@@ -373,43 +442,74 @@ def main():
     parser.add_argument('snapshot', type=Path)
     parser.add_argument('--date', default=date.today().isoformat())
     parser.add_argument('--fetch', action='store_true', help='fetch and save Liander, BAG and BGT in the snapshot')
+    parser.add_argument('--municipality', action='store_true', help='Use the complete played Gemeente Ede boundary')
+    parser.add_argument('--bag-cache', type=Path, help='Reuse active BAG footprints from native 2 km tiles')
+    parser.add_argument('--osm-source', type=Path, help='Read tags from an existing complete OSM extract')
     parser.add_argument('--contact-sheets', action='store_true', help='fetch and label local photo crops for review')
     parser.add_argument('--imagery-layer', default='2026_orthoHR')
     parser.add_argument('--fetch-roofs', action='store_true')
+    parser.add_argument('--preserve', type=Path, help='Carry verified utility features forward without changing their geometry')
+    parser.add_argument('--preserve-report', type=Path, help='Carry audit provenance for the preserved features')
     parser.add_argument('--evidence', type=Path, default=ROOT / 'tools/data/ede-utility-review.json')
     parser.add_argument('--asset', type=Path, default=ROOT / 'assets/ede-utility-detail.json.gz')
     parser.add_argument('--report', type=Path, default=ROOT / 'tools/data/ede-utility-detail.audit.json')
     args = parser.parse_args()
-    scene = load_scene()
+    scene = load_playable_scene() if args.municipality else load_scene()
     bounds = scene['meta']['bounds']
     frame = Frame(scene['meta']['lonLatAffine'])
-    area = box(*bounds)
-    rd_bounds = transform(area, frame.scene_to_rd, interleaved=False).bounds
+    area = load_playable_boundary() if args.municipality else box(*bounds)
     if args.fetch:
-        snapshot(args.snapshot, (frame, bounds, rd_bounds), args.date)
+        snapshot(args.snapshot, frame, bounds, area, args.date, municipality=args.municipality, bag_cache=args.bag_cache)
     data = read_json(args.snapshot / 'utility-sources.json.gz')
-    if data['bounds'] != bounds or data['horizontalCrs'] != RD or data['date'] != args.date:
+    if (data['bounds'] != bounds or data['horizontalCrs'] != RD or data['date'] != args.date
+            or data.get('municipality', False) != args.municipality):
         raise ValueError('Snapshot scene bounds, CRS or date do not match the requested bake')
-    candidates, unresolved = source_fitted_candidates(scene, frame, data)
+    candidates, unresolved = source_fitted_candidates(scene, frame, data, area)
     tag_path = args.snapshot / "osm-building-tags.json"
-    if args.fetch:
+    if args.osm_source:
+        wanted = {row['osm']['id'] for row in candidates.values() if row['osm']}
+        tags = [row for row in read_json(args.osm_source)['elements']
+                if row['type'] == 'way' and f"w{row['id']}" in wanted]
+        write_json(tag_path, {'elements': tags})
+    elif args.fetch:
         write_json(tag_path, osm_building_tags(candidates))
     osm_tags = {f"w{row['id']}": row.get("tags", {}) for row in read_json(tag_path)["elements"]}
+    review = read_json(args.evidence)
     if args.contact_sheets:
-        ordered = contact_sheets(args.snapshot, candidates, args.imagery_layer)
+        if args.municipality:
+            reviewed = set(review['houses']) | set(review.get('withheld', []))
+            candidates = {bid: row for bid, row in candidates.items() if bid not in reviewed}
         write_json(args.snapshot / 'utility-candidates.json', {bid: {
             'center': [round(x, 1) for x in row['footprint'].centroid.coords[0]],
             'osm': (row['osm'] or {}).get('id'), 'kind': (row['osm'] or {}).get('kind'),
             'tags': osm_tags.get((row['osm'] or {}).get('id'), {}),
             'area': round(row['footprint'].area, 2), 'stations': row['stationIds'],
-            } for bid, row in candidates.items() if bid in ordered})
+            } for bid, row in candidates.items()})
+        contact_sheets(args.snapshot, candidates, args.imagery_layer)
         print(f'Review {len(candidates)} candidates in the contact sheets.')
         return
-    review = read_json(args.evidence)
     if review.get("version") != 1:
         raise ValueError("Unsupported exterior review format")
+    retained = {}
+    previous_audit = {}
+    if args.preserve:
+        previous = read_json(args.preserve)
+        retained = {row['id']: row for row in previous['features']}
+        if previous['version'] != 1 or len(retained) != len(previous['features']):
+            raise ValueError('Invalid retained utility features')
+        for row in retained.values():
+            geometry = Polygon(row['polygon'], row['holes']) if row['type'] == 'utilityHouse' else Point(row['position'])
+            if not area.covers(geometry):
+                raise ValueError(f"Retained utility {row['id']} is outside the playable area")
+        if args.preserve_report:
+            previous_audit = {row['id']: row for row in read_json(args.preserve_report)['accepted']}
     asset, audit = build(data, candidates, unresolved, frame, area, review, args.snapshot, args.fetch_roofs,
-                         cabinet_clearance(scene, frame, area, args.snapshot), osm_tags)
+                         cabinet_clearance(scene, frame, area, args.snapshot), osm_tags, retained)
+    asset['features'] = [*retained.values(), *asset['features']]
+    audit['accepted'] = [*(previous_audit.get(key, row) for key, row in retained.items()), *audit['accepted']]
+    if retained:
+        audit['retainedReviewed'] = len(retained)
+        audit['retainedAssetSha256'] = sha256(args.preserve.read_bytes()).hexdigest()
     audit['snapshotSha256'] = sha256((args.snapshot / 'utility-sources.json.gz').read_bytes()).hexdigest()
     write_json(args.asset, asset)
     write_json(args.report, audit)

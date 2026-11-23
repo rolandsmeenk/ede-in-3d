@@ -21,18 +21,22 @@ from shapely import STRtree, make_valid, orient_polygons, set_precision, union_a
 from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Polygon, shape
 
-from ede_map import load_playable_boundary, load_playable_scene
+from ede_map import load_coverage_polygon, load_playable_boundary, load_playable_scene, read_packed
 from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
-API = 'https://api.pdok.nl/lv/bgt/ogc/v1'
+API = 'https://api.pdok.nl/kadaster/bgt/ogc/v1'
 COLLECTIONS = (
     'overbruggingsdeel', 'kunstwerkdeel_lijn', 'kunstwerkdeel_punt', 'kunstwerkdeel_vlak',
     'scheiding_lijn', 'scheiding_vlak', 'overigbouwwerk', 'pand',
 )
 WALL_WIDTHS = {'geluidsscherm': 0.32, 'keermuur': 0.45, 'damwand': 0.34, 'kademuur': 0.45, 'muur': 0.36}
 CIVIL_OWNERS = {'L0002', 'L0004', 'P0025'}  # Rijkswaterstaat, ProRail, Gelderland
-SMALL_WIND_TURBINE = 'G0228.21950daf66f24cff8e1cecb19522613c'
+SMALL_TURBINE_HUBS = {
+    'G0228.21950daf66f24cff8e1cecb19522613c': 6,
+    # AHN 0.5 m DSM samples at RD (173837.04, 460396.17) reach 16 m above ground, including the rotor.
+    'G0228.3ee8eb0533604ce9b05475f200118735': 11,
+}
 
 
 @dataclass
@@ -44,7 +48,7 @@ class Record:
     estimated_type: bool = False
 
 
-def fetch_tile(collection, bounds, day):
+def fetch_tile(collection, bounds, day, timeout=40, retries=2):
     query = urlencode({
         'bbox': ','.join(f'{value:.8f}' for value in bounds),
         'datetime': f'{day}T00:00:00Z', 'limit': 1000, 'f': 'json',
@@ -55,7 +59,7 @@ def fetch_tile(collection, bounds, day):
         if url in pages:
             raise ValueError(f'Repeated PDOK page for {collection}')
         pages.add(url)
-        raw = subprocess.check_output(['curl', '-fsSL', '--max-time', '40', '--retry', '2', url])
+        raw = subprocess.check_output(['curl', '-fsSL', '--max-time', str(timeout), '--retry', str(retries), url])
         page = json.loads(raw)
         for feature in page['features']:
             props = feature['properties']
@@ -69,16 +73,53 @@ def fetch_tile(collection, bounds, day):
     return collection, features
 
 
-def snapshot(directory, scene, day):
+def snapshot(directory, scene, day, area=None):
     directory.mkdir(parents=True, exist_ok=True)
-    south, west, north, east = scene['meta']['geographicBounds']
-    work = [(name, (west, south, east, north), day) for name in COLLECTIONS if name != 'pand']
-    xs = [west + (east - west) * i / 6 for i in range(7)]
-    ys = [south + (north - south) * i / 6 for i in range(7)]
-    work.extend(('pand', (x0, y0, x1, y1), day) for y0, y1 in zip(ys, ys[1:]) for x0, x1 in zip(xs, xs[1:]))
+    cache = directory / str(day)
+    cache.mkdir(exist_ok=True)
+    project = SceneAffine(scene['meta']['lonLatAffine'])
+    if area is None:
+        south, west, north, east = scene['meta']['geographicBounds']
+        area = load_playable_boundary()
+    else:
+        west, south, east, north = project.geographic_bounds(area.bounds)
+
+    def intersects(bounds):
+        x0, y0, x1, y1 = bounds
+        return area.intersects(Polygon([project.lon_lat_to_scene(x, y) for x, y in
+                                        [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]]))
+
+    def subdivisions(bounds, divisions):
+        x0, y0, x1, y1 = bounds
+        xs = [x0 + (x1 - x0) * i / divisions for i in range(divisions + 1)]
+        ys = [y0 + (y1 - y0) * i / divisions for i in range(divisions + 1)]
+        for bottom, top in zip(ys, ys[1:]):
+            for left, right in zip(xs, xs[1:]):
+                cell = left, bottom, right, top
+                if intersects(cell):
+                    yield cell
+
+    def request(job):
+        name, bounds = job
+        key = '-'.join(f'{v:.8f}' for v in bounds)
+        file = cache / f'{name}-{key}.json'
+        if file.exists():
+            return name, json.loads(file.read_bytes())
+        try:
+            _, features = fetch_tile(name, bounds, day, timeout=18, retries=1)
+        except subprocess.CalledProcessError:
+            if bounds[2] - bounds[0] < .009:
+                raise
+            features = [row for cell in subdivisions(bounds, 2) for row in request((name, cell))[1]]
+        file.write_text(json.dumps(features, ensure_ascii=False, separators=(',', ':')))
+        return name, features
+
     data = {name: {} for name in COLLECTIONS}
+    dense = {'scheiding_lijn', 'scheiding_vlak', 'overigbouwwerk', 'pand'}
+    work = [(name, bounds) for name in COLLECTIONS
+            for bounds in subdivisions((west, south, east, north), 6 if name in dense else 3)]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for name, features in pool.map(lambda args: fetch_tile(*args), work):
+        for name, features in pool.map(request, work):
             for feature in features:
                 props = feature['properties']
                 key = props['lokaal_id'], props.get('tijdstip_registratie')
@@ -245,23 +286,59 @@ def encode(record):
         else:
             span, base, angle = max(3.5, extent.length), max(3.5, extent.length), 0
         result['tower'] = [round(v, 2) for v in (center.x, center.y, span, base, angle)]
-    if record.kind == 'turbine' and SMALL_WIND_TURBINE in record.ids:
-        # The local AHN surface is about 6 m above ground. Hub and rotor dimensions are estimates.
-        result['hubHeight'] = 6
+    if record.kind == 'turbine':
+        for identity in record.ids:
+            if identity in SMALL_TURBINE_HUBS:
+                result['hubHeight'] = SMALL_TURBINE_HUBS[identity]
+                break
     return result
 
 
-def build(scene, directory, day):
+def exterior_building_footprints():
+    for building in read_packed('assets/ede-bag-exterior/footprints.json.gz'):
+        for outer, *holes in building['polygons']:
+            yield make_valid(Polygon(pairs(outer), [pairs(hole) for hole in holes]))
+
+
+def merge_belt(previous, extension):
+    structures = previous['structures']
+    owners = {identity: record for record in structures for identity in record['ids']}
+    for record in extension['structures']:
+        shared = next((owners[identity] for identity in record['ids'] if identity in owners), None)
+        if shared is None:
+            structures.append(record)
+            owners.update((identity, record) for identity in record['ids'])
+            continue
+        if shared['kind'] != record['kind'] or shared['layer'] != record['layer']:
+            raise ValueError(f'Structure classification changed between municipality and belt: {record["ids"]}')
+        shared['polygons'].extend(record['polygons'])
+        for identity in record['ids']:
+            if identity not in owners:
+                shared['ids'].append(identity)
+                owners[identity] = shared
+    previous['source']['exterior'] = extension['source']
+    previous['counts'] = dict(sorted(Counter(item['kind'] for item in structures).items()))
+    previous['omitted'] = dict(sorted((Counter(previous['omitted']) + Counter(extension['omitted'])).items()))
+    covered = set(previous.get('coveredByBuildings', ())) | set(extension.get('coveredByBuildings', ()))
+    previous['coveredByBuildings'] = sorted(covered - owners.keys())
+    return previous
+
+
+def build(scene, directory, day, exterior=None):
     affine = scene['meta']['lonLatAffine']
-    area = load_playable_boundary()
+    area = load_playable_boundary() if exterior is None else exterior
+    west, south, east, north = SceneAffine(affine).geographic_bounds(area.bounds)
     road_features = [r for r in [*scene['roads'], *scene['railways']] if not r.get('tunnel') and len(r['pts']) >= 4]
     bridge_routes = STRtree([LineString(pairs(r['pts'])) for r in road_features if r.get('bridge')])
     corridor = STRtree([LineString(pairs(r['pts'])).buffer(
         (r.get('width', 3) / 2 + 0.25), cap_style='flat') for r in road_features if not r.get('bridge')])
     footprints = [make_valid(Polygon(pairs(b['ring']), [pairs(h) for h in b.get('holes', [])]))
                   for b in scene['buildings'] if len(b['ring']) >= 6 and not b.get('part')]
+    if exterior is not None:
+        footprints.extend(exterior_building_footprints())
     selected, source_counts, source_hashes = {}, {}, {}
     omitted = Counter()
+    covered_by_buildings = []
     for name, features, digest in read_snapshot(directory):
         source_counts[name], source_hashes[name] = len(features), digest
         for identity, feature in sorted(features.items()):
@@ -280,7 +357,7 @@ def build(scene, directory, day):
                     Record(kind, props.get('relatieve_hoogteligging') or 0, (identity,), form.intersection(area), estimated_type))
             elif name == 'overbruggingsdeel':
                 omitted['unclassifiedCrossingComponent'] += 1
-    if not footprints or not selected.get('deck') or not selected.get('platform'):
+    if exterior is None and (not footprints or not selected.get('deck') or not selected.get('platform')):
         raise ValueError('Required BGT structure or building data is missing')
 
     footprint_index = STRtree(footprints)
@@ -294,6 +371,7 @@ def build(scene, directory, day):
                 buildings = nearby_union(footprint_index, geom)
                 if kind in {'tank', 'shed', 'closedShed'} and geom.intersection(buildings).area > geom.area * 0.4:
                     omitted['coveredByBuilding'] += 1
+                    covered_by_buildings.extend(record.ids)
                     continue
                 geom = geom.difference(buildings)
             if kind in {'civilWall', 'retainingWall'}:
@@ -320,7 +398,10 @@ def build(scene, directory, day):
         if item['kind'] not in {'abutment', 'pier', 'foundation'}:
             continue
         footing = union_all([Polygon(pairs(outer), [pairs(h) for h in holes]) for outer, *holes in item['polygons']])
-        index = int(min(deck_index.query_nearest(footing)))
+        nearest = deck_index.query_nearest(footing)
+        if not len(nearest):
+            continue
+        index = int(min(nearest))
         if deck_index.geometries[index].distance(footing) <= 9:
             item['deck'] = decks[index]['ids'][0]
 
@@ -330,16 +411,18 @@ def build(scene, directory, day):
     return {
         'version': 1,
         'source': {'url': f'{API}/collections?f=html', 'license': 'CC0 1.0', 'date': str(day),
-                   'municipality': scene['meta']['municipality']['id'], 'geographicBounds': scene['meta']['geographicBounds'],
+                   'municipality': scene['meta']['municipality']['id'],
+                   'geographicBounds': [south, west, north, east] if exterior is not None else scene['meta']['geographicBounds'],
                    'collections': source_counts, 'sha256': source_hashes},
         'uncertainty': {
             'elevation': 'AHN DTM ground, inferred structure heights unless externally documented',
             'decks': 'Untyped raised bridge components are treated as decks; untyped ground pieces are excluded',
             'walls': 'BGT civil muur is generic wall; only mapped keermuur, damwand and kademuur are classified as retaining',
-            'turbines': 'Maanderbroek Siemens SWT-3.2-101, 99.5 m hub and 101 m rotor. Small Lunteren turbine model scaled from AHN.',
+            'turbines': 'Maanderbroek Siemens SWT-3.2-101, 99.5 m hub and 101 m rotor. Small Lunteren and northern turbines scaled from local AHN observations.',
             'turbineDimensionsSource': 'https://verwaard-bv.nl/raedthuys-windpark-a30-a12-maanderbroek/',
         },
-        'counts': dict(sorted(counts.items())), 'omitted': dict(sorted(omitted.items())), 'structures': items,
+        'counts': dict(sorted(counts.items())), 'omitted': dict(sorted(omitted.items())),
+        'coveredByBuildings': sorted(covered_by_buildings), 'structures': items,
     }
 
 
@@ -348,12 +431,17 @@ def main():
     parser.add_argument('directory', type=Path)
     parser.add_argument('--date', type=date.fromisoformat, required=True)
     parser.add_argument('--fetch', action='store_true')
+    parser.add_argument('--retain-structures', type=Path, help='Keep the existing municipal asset and add source structures to the 500 m belt')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-bgt.json')
     args = parser.parse_args()
     scene = load_playable_scene()
+    exterior = (load_coverage_polygon('buildingBoundary').difference(load_coverage_polygon('playableBoundary'))
+                if args.retain_structures else None)
     if args.fetch:
-        snapshot(args.directory, scene, args.date)
-    result = build(scene, args.directory, args.date)
+        snapshot(args.directory, scene, args.date, exterior)
+    result = build(scene, args.directory, args.date, exterior)
+    if args.retain_structures:
+        result = merge_belt(json.loads(args.retain_structures.read_bytes()), result)
     metadata = {key: value for key, value in result.items() if key != 'structures'}
     prefix = json.dumps(metadata, ensure_ascii=False, indent=2).removesuffix('\n}')
     rows = ',\n'.join('    ' + json.dumps(row, ensure_ascii=False, separators=(',', ':'))

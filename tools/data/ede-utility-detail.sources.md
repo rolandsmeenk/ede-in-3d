@@ -22,9 +22,29 @@ Of the 64 ordinary houses, 63 have 3DBAG height measurements and 15 ship with a 
 
 The [placement audit](ede-utility-detail.audit.json) retains match IDs, image dates and crop bounds, exterior style evidence and rejected candidates. [Manual review](ede-utility-review.json) records the decisions. The replay asset is 4,200 compressed bytes. The source snapshot, photos and measured 3DBAG responses stay in the local offline cache.
 
-## Refresh
+## Full municipality refresh
 
-Fetch the dated source snapshot and review the generated aerial contact sheets. Retain the imagery and sources locally. Update the review ledger for changed footprints and new approvals before rebuilding. The current import uses the original Ede bounds with verified utility records, so covered railway and terrain-only extensions keep their existing scenery.
+The 23 November 2026 snapshot covers the full GM0228 polygon. It matched 670 medium-voltage and 171 low-voltage station points against 96,743 standing BAG footprints. The importer follows Liander's pages and requests BAG tiles around the station points. It reuses native RD New footprint tiles and subdivides slow requests.
+
+The expanded asset contains **83 utility houses and 22 electrical cabinets**. All 66 previously reviewed placements and their original audit rows carry forward unchanged. The refresh added 19 houses with separate roofs visible in 2026 aerial imagery and exact OSM BAG references. Eighteen use measured 3DBAG heights and one uses the generic height. Nine have simplified pitched roofs. The exterior finishes are approximate. Twenty additional active BGT cabinets passed the ground-level travel, building and water clearance checks. Both historic custom models retain their separate placement. The new replay asset is 6,085 compressed bytes. [Placement audit](ede-utility-detail.audit.json) · [Aerial review ledger](ede-utility-review.json)
+
+Use a separate dated cache. Review the new aerial sheets and record approvals before running the second command. For staged output, set `--asset` and `--report` to files outside the checked-in inventories.
+
+```sh
+uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 --with pillow \
+  python -B tools/build-ede-utility-detail.py /tmp/ede-full-utility \
+  --date 2026-11-23 --municipality --fetch --contact-sheets \
+  --osm-source /tmp/ede-expansion/osm-gm0228-detail.json
+uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 \
+  python -B tools/build-ede-utility-detail.py /tmp/ede-full-utility \
+  --date 2026-11-23 --municipality --fetch-roofs \
+  --preserve assets/ede-utility-detail.json.gz \
+  --preserve-report tools/data/ede-utility-detail.audit.json
+```
+
+## Original rectangle replay
+
+Use the 21 November 2026 snapshots and review ledger to reproduce the original city-rectangle bake.
 
 ```sh
 uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 --with pillow \

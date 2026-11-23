@@ -3,6 +3,7 @@
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import gzip
 import json
 import math
 from pathlib import Path
@@ -13,6 +14,8 @@ import numpy as np
 from PIL import Image
 import rasterio
 from scipy.ndimage import distance_transform_edt, map_coordinates
+from shapely.geometry import MultiPolygon, Polygon, box
+from shapely.prepared import prep
 
 from ede_gis import Frame
 from ede_map import load_scene
@@ -21,12 +24,14 @@ from ede_scene import SCENE_NAP_ORIGIN
 
 ROOT = Path(__file__).resolve().parents[1]
 COVERAGE = ROOT / 'tools/data/ede-outer-coverage.json'
+FULL_COVERAGE = ROOT / 'assets/ede-coverage-v1.json'
 WCS = 'https://service.pdok.nl/rws/ahn/wcs/v1_0'
 WMS = 'https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0'
 SOURCE_SIZE = 2000
 SOURCE_PIXEL = 2
 STEP = 5
-GROUND_STEP = 10
+LEGACY_GROUND_STEP = 10
+GROUND_STEP = 40
 CELLS = 50
 LEAF = STEP * CELLS
 ROOT_SIZE = LEAF * 16
@@ -174,9 +179,31 @@ def scene_grid(frame, bounds, sources, source_bounds, legacy):
     return np.rint(heights).astype('<i2'), colors
 
 
-def write_tiles(directory, bounds, heights, colors, legacy_bounds, retained=None):
+def coverage_polygon(rings):
+    return MultiPolygon([Polygon(list(zip(polygon[0][::2], polygon[0][1::2])),
+                                [list(zip(ring[::2], ring[1::2])) for ring in polygon[1:]])
+                         for polygon in rings])
+
+
+def write_field(path, bounds, heights, step):
+    rows, columns = heights.shape
+    compressed_field = path.suffix == '.gz'
+    fields = AHN_HEADER.pack(b'AHN2' if compressed_field else b'AHN1', columns, rows, *bounds[:2], step, SCENE_NAP_ORIGIN)
+    if compressed_field:
+        encoded = heights.copy()
+        encoded[:, 1:] -= heights[:, :-1]
+        with path.open('wb') as raw:
+            with gzip.GzipFile(filename='', fileobj=raw, mode='wb', compresslevel=6, mtime=0) as compressed:
+                compressed.write(fields)
+                compressed.write(encoded.tobytes())
+    else:
+        path.write_bytes(fields + heights.tobytes())
+
+
+def write_tiles(directory, bounds, heights, colors, legacy_bounds, retained=None, coverage=None):
     west, south, east, north = bounds
     tiles, roots = {}, []
+    mask = prep(coverage_polygon(coverage['terrainBoundary'])) if coverage else None
     dtype = np.dtype([('height', '<i2'), ('rgb', 'u1', (3,))])
 
     def hidden(x, z, size):
@@ -185,6 +212,8 @@ def write_tiles(directory, bounds, heights, colors, legacy_bounds, retained=None
 
     def emit(x, z, size, root=False):
         if x >= east or z >= north or x + size <= west or z + size <= south or hidden(x, z, size):
+            return None
+        if mask and not mask.intersects(box(x, z, x + size, z + size)):
             return None
         half = size // 2
         if x < west or z < south or x + size > east or z + size > north:
@@ -205,6 +234,14 @@ def write_tiles(directory, bounds, heights, colors, legacy_bounds, retained=None
             coarse = sample_triangles(data['height'], axis, axis[:, np.newaxis])
             error = math.ceil(np.max(np.abs(coarse - samples)) - 1e-9) / 100
         entry = dict(bounds=[x, z, x + size, z + size], error=error, bytes=data.nbytes)
+        if coverage:
+            entry['range'] = [int(samples.min()), int(samples.max())]
+            if root:
+                locations = np.linspace(0, samples.shape[0] - 1, 13)
+                overview = sample_triangles(samples, locations, locations[:, np.newaxis])
+                axis = np.arange(samples.shape[0]) * 12 / (samples.shape[0] - 1)
+                estimate = sample_triangles(overview, axis, axis[:, np.newaxis])
+                entry['overviewError'] = math.ceil(np.max(np.abs(estimate - samples))) / 100
         if stride > 1:
             children = [child for dx, dz in ((0, 0), (half, 0), (0, half), (half, half))
                         if (child := emit(x + dx, z + dz, half))]
@@ -219,7 +256,8 @@ def write_tiles(directory, bounds, heights, colors, legacy_bounds, retained=None
     for x in range(west // ROOT_SIZE * ROOT_SIZE, east, ROOT_SIZE):
         for z in range(south // ROOT_SIZE * ROOT_SIZE, north, ROOT_SIZE):
             emit(x, z, ROOT_SIZE, root=True)
-    overview_pixels = colors[::GROUND_STEP // STEP, ::GROUND_STEP // STEP]
+    ground_step = GROUND_STEP if coverage else LEGACY_GROUND_STEP
+    overview_pixels = colors[::ground_step // STEP, ::ground_step // STEP]
     if retained is not None:
         previous, prior_heights, prior_colors = retained
         tiles = {**previous['tiles'], **tiles}
@@ -228,14 +266,39 @@ def write_tiles(directory, bounds, heights, colors, legacy_bounds, retained=None
         bounds = [west, south, east, north]
         heights = np.concatenate((heights[:-1], prior_heights))
         overview_pixels = np.concatenate((overview_pixels[:-1], prior_colors))
-    rows, columns = heights.shape
-    (directory / 'collision.bin').write_bytes(
-        AHN_HEADER.pack(b'AHN1', columns, rows, west, south, STEP, SCENE_NAP_ORIGIN) + heights.tobytes())
+    if coverage:
+        # Keep collision synchronous for draping the map and seating the 500 m BAG collar.
+        bag = coverage_polygon(coverage['buildingBoundary']).bounds
+        collision_bounds = aligned_bounds([(bag[0], bag[1]), (bag[2], bag[3])], STEP, padding=100)
+        left, top, right, bottom = collision_bounds
+        collision = heights[(top - south) // STEP:(bottom - south) // STEP + 1,
+                            (left - west) // STEP:(right - west) // STEP + 1]
+        write_field(directory / 'collision.bin.gz', collision_bounds, collision, STEP)
+        stride = ground_step // STEP
+        write_field(directory / 'overview.bin', bounds, heights[::stride, ::stride], ground_step)
+        # Root vertices match the ground sample grid even where a root size is not a multiple of 40 m.
+        overview_heights = bytearray()
+        for name in roots:
+            x, z, e, s = tiles[name]['bounds']
+            axis = np.arange(13) / 12
+            columns = ((x - west) + axis * (e - x)) / STEP
+            rows = ((z - south) + axis * (s - z)) / STEP
+            overview_heights.extend(np.rint(sample_triangles(heights, columns, rows[:, None])).astype('<i2').tobytes())
+        (directory / 'roots.bin').write_bytes(overview_heights)
+    else:
+        write_field(directory / 'collision.bin', bounds, heights, STEP)
     overview = Image.fromarray(overview_pixels)
     overview.save(directory / 'ground.jpg', quality=88, optimize=True, subsampling=0)
-    ground = dict(minX=west, minZ=south, step=GROUND_STEP, width=overview.width, height=overview.height)
+    ground = dict(minX=west, minZ=south, step=ground_step, width=overview.width, height=overview.height)
     manifest = dict(version=1, napOrigin=SCENE_NAP_ORIGIN, bounds=bounds, roots=roots, tiles=tiles, ground=ground)
-    (directory / 'manifest.json').write_text(json.dumps(manifest, separators=(',', ':')) + '\n')
+    if coverage:
+        manifest.update(version=2, collisionBounds=collision_bounds, collisionFile='collision.bin.gz')
+    previous_path = directory / 'manifest.json'
+    previous = json.loads(previous_path.read_text())['tiles'] if coverage and previous_path.exists() else {}
+    previous_path.write_text(json.dumps(manifest, separators=(',', ':')) + '\n')
+    for name in previous.keys() - tiles.keys():
+        if len(name.split('_')) == 3 and all(value.lstrip('-').isdigit() for value in name.split('_')):
+            (directory / f'{name}.bin').unlink(missing_ok=True)
     print(f'Wrote {len(tiles)} terrain tiles in {len(roots)} roots', flush=True)
 
 
@@ -253,7 +316,7 @@ def retained_terrain(directory, bounds):
     heights = np.frombuffer(raw, dtype='<i2', offset=AHN_HEADER.size).reshape(rows, columns)
     with Image.open(directory / 'ground.jpg') as image:
         overview = np.array(image.convert('RGB'))
-    if overview.shape != ((south - edge) // GROUND_STEP + 1, (east - west) // GROUND_STEP + 1, 3):
+    if overview.shape != ((south - edge) // LEGACY_GROUND_STEP + 1, (east - west) // LEGACY_GROUND_STEP + 1, 3):
         raise ValueError('Retained colour grid does not match its manifest')
     return previous, heights, overview
 
@@ -282,17 +345,25 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-terrain-tiles')
     parser.add_argument('--retain-existing', action='store_true',
                         help='Append a northward strip to the existing output and reuse its tile payloads')
+    parser.add_argument('--coverage', type=Path, default=FULL_COVERAGE)
+    parser.add_argument('--legacy-extent', action='store_true', help='Reproduce the previous rectangular terrain bake')
+    parser.add_argument('--fetch-only', action='store_true', help='Download source rasters without rebuilding assets')
     args = parser.parse_args()
     args.cache.mkdir(parents=True, exist_ok=True)
     args.output.mkdir(parents=True, exist_ok=True)
     frame = Frame(load_scene()['meta']['lonLatAffine'])
     legacy = legacy_grid()
-    lat0, lon0, lat1, lon1 = json.loads(COVERAGE.read_text())['geographicBounds']
-    scene = [frame.lon_lat_to_scene(lon, lat) for lon in (lon0, lon1) for lat in (lat0, lat1)]
+    coverage = None if args.legacy_extent or args.retain_existing else json.loads(args.coverage.read_text())
     x0, z0, x1, z1 = legacy[0]
-    bounds = aligned_bounds([*scene, (x0, z0), (x1, z1)], LEAF)
-    # Complete the northern root so the edge does not create a row of extra overview batches.
-    bounds = (bounds[0], bounds[1] // ROOT_SIZE * ROOT_SIZE, *bounds[2:])
+    if coverage:
+        left, top, right, bottom = coverage_polygon(coverage['terrainBoundary']).bounds
+        # Every emitted root is aligned to the common quadtree grid.
+        bounds = aligned_bounds([(left, top), (right, bottom), (x0, z0), (x1, z1)], 1000)
+    else:
+        lat0, lon0, lat1, lon1 = json.loads(COVERAGE.read_text())['geographicBounds']
+        scene = [frame.lon_lat_to_scene(lon, lat) for lon in (lon0, lon1) for lat in (lat0, lat1)]
+        bounds = aligned_bounds([*scene, (x0, z0), (x1, z1)], LEAF)
+        bounds = (bounds[0], bounds[1] // ROOT_SIZE * ROOT_SIZE, *bounds[2:])
     retained = retained_terrain(args.output, bounds) if args.retain_existing else None
     if retained is not None:
         bounds = (*bounds[:3], retained[0]['bounds'][1])
@@ -300,11 +371,18 @@ def main():
     edge = [(x, z) for x in (a, c) for z in (b, d)]
     rd_bounds = aligned_bounds([frame.scene_to_rd(x, z) for x, z in edge], SOURCE_SIZE, STEP)
     print(f'Scene coverage {bounds}, PDOK cache bounds {rd_bounds}', flush=True)
+    if args.fetch_only:
+        west, south, east, north = rd_bounds
+        locations = [(x, y) for x in range(west, east, SOURCE_SIZE) for y in range(south, north, SOURCE_SIZE)]
+        with ThreadPoolExecutor(max_workers=12) as workers:
+            for _ in workers.map(lambda xy: source_tile(args.cache, *xy, args.offline), locations):
+                pass
+        return
     sources = join_source_tiles(args.cache, rd_bounds, args.offline)
     heights, colors = scene_grid(frame, bounds, sources, rd_bounds, legacy)
     if retained is not None:
         join_retained_edge(args.output, retained, heights, colors)
-    write_tiles(args.output, bounds, heights, colors, legacy[0], retained)
+    write_tiles(args.output, bounds, heights, colors, legacy[0], retained, coverage)
 
 
 if __name__ == '__main__':

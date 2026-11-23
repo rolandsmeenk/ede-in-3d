@@ -18,7 +18,10 @@ const suite = process.env.EDE_BENCH_SCENARIOS || 'standard';
 const screenshots = process.env.EDE_BENCH_SCREENSHOTS;
 const tileDelay = Number(process.env.EDE_BENCH_TILE_DELAY_MS || 0);
 const noHttpCache = process.env.EDE_BENCH_NO_HTTP_CACHE === '1';
+const forceWebGL = process.env.EDE_BENCH_BACKEND === 'webgl';
+const settleMs = Number(process.env.EDE_BENCH_SETTLE_MS ?? 600);
 const expansionOnly = suite === 'expansion';
+const municipalCoverage = suite === 'municipality-coverage';
 if (screenshots) await mkdir(screenshots, { recursive: true });
 
 function facadeWalk(name, a, b, distance, lookHeight) {
@@ -82,6 +85,16 @@ const shots = newLandmarks ? newLandmarks.flatMap(site => {
 ] : suite === 'bag' ? [
   { name: 'Fast helicopter pass', from: [-1400, 95, 660], to: [-515, 95, 848],
     look: [-940, 18, 860], lookTo: [-140, 17, 1035], waitForBag: true },
+] : municipalCoverage ? [
+  { name: 'Oude Kerk walking control', travel: ['person', -37, 20.02, 1.214] },
+  { name: 'Wekerom coverage control', from: [2600, 32, -7350], to: [2720, 37, -7358], look: [2740, 2, -7340] },
+  { name: 'Harskamp drive', roadArrival: ['car', 5494, -9250] },
+  { name: 'Bennekom walk', roadArrival: ['person', 339, 5154] },
+  { name: 'Former cutoff flight', from: [2600, 100, -6830], to: [5494, 90, -9250], look: [5750, 4, -9410], jump: true },
+  { name: 'Hoenderloo eastward flight', from: [13780, 100, -7600], to: [13929, 100, -7681],
+    look: [14650, 5, -7690], lookTo: [15150, 5, -7800] },
+  { name: 'Veenendaal gray building fringe', from: [-6540, 130, 155], to: [-6770, 140, 140],
+    look: [-7530, 8, 130], lookTo: [-7650, 8, 150] },
 ] : suite === 'municipal' ? [
   { name: 'De Oude Hofstede walk', from: [-594, 1.65, 3344], to: [-590, 1.65, 3350], look: [-578, 1.25, 3371] },
   { name: 'De Oude Hofstede aerial', from: [-624, 39, 3356], to: [-617, 27, 3360], look: [-577, 1, 3379] },
@@ -230,6 +243,7 @@ async function playable() {
       return {
         ms: app.firstFrameAt, stages: app.init, backend: app.backend, quality: app.graphics?.quality,
         bagMeshes: app.scene.getObjectByName('bag3d-buildings')?.children.length ?? 0,
+        ...(app.exteriorBag && { exteriorBag: { ...app.exteriorBag } }),
         terrainTiles: app.terrainTiles && { ...app.terrainTiles }, forestCanopy: app.forestCanopy && { ...app.forestCanopy },
         trees: app.treeInventory && {...app.treeInventory, planted: app.treeStats?.trees},
         detail: detail && { bgt: detail.bgt, municipal: detail.municipal, motorway: detail['1gis'] ?? detail.dtb, signs: detail.nbd,
@@ -243,9 +257,19 @@ async function playable() {
 }
 
 function sampleShot(shot, frames) {
-  return evaluate(`(${async (shot, frames, freezeTraffic, treeAudit) => {
+  return evaluate(`(${async (shot, frames, freezeTraffic, treeAudit, coverageAudit, settleMs) => {
     const app = window.__slopwaw;
-    const { terrainHeightAt } = await import('./js/terrain.js');
+    const { terrainHeightAt, getExpansionTerrain } = await import('./js/terrain.js');
+    const shotStarted = performance.now();
+    if (shot.roadArrival) {
+      const { nearestDrivingPoint } = await import('./js/city-config.js');
+      const [mode, x, z] = shot.roadArrival;
+      const road = nearestDrivingPoint(x, z);
+      if (!road || Math.hypot(road.x - x, road.z - z) > 125) {
+        throw new Error(shot.name + ' is missing a nearby mapped road');
+      }
+      shot.travel = [mode, road.x, road.z, road.heading];
+    }
     const { gradeWayAt } = await import('./js/ede-grade.js');
     const frame = () => new Promise(requestAnimationFrame);
     const ground = ([x, y, z]) => [x, y + ((shot.way && gradeWayAt(shot.way, x, z, 18)?.y) ?? terrainHeightAt(x, z)), z];
@@ -268,7 +292,11 @@ function sampleShot(shot, frames) {
       const [mode, x, z, heading, height] = shot.travel;
       const deck = shot.way && gradeWayAt(shot.way, x, z, 4);
       app.mode(mode);
-      controller.teleportActiveTo(x, z, heading, height ?? deck?.y);
+      const destination = controller.teleportActiveTo(x, z, heading, height ?? deck?.y);
+      if (coverageAudit) {
+        arrival = { x: destination.x, z: destination.z, clearance: Math.hypot(destination.x - x, destination.z - z) };
+        if (shot.roadArrival && arrival.clearance > 22) throw new Error(shot.name + ' could not reach its mapped road');
+      }
       app.cameraSystem.resetForTeleport();
       app.camera('chase');
     } else if (!shot.travel) app.setCamera(...from, ...look);
@@ -289,11 +317,34 @@ function sampleShot(shot, frames) {
       const deadline = performance.now() + 18000;
       while (!(bagGroup?.userData.stats?.completed > 0) && performance.now() < deadline) await frame();
     }
-    await wait(36);
+    const streamsIdle = () => !(app.terrainTiles?.loading || app.forestCanopy?.loading || app.exteriorBag?.inFlight);
+    const settle = async () => {
+      const start = performance.now(), timeout = start + 8000;
+      let idleSince = start;
+      while (performance.now() < timeout) {
+        await frame();
+        if (!streamsIdle()) idleSince = performance.now();
+        if (performance.now() - idleSince >= settleMs) return true;
+      }
+      return false;
+    };
+    let settled;
+    if (coverageAudit && settleMs > 0) {
+      if (shot.jump) {
+        app.setCamera(...to, ...look);
+        await settle();
+        app.setCamera(...from, ...look);
+      }
+      settled = await settle();
+    } else await wait(36);
     const bagAtStart = shot.waitForBag && bagGroup ? { ...bagGroup.userData.stats } : undefined;
     const streamedBytes = () => (bagGroup?.userData.stats?.geometryBytes ?? 0) +
       (app.terrainTiles?.residentBytes ?? 0) + (app.forestCanopy?.residentBytes ?? 0);
     let peakStreamedGeometryBytes = streamedBytes();
+    const terrainGroup = coverageAudit && app.scene.getObjectByName('EdeTerrainQuadtree');
+    const exteriorGroup = coverageAudit && app.scene.getObjectByName('ede-exterior-bag');
+    let peakTerrainResidentBytes = app.terrainTiles?.residentBytes ?? 0;
+    let exteriorBuildings = 0;
     const textureBytes = () => {
       const s = bagGroup?.userData.stats;
       return (s?.maskTextureBytes ?? 0) + (s?.photoTextureBytes ?? 0) + (s?.surfaceTextureBytes ?? 0);
@@ -336,6 +387,11 @@ function sampleShot(shot, frames) {
       draws.push(app.renderer.info.render.drawCalls);
       triangles.push(app.renderer.info.render.triangles);
       peakStreamedGeometryBytes = Math.max(peakStreamedGeometryBytes, streamedBytes());
+      if (coverageAudit) {
+        peakTerrainResidentBytes = Math.max(peakTerrainResidentBytes, app.terrainTiles?.residentBytes ?? 0);
+        exteriorBuildings = Math.max(exteriorBuildings, exteriorGroup ? exteriorGroup.children.reduce(
+          (count, mesh) => count + (mesh.userData.buildings ?? 0), 0) : 0);
+      }
       if (treeStats) {
         const visible = treeStats.visibleTrees ?? 0;
         if (visibleTrees.length) biggestCountChange = Math.max(biggestCountChange, Math.abs(visible - visibleTrees.at(-1)));
@@ -373,13 +429,27 @@ function sampleShot(shot, frames) {
       const path = new URL(entry.name).pathname;
       return path.startsWith('/assets/ede-facade') ? [path] : [];
     });
+    const terrainRequests = coverageAudit && performance.getEntriesByType('resource').filter(entry =>
+      entry.startTime >= shotStarted && new URL(entry.name).pathname.includes('/ede-terrain-tiles/'));
+    const terrainCoverage = coverageAudit ? {
+      settledBeforeSample: settled,
+      manifestVersion: getExpansionTerrain()?.manifest.version ?? null,
+      residentBytes: peakTerrainResidentBytes,
+      transferBytes: terrainRequests.reduce((total, entry) => total + entry.transferSize, 0),
+      requests: terrainRequests.length,
+      visibleTiles: terrainGroup ? terrainGroup.children.filter(mesh => mesh.visible).length : 0,
+    } : undefined;
+    const exteriorBag = coverageAudit ? {
+      ...app.exteriorBag, peakBuildings: exteriorBuildings,
+      visibleTiles: exteriorGroup ? exteriorGroup.children.filter(mesh => mesh.visible).length : 0,
+    } : undefined;
     const travelledMetres = start ? controller.getActiveEntity().position.distanceTo(start) : undefined;
     const drivenMetres = shot.travel?.[0] === 'car' ? travelledMetres : undefined;
     return { frameMs: stats(times), drawCalls: stats(draws), triangles: stats(triangles), profiler, bag, bagAtStart,
-      travelledMetres, drivenMetres, coverage, arrival, parcelTiles: app.parcelTiles && { ...app.parcelTiles }, peakStreamedGeometryBytes, terrainTiles: app.terrainTiles, forestCanopy: app.forestCanopy,
+      travelledMetres, drivenMetres, coverage, arrival, terrainCoverage, exteriorBag, parcelTiles: app.parcelTiles && { ...app.parcelTiles }, peakStreamedGeometryBytes, terrainTiles: app.terrainTiles, forestCanopy: app.forestCanopy,
       ...(shot.facade && { bagCoversLook: bagCoversLook(), facadeTextureBytes,
         facadeRequests: [...new Set(facadeRequests)], textureCount: app.renderer.info.memory?.textures }) };
-  }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic}, ${suite === 'trees'})`);
+  }})(${JSON.stringify(shot)}, ${frames}, ${freezeTraffic}, ${suite === 'trees'}, ${municipalCoverage}, ${settleMs})`);
 }
 
 async function run(search, cache, trial) {
@@ -404,13 +474,14 @@ async function run(search, cache, trial) {
   try {
     await send('Page.navigate', { url: url.href });
     const startup = await playable();
+    if (forceWebGL && startup.backend !== 'WebGL fallback') throw new Error(`Expected WebGL fallback, got ${startup.backend}`);
     startup.wireBytes = wireBytes;
     startup.peakMemory = { ...memory };
     const samples = [];
-    if (!startupOnly && (cache === 'warm' || expansionOnly)) {
+    if (!startupOnly && (cache === 'warm' || expansionOnly || municipalCoverage)) {
       for (const shot of shots) {
         samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
-        if (screenshots && ['facades', 'trees', 'municipal', 'expansion', 'parcels', 'parcel-map', 'expansion-landmarks', 'lunteren', 'lunteren-landmarks'].includes(suite)) {
+        if (screenshots && ['facades', 'trees', 'municipal', 'municipality-coverage', 'expansion', 'parcels', 'parcel-map', 'expansion-landmarks', 'lunteren', 'lunteren-landmarks'].includes(suite)) {
           const label = shot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const { data } = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
           const variant = suite === 'trees'
@@ -440,15 +511,15 @@ try {
   await send('Emulation.setDeviceMetricsOverride', viewport);
   const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
     if (!location.protocol.startsWith('http')) return;
+    if (${forceWebGL}) Object.defineProperty(navigator, 'gpu', { value: undefined });
     localStorage.removeItem('slop-ede-player-state');
-    if (${JSON.stringify(suite)} === 'facades') performance.setResourceTimingBufferSize(1000);
+    if (${municipalCoverage} || ${JSON.stringify(suite)} === 'facades') performance.setResourceTimingBufferSize(3000);
     const delay = ${tileDelay};
     if (delay > 0) {
       const request = window.fetch.bind(window);
       window.fetch = async (input, ...args) => {
         const url = String(input?.url ?? input);
-        if ((url.includes('/ede-terrain-tiles/') || url.includes('/ede-forest-canopy/'))
-            && url.endsWith('.bin') && !url.endsWith('/collision.bin')) {
+        if (/\\/ede-(?:terrain-tiles|forest-canopy)\\/\\d+_-?\\d+_-?\\d+\\.bin$/.test(url)) {
           await new Promise(resolve => setTimeout(resolve, delay));
         }
         return request(input, ...args);
@@ -465,7 +536,7 @@ try {
       for (const cache of caches) {
         const result = await run(search, cache, trial);
         results.push({ trial, ...result });
-        await writeFile(output, JSON.stringify({ suite, viewport, freezeClock, freezeTraffic, tileDelay, noHttpCache, results }, null, 2));
+        await writeFile(output, JSON.stringify({ suite, viewport, freezeClock, freezeTraffic, tileDelay, noHttpCache, forceWebGL, settleMs, results }, null, 2));
         console.log(`${search || 'default'} ${cache} ${Math.round(result.startup.ms)} ms`, result.samples.map(s => [s.name, s.frameMs.median, s.frameMs.p95]));
       }
     }

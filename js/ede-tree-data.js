@@ -53,7 +53,7 @@ export async function loadEdeTrees(inventory = 'expanded') {
   if (inventory === 'expanded') {
     try {
       const [records, canopyDensity] = await Promise.all([
-        read('../assets/ede-trees-expanded.bin?v=20261122-safari-cache'), loadWoodlandCanopyDensity(),
+        read('../assets/ede-trees-expanded.bin?v=20261123-municipality'), loadWoodlandCanopyDensity(),
       ]);
       return { inventory: 'expanded', records, canopyDensity };
     } catch (error) {

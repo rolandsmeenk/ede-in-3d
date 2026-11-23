@@ -1,4 +1,5 @@
 // Ede map in local metres around Oude Kerk. © OpenStreetMap contributors (ODbL).
+import { edeCoverage } from './ede-coverage.js';
 import { EDE_ROAD_TAGS } from './ede-road-tags.js';
 import { EDE_FUEL_FALLBACK_FOOTPRINTS } from './ede-fuel-sites.js';
 import { FRANKENENG_DOWNSTREAM } from './ede-water-levels.js';
@@ -10,6 +11,7 @@ const northUrl = new URL('../assets/ede-north-v1.json.gz?v=20261122-municipal', 
 const corridorsUrl = new URL('../assets/ede-corridors-v1.json.gz', import.meta.url);
 const windowUsesUrl = new URL('../assets/ede-window-uses.json.gz', import.meta.url);
 const municipalityUrl = new URL('../assets/ede-municipality-v1.json.gz?v=20261122-municipal', import.meta.url);
+const completionUrl = new URL('../assets/ede-complete-v1.json.gz', import.meta.url);
 const mapLayers = ['buildings', 'roads', 'railways', 'water', 'parks', 'squares', 'trees', 'signals'];
 const mapGraphs = ['roadGraph', 'activeGraph'];
 export let EDE_AERIAL_INPUTS;
@@ -136,12 +138,34 @@ function applyCorridors(data, corridors) {
   });
 }
 
-function applyMunicipalCoverage(data, patch) {
-  const prefix = {
+function municipalBase(data) {
+  return {
     bounds: data.meta.bounds,
     counts: mapLayers.map(key => data[key].length),
     graphs: mapGraphs.map(key => [data[key].nodes.length, data[key].links.length]),
   };
+}
+
+function applyCompletion(data, completion) {
+  if (completion.version !== 1 || JSON.stringify(municipalBase(data)) !== JSON.stringify(completion.base)) {
+    throw new Error('Ede completion bake does not match the existing map assets');
+  }
+  for (const key of mapLayers) {
+    const { add, replace } = completion.layers[key];
+    for (const [index, replacement] of replace) data[key][index] = replacement;
+    data[key] = data[key].concat(add);
+  }
+  for (const key of mapGraphs) data[key] = completion.graphs[key];
+  Object.assign(data.meta, { bounds: completion.bounds, geographicBounds: completion.geographicBounds,
+    areas: completion.areas, fullMunicipality: true, osmCompletion: completion.source });
+  if (completion.travelBounds && edeCoverage) {
+    data.meta.travelBounds = completion.travelBounds;
+    data.meta.travelBoundary = edeCoverage.buildingBoundary;
+  }
+}
+
+function applyMunicipalCoverage(data, patch) {
+  const prefix = municipalBase(data);
   if (patch.version !== 1 || JSON.stringify(prefix) !== JSON.stringify(patch.base)) {
     throw new Error('Ede municipal bake does not match the expanded map');
   }
@@ -180,7 +204,7 @@ function applyMunicipalCoverage(data, patch) {
 }
 
 async function loadMap() {
-  const [data, shoreline, years, corridors, windowUses, north, municipality] = await Promise.all([
+  const [data, shoreline, years, corridors, windowUses, north, municipality, completion] = await Promise.all([
     readMapAsset(mapUrl),
     readMapAsset(shorelineUrl, true).catch(error => {
       console.warn('[Ede shorelines] using OSM geometry:', error);
@@ -203,6 +227,7 @@ async function loadMap() {
       return null;
     }),
     readMapAsset(municipalityUrl, true),
+    readMapAsset(completionUrl, true),
   ]);
   if (data?.meta?.city !== 'Ede' || !Array.isArray(data.roads) ||
       !Array.isArray(data.buildings) || !data.roadGraph || !data.activeGraph) {
@@ -235,7 +260,10 @@ async function loadMap() {
       console.warn('[Ede north] using the existing extent:', error);
     }
   }
-  if (municipality && data.meta.north) applyMunicipalCoverage(data, municipality);
+  if (completion) {
+    applyCompletion(data, completion);
+    applyMunicipalCoverage(data, completion.municipality);
+  } else if (municipality && data.meta.north) applyMunicipalCoverage(data, municipality);
   if (windowUses?.version === 1) {
     const uses = new Map();
     for (const use of ['unlit', 'home', 'office', 'shop', 'mixed']) {

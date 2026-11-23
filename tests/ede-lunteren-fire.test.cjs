@@ -1,3 +1,4 @@
+const { gunzipSync } = require('node:zlib');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
@@ -11,7 +12,7 @@ test('Lunteren fire station keeps its surveyed silhouette, grounded collider and
   const { EDE_DATA, pointInPoly, nearestRoads, sidewalkAt, waterAt } = await import('../js/city-config.js');
   const sites = await import('../js/ede-lunteren-fire-sites.js');
   const site = sites.EDE_LUNTEREN_FIRE_SITE;
-  const packed = readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin'));
+  const packed = gunzipSync(readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin.gz')));
   const field = decodeTerrain(packed.buffer.slice(packed.byteOffset, packed.byteOffset + packed.byteLength));
   const terrain = { getTerrain: () => field, terrainHeightAt: (x, z) => sampleTerrain(field, x, z) };
   const load = (name, imports) => loadModule(readFileSync(join(__dirname, '../js', name), 'utf8'),

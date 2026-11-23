@@ -27,7 +27,7 @@ function demandProfile({ minute, weekday }) {
 }
 
 export async function loadEdePostedSpeeds() {
-  const response = await fetch(new URL('../assets/ede-posted-speeds.json?v=20261121-roundabouts', import.meta.url));
+  const response = await fetch(new URL('../assets/ede-posted-speeds.json?v=20261123-harderwijkerweg', import.meta.url));
   if (!response.ok) throw new Error(`Posted speed limits: HTTP ${response.status}`);
   const asset = await response.json();
   if (asset.version !== 1 || !asset.edges || typeof asset.edges !== 'object') {

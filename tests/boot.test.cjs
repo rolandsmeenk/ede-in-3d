@@ -36,6 +36,14 @@ test('native module entry and imports share canonical preloaded URLs on GitHub P
   assert.equal([...html.matchAll(/<script\b/g)].length, 2, 'only the import map and native entry are needed');
   const base = 'https://example.test/slop-newyork/';
   const urls = new Set(links.map((src) => new URL(src, base).href));
+  const { imports: mappings } = JSON.parse(importMap[1]);
+  const localMappings = new Map(Object.entries(mappings)
+    .filter(([specifier]) => specifier.startsWith('./js/'))
+    .map(([specifier, target]) => [new URL(specifier, base).href, new URL(target, base).href]));
+  for (const [specifier, target] of localMappings) {
+    assert.ok(urls.has(target), `the resolved URL is preloaded: ${target}`);
+    assert.ok(!urls.has(specifier), `the old URL is not preloaded: ${specifier}`);
+  }
   for (const src of links) {
     assert.match(src, /^\.\/js\/[\w-]+\.js(?:\?v=[\w-]+)?$/, 'each preload addresses a local module');
     const source = readFileSync(join(__dirname, '..', src.split('?')[0]), 'utf8');
@@ -44,7 +52,7 @@ test('native module entry and imports share canonical preloaded URLs on GitHub P
       : /(?:\bfrom\s*|\bimport\s*)['"](\.[^'"]+)['"]/g;
     for (const [, specifier] of source.matchAll(imports)) {
       const url = new URL(specifier, new URL(src, base));
-      assert.ok(urls.has(url.href), `${src} imports an unpreloaded or mismatched URL: ${specifier}`);
+      assert.ok(urls.has(localMappings.get(url.href) ?? url.href), `${src} imports an unpreloaded or mismatched URL: ${specifier}`);
     }
   }
 });

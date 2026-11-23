@@ -3,12 +3,13 @@ import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { createPostProcessing } from './post-processing.js?v=20261119-perf';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
-import { getLocationLabel, isTypingInField, EDE_DATA, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
+import { getLocationLabel, isTypingInField, containsPlayablePoint, constrainToTravelArea, EDE_DATA, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
 import { buildLandmarks } from './landmarks.js';
 import { createEdeMurals } from './ede-murals.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
+import { buildExteriorBagColliders, createExteriorBagStream, loadExteriorBagFootprints } from './ede-bag-exterior.js';
 import { buildStreetDetails } from './street-details.js?v=20261122-forecourt-lights';
 import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-hospital-signals';
 import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261122-startup';
@@ -29,7 +30,7 @@ import { updateSceneWind } from './tsl-materials.js';
 import { createKiteFlyers } from './ede-kites.js';
 import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js?v=20261122-municipal-coverage';
-import { createExpansionCulling, setupSceneCulling, updateSceneCulling } from './scene-culling.js';
+import { createExpansionCulling, setupSceneCulling, updateSceneCulling } from './scene-culling.js?v=20261123-startup-memory';
 import { CityAudioSystem } from './audio-system.js?v=20261122-p2000';
 import { loadTerrain, terrainHeightAt } from './terrain.js';
 import { createTerrainTiles } from './ede-terrain-tiles.js';
@@ -161,12 +162,12 @@ export async function initApp() {
   await showLoadingStage('Loading Ede’s map and timetables…');
   const useUtilityDetails = enabled('detail') && enabled('utilityDetail');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult] = await Promise.allSettled([
     loadTerrain({ expanded: query.get('terrainTiles') !== 'off' }), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
-    loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces({ north: EDE_DATA.meta.north }), loadEdeTrainTimetable(), loadEdeParking(),
+    loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces({ north: EDE_DATA.meta.north, fringe: Boolean(EDE_DATA.meta.travelBounds) }), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
       motorway: enabled('motorwayDetail'), parcels: enabled('parcelDetail'), utilities: useUtilityDetails,
-      directional: enabled('motorwayDetail') && enabled('nbdSigns') }) : null,
+      directional: enabled('motorwayDetail') && enabled('nbdSigns'), fringe: Boolean(EDE_DATA.meta.travelBounds) }) : null,
     enabled('laneFits') ? loadEdeFittedLanes() : null,
     enabled('sports') ? loadEdeSports() : null,
     loadEdeCorridorFallbacks(),
@@ -174,6 +175,7 @@ export async function initApp() {
     useUtilityDetails ? import('./ede-utility-landmarks.js') : null,
     loadEdeSignalHardware(),
     enabled('detail') && enabled('waterWorks') ? loadEdeWaterWorks() : null,
+    loadExteriorBagFootprints(),
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -215,7 +217,8 @@ export async function initApp() {
   markInit('sports fields');
   await loadExpansionGroundColors();
   const heath = treeSeasonsEnabled ? createEdeHeathCover(EDE_DATA.parks, EDE_DATA.meta.bounds, detailData?.landCover) : null;
-  const terrainTiles = createTerrainTiles(scene, heath);
+  const terrainTiles = createTerrainTiles(scene, heath, detailData?.fringeLandCover);
+  const exteriorBag = createExteriorBagStream(scene);
   const forest = terrainTiles && forestCanopyResult.value;
   const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity,
     replacedPitches, forest?.cells, EDE_DATA.meta.north ? forest?.northernTreeSamples : undefined, heath);
@@ -322,7 +325,9 @@ export async function initApp() {
   const murals = createEdeMurals(scene, { enabled: enabled('murals'), isFallbackVisible: cityBlocks.isFallbackVisible });
   if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks, replacementBagIds: replacements?.bag });
   markInit('blocks');
-  const allColliders = [...landmarks.colliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
+  if (exteriorFootprintsResult.status === 'rejected') console.warn('[exterior BAG collisions]', exteriorFootprintsResult.reason);
+  const exteriorColliders = buildExteriorBagColliders(exteriorFootprintsResult.value ?? []);
+  const allColliders = [...landmarks.colliders, ...exteriorColliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
     ...gradeWorld.colliders, ...(bgtWorld?.colliders || [])];
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');
@@ -410,7 +415,8 @@ export async function initApp() {
         const p = saved.entities?.[mode];
         if (!p || ![p.x, p.y, p.z, p.heading].every(Number.isFinite)) continue;
         controllerManager.setMode(mode);
-        controllerManager.teleportActiveTo(p.x, p.z, p.heading, terrainHeightAt(p.x, p.z) + p.y);
+        const { x, z } = constrainToTravelArea(p.x, p.z);
+        controllerManager.teleportActiveTo(x, z, p.heading, terrainHeightAt(x, z) + p.y);
       }
       controllerManager.setMode(Object.hasOwn(controllerManager.entities, saved.activeMode) ? saved.activeMode : 'car');
     }
@@ -449,6 +455,7 @@ export async function initApp() {
     savePlayerState();
     if (!event.persisted) {
       bagBuildings?.userData.dispose?.();
+      exteriorBag.dispose();
       parcelTiles?.dispose();
       audioSystem.dispose();
     }
@@ -1080,7 +1087,7 @@ export async function initApp() {
   // while individual jobs yield to the browser.
   const COMPILE_POOL = 16;
   const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0)));
-  async function precompileShaders() {
+  async function precompileShaders(warmWholeScene) {
     await showLoadingStage('Preparing the render pipeline...');
     // An empty frame first: it sets up the post-processing chain, which configures the scene pass's render target
     // (MSAA samples, depth format), so the pipelines compiled below are the very ones the scene pass asks for
@@ -1096,12 +1103,18 @@ export async function initApp() {
     const jobs = [];
     const jobByMaterial = new Map();
     const pipelines = new Set();
+    const camera = cameraSystem.camera;
+    camera.updateMatrixWorld();
+    const startupView = new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      camera.coordinateSystem, camera.reversedDepth);
     scene.traverseVisible((o) => {
+      if (!o.isMesh && !o.isLine && !o.isPoints && !o.isSprite) return;
       if (o.frustumCulled) {
+        if (!warmWholeScene && !(o.isSprite ? startupView.intersectsSprite(o) : startupView.intersectsObject(o))) return;
         culled.push(o);
         o.frustumCulled = false;
       }
-      if (!o.isMesh && !o.isLine && !o.isPoints && !o.isSprite) return;
       // Use the first visible chunk: the original representative may be in an inactive tree cell. Shadow stand-ins
       // only draw in the shadow maps (the warm-up frame compiles those).
       if (o.userData.shadowProxy) return;
@@ -1154,14 +1167,21 @@ export async function initApp() {
     for (const o of culled) o.frustumCulled = true;
   }
 
-  // An unculled map-wide first frame takes too much memory on Safari's WebGPU backend.
-  const warmWholeScene = navigator.vendor !== 'Apple Computer, Inc.' || !renderer.backend.isWebGPUBackend;
-  if (warmWholeScene) {
+  cameraSystem.update(0, 0);
+  await showLoadingStage('Building paving near your starting point...');
+  while (cityGrid.pavingTiles.update(cameraSystem.camera.position, 140)) await nextTask();
+  if (EDE_DATA.meta.fullMunicipality) expansionCulling?.update(cameraSystem.camera);
+  markInit('local paving');
+
+  // The full municipality would submit distant geometry before the player sees it.
+  const canPrecompile = navigator.vendor !== 'Apple Computer, Inc.' || !renderer.backend.isWebGPUBackend;
+  const warmWholeScene = canPrecompile && !EDE_DATA.meta.fullMunicipality;
+  if (canPrecompile) {
     const restoreTreeWarmup = treeField.prepareWarmup();
     const aerialShell = cityBlocks.group.children.find(object => object.userData.aerialBuildingProxy);
     if (aerialShell) aerialShell.visible = true;
     try {
-      await precompileShaders();
+      await precompileShaders(warmWholeScene);
     } finally {
       if (aerialShell) aerialShell.visible = false;
       restoreTreeWarmup();
@@ -1178,13 +1198,17 @@ export async function initApp() {
   let fpsTimer = 0;
   let nextPlayerSave = 0;
   let warmedUp = false; // see the first frame below
+  const municipalWarning = document.getElementById('municipal-warning');
+  const municipalStatus = document.getElementById('municipal-warning-status');
+  let outsideMunicipality = false;
 
   if (elFps) elFps.textContent = '60';
 
   renderer.setAnimationLoop((now) => {
-    profiler?.beginFrame(now);
     const rawDt = (now - lastTime) * 0.001;
     lastTime = now;
+    if (warmedUp && initTimings) return;
+    profiler?.beginFrame(now);
     const dt = fixedStep ? 1 / 60 : Math.min(Math.max(rawDt, 0.001), 0.05);
     elapsed += dt;
 
@@ -1197,6 +1221,8 @@ export async function initApp() {
     bgtWorld?.updateMastLod(cameraSystem.camera, renderer.domElement.height);
     if (warmedUp) landmarks.updateMastLod(cameraSystem.camera, renderer.domElement.height, lightingSystem.uNightFactor.value);
     profiler?.stage('Player, camera and terrain');
+    if (warmedUp) cityGrid.pavingTiles.update(cameraSystem.camera.position);
+    profiler?.stage('Paving tiles');
     if (trafficUpdates) {
       trafficClock += dt;
       const railTime=Date.now()/1000;
@@ -1211,6 +1237,7 @@ export async function initApp() {
     profiler?.stage('Ambient highways');
     if (warmedUp) {
       bagBuildings?.userData.update?.(cameraSystem.camera);
+      exteriorBag.update(cameraSystem.camera);
       murals.update(cameraSystem.camera.position, now);
       landmarks.update(cameraSystem.camera.position);
     }
@@ -1219,6 +1246,7 @@ export async function initApp() {
     if (graphics.vegetation) {
       const camera = cameraSystem.camera;
       forestCanopy?.update(camera, treeField);
+      profiler?.stage('Woodland canopy');
       treeField.update(camera, {
         renderer, deltaMs: rawDt * 1000, viewportHeight: renderer.domElement.height,
         groundHeight: terrainHeightAt(camera.position.x, camera.position.z),
@@ -1246,6 +1274,13 @@ export async function initApp() {
     bgtWorld?.updateWind(windDt, liveWeather.turbineWind, now / 1000, lightingSystem.uNightFactor.value);
     precipitation.update(dt, cameraSystem.camera, weatherEffects);
     profiler?.stage('Lighting and weather');
+    const { x: playerX, z: playerZ } = controllerManager.getActiveEntity().position;
+    const outside = !containsPlayablePoint(playerX, playerZ);
+    if (outside !== outsideMunicipality) {
+      outsideMunicipality = outside;
+      municipalWarning.hidden = !outside;
+      municipalStatus.textContent = outside ? 'You are outside Gemeente Ede, in the 500 metre travel area.' : 'You are back inside Gemeente Ede.';
+    }
     mapSystem.update();
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
     profiler?.stage('Map and audio');
@@ -1316,6 +1351,8 @@ export async function initApp() {
             setTreeSeason: selectTreeSeason,
           },
           terrainTiles: terrainTiles?.stats,
+          pavingTiles: cityGrid.pavingTiles.stats,
+          exteriorBag: exteriorBag.stats,
           expansionCulling: expansionCulling?.stats,
           forestCanopy: forestCanopy?.stats,
           treeStats: treeField.stats,

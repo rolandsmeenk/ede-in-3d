@@ -12,6 +12,7 @@ from shapely import STRtree, union_all
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import substring
 
+from ede_height_field import expansion_collision_path
 from ede_traffic_geometry import RoadGraph, Segment, SegmentIndex
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,7 +66,7 @@ class Motorway:
         self.area = box(*self.meta['bounds'])
         terrain = runpy.run_path(str(ROOT / 'tools/build-ede-grade.py'))['Terrain']
         self.terrain = terrain()
-        self.expansion = terrain(ROOT / 'assets/ede-terrain-tiles/collision.bin') if self.meta.get('north') else None
+        self.expansion = terrain(expansion_collision_path()) if self.meta.get('north') else None
         grade = read_json(ROOT / 'assets/ede-grade.json')
         self.datum = grade['datumNAP']
         self.profiles = defaultdict(list)

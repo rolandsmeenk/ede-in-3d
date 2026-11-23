@@ -8,7 +8,7 @@ function load(name, imports, globals) {
   return loadModule(readFileSync(join(__dirname, '../js/', name), 'utf8'), { imports, globals, filename: name });
 }
 
-test('Ginkel and restaurant landmarks build finite meshes in the surveyed frame', async () => {
+test('Expansion landmarks build finite meshes in the surveyed frame', async () => {
   const three = await import('../vendor/three/build/three.webgpu.js');
   const tsl = await import('../vendor/three/build/three.tsl.js');
   const captions = [];
@@ -23,6 +23,17 @@ test('Ginkel and restaurant landmarks build finite meshes in the surveyed frame'
     './bag3d.js': {}, './ede-grade.js': { buildingPassageOpenings: () => [] }, './ede-geodata.js': { EDE_DATA: {} },
     './ede-wind-props.js': {}, './aerial-colors.js': {}, './ede-facades.js': {}, './ede-facade-material.js': {},
   }, { document });
+  const { EDE_OUTER_CULTURAL_FACTORIES } = load('ede-outer-cultural-models.js', {
+    'three/webgpu': three, './ede-civic-landmarks.js': civic, './terrain.js': terrain,
+    './ede-sint-hubertus.js': {},
+  });
+  const museum = EDE_OUTER_CULTURAL_FACTORIES['kijk-luistermuseum'](null, {
+    name: 'Kijk & Luistermuseum', x: 239, z: 5396, heading: 0,
+  });
+  const museumSize = new three.Box3().setFromObject(museum).getSize(new three.Vector3());
+  assert.ok(museumSize.x > 17 && museumSize.x < 20, 'Bennekom museum width stays within the modeled wings');
+  assert.ok(museumSize.z > 6 && museumSize.z < 8, 'Bennekom museum depth stays within the modeled wings and trim');
+
   const surveys = load('ede-expansion-landmark-surveys.js');
   const surveyBuilder = load('ede-survey-landmark.js', {
     './ede-civic-landmarks.js': civic, './terrain.js': terrain,

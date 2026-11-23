@@ -2,7 +2,7 @@
 
 [Back to Ede in 3D](../README.md)
 
-In-game screenshots of all 191 landmark destinations on the map. Select any screenshot to open it at full size.
+In-game screenshots of selected landmark destinations on the map. Select any screenshot to open it at full size. The newest municipal models are documented in [map and asset coverage](map-and-assets.md#municipal-coverage); they do not have gallery screenshots yet.
 
 [A to C](#a-to-c) · [D to G](#d-to-g) · [H to L](#h-to-l) · [M to R](#m-to-r) · [S to Z](#s-to-z)
 

@@ -22,6 +22,8 @@ from shapely import STRtree, from_wkb, make_valid, transform, union_all
 from shapely.affinity import rotate, translate
 from shapely.geometry import LineString, Point, Polygon, box
 
+from ede_height_field import expansion_collision_path
+from ede_map import load_playable_boundary, load_playable_scene
 from ede_scene import SceneAffine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -445,11 +447,11 @@ def rebase_ground(payload, profiles, terrain):
     return changes
 
 
-def build(osm, wkd_path):
-    scene = GRADE['load_scene']()
+def build(osm, wkd_path, outer_paving):
+    scene = load_playable_scene()
     scene_meta = scene['meta']
     south, west, north, east = scene_meta['geographicBounds']
-    area = box(*scene_meta['bounds'])
+    area = load_playable_boundary()
 
     project = SceneAffine(scene_meta['lonLatAffine']).lon_lat_to_scene
 
@@ -459,8 +461,26 @@ def build(osm, wkd_path):
     raw_roads, osm_lots, individual, points, releases = osm_snapshot(osm, area, (west, south, east, north), project)
     bgt_asset = read(ROOT / 'assets/ede-road-surfaces.json.gz')
     bgt, paving = features_from_bgt(bgt_asset)
+    if outer_paving.is_file():
+        outer_bgt, outer_obstacles = features_from_bgt(read(outer_paving))
+        known = {feature.id for feature in (*bgt, *paving)}
+        bgt.extend(feature for feature in outer_bgt if feature.id not in known)
+        paving.extend(feature for feature in outer_obstacles if feature.id not in known)
     wkd = read_wkd(read(wkd_path), project)
-    terrain = GRADE['Terrain']()
+    town = GRADE['Terrain']()
+    expansion = GRADE['Terrain'](expansion_collision_path())
+
+    class Terrain:
+        nap = town.nap
+
+        def at(self, point):
+            x, z = point
+            if (town.x <= x < town.x + town.step * (town.columns - 1)
+                    and town.z <= z < town.z + town.step * (town.rows - 1)):
+                return town.at(point)
+            return expansion.at(point)
+
+    terrain = Terrain()
     grade = grade_profiles()
     street = read(ROOT / 'assets/ede-street-features.json.gz')
     drive_roads = [road for road in raw_roads.values() if road.tags.get('highway') in MOTOR]
@@ -724,6 +744,7 @@ if __name__ == '__main__':
     mode.add_argument('--osm', nargs='+', type=Path, help='Geofabrik extracts covering the Ede bounds')
     mode.add_argument('--rebase-ground', type=Path, help='Re-seat unambiguously terrain-backed bays in an existing asset')
     parser.add_argument('--wkd', type=Path, help='Complete clipped WKD parkeervlakken WFS GeoJSON')
+    parser.add_argument('--outer-paving', type=Path, default=ROOT / 'assets/ede-north-paving.json.gz')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-parking-spaces.json.gz')
     args = parser.parse_args()
     if args.rebase_ground:
@@ -734,7 +755,7 @@ if __name__ == '__main__':
     else:
         if not args.wkd:
             parser.error('--wkd is required with --osm')
-        payload = build(args.osm, args.wkd)
+        payload = build(args.osm, args.wkd, args.outer_paving)
     args.output.write_bytes(gzip.compress(json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode(), mtime=0))
     print(f'{len(payload["spaces"])} parking spaces, {len(payload["areas"])} areas, {len(payload["aisles"])} aisle ways')
     print(json.dumps(payload['counts'], sort_keys=True))

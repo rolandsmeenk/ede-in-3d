@@ -7,6 +7,7 @@ import struct
 import numpy as np
 import rasterio
 
+from ede_height_field import expansion_collision_path, read_height_field
 from ede_gis import Frame
 from ede_map import load_scene
 from ede_raster import require_rd_raster, sample_bilinear
@@ -26,9 +27,8 @@ def build(source, output):
     x, z = np.meshgrid(west + STEP * np.arange(cols), north + STEP * np.arange(rows))
 
     # Use the same 5 m triangles as collision and the original meshes.
-    raw = (TILES / 'collision.bin').read_bytes()
-    _, base_cols, base_rows, base_x, base_z, base_step, _ = HEADER.unpack_from(raw)
-    heights = np.frombuffer(raw, dtype='<i2', offset=HEADER.size).reshape(base_rows, base_cols)
+    base_cols, base_rows, base_x, base_z, base_step, _, samples = read_height_field(expansion_collision_path(TILES))
+    heights = np.frombuffer(samples, dtype=np.int16).reshape(base_rows, base_cols)
     col, row = (x - base_x) / base_step, (z - base_z) / base_step
     ci, ri = np.floor(col).astype(int), np.floor(row).astype(int)
     u, v = col - ci, row - ri

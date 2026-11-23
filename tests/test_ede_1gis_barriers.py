@@ -25,6 +25,7 @@ class Ede1gisBarrierTest(unittest.TestCase):
     def test_no_known_fence_can_reappear_on_lower_level(self):
         with gzip.open(ROOT / 'assets/ede-1gis-detail.json.gz', 'rt', encoding='utf-8') as file:
             features = json.load(file)['features']
+        corrected = set()
         for feature in features:
             if feature['type'] != 'fence' or feature['collection'] != 31:
                 continue
@@ -36,6 +37,8 @@ class Ede1gisBarrierTest(unittest.TestCase):
                 if object_id in MAANDERBROEK_UPPER:
                     profile = 'maanderbroek-a30-a12-upper-'
             if profile:
+                if source_id.isdecimal():
+                    corrected.add(int(source_id))
                 self.assertGreater(feature['level'], 0, feature['id'])
                 self.assertTrue(feature['profileId'].startswith(profile), feature['id'])
                 if profile.startswith('maanderdijk'):
@@ -44,6 +47,16 @@ class Ede1gisBarrierTest(unittest.TestCase):
                     self.assertTrue(all(0 < width < 5 for width in distance))
                 else:
                     self.assertIn('surfaceId', feature)
+
+        self.assertTrue(FIXED.keys() <= corrected)
+
+    def test_expanded_motorway_has_east_and_north_guardrails(self):
+        with gzip.open(ROOT / 'assets/ede-1gis-detail.json.gz', 'rt', encoding='utf-8') as file:
+            asset = json.load(file)
+        features = {feature['id']: feature for feature in asset['features']}
+        for key in ('1gis:23:2103956779', '1gis:23:2103958813@20269'):
+            self.assertEqual(features[key]['type'], 'guardrail')
+        self.assertEqual(len(features), len(asset['features']))
 
 
 if __name__ == '__main__':

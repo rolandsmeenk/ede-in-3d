@@ -6,20 +6,49 @@
   <title>Ede in 3D</title>
   <link rel="icon" type="image/svg+xml" href="./assets/wapen-van-ede.svg" />
   <meta name="description" content="Explore Ede in 3D on foot, by car, bicycle, or helicopter." />
-  <!-- Pinned Three.js runtime is served locally for offline play. -->
+  <!-- Use one URL per module so cached code shares the same materials, terrain and map state. -->
   <script type="importmap">
     {
       "imports": {
         "three": "./vendor/three/build/three.webgpu.js",
         "three/webgpu": "./vendor/three/build/three.webgpu.js",
         "three/tsl": "./vendor/three/build/three.tsl.js",
-        "three/addons/": "./vendor/three/examples/jsm/"
+        "three/addons/": "./vendor/three/examples/jsm/",
+        "./js/bag3d.js": "./js/bag3d.js?v=20261123-municipal",
+        "./js/city-config.js": "./js/city-config.js?v=20261123-municipal",
+        "./js/city-grid.js": "./js/city-grid.js?v=20261123-startup-memory",
+        "./js/controllers.js?v=20261122-municipal-coverage": "./js/controllers.js?v=20261123-municipal",
+        "./js/ede-bus-schedule.js": "./js/ede-bus-schedule.js?v=20261123-harderwijkerweg",
+        "./js/ede-detail.js?v=20261122-truecolor-signs": "./js/ede-detail.js?v=20261123-municipal",
+        "./js/ede-forest-canopy.js": "./js/ede-forest-canopy.js?v=20261123-municipal",
+        "./js/ede-geodata.js": "./js/ede-geodata.js?v=20261123-municipal",
+        "./js/ede-landmark-sites.js": "./js/ede-landmark-sites.js?v=20261123-municipal",
+        "./js/ede-north-rail-data.js": "./js/ede-north-rail-data.js?v=20261123-municipal",
+        "./js/ede-outer-cultural-models.js": "./js/ede-outer-cultural-models.js?v=20261123-museum-trim",
+        "./js/ede-outer-memorial-sites.js": "./js/ede-outer-memorial-sites.js?v=20261123-municipal",
+        "./js/ede-outer-memorials.js": "./js/ede-outer-memorials.js?v=20261123-municipal",
+        "./js/ede-playable-boundary.js": "./js/ede-playable-boundary.js?v=20261123-municipal",
+        "./js/ede-road-surfaces.js": "./js/ede-road-surfaces.js?v=20261123-municipal",
+        "./js/ede-terrain-tiles.js": "./js/ede-terrain-tiles.js?v=20261123-municipal",
+        "./js/ede-town-memorial-sites.js": "./js/ede-town-memorial-sites.js?v=20261123-municipal",
+        "./js/ede-town-memorials.js": "./js/ede-town-memorials.js?v=20261123-municipal",
+        "./js/ede-train-schedule.js": "./js/ede-train-schedule.js?v=20261123-municipal",
+        "./js/ede-train-tracks.js": "./js/ede-train-tracks.js?v=20261123-municipal",
+        "./js/ede-tree-data.js?v=20261122-safari-cache": "./js/ede-tree-data.js?v=20261123-municipal",
+        "./js/landmarks.js": "./js/landmarks.js?v=20261123-municipal",
+        "./js/nyc-map.js?v=20261122-municipal-coverage": "./js/nyc-map.js?v=20261123-municipal",
+        "./js/terrain.js": "./js/terrain.js?v=20261123-municipal",
+        "./js/road-network.js?v=20261122-startup": "./js/road-network.js?v=20261123-narrow-road-junctions",
+        "./js/ede-lane-geometry.js": "./js/ede-lane-geometry.js?v=20261123-harderwijkerweg-fit",
+        "./js/ede-road-traffic.js?v=20261122-p2000": "./js/ede-road-traffic.js?v=20261123-harderwijkerweg",
+        "./js/ede-street-features.js?v=20261122-startup": "./js/ede-street-features.js?v=20261123-harderwijkerweg",
+        "./js/tsl-materials.js": "./js/tsl-materials.js?v=20261123-municipal"
       }
     }
   </script>
-  <!-- Fetch the city modules in parallel before stylesheets. Keep the lighting versions in sync with the entry and imports. -->
+  <!-- Preload the resolved module URLs before stylesheets. -->
   <link rel="preload" href="./assets/ede-map-v1.json.gz" as="fetch" crossorigin />
-  <link rel="modulepreload" href="./js/ede-geodata.js" />
+  <link rel="modulepreload" href="./js/ede-geodata.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-water-levels.js" />
   <link rel="modulepreload" href="./js/ede-water-works-world.js" />
   <link rel="modulepreload" href="./js/ede-westhoffhuis.js" />
@@ -47,6 +76,8 @@
   <link rel="modulepreload" href="./js/ede-reemst-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-west-expansion-surveys.js" />
   <link rel="modulepreload" href="./js/ede-west-expansion-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-farm-building-survey.js" />
+  <link rel="modulepreload" href="./js/ede-farm-building.js" />
   <link rel="modulepreload" href="./js/ede-zonneoord-surveys.js" />
   <link rel="modulepreload" href="./js/ede-zonneoord-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-lunteren-survey.js" />
@@ -68,16 +99,16 @@
   <link rel="modulepreload" href="./js/ede-mast-sites.js" />
   <link rel="modulepreload" href="./js/ede-mast-models.js" />
   <link rel="modulepreload" href="./js/ede-mast-strokes.js" />
-  <link rel="modulepreload" href="./js/ede-playable-boundary.js" />
+  <link rel="modulepreload" href="./js/ede-playable-boundary.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-industrial-skyline-survey.js" />
   <link rel="modulepreload" href="./js/ede-industrial-skyline-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-memorial-plaque.js" />
   <link rel="modulepreload" href="./js/ede-paasberg-memorial-sites.js" />
   <link rel="modulepreload" href="./js/ede-paasberg-memorials.js" />
-  <link rel="modulepreload" href="./js/ede-town-memorial-sites.js" />
-  <link rel="modulepreload" href="./js/ede-town-memorials.js" />
-  <link rel="modulepreload" href="./js/ede-outer-memorial-sites.js" />
-  <link rel="modulepreload" href="./js/ede-outer-memorials.js" />
+  <link rel="modulepreload" href="./js/ede-town-memorial-sites.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-town-memorials.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-outer-memorial-sites.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-outer-memorials.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-street-heritage-survey.js" />
   <link rel="modulepreload" href="./js/ede-street-heritage-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-industrial-heritage-survey.js" />
@@ -86,24 +117,24 @@
   <link rel="modulepreload" href="./js/ede-modern-neighborhood-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-zuiderpoort-survey.js" />
   <link rel="modulepreload" href="./js/ede-zuiderpoort-landmark.js" />
-  <link rel="modulepreload" href="./js/ede-forest-canopy.js" />
-  <link rel="modulepreload" href="./js/ede-terrain-tiles.js" />
+  <link rel="modulepreload" href="./js/ede-forest-canopy.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-terrain-tiles.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-heath.js" />
-  <link rel="modulepreload" href="./js/terrain.js" />
+  <link rel="modulepreload" href="./js/terrain.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-grade.js" />
   <link rel="modulepreload" href="./js/ede-grade-world.js" />
   <link rel="modulepreload" href="./js/ede-bgt-world.js" />
   <link rel="modulepreload" href="./js/ede-fuel-sites.js" />
   <link rel="modulepreload" href="./js/ede-fuel-stations.js" />
   <link rel="modulepreload" href="./js/ede-fuel-prices.js" />
-  <link rel="modulepreload" href="./js/ede-detail.js?v=20261122-truecolor-signs" />
+  <link rel="modulepreload" href="./js/ede-detail.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-playground-equipment.js" />
   <link rel="modulepreload" href="./js/aerial-colors.js" />
-  <link rel="modulepreload" href="./js/city-config.js" />
-  <link rel="modulepreload" href="./js/tsl-materials.js" />
+  <link rel="modulepreload" href="./js/city-config.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/tsl-materials.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/trees.js" />
   <link rel="modulepreload" href="./js/tree-seasons.js" />
-  <link rel="modulepreload" href="./js/ede-tree-data.js?v=20261122-safari-cache" />
+  <link rel="modulepreload" href="./js/ede-tree-data.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-lamp-data.js?v=20261122-safari-cache" />
   <link rel="modulepreload" href="./js/ede-poster-sites.js" />
   <link rel="modulepreload" href="./js/ede-posters.js" />
@@ -125,10 +156,10 @@
   <link rel="modulepreload" href="./js/ede-emergency.js" />
   <link rel="modulepreload" href="./js/ede-fire-engine.js" />
   <link rel="modulepreload" href="./js/ede-transit-time.js" />
-  <link rel="modulepreload" href="./js/ede-bus-schedule.js" />
-  <link rel="modulepreload" href="./js/ede-train-schedule.js" />
-  <link rel="modulepreload" href="./js/ede-train-tracks.js" />
-  <link rel="modulepreload" href="./js/ede-north-rail-data.js" />
+  <link rel="modulepreload" href="./js/ede-bus-schedule.js?v=20261123-harderwijkerweg" />
+  <link rel="modulepreload" href="./js/ede-train-schedule.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-train-tracks.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-north-rail-data.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-lunteren-platforms.js" />
   <link rel="modulepreload" href="./js/ede-train-traffic.js" />
   <link rel="modulepreload" href="./js/ede-train-models.js" />
@@ -148,13 +179,18 @@
   <link rel="modulepreload" href="./js/ede-weather.js?v=20261122-rink-ice" />
   <link rel="modulepreload" href="./js/weather-precipitation.js" />
   <link rel="modulepreload" href="./js/ede-kites.js" />
-  <link rel="modulepreload" href="./js/city-grid.js" />
+  <link rel="modulepreload" href="./js/city-grid.js?v=20261123-startup-memory" />
+  <link rel="modulepreload" href="./js/ede-paving-tiles.js" />
   <link rel="modulepreload" href="./js/buildings.js" />
   <link rel="modulepreload" href="./js/shop-signs.js" />
   <link rel="modulepreload" href="./js/passages.js" />
   <link rel="modulepreload" href="./js/ede-shops.js" />
   <link rel="modulepreload" href="./js/fire-escapes.js" />
-  <link rel="modulepreload" href="./js/landmarks.js" />
+  <link rel="modulepreload" href="./js/landmarks.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-outer-cultural-models.js?v=20261123-museum-trim" />
+  <link rel="modulepreload" href="./js/ede-outer-cultural-sites.js" />
+  <link rel="modulepreload" href="./js/ede-sint-hubertus.js" />
+  <link rel="modulepreload" href="./js/ede-sint-hubertus-survey.js" />
   <link rel="modulepreload" href="./js/ede-estate-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-estate-survey.js" />
   <link rel="modulepreload" href="./js/ede-research-landmarks.js" />
@@ -234,7 +270,7 @@
   <link rel="modulepreload" href="./js/ede-other-church-shells.js" />
   <link rel="modulepreload" href="./js/ede-lukkien.js" />
   <link rel="modulepreload" href="./js/ede-lukkien-survey.js" />
-  <link rel="modulepreload" href="./js/ede-landmark-sites.js" />
+  <link rel="modulepreload" href="./js/ede-landmark-sites.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-windmill.js" />
   <link rel="modulepreload" href="./js/ede-wind-props.js" />
   <link rel="modulepreload" href="./js/ede-concordiamolen.js" />
@@ -262,12 +298,12 @@
   <link rel="modulepreload" href="./js/ede-signal-models.js?v=20261121-signal-optics" />
   <link rel="modulepreload" href="./js/ede-street-name-signs.js" />
   <link rel="modulepreload" href="./js/street-props.js" />
-  <link rel="modulepreload" href="./js/road-network.js?v=20261122-startup" />
+  <link rel="modulepreload" href="./js/road-network.js?v=20261123-narrow-road-junctions" />
   <link rel="modulepreload" href="./js/road-access.js?v=20261122-startup" />
   <link rel="modulepreload" href="./js/ede-active-travel.js" />
   <link rel="modulepreload" href="./js/ede-mtb-routes.js" />
   <link rel="modulepreload" href="./js/road-paint.js?v=20261121-roundabouts" />
-  <link rel="modulepreload" href="./js/ede-street-features.js?v=20261122-startup" />
+  <link rel="modulepreload" href="./js/ede-street-features.js?v=20261123-harderwijkerweg" />
   <link rel="modulepreload" href="./js/ede-street-features-world.js?v=20261121-shared-sign-posts" />
   <link rel="modulepreload" href="./js/traffic.js?v=20261122-startup" />
   <link rel="modulepreload" href="./js/ede-trips.js" />
@@ -280,38 +316,40 @@
   <link rel="modulepreload" href="./js/ede-parking-access.js" />
   <link rel="modulepreload" href="./js/ede-parking-demand.js" />
   <link rel="modulepreload" href="./js/traffic-area.js" />
-  <link rel="modulepreload" href="./js/ede-road-traffic.js?v=20261122-p2000" />
+  <link rel="modulepreload" href="./js/ede-road-traffic.js?v=20261123-harderwijkerweg" />
   <link rel="modulepreload" href="./js/ede-motorway-lanes.js" />
   <link rel="modulepreload" href="./js/ede-road-lanes.js" />
-  <link rel="modulepreload" href="./js/ede-lane-geometry.js" />
-  <link rel="modulepreload" href="./js/ede-road-surfaces.js" />
+  <link rel="modulepreload" href="./js/ede-lane-geometry.js?v=20261123-harderwijkerweg-fit" />
+  <link rel="modulepreload" href="./js/ede-road-surfaces.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-asphalt-lanes.js" />
   <link rel="modulepreload" href="./js/pedestrian-system.js" />
   <link rel="modulepreload" href="./js/pedestrian-routes.js" />
-  <link rel="modulepreload" href="./js/controllers.js?v=20261122-municipal-coverage" />
+  <link rel="modulepreload" href="./js/controllers.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/touch-controls.js" />
   <link rel="modulepreload" href="./js/gamepad-controls.js" />
   <link rel="modulepreload" href="./js/cameras.js" />
-  <link rel="modulepreload" href="./js/nyc-map.js?v=20261122-municipal-coverage" />
-  <link rel="modulepreload" href="./js/scene-culling.js" />
+  <link rel="modulepreload" href="./js/nyc-map.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/scene-culling.js?v=20261123-startup-memory" />
   <link rel="modulepreload" href="./js/post-processing.js?v=20261119-perf" />
   <link rel="modulepreload" href="./js/audio-synthesis.js" />
   <link rel="modulepreload" href="./js/audio-events.js" />
   <link rel="modulepreload" href="./js/audio-sources.js?v=20261122-p2000" />
   <link rel="modulepreload" href="./js/audio-acoustics.js" />
   <link rel="modulepreload" href="./js/audio-system.js?v=20261122-p2000" />
-  <link rel="modulepreload" href="./js/bag3d.js" />
+  <link rel="modulepreload" href="./js/bag3d.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-bag-exterior.js" />
+  <link rel="modulepreload" href="./js/ede-coverage.js" />
   <link rel="modulepreload" href="./js/ede-facades.js" />
   <link rel="modulepreload" href="./js/ede-neighbourhood-facades.js" />
   <link rel="modulepreload" href="./js/ede-facade-material.js" />
-  <link rel="modulepreload" href="./js/main.js?v=20261122-rink-ice" />
-  <link rel="modulepreload" href="./js/startup.js?v=20261122-rink-ice" />
-  <script type="module" src="./js/startup.js?v=20261122-rink-ice"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261123-startup-memory" />
+  <link rel="modulepreload" href="./js/startup.js?v=20261123-startup-memory" />
+  <script type="module" src="./js/startup.js?v=20261123-startup-memory"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261122-startup" />
+  <link rel="stylesheet" href="./css/style.css?v=20261123-travel-area" />
 </head>
 <body>
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
@@ -358,6 +396,10 @@
 
   <!-- 3D WebGPU Viewport Container -->
   <main id="canvas-container" data-train-prediction-seconds="32" aria-label="Interactive map of Ede in 3D"></main>
+  <div id="municipal-warning" class="municipal-warning" hidden aria-hidden="true">
+    <span>Outside Gemeente Ede · 500 m travel area</span>
+  </div>
+  <div id="municipal-warning-status" class="municipal-warning-status" role="status" aria-live="polite"></div>
   <div class="map-attribution">
     <a href="https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html" target="_blank" rel="noopener noreferrer">Structures and streets via PDOK BGT</a>
     <a href="./docs/map-and-assets.md#refresh-water-works" target="_blank" rel="noopener noreferrer">Water works by Waterschap Vallei en Veluwe</a>

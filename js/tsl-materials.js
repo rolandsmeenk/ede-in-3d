@@ -2880,6 +2880,7 @@ function createCarFlareMaterial() {
 
 export {
   createEdeGroundMaterial,
+  sampleEdeLandCover,
   heathBloomColor,
   cityUniforms,
   WALL_KINDS,

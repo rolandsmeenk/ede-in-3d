@@ -67,6 +67,8 @@ import { EDE_INDUSTRIAL_SKYLINE_LANDMARK_FACTORIES } from './ede-industrial-skyl
 import { EDE_PAASBERG_MEMORIAL_FACTORIES } from './ede-paasberg-memorials.js';
 import { EDE_TOWN_MEMORIAL_FACTORIES } from './ede-town-memorials.js';
 import { EDE_OUTER_MEMORIAL_FACTORIES } from './ede-outer-memorials.js';
+import { EDE_OUTER_CULTURAL_FACTORIES } from './ede-outer-cultural-models.js';
+import { EDE_FARM_LANDMARK_FACTORIES } from './ede-farm-building.js';
 import { createPomphuis } from './ede-pomphuis.js';
 import { createVillaBrutusTerraces } from './ede-villa-brutus.js';
 import { createUluCamii } from './ede-ulu-camii.js';
@@ -249,6 +251,8 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     ...EDE_PAASBERG_MEMORIAL_FACTORIES,
     ...EDE_TOWN_MEMORIAL_FACTORIES,
     ...EDE_OUTER_MEMORIAL_FACTORIES,
+    ...EDE_OUTER_CULTURAL_FACTORIES,
+    ...EDE_FARM_LANDMARK_FACTORIES,
   };
   function registerDetail(detail) {
     if (detail.userData.setClockMinutes) clockUpdates.push(detail.userData.setClockMinutes);

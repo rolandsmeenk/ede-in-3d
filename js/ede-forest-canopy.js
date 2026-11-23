@@ -3,7 +3,7 @@ import { attribute, cameraPosition, float, interleavedGradientNoise, mix, positi
   screenCoordinate, smoothstep, uniform, userData } from 'three/tsl';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { terrainHeightAt } from './terrain.js';
-import { playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
+import { containsPlayablePoint, playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
 import { treeSeasonNodes } from './tree-seasons.js';
 
 const DIRECTORY = new URL('../assets/ede-forest-canopy/', import.meta.url);
@@ -21,7 +21,7 @@ const CROWN_PROFILE = [[0, 0.22, 0.94], [0.16, 0.59, 0.72], SKIRT_BASE];
 const DISTANT_CROWN_PROFILE = [[0, 0.28, 0.92], SKIRT_BASE];
 
 async function request(file) {
-  const response = await fetch(new URL(file, DIRECTORY));
+  const response = await fetch(new URL(`${file}?v=20261123-municipal`, DIRECTORY));
   if (!response.ok) throw new Error(`Canopy ${file} returned HTTP ${response.status}`);
   return response;
 }
@@ -29,29 +29,30 @@ async function request(file) {
 export async function loadForestCanopy() {
   try {
     const { version, cells, northernTreeSamples = [] } = await request('manifest.json').then(response => response.json());
-    if (version !== 1 || !Array.isArray(cells) || !cells.every(({ id, bounds, step, neighborMask }) =>
+    if (![1, 2].includes(version) || !Array.isArray(cells) || !cells.every(({ id, bounds, step, neighborMask, maxY }) =>
       typeof id === 'string' && /^[-_a-zA-Z0-9]+$/.test(id) && [10, 20].includes(step) &&
       bounds?.length === 4 && bounds.every(Number.isFinite) &&
-      bounds[2] - bounds[0] === step * CELLS && bounds[3] - bounds[1] === step * CELLS &&
+      (version === 1 || Number.isFinite(maxY)) && bounds[2] - bounds[0] === step * CELLS && bounds[3] - bounds[1] === step * CELLS &&
       (neighborMask === undefined || Array.isArray(neighborMask) && neighborMask.length === 4 &&
         neighborMask.every(bits => Number.isSafeInteger(bits) && bits >= 0 && bits <= FULL_EDGE)))) {
       throw new Error('Invalid Ede canopy manifest');
     }
     const samples = Array.isArray(northernTreeSamples) && northernTreeSamples.every(sample =>
       Array.isArray(sample) && sample.length === 3 && sample.every(Number.isFinite));
-    return { cells: cells.filter(cell => playableBoundsOverlap(...cell.bounds)), northernTreeSamples: samples ? northernTreeSamples : [] };
+    return { cells: version === 2 ? cells.map(cell => ({ ...cell, buffered: true }))
+      : cells.filter(cell => playableBoundsOverlap(...cell.bounds)), northernTreeSamples: samples ? northernTreeSamples : [] };
   } catch (error) {
     console.warn('[forest canopy] using individual trees:', error);
     return null;
   }
 }
 
-export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FULL_EDGE, FULL_EDGE, FULL_EDGE, FULL_EDGE] }) {
+export function canopyGeometry(buffer, { bounds, step: size, buffered = false, neighborMask = [FULL_EDGE, FULL_EDGE, FULL_EDGE, FULL_EDGE] }) {
   const side = CELLS + 1;
   const offset = CELLS * CELLS;
   if (buffer.byteLength !== offset + side * side * 2) throw new Error('Invalid canopy cell size');
   const rawMask = new Uint8Array(buffer, 0, offset);
-  const mask = playableBoundsCovered && !playableBoundsCovered(...bounds) ? rawMask.slice() : rawMask;
+  const mask = !buffered && playableBoundsCovered && !playableBoundsCovered(...bounds) ? rawMask.slice() : rawMask;
   if (mask !== rawMask) for (let z = 0; z < CELLS; z++) for (let x = 0; x < CELLS; x++) {
     const i = z * CELLS + x;
     if (!mask[i]) continue;
@@ -219,6 +220,14 @@ export function canopyGeometry(buffer, { bounds, step: size, neighborMask = [FUL
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('crownShade', new THREE.Float32BufferAttribute(shades, 1));
+  const exterior = new Float32Array(positions.length / 3);
+  if (buffered && playableBoundsOverlap && !playableBoundsOverlap(...bounds)) exterior.fill(1);
+  else if (buffered && containsPlayablePoint && !playableBoundsCovered(...bounds)) {
+    for (let i = 0; i < exterior.length; i++) {
+      exterior[i] = Number(!containsPlayablePoint(positions[i * 3], positions[i * 3 + 2]));
+    }
+  }
+  geometry.setAttribute('exteriorCanopy', new THREE.BufferAttribute(exterior, 1));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
@@ -237,7 +246,8 @@ export function createForestCanopy(scene, source, seasonal) {
   const base = float(attribute('crownShade', 'float')).mul(new THREE.Color(0x3b5525));
   material.colorNode = tint ? base.mul(mix(1, tint.rgb, 0.55)).mul(mix(0.48, 1, tint.a)) : base;
   const distance = positionWorld.xz.distance(cameraPosition.xz).add(aerialOffset);
-  const visibility = mix(smoothstep(FADE_START, FADE_END, distance), 1, holdNear);
+  const nearTrees = mix(smoothstep(FADE_START, FADE_END, distance), 1, holdNear);
+  const visibility = mix(nearTrees, 1, attribute('exteriorCanopy', 'float'));
   const pattern = interleavedGradientNoise(screenCoordinate.xy);
   const range = userData('lodRange', 'vec2');
   // The parent and children occupy complementary parts of the same screen-door pattern.
@@ -372,10 +382,10 @@ export function createForestCanopy(scene, source, seasonal) {
     tick++;
     viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(viewProjection, camera.coordinateSystem, camera.reversedDepth);
-    const inView = ({ bounds: [w, n, e, s] }) => {
+    const inView = ({ bounds: [w, n, e, s], maxY }) => {
       // Leave room for the crowns and the range of terrain elevations in the expansion.
       box.min.set(w, -20, n);
-      box.max.set(e, 85, s);
+      box.max.set(e, maxY ?? 110, s);
       return frustum.intersectsBox(box);
     };
     const distance = ({ bounds: [w, n, e, s] }) =>

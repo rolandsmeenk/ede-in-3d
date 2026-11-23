@@ -11,9 +11,9 @@ test('baked signal heads join the current OSM controls and reuse surveyed gantri
   const { indexEdeSignalHardware } = await import('../js/ede-signal-hardware.js');
   const { byAnchor, supports } = indexEdeSignalHardware(asset);
   const { containsPlayablePoint } = await import('../js/ede-playable-boundary.js');
-  const maps = ['ede-map-v1.json.gz', 'ede-corridors-v1.json.gz', 'ede-north-v1.json.gz'].map(readAsset);
-  const anchors = new Set(maps.flatMap(map => map.signals.map(({ x, z }) => `${x}/${z}`)));
-  const ways = new Set(maps.flatMap(map => map.roads.map(road => road.id)));
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const anchors = new Set(EDE_DATA.signals.map(({ x, z }) => `${x}/${z}`));
+  const ways = new Set(EDE_DATA.roads.map(road => road.id));
   const gantries = new Set(readAsset('ede-1gis-detail.json.gz').features.filter(f => f.type === 'gantry').map(f => f.id));
   for (const [key, heads] of byAnchor) {
     assert.ok(anchors.has(key), key);

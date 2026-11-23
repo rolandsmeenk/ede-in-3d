@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
+const { gunzipSync } = require('node:zlib');
 const test = require('node:test');
 const { loadModule } = require('./helpers/module.cjs');
 
@@ -57,6 +58,7 @@ function loadBag({ blocks = [], aerial = {}, grade = {}, three, facadeStubs = {}
       'three/addons/loaders/GLTFLoader.js': {},
       'three/addons/libs/meshopt_decoder.module.js': {},
       './ede-scene-coordinates.js': loadModule(read('ede-scene-coordinates.js')),
+      './ede-bag-exterior.js': { loadBagBoundaryOwnership: async () => null },
       './ede-playable-boundary.js': { playableBoundsCovered: () => true, playableBoundsOverlap: () => true, ...boundary },
       './nyc-geodata.js': { GEO: { ede: { meta: { bounds: [0, 0, 30, 30], ...meta } } } },
       './city-config.js': { BLOCKS: blocks },
@@ -415,23 +417,32 @@ test('aerial town tiles keep their shells across the map boundary and restore st
     culling.update(camera);
   };
   const rendered = object => object.visible && object.layers.isEnabled(0);
-  for (const x of [2999, 3001, 2999]) {
-    at(x, 100);
-    assert.ok(rendered(shell));
-    assert.equal(culling.stats.aerialShells, 1);
-    assert.ok([walls, roofs, paving].every(object => !object.layers.isEnabled(0)));
-    assert.ok([terrain, rail, water, chimney, deck].every(rendered));
+  for (const altitude of [40, 100]) {
+    for (const x of [2999, 3001, 2999]) {
+      at(x, altitude);
+      assert.ok(rendered(shell));
+      assert.equal(culling.stats.aerialShells, 1);
+      assert.ok([walls, roofs, paving].every(object => !object.layers.isEnabled(0)));
+      assert.ok([terrain, rail, water, chimney, deck].every(rendered));
+    }
   }
 
-  at(750, 100);
+  at(750, 40);
   assert.ok(rendered(walls));
   assert.ok(!rendered(shell));
-  at(2999, 100);
-  assert.ok(rendered(shell));
-  at(2999, 54);
+  at(1935, 30);
+  assert.ok(rendered(walls) && !rendered(shell));
+  at(1935, 36);
+  assert.ok(rendered(shell) && !rendered(walls));
+  at(1935, 17);
   assert.ok(!rendered(shell));
   assert.ok(rendered(walls) && rendered(paving));
   assert.ok(roofs.layers.isEnabled(0) && !roofs.visible);
+
+  at(2999, 2);
+  assert.ok(rendered(shell));
+  assert.ok(!rendered(walls) && !rendered(paving));
+  assert.ok([terrain, rail, water, chimney, deck].every(rendered));
 });
 
 test('surveyed landmarks exclude only their surveyed buildings across both building sources', async () => {
@@ -728,4 +739,86 @@ test('shop signs keep the same wall position and inherit facade or local street 
     assert.equal(osm[i + 1] - bag[i + 1], 3);
   }
   assert.ok(Math.abs((bag[1] + bag[7]) / 2 - (23 + 3.4)) < 1e-8);
+});
+
+test('authoritative BAG ownership keeps whole Ede-majority geometry and removes the exterior ID', () => {
+  const boundary = { playableBoundsCovered: (minX, minZ, maxX) => maxX <= 3.5 };
+  const { bakeTile } = loadBag({ boundary, facadeStubs: { meshBagFacadeFeatures: (_, mesh, tables) => tables[mesh.table] } });
+  const mesh = { table: 0, isMesh: true, geometry: { attributes: {
+    position: new BufferAttribute([1,0,0, 2,0,0, 2,2,0, 3,0,0, 4,0,0, 4,2,0], 3),
+    normal: new BufferAttribute([0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,1], 3),
+    _feature_id_0: new BufferAttribute([6,6,6, 7,7,7], 1),
+  } } };
+  const gltf = { scene: { updateMatrixWorld() {}, traverse(fn) { fn(mesh); } } };
+  const [kept] = bakeTile(gltf, {}, null, null, null, null, null, null, true, [new Map([[6, -1], [7, 1]])]);
+  assert.deepEqual(Array.from(kept.index.array), [3, 4, 5]);
+});
+
+test('exterior BAG tiles share the map footprints and keep a courtyard in the fallback', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { buildExteriorBagTile } = loadModule(read('ede-bag-exterior.js').replace('import.meta.url', 'moduleUrl'), {
+    globals: { URL, moduleUrl: 'https://example.test/js/ede-bag-exterior.js' },
+    imports: { 'three/webgpu': T, './terrain.js': {} },
+  });
+  const id = '0228100000000000';
+  const footprint = { id, minX: 100, maxX: 110, minZ: 200, maxZ: 210,
+    polygons: [[[100,200, 110,200, 110,210, 100,210], [102,202, 102,204, 104,204, 104,202]]] };
+  const footprints = new Map([[id, footprint]]);
+  const ground = (x, z) => (x - 100) / 10 + (z - 200) / 10;
+  const fallback = buildExteriorBagTile([[id, 'height', null, 4, [], []]], footprints, 100, 200, ground);
+  const { position, normal } = fallback.attributes;
+  const { start, count } = fallback.groups[1];
+  let roofArea = 0;
+  for (let i = start; i < start + count; i += 3) {
+    const ax = position.getX(i), az = position.getZ(i);
+    const ux = position.getX(i + 1) - ax, uz = position.getZ(i + 1) - az;
+    const vx = position.getX(i + 2) - ax, vz = position.getZ(i + 2) - az;
+    roofArea += (uz * vx - ux * vz) / 2;
+    assert.equal(position.getY(i), 5);
+    assert.equal(normal.getY(i), 1);
+  }
+  assert.equal(roofArea, 96);
+  const detail = buildExteriorBagTile([
+    [id, '2.2', 2, null, [0,0,0, 100,0,0, 0,120,0], [0,120,0, 100,180,0, 0,120,100]],
+  ], footprints, 100, 200, ground).attributes.position;
+  assert.equal(detail.getY(0), -0.25);
+  assert.equal(detail.getY(3), Math.fround(3.2));
+  assert.equal(detail.getY(4), Math.fround(3.8));
+});
+
+
+test('exterior BAG tiles and gray map footprints share one record per BAG ID', () => {
+  const directory = join(__dirname, '../assets/ede-bag-exterior');
+  const packed = name => JSON.parse(gunzipSync(readFileSync(join(directory, name))));
+  const index = JSON.parse(readFileSync(join(directory, 'index.json')));
+  const footprints = packed('footprints.json.gz');
+  const ownership = new Map(packed('ownership.json.gz'));
+  const tiles = index.tiles.flatMap(([, , name]) => packed(name));
+  const ids = new Set(tiles.map(([id]) => id));
+  assert.equal(ids.size, tiles.length);
+  assert.equal(ids.size, footprints.length);
+  assert.equal(ids.size, Object.values(index.counts).reduce((a, b) => a + b, 0));
+  for (const { id } of footprints) {
+    assert.ok(ids.has(id), id);
+    assert.equal(ownership.get(id), false, id);
+  }
+  const overlap = tiles.find(([id]) => id === '0228100000068408');
+  assert.equal(overlap[1], '2.2');
+  assert.ok(overlap[4].length && overlap[5].length);
+});
+
+test('gray BAG colliders exist independently of meshes and preserve courtyard holes', async () => {
+  const T = await import('../vendor/three/build/three.webgpu.js');
+  const { buildExteriorBagColliders } = loadModule(read('ede-bag-exterior.js').replace('import.meta.url', 'moduleUrl'), {
+    globals: { URL, moduleUrl: 'https://example.test/js/ede-bag-exterior.js' },
+    imports: { 'three/webgpu': T, './terrain.js': {} },
+  });
+  const { polygonContains } = loadModule(read('building-collision.js'));
+  const square = { minX: 100, maxX: 110, minZ: 200, maxZ: 210, height: 9, sourceGround: 2,
+    polygons: [[[100,200, 110,200, 110,210, 100,210], [102,202, 102,204, 104,204, 104,202]]] };
+  const [collider] = buildExteriorBagColliders([square], (x, z) => (x - 100) / 10 + (z - 200) / 10);
+  assert.equal(collider.minY, -0.25);
+  assert.equal(collider.maxY, 11);
+  assert.ok(polygonContains(collider.polygon, 105, 205));
+  assert.ok(!polygonContains(collider.polygon, 103, 203));
 });

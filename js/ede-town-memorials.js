@@ -237,6 +237,24 @@ function mapleLeafs(site) {
   }, false);
 }
 
+function bartVanElstMemorial(site) {
+  return buildMemorial(site, (batch, plaques, ground, obstacle) => {
+    // White stone and plinth, with the two flanking brick-and-timber benches.
+    box(batch, 0, ground(0, 0) + 0.42, 0, 0.92, 0.78, 0.48, 0x938f86);
+    box(batch, 0, ground(0, 0) + 1.13, 0, 0.70, 0.62, 0.20, 0xe1ddd2);
+    box(batch, 0, ground(0, 0) + 0.90, 0.108, 0.57, 0.035, 0.012, 0x858179);
+    plaques.push({ center: [0, ground(0, 0) + 1.12, 0.111], width: 0.54, height: 0.34,
+      lines: ['1940–1945', 'B. VAN ELST · M. LUGTHART', 'J. MEKKING · P. ROSEBOOM',
+        'J. SCHOUTEN · H. VAN VLIET', 'GEVALLEN IN HET VERZET'], color: '#44423d' });
+    for (const x of [-1.18, 1.18]) {
+      box(batch, x, ground(x, 0) + 0.22, 0, 1.14, 0.44, 0.52, 0x795b4d);
+      box(batch, x, ground(x, 0) + 0.49, 0, 1.20, 0.08, 0.58, 0x59483d);
+      obstacle(x, 0, 1.15, 0.58, 0.58);
+    }
+    obstacle(0, 0, 0.94, 1.46, 0.48);
+  });
+}
+
 function leijdesdorffMemorial(site) {
   return buildMemorial(site, (batch, plaques, ground, obstacle) => {
     const rim = [[-0.14, -0.28], [-0.14, 0.28], [0.14, 0.28], [0.14, -0.28]];
@@ -264,4 +282,5 @@ export const EDE_TOWN_MEMORIAL_FACTORIES = {
   'de-amazones-van-ede': (_, site) => amazones(site),
   'maple-leafs-polar-bears': (_, site) => mapleLeafs(site),
   'leijdesdorff-hoek-gedenksteen': (_, site) => leijdesdorffMemorial(site),
+  'bart-van-elst-monument': (_, site) => bartVanElstMemorial(site),
 };

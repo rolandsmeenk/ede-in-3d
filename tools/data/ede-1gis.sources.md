@@ -1,5 +1,15 @@
 # Rijkswaterstaat 1GIS motorway detail
 
+The 23 November 2026 refresh uses the full playable Ede boundary and the matching
+BGT bridge and wall inventory. The runtime asset contains 4,269 pieces, including
+157 additional IDs on the expanded A12 and A30 corridors. It retains all 4,112
+IDs from the preceding bake and all reviewed upper-deck barrier placements.
+The crossing audit checked 1,144 pieces, corrected 13 deck mounts and withheld
+one unsupported crossing. The bundled source snapshot and regeneration commands
+below apply to the refreshed extent.
+
+## Initial extraction
+
 The 19 November 2026 extraction used the public production MapServer. It preserves the supplied RD New coordinates (EPSG:28992) and Z samples in metres NAP. The query requests `returnZ=true` and rejects a truncated response. The offline snapshot keeps the source points, paths and polygon rings with their dates, object and GlobalIDs, native types and relative levels. The runtime asset projects them into the existing Oude Kerk frame. The source layers are published by Rijkswaterstaat under CC0 1.0. [Rijkswaterstaat 1GIS](https://www.rijkswaterstaat.nl/zakelijk/zakendoen-met-rijkswaterstaat/werkwijzen/werkwijze-in-gww/data-eisen-rijkswaterstaatcontracten/1gis) · [MapServer](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer) · [Lighting licence](https://data.overheid.nl/dataset/83397-geografische-areaalregistratie-licht-punten) · [Marking licence](https://data.overheid.nl/dataset/80488-geografische-areaalregistratie-markering-lijnen) · [Furniture licence](https://data.overheid.nl/dataset/79146-geografische-areaalregistratie-meubilair-lijnen) · [Structure licence](https://data.overheid.nl/dataset/80494-geografische-areaalregistratie-kunstwerk-vlakken)
 
 | 1GIS layer | Ede extent | Within corridor | Use |
@@ -37,7 +47,7 @@ The site counts include geometry within 180 m of the indicated view position. Th
 
 ## Refresh
 
-Rebuild with the bundled 529,894-byte survey snapshot and the existing BGT, NWB and grade assets.
+Rebuild with the bundled survey snapshot and the existing BGT, NWB, and grade assets.
 
 ```sh
 uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/build-ede-1gis.py --report /tmp/ede-1gis-report.json

@@ -6,8 +6,8 @@ import bisect
 import json
 import math
 from pathlib import Path
-import struct
 
+from ede_height_field import read_height_field
 from ede_map import load_scene
 from ede_scene import SceneAffine
 from ede_rail_profiles import extend_corridor_profiles, fit as fit_rail_profiles
@@ -23,12 +23,8 @@ STATION_PLAN = 'https://www.prorail.nl/siteassets/homepage/projecten/ede-spoorzo
 
 class Terrain:
     def __init__(self, path=ROOT / 'assets/ede-ahn.bin'):
-        data = path.read_bytes()
-        magic, self.columns, self.rows, self.x, self.z, self.step, self.nap = struct.unpack_from('<4sIIffff', data)
-        if magic != b'AHN1':
-            raise ValueError('Unrecognized terrain datum')
+        self.columns, self.rows, self.x, self.z, self.step, self.nap, self.heights = read_height_field(path)
         self.nap = round(self.nap, 2)
-        self.heights = struct.unpack_from(f'<{self.columns * self.rows}h', data, 28)
 
     def at(self, point):
         x, z = point

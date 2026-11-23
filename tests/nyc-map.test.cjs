@@ -6,7 +6,10 @@ const { loadModule } = require('./helpers/module.cjs');
 
 const source = readFileSync(join(__dirname, '../js/nyc-map.js'), 'utf8');
 const ISLAND_BOUNDS = { minX: -10000, maxX: 10000, minZ: -10000, maxZ: 10000 };
-const mapImports = { './nyc-geodata.js': { GEO: {} }, './city-config.js': { ROADS: [], ISLAND_BOUNDS } };
+const mapImports = {
+  './nyc-geodata.js': { GEO: {} }, './city-config.js': { ROADS: [], ISLAND_BOUNDS },
+  './ede-coverage.js': { edeCoverage: null }
+};
 
 test('surveyed building courtyards remain holes in the map footprint layer', () => {
   class Path2D {
@@ -91,7 +94,7 @@ function classList() {
   };
 }
 
-function mapHarness(landmarks = [], teleportsById = {}, geo = {}) {
+function mapHarness(landmarks = [], teleportsById = {}, geo = {}, boundaryConfig = {}) {
   const window = { ...eventTarget(), innerWidth: 200, innerHeight: 200 };
   const canvas = {
     ...eventTarget(), style: {}, clientWidth: 200, clientHeight: 200,
@@ -124,11 +127,11 @@ function mapHarness(landmarks = [], teleportsById = {}, geo = {}) {
     ISLAND_BOUNDS,
     getIslandBoundsAtZ: () => ({ westX: -10000, eastX: 10000 }),
     getLocationLabel: (x, z) => `${x}, ${z}`,
-    isTypingInField: () => false
+    isTypingInField: () => false, ...boundaryConfig
   };
   const { NYCMapSystem } = loadModule(source, {
     globals: { window, document },
-    imports: { './nyc-geodata.js': { GEO: geo }, './city-config.js': config }
+    imports: { ...mapImports, './nyc-geodata.js': { GEO: geo }, './city-config.js': config }
   });
   const teleports = [], landmarkTeleports = [], toggles = [];
   const map = new NYCMapSystem({
@@ -183,6 +186,27 @@ test('a normal map tap teleports once and releases capture', () => {
   assert.equal(h.map.isPanning, false);
 });
 
+test('map taps reach the exterior travel area and reject scenery beyond it', () => {
+  const playableBoundary = [[[990, 1990, 1010, 1990, 1010, 2010, 990, 2010]]];
+  const h = mapHarness([], {}, { city: 'Ede', ede: { meta: { playableBoundary } } }, {
+    containsPlayablePoint: (x, z) => x >= 990 && x <= 1010 && z >= 1990 && z <= 2010,
+    containsTravelPoint: (x, z) => x >= 980 && x <= 1020 && z >= 1980 && z <= 2020,
+    constrainToTravelArea: (x, z) => ({ x, z }),
+    blockAt: () => null, waterAt: () => false
+  });
+  h.pointer(h.canvas, 'pointermove', 1, 131, 120, 'mouse');
+  assert.equal(h.hoverInfo.textContent, 'Outside the travel area');
+  h.pointer(h.canvas, 'pointerdown', 1, 131, 120);
+  h.pointer(h.canvas, 'pointerup', 1, 131, 120);
+  assert.deepEqual(h.teleports, []);
+  assert.equal(h.map.isFullMapOpen, true);
+  h.pointer(h.canvas, 'pointermove', 2, 130, 120, 'mouse');
+  assert.match(h.hoverInfo.textContent, /^Outside Gemeente Ede/);
+  h.pointer(h.canvas, 'pointerdown', 2, 130, 120);
+  h.pointer(h.canvas, 'pointerup', 2, 130, 120);
+  assert.deepEqual(h.teleports, [[1020, 2000]]);
+});
+
 test('a map tap finds the framed approach to a landmark outside the area menu', () => {
   const theatre = { id: 'openluchttheater', name: 'De Eder Kuil', x: 1000, z: 2000 };
   const h = mapHarness([theatre, { id: 'old-site', name: 'Old Site', x: 1003, z: 2000 }],
@@ -206,7 +230,10 @@ test('the atlas omits hidden pins, search results and generic area labels', () =
   const area = { id: 'area', name: 'Village Centre', short: 'Village Centre', x: 1200, z: 2050, hideOnMap: true };
   const church = { id: 'kerk', name: 'Church', short: 'Church', x: 700, z: 2350 };
   const h = mapHarness([mast, area, church], { mast: { focus: mast }, area: { focus: area }, kerk: { focus: church } }, {
-    city: 'Ede', ede: { meta: { areas: [{ name: 'Neighbourhood', labelPoint: [450, 1500] }] },
+    city: 'Ede', ede: { meta: { areas: [
+      { name: 'Neighbourhood', labelPoint: [450, 1500] },
+      { name: 'Village', place: 'village', labelPoint: [1500, 1500] }
+    ] },
       parks: [{ name: 'Local park', kind: 'park', ring: [1240, 1700, 1260, 1700, 1260, 1720, 1240, 1720] }] },
   });
   const labels = [], circles = [];
@@ -217,8 +244,16 @@ test('the atlas omits hidden pins, search results and generic area labels', () =
   Object.assign(h.map, { drawWorld() {}, drawRoadLabels() {}, drawScaleBar() {}, viewZoom: 0.1 });
   h.map.renderFullMapStatic(ctx, { w: 200, h: 200, s: 0.1, screen() {},
     toX: x => (x - 1000) * 0.1, toY: z => (z - 2000) * 0.1 });
-  assert.deepEqual(labels, ['LOCAL PARK', 'Church']);
+  assert.deepEqual(labels, ['Village', 'LOCAL PARK', 'Church']);
   assert.deepEqual(circles, [[-30, 35], [-30, 35]]);
+  labels.length = circles.length = 0;
+  h.map.viewZoom = 0.03;
+  h.map.renderFullMapStatic(ctx, { w: 200, h: 200, s: 0.03, screen() {},
+    toX: x => (x - 1000) * 0.03, toY: z => (z - 2000) * 0.03 });
+  assert.deepEqual(labels, ['Village']);
+  assert.deepEqual(circles, []);
+  assert.equal(h.map.scenicLandmarkAt(church, { width: 200, height: 200 }), null);
+  h.map.viewZoom = 0.1;
   assert.equal(h.map.scenicLandmarkAt(mast, { width: 200, height: 200 }), null);
   h.map.search(area.name);
   assert.equal(h.map.viewCenterX, 1000);
@@ -300,6 +335,18 @@ test('the city overview fits the whole map on a small canvas', () => {
   assert.ok(map.viewZoom <= fit);
 });
 
+test('the municipality overview also fits the complete terrain buffer', () => {
+  const terrainBoundary = [[[-17000, -16000, 16000, -16000, 16000, 12000, -17000, 12000]]];
+  const { NYCMapSystem } = loadModule(source, {
+    imports: { ...mapImports, './ede-coverage.js': { edeCoverage: { terrainBoundary } } }
+  });
+  const map = Object.create(NYCMapSystem.prototype);
+  map.fullSize = () => ({ w: 320, h: 200 });
+  const zoom = map.cityOverviewZoom();
+  assert.ok(33000 * zoom < 320);
+  assert.ok(28000 * zoom < 200);
+});
+
 test('the map includes mapped roads in the outer Ede districts', async () => {
   const { EDE_DATA, nearestRoads } = await import('../js/city-config.js');
   for (const [district, road] of [
@@ -313,6 +360,19 @@ test('the map includes mapped roads in the outer Ede districts', async () => {
     const { labelPoint: [x, z] } = EDE_DATA.meta.areas.find(area => area.name === district);
     assert.ok(nearestRoads(x, z, 200).some(q => q.road.name === road), `${district} includes ${road}`);
   }
+});
+
+test('atlas GPS connectors stay inside the municipal outline', () => {
+  const GEO = {
+    city: 'Ede',
+    roadGraph: { nodes: [3, 0, 8, 0], links: [[0, 1, '', 6, '', 1, []]] }
+  };
+  const { getEdeMapRoute } = loadModule(source, { imports: {
+    ...mapImports, './nyc-geodata.js': { GEO },
+    './city-config.js': { ...mapImports['./city-config.js'],
+      containsPlayablePoint: x => x !== 1, waterAt: () => false }
+  } });
+  assert.deepEqual(Array.from(getEdeMapRoute(0, 0, 9, 0), p => p.x), [3, 8, 9]);
 });
 
 test('atlas GPS connections stop at open water and can reach a mapped bridge', () => {

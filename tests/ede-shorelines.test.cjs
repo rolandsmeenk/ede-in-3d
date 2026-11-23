@@ -13,11 +13,13 @@ test('the corrected shoreline is shared by map layers, park geometry and movemen
   const { water, land } = asset('ede-shorelines.json.gz');
   const original = asset('ede-map-v1.json.gz');
   const activeWater = [...water.filter(({ id }) => id !== 'water171'), FRANKENENG_DOWNSTREAM];
-  const changes = new Map(asset('ede-municipality-v1.json.gz').layers.water.changes);
+  const changes = new Map(asset('ede-complete-v1.json.gz').municipality.layers.water.changes);
   const playableWater = activeWater.flatMap(row => changes.get(row.id) ?? [row]);
   assert.deepEqual(EDE_DATA.water.slice(0, playableWater.length), playableWater);
   assert.equal(EDE_DATA.meta.counts.water, EDE_DATA.water.length);
-  assert.ok(EDE_DATA.water.slice(playableWater.length).every(feature => /^(?:corridor|north)-water/.test(feature.id)));
+  assert.ok(EDE_DATA.water.slice(playableWater.length).every(feature =>
+    /^(?:(?:corridor|north)-water|osm-water-)/.test(feature.id) || (feature.fringe && feature.id.startsWith('bgt-fringe-water-'))));
+  assert.ok(EDE_DATA.water.filter(feature => feature.fringe).length > 2000);
   assert.equal(waterAtExact(-3458, 783), false);
   assert.equal(waterAt(-3458, 783), false);
   assert.equal(GEO.centralPark.water, EDE_DATA.water);

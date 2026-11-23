@@ -416,39 +416,35 @@ export function createExpansionCulling(roots, bounds, getGroundHeight) {
     }
   }
 
-  let lastX = Infinity, lastZ = Infinity, lastY = Infinity, wasOutside = false, wasAerial = false;
+  let lastX = Infinity, lastZ = Infinity, lastY = Infinity, lastTownReach = 0;
   const [west, north, east, south] = bounds;
+  const hysteresis = 70;
   const stats = { hiddenBatches: 0, aerialShells: 0 };
   return {
     stats,
     update(camera) {
       const { x, y, z } = camera.position;
       const townDepth = Math.min(x - west, east - x, z - north, south - z);
-      const outside = townDepth < 0;
       const altitude = y - getGroundHeight(x, z);
-      const aerialBlend = THREE.MathUtils.smoothstep(altitude, 55, 100);
-      const aerial = aerialBlend > 0;
-      const active = outside || aerial;
-      if (!active && !wasOutside && !wasAerial) return;
+      // Keep more street detail near the ground, then use the same distance limit for low flights.
+      const aerialBlend = THREE.MathUtils.smoothstep(altitude, 18, 40);
+      const townReach = 650 * (1 - aerialBlend) * THREE.MathUtils.smoothstep(townDepth, -360, 360);
+      if (Math.abs(townReach - lastTownReach) < hysteresis && Math.hypot(x - lastX, y - lastY, z - lastZ) < 18) return;
       collectBatches();
-      if (outside === wasOutside && aerial === wasAerial && Math.hypot(x - lastX, y - lastY, z - lastZ) < 18) return;
       lastX = x;
       lastY = y;
       lastZ = z;
-      wasOutside = outside;
-      wasAerial = aerial;
+      lastTownReach = townReach;
       const air = THREE.MathUtils.clamp((altitude - 38) * 2, 0, 500);
-      // Bring the detail cutoff inward as the camera climbs. Blend across the map boundary during the climb.
-      const townReach = aerial ? 6500 * (1 - aerialBlend) * THREE.MathUtils.smoothstep(townDepth, -360, 360) : 0;
       let hiddenBatches = 0;
       let aerialShells = 0;
       for (const batch of batches) {
-        const reach = batch.reach + air + townReach + (batch.hidden ? 0 : 70);
-        const hidden = active && !(aerial && batch.keepInAerial) &&
+        const reach = batch.reach + air + townReach + (batch.hidden ? 0 : hysteresis);
+        const hidden = !batch.keepInAerial &&
           (x - batch.x) ** 2 + (z - batch.z) ** 2 > reach ** 2;
         if (hidden) hiddenBatches += batch.meshes.length;
         if (batch.proxy) {
-          batch.proxy.visible = aerial && hidden;
+          batch.proxy.visible = hidden;
           if (batch.proxy.visible) aerialShells++;
         }
         if (hidden === batch.hidden) continue;

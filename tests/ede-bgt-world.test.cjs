@@ -18,9 +18,13 @@ function area(ring) {
   return sum / 2;
 }
 
-test('BGT structures fit the playable Ede frame and each source ID is assigned once', async () => {
-  const { EDE_DATA } = await import('../js/ede-geodata.js');
-  const [minX, minZ, maxX, maxZ] = EDE_DATA.meta.bounds;
+test('BGT structures fit the 500 m playable frame and each source ID is assigned once', async () => {
+  const { edeCoverage } = await import('../js/ede-coverage.js');
+  const rings = edeCoverage.buildingBoundary.flat();
+  const xs = rings.flatMap(ring => ring.filter((_, i) => i % 2 === 0));
+  const zs = rings.flatMap(ring => ring.filter((_, i) => i % 2 === 1));
+  const minX = Math.min(...xs), minZ = Math.min(...zs), maxX = Math.max(...xs), maxZ = Math.max(...zs);
+  assert.equal(asset.source.exterior.date, '2026-11-23');
   assert.equal(asset.source.municipality, 'GM0228');
   const counts = {};
   const sources = new Set();
@@ -58,6 +62,14 @@ test('BGT extract includes the stations, A30 crossing and both Maanderbroek turb
   assert.ok(authoredPlatformIds.every(id => has('platform', id)));
 });
 
+
+test('the complete municipal BGT inventory includes northern decks and local turbine scale', () => {
+  const ids = new Map(asset.structures.flatMap(structure => structure.ids.map(id => [id, structure])));
+  assert.equal(ids.get('L0003.d6cadc8d77994768830be8beb29046a2').kind, 'deck');
+  assert.equal(ids.get('G0228.3ee8eb0533604ce9b05475f200118735').hubHeight, 11);
+  assert.ok(asset.coveredByBuildings.includes('G0228.03edc86e0860404990dd1d44134deb74'));
+  assert.ok(asset.coveredByBuildings.every(id => !ids.has(id)));
+});
 
 test('a rail-only deck with sparse rail hits stays above its cut approaches', () => {
   const { loadModule } = require('./helpers/module.cjs');

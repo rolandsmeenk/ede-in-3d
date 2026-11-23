@@ -12,49 +12,50 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 - **Cycle or drive across town.** Follow mapped cycle routes, pass buses on local streets, and watch the trains at Ede-Wageningen, Ede Centrum and Lunteren.
 - **Jump to a major area or find a landmark.** Use **Teleport** for areas such as Centrum, ENKA, Ginkelse Heide and Lunteren. Open **Map** and search for an individual landmark, such as De Eder Kuil, Groot Zonneoord or De Valenberg, then click its pin to teleport.
 
+A border warning appears while you walk, cycle, drive or fly in the 500 m strip outside the municipality. The atlas marks the official boundary and the outer travel limit.
+
 ## Ede by the numbers
 
 | Feature | Count or coverage |
 | --- | ---: |
-| Playable area inside Gemeente Ede | 179 km² |
+| Official area of Gemeente Ede | 318.62 km² |
+| Playable area with the 500 m border | 361.15 km² |
+| Exterior terrain and canopy | 2 km buffer |
+| Gray BAG buildings in the 500 m buffer | 10,459 |
 | Teleport menu areas | 14 |
-| Custom landmark models | 252 |
-| Mapped building footprints | 60,950 |
-| Street litter bins | 663 |
-| Waste collection sites | 438 |
-| Mapped playground outlines | 144 |
-| Municipal play-site locations | 254 |
+| Custom landmark models | 258 |
+| Mapped building footprints | 85,395 |
+| Municipal litter-bin placements | 742 |
+| Municipal waste container placements | 483 |
+| Municipal play-site locations | 287 |
 | Playgrounds with surveyed equipment | 2 |
-| Outdoor sports pitches, courts and tracks | 262 |
-| Timetable bus-stop records | 248 |
-| Rendered bus-stop signs | 218 |
-| Bus stops with generated boarding areas | 109 |
-| Bus shelters | 62 |
-| Mapped traffic-light locations | 293 |
-| Lamp posts | 18,300 |
-| Mapped tree records in the default inventory | 104,141 |
-| Mapped roads and paths | 2,305 km |
-| Mapped railway tracks | 38 km |
-| Modeled parking spaces | 18,193 |
+| Outdoor sports pitches, courts and tracks | 396 |
+| Timetable bus-stop records | 339 |
+| Mapped traffic-light locations | 314 |
+| Lamp posts | 22,902 |
+| Mapped tree records in the default inventory | 127,213 |
+| Mapped roads and paths | 3,672 km |
+| Mapped railway tracks | 40 km |
+| Modeled parking spaces | 26,543 |
 
-Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 248 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. The tree inventory counts imported trunks before clearance checks and procedural woodland. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Municipal coverage and sources](docs/map-and-assets.md#municipal-coverage)
+Counts come from the bundled map, placement assets and landmark registry. The landmark total includes 254 registered sites, Ede-Wageningen station, the Sherman Tank monument and the two Chico and Chica sculptures. The tree inventory counts imported trunks before clearance checks and procedural woodland. Municipal play-site points can overlap mapped playground outlines. Each traffic-light location is a mapped signal point, and each waste collection site counts as one placement even if it serves several waste streams. Lengths sum the mapped ways, including separate carriageways and parallel tracks. [Municipal coverage and sources](docs/map-and-assets.md#municipal-coverage)
 
-Bus-stop signs combine timetable records that share a boarding point. The shelter count includes 61 generated shelters and one surveyed model. [Bus-stop models and sources](docs/map-and-assets.md#bus-stop-design-references)
+Bus-stop signs combine timetable records that share a boarding point. Shelter placements use mapped and surveyed sources. [Bus-stop models and sources](docs/map-and-assets.md#bus-stop-design-references)
 
 ### Outdoor sports areas by type
 
-The expanded map adds 93 outdoor sports areas. Across the full map, 147 areas get sport-specific layouts and 115 show the playing surface only.
+The expanded map adds 134 outdoor sports areas to the previous inventory. Mapped grounds include both sport-specific layouts and playing surfaces.
 
 | Sport or use | Mapped areas | Sport or use | Mapped areas |
 | --- | ---: | --- | ---: |
-| Equestrian | 89 | Baseball and softball | 3 |
-| Football | 61 | Field hockey | 3 |
-| Tennis | 45 | Padel | 3 |
-| Basketball | 22 | Korfball | 2 |
+| Equestrian | 159 | Baseball and softball | 3 |
+| Football | 89 | Field hockey | 3 |
+| Tennis | 67 | Padel | 3 |
+| Basketball | 25 | Korfball | 6 |
 | Athletics | 19 | Pickleball | 2 |
-| Table tennis | 5 | Boules | 1 |
+| Table tennis | 5 | Boules | 2 |
 | Multi-sport | 4 | Ice skating | 1 |
-| Skateboarding | 4 | Unspecified | 2 |
+| Skateboarding | 6 | Unspecified | 3 |
 
 Four courts count toward both football and basketball. [Bundled sports inventory](assets/ede-sports.json)
 

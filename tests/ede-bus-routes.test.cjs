@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const busAsset = require('../assets/ede-bus-routes.json');
 const { test } = require('node:test');
 
 function edge(id, from, to, moves) {
@@ -76,4 +77,11 @@ test('a bus lane re-entering the municipal boundary does not cross the excluded 
   assert.deepEqual([gap.from, gap.to], [35, 55]);
   assert.ok(route.slices[0].legs.at(-1).to <= 38);
   assert.ok(route.slices[1].legs[0].from >= 58);
+});
+
+test('the bundled timetable boards at the newly covered villages', () => {
+  for (const town of ['Bennekom', 'Harskamp', 'De Valk']) {
+    assert.ok(busAsset.variants.some(variant => variant.slices.length &&
+      variant.stops.some(stop => stop.matched && stop.name.startsWith(`${town},`))), town);
+  }
 });

@@ -69,7 +69,7 @@ test('the Ede map binds a raised zebra, directed stops and roundabout priority',
   const circulating = controls.conflicts(roundabout, CAR);
   assert.deepEqual(circulating.map(e => e.wayId), ['w668532572']);
   assert.deepEqual(controls.conflicts(circulating[0], CAR), []);
-  assert.equal(controls.review.signalizedCrossingsWithoutPlans, 82);
+  assert.equal(controls.review.signalizedCrossingsWithoutPlans, features.crossings.filter(row => row.control === 'signal').length);
 });
 
 test('street controls keep directed and independently layered references separate', async () => {

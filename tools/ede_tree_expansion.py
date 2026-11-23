@@ -13,7 +13,7 @@ from shapely.geometry import LineString, Polygon
 from ede_gis import Frame, source_crs
 from ede_map import ROOT, load_playable_boundary, load_playable_scene, load_scene
 
-BGT, SURVEYED, MOR, ROADSIDE, AHN, PHENOLOGY = 1, 8, 16, 32, 64, 128
+BGT, OSM, SURVEYED, MOR, ROADSIDE, AHN, PHENOLOGY = 1, 4, 8, 16, 32, 64, 128
 UNKNOWN = 255
 ROAD_REFS = ('N224', 'N304', 'N781')
 VEHICLE_SURFACES = {
@@ -141,6 +141,8 @@ def match_rows(records, sites, radius, eligible=lambda *_: True, review_gap=0):
 
 
 def rejection_masks(records, masks):
+    if not records:
+        return {}
     positions = points([r[2] for r in records])
     reasons = defaultdict(list)
     for key, tree in masks.items():
@@ -252,7 +254,7 @@ def expand(args, Tree, unpack_baseline, pack, classify, read_geojson, unique_tre
         base = [tree for tree in base if intersects_xy(boundary, *tree.world)]
     masks = spatial_masks(scene)
     baseline_counts = coverage(base)
-    bgt_count = 0
+    bgt_count = osm_count = 0
     if args.playable and args.pdok:
         raw_bgt = [(identity, rd, world) for rd, p, identity in read_geojson(args.pdok, 'Point')
                    if p.get('plus_type', 'boom') == 'boom' and p.get('status', 'bestaand') == 'bestaand'
@@ -264,6 +266,19 @@ def expand(args, Tree, unpack_baseline, pack, classify, read_geojson, unique_tre
         before = len(base)
         join(base, additions, 1.2)
         bgt_count = len(base) - before
+    if args.playable and scene['meta'].get('fullMunicipality'):
+        with gzip.open(ROOT / 'assets/ede-north-v1.json.gz', 'rt') as legacy:
+            prior_bounds = json.load(legacy)['bounds']
+        mapped = []
+        for row in scene['trees']:
+            world = row['x'], row['z']
+            if in_bounds(world, prior_bounds):
+                continue
+            height = row.get('h', 0)
+            mapped.append(Tree(frame.scene_to_rd(*world), world, height if height != 8 else 0, sources=OSM))
+        before = len(base)
+        join(base, unique_trees(mapped), 1.2)
+        osm_count = len(base) - before
     surveyed = next((tree for tree in base if tree.sources & SURVEYED and math.dist(tree.rd, VUUR_MOR) < 5.6), None)
     alias = next((i for i, (identity, rd, _) in enumerate(records)
                   if identity == 9775 and math.dist(rd, VUUR_MOR) < 0.5), None) if surveyed else None
@@ -353,7 +368,7 @@ def expand(args, Tree, unpack_baseline, pack, classify, read_geojson, unique_tre
     output.write_bytes(data)
     summary = {
         'morSnapshot': municipal['timeStamp'], 'sourceRecords': len(municipal['features']), 'inBounds': len(records),
-        'mor': dict(counts), 'provincial': province, 'canopy': canopy_report, 'outerBgtAdded': bgt_count,
+        'mor': dict(counts), 'provincial': province, 'canopy': canopy_report, 'outerBgtAdded': bgt_count, 'outerOsmAdded': osm_count,
         'coverageBefore': baseline_counts, 'coverageAfter': coverage(base),
         'asset': {'filename': output.name, 'bytes': len(data), 'sha256': sha256(data).hexdigest()},
         'sourceHashes': {p.name: sha256(p.read_bytes()).hexdigest() for p in (args.baseline, args.mor, args.roadside, args.pdok) if p}

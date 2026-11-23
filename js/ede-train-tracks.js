@@ -233,7 +233,9 @@ export function buildEdeTrainTracks() {
   const rs34 = direction => {
     const id = direction === 1 ? 'rs34-south' : 'rs34-north';
     const platform = EDE_NORTH_RAIL.platforms.find(berth => berth.number === (direction === 1 ? '1' : '2'));
-    const prefix = northern ? [1299229167, 431725851, 227525838, Number(platform.wayId.slice(1)), 431760968] : [];
+    const boundaryBridge = ways.has('w6305163') ? [6305163] : [];
+    const prefix = northern
+      ? [...boundaryBridge, 1299229167, 431725851, 227525838, Number(platform.wayId.slice(1)), 431760968] : [];
     const track = buildAlignment([...prefix, ...valleilijn], ways, valleilijnBounds);
     const path = trainPath(id, 'rs34', direction, '1', track, WAGENINGEN);
     if (northern) addLunterenBerth(path, platform);

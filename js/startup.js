@@ -1,4 +1,4 @@
-import('./main.js?v=20261122-rink-ice')
+import('./main.js?v=20261123-startup-memory')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

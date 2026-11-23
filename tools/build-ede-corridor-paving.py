@@ -10,11 +10,12 @@ import json
 import math
 from pathlib import Path
 import runpy
+import struct
 
-from shapely import STRtree, make_valid, prepare, union_all
+from shapely import STRtree, contains_xy, make_valid, prepare, union_all
 from shapely.geometry import Polygon, box
 
-from ede_map import ROOT, load_scene_metadata
+from ede_map import ROOT, load_coverage_polygon, load_scene_metadata
 from ede_scene import SceneAffine
 
 
@@ -144,26 +145,88 @@ def write_paving(output, asset):
                                                      allow_nan=False).encode(), mtime=0))
 
 
+def bake_fringe_land(module, snapshot, affine, area, output):
+    import numpy as np
+
+    step = 12
+    min_x, min_z, max_x, max_z = area.bounds
+    min_x, min_z = math.floor(min_x / step) * step, math.floor(min_z / step) * step
+    columns, rows = math.ceil((max_x - min_x) / step), math.ceil((max_z - min_z) / step)
+    cells = np.zeros((rows, columns), dtype=np.uint8)
+    xs, zs = min_x + (np.arange(columns) + .5) * step, min_z + (np.arange(rows) + .5) * step
+    # Interpolated exterior texels must stay outside existing municipal terrain shading.
+    sample_area = area.buffer(-step * math.sqrt(2))
+    counts = Counter()
+    for name in module['COLLECTIONS']:
+        features = json.loads((snapshot / f'{name}.geojson').read_bytes())['features']
+        latest = {}
+        for feature in features:
+            props = feature['properties']
+            key = props['lokaal_id']
+            if (props.get('status') == 'bestaand' and not props.get('relatieve_hoogteligging')
+                    and feature.get('geometry')):
+                latest[key] = feature
+        for feature in latest.values():
+            label = module['land_class'](name, feature['properties'])
+            if label is None:
+                continue
+            geometry = module['BGT']['world_geometry'](feature, affine, sample_area)
+            if geometry.is_empty:
+                continue
+            west, north, east, south = geometry.bounds
+            x = slice(int(np.searchsorted(xs, west)), int(np.searchsorted(xs, east)))
+            z = slice(int(np.searchsorted(zs, north)), int(np.searchsorted(zs, south)))
+            if x.start == x.stop or z.start == z.stop:
+                continue
+            cells[z, x][contains_xy(geometry, xs[None, x], zs[z, None])] = module['LAND_CLASSES'][label]
+            counts[label] += 1
+    content = struct.pack('<IIIfff', 0x314C4742, columns, rows, min_x, min_z, step) + cells.tobytes()
+    output.write_bytes(gzip.compress(content, mtime=0))
+    print(f'Fringe land cover {columns} × {rows} at {step} m, {output.stat().st_size} gzip bytes; {dict(counts)}.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('snapshot', type=Path)
     parser.add_argument('--date', type=date.fromisoformat, required=True)
     parser.add_argument('--fetch', action='store_true')
+    parser.add_argument('--fetch-only', action='store_true', help='Fetch sources before the matching OSM graph is ready')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--north", action="store_true")
     mode.add_argument("--municipality", action="store_true", help="Extend surveyed paving across the playable Gemeente Ede area")
+    mode.add_argument("--fringe", action="store_true", help="Bake paving in the 500 m exterior band")
+    mode.add_argument("--fringe-land", action="store_true", help="Bake ground cover in the 500 m exterior band")
     parser.add_argument("--reviewed", type=Path, help="Previously reviewed north paving preserved by --municipality")
     parser.add_argument('--map', type=Path)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--reviewed-corridor', type=Path, help='Original corridor paving before municipality clipping')
     parser.add_argument('--corridor-output', type=Path, help='Write the municipality-clipped corridor paving here')
     args = parser.parse_args()
+    if args.fetch_only and not args.fetch:
+        parser.error('--fetch-only requires --fetch')
     module = runpy.run_path(str(ROOT / 'tools/build-ede-bgt-roads.py'))
     coverage = json.loads((ROOT / 'tools/data/ede-outer-coverage.json').read_text())
     base = load_scene_metadata()
     north = args.north or args.municipality
     output = args.output or ROOT / "assets" / ("ede-north-paving.json.gz" if north else "ede-corridor-paving.json.gz")
-    if args.municipality:
+    if args.fringe or args.fringe_land:
+        from ede_map import load_playable_scene
+        area = load_coverage_polygon('buildingBoundary').difference(load_coverage_polygon('playableBoundary'))
+        bounds = list(municipality_tiles(area, SceneAffine(base['lonLatAffine'])))
+        if args.fringe_land:
+            detail = runpy.run_path(str(ROOT / 'tools/build-ede-bgt-detail.py'))
+            module = {**detail, 'COLLECTIONS': ('onbegroeidterreindeel', 'begroeidterreindeel')}
+            if args.fetch:
+                fetch(module, args.snapshot, args.date, bounds)
+            if not args.fetch_only:
+                output = args.output or ROOT / 'assets/ede-fringe-land.bin.gz'
+                bake_fringe_land(module, args.snapshot, base['lonLatAffine'], area, output)
+            return
+        output = args.output or ROOT / 'assets/ede-fringe-paving.json.gz'
+        scene = None if args.fetch_only else load_playable_scene()
+        if scene and not scene['meta'].get('travelBounds'):
+            parser.error('Bake the 500 m travel graph before matching exterior paving.')
+    elif args.municipality:
         from ede_map import load_playable_boundary, load_playable_scene
         if not args.reviewed:
             parser.error("--municipality requires --reviewed pointing to the previous north paving asset")
@@ -179,11 +242,17 @@ def main():
         bounds = coverage["northDetail"]["pavingBounds"] if north else BOUNDS
     if args.fetch:
         fetch(module, args.snapshot, args.date, bounds)
+    if args.fetch_only:
+        print(f"{len(bounds)} BGT paving request tiles saved.", flush=True)
+        return
     index, surfaces, collections = module['get_snapshot'](args.snapshot, scene, area)
     source = {'url': f"{module['BGT']['API']}/collections?f=html", 'license': 'CC0 1.0',
               'collections': collections}
+    if args.fringe:
+        source['coverage'] = 'Gemeente Ede +500 m exterior'
     tags = {row['id']: row['surface'] for row in scene['roads'] if row.get('surface')}
-    result = module['build_surfaces'](scene, index, surfaces, tags, source, args.date)
+    result = module['build_surfaces'](scene, index, surfaces, tags, source, args.date,
+                                      include_rail=args.fringe)
     if args.municipality:
         previous = read_paving(args.reviewed)
         corridor_path = ROOT / "assets/ede-corridor-paving.json.gz"

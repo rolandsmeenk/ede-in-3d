@@ -1,3 +1,4 @@
+const { gunzipSync } = require('node:zlib');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
@@ -19,7 +20,7 @@ test('Lunteren models are grounded, batched, and replace only the surveyed footp
   const three = await import('../vendor/three/build/three.webgpu.js');
   const tsl = await import('../vendor/three/build/three.tsl.js');
   const terrainModule = await import('../js/terrain.js');
-  const heights = readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin'));
+  const heights = gunzipSync(readFileSync(join(__dirname, '../assets/ede-terrain-tiles/collision.bin.gz')));
   const field = terrainModule.decodeTerrain(heights.buffer.slice(heights.byteOffset, heights.byteOffset + heights.byteLength));
   const terrain = { getTerrain: () => field, terrainHeightAt: (x, z) => terrainModule.sampleTerrain(field, x, z) };
   const civic = load('ede-civic-landmarks.js', {

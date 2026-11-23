@@ -18,10 +18,11 @@ import tempfile
 from zipfile import ZipFile
 
 from shapely import STRtree, from_wkb, make_valid
+from shapely import transform
 from shapely.geometry import LineString, Point, Polygon
 
 from ede_gis import Frame, geopackage_crs, geopackage_wkb
-from ede_map import load_scene
+from ede_map import load_playable_boundary, load_playable_scene, load_scene
 
 PORTAL = 'https://verkeersveiligheid.ndw.nu'
 FILES = PORTAL + '/cms/api/dataset-files/file/'
@@ -156,13 +157,14 @@ class Map:
         self.by_id = {}
         self.separate = []
         for road in scene['roads']:
-            source = rows.get(('way', int(road['id'][1:])), {})
+            osm_id = road.get('osmId', road['id']).split('~', 1)[0]
+            source = rows.get(('way', int(osm_id[1:])), {})
             ids = source.get('nodes', road.get('nodeIds', []))
             tags = source.get('tags', {})
             if tags.get('area') == 'yes':
                 continue
             points = [project(p['lon'], p['lat']) for p in source.get('geometry', [])]
-            if len(points) < 2:
+            if len(points) < 2 or not bounds.covers(LineString(points)):
                 points = [scene_to_grid(x, z) for x, z in zip(road['pts'][::2], road['pts'][1::2])]
             line = LineString(points)
             if line.length < 0.1:
@@ -645,7 +647,7 @@ def export_scene(feature, project):
 
 
 def build(args):
-    scene = load_scene()
+    scene = load_playable_scene() if args.municipality else load_scene()
     frame = Frame(scene['meta']['lonLatAffine'])
     origin_e, origin_n = frame.scene_to_rd(0, 0)
 
@@ -656,7 +658,10 @@ def build(args):
     scene_to_grid = lambda x, z: project_rd(*frame.scene_to_rd(x, z))
     to_scene = lambda x, z: frame.rd_to_scene(x + origin_e, origin_n - z)
     x0, z0, x1, z1 = scene['meta']['bounds']
-    bounds = Polygon([scene_to_grid(x, z) for x, z in ((x0, z0), (x1, z0), (x1, z1), (x0, z1))])
+    if args.municipality:
+        bounds = transform(load_playable_boundary(), scene_to_grid, interleaved=False)
+    else:
+        bounds = Polygon([scene_to_grid(x, z) for x, z in ((x0, z0), (x1, z0), (x1, z1), (x0, z1))])
     snapshot = elements(args.osm)
     supplement = elements(args.osm_features)
     rows = {(e['type'], e['id']): e for e in (*snapshot['elements'], *supplement['elements'])}
@@ -695,6 +700,7 @@ def main():
     parser.add_argument('output', type=Path)
     parser.add_argument('--osm-date', type=lambda value: datetime.fromisoformat(value).isoformat().replace('+00:00', 'Z'),
                         help='Historical date explicitly requested in both Overpass queries')
+    parser.add_argument('--municipality', action='store_true', help='Use the full playable Ede polygon')
     parser.add_argument('--published-crossings', action='store_true',
                         help='Limit OSM-only crossings to zebra, signal-controlled or individually reviewed markings')
     parser.add_argument('--marking-review', type=Path, help='PDOK imagery decisions keyed by crossing ID')

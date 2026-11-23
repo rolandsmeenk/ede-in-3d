@@ -50,6 +50,8 @@ import { EDE_INDUSTRIAL_SKYLINE_LANDMARKS, NIZO_NORTH_SITE } from './ede-industr
 import { EDE_PAASBERG_MEMORIALS } from './ede-paasberg-memorial-sites.js';
 import { EDE_TOWN_MEMORIALS } from './ede-town-memorial-sites.js';
 import { EDE_OUTER_MEMORIALS } from './ede-outer-memorial-sites.js';
+import { EDE_OUTER_CULTURAL_LANDMARKS } from './ede-outer-cultural-sites.js';
+import { EDE_FARM_LANDMARKS } from './ede-farm-building-survey.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -253,6 +255,8 @@ export const EDE_MODELED_LANDMARKS = [
   ...EDE_PAASBERG_MEMORIALS,
   ...EDE_TOWN_MEMORIALS,
   ...EDE_OUTER_MEMORIALS.filter(site => !site.north || EDE_DATA.meta.north),
+  ...EDE_OUTER_CULTURAL_LANDMARKS,
+  ...EDE_FARM_LANDMARKS,
   ...(EDE_DATA.meta.north ? [
     ...EDE_VILLAGE_SKYLINE_LANDMARKS,
     ...EDE_LUNTEREN_LANDMARKS,

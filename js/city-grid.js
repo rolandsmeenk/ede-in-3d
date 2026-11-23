@@ -23,6 +23,7 @@ import { REEMST_TREES } from './ede-reemst-landmark-survey.js';
 import { LUNTEREN_STRUCTURES } from './ede-lunteren-survey.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
 import { addAsphaltLanes } from './ede-asphalt-lanes.js';
+import { createPavingTiles } from './ede-paving-tiles.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
 import { EDE_MTB_WAYS } from './ede-active-travel.js';
 
@@ -112,19 +113,20 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const polygon = (ring, holes, y, wayId) => drapeEdeSurface(edePolygonGeometry(ring, holes, y), true, wayId);
   const strip = (a, b, half, y, offset, wayId) => drapeEdeSurface(edeStrip(a, b, half, y, offset), true, wayId);
   const collections = new Map();
-  const collect = (geometry, material, segment, trackLayer) => {
+  const pavingTiles = createPavingTiles(scene, mergeCityBatches);
+  const collect = (geometry, material, segment, trackLayer, target = collections) => {
     if (!geometry?.getAttribute('position')?.count) return;
     if (material === roadMat) geometry = addAsphaltLanes(geometry, segment, trackLayer);
     if (aerial && aerialMaterials.has(material)) {
       const ground = !segment || (baseRoads && !baseRoads.has(segment.road.id));
       setAerialSurfaceColors(geometry, segment, material === roadMat, !!ground);
     }
-    if (!collections.has(material)) collections.set(material, []);
-    collections.get(material).push(geometry);
+    if (!target.has(material)) target.set(material, []);
+    target.get(material).push(geometry);
   };
-  function collectPaving(geometry, material, angle, segment, trackLayer) {
+  function collectPaving(geometry, material, angle, segment, trackLayer, target) {
     if (material === 'asphalt') {
-      collect(geometry, roadMat, segment, trackLayer);
+      collect(geometry, roadMat, segment, trackLayer, target);
       return;
     }
     const position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
@@ -135,7 +137,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       uv.setXY(i, x * cs + z * sn, z * cs - x * sn);
     }
     geometry.setAttribute('pavingStyle', new THREE.BufferAttribute(styles, 1));
-    collect(geometry, mappedPavingMat, segment);
+    collect(geometry, mappedPavingMat, segment, undefined, target);
   }
   const footprints = [], sidewalks = [], colliders = [];
   parkTreeSites = []; parkLampSites = []; pavedPlazaRects = []; sidewalkBlocks = [];
@@ -218,12 +220,28 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   }
 
   let mappedPavingCount = 0;
-  for (const { layer, material, angle, polygons, function: use } of getEdeRoadSurfaces().surfaces) {
+  const surveyedPaving = getEdeRoadSurfaces();
+  const fringeSurfaces = new Set(surveyedPaving.fringeSurfaces);
+  function addSurveyedPaving({ outer, holes, material, angle, motor }, target) {
+    const geometry = drapeEdeSurface(edePolygonGeometry(edePoints(outer), holes.map(edePoints), 0.065), true, undefined, true);
+    collectPaving(geometry, material, angle, undefined, motor ? 0 : undefined, target);
+  }
+  for (const surface of surveyedPaving.surfaces) {
+    const { layer, material, angle, polygons, function: use } = surface;
     if (layer !== 0) continue;
     const motor = use.startsWith('rijbaan ') || ['ov-baan', 'verbindingsweg', 'overweg', 'verkeersdrempel', 'woonerf'].includes(use);
     for (const [outer, ...holes] of polygons) {
-      const geometry = drapeEdeSurface(edePolygonGeometry(edePoints(outer), holes.map(edePoints), 0.065), true, undefined, true);
-      collectPaving(geometry, material, angle, undefined, motor ? layer : undefined);
+      const entry = { outer, holes, material, angle, motor };
+      if (EDE_DATA.meta.fullMunicipality || fringeSurfaces.has(surface)) {
+        const bounds = { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity };
+        for (let i = 0; i < outer.length; i += 2) {
+          bounds.minX = Math.min(bounds.minX, outer[i]);
+          bounds.maxX = Math.max(bounds.maxX, outer[i]);
+          bounds.minZ = Math.min(bounds.minZ, outer[i + 1]);
+          bounds.maxZ = Math.max(bounds.maxZ, outer[i + 1]);
+        }
+        pavingTiles.add(bounds, target => addSurveyedPaving(entry, target));
+      } else addSurveyedPaving(entry);
       mappedPavingCount++;
     }
   }
@@ -232,7 +250,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const mappedRoadSegments = edeRoadSegments();
   const roadsToDraw = EDE_DATA.meta.north
     ? mappedRoadSegments.filter(({ road }) => !HESSENHUT_SURFACES.has(road.id)) : mappedRoadSegments;
-  const roadSegments = baseRoads && detailCells.size ? roadsToDraw.filter(({ road, a, b }) =>
+  const roadSegments = !EDE_DATA.meta.fullMunicipality && baseRoads && detailCells.size ? roadsToDraw.filter(({ road, a, b }) =>
     baseRoads.has(road.id) || /^(motorway|trunk|primary|secondary)/.test(road.kind)
     || (EDE_MTB_WAYS.has(road.id) && /^(path|track|cycleway)$/.test(road.kind))
     || (road.kind === 'cycleway' && osmRoadMaterial(road))
@@ -378,28 +396,32 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     for (const surface of mapped ? [] : pavementBySegment.get(s)) {
       const pieces = visiblePavement(surface);
       if (!pieces.length) continue;
-      const geometries = pieces.map(piece => edePolygonGeometry(piece, [], pavementHeight[surface.kind]));
-      // Keep each segment batched even when clipping splits it into several fragments.
-      const joined = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
-      if (geometries.length > 1) geometries.forEach(geometry => geometry.dispose());
-      const geometry = drapeEdeSurface(joined, true, s.road.id);
       const naturalTrail = surface.kind === 'path' && s.a.z < northStart
         && ['track', 'bridleway', 'path'].includes(s.road.kind)
         && !corridorDetail.zones.some(([left, top, right, bottom]) =>
           s.a.x >= left && s.a.x <= right && s.a.z >= top && s.a.z <= bottom);
       const signedTrail = EDE_MTB_WAYS.has(s.road.id) && /^(path|track)$/.test(s.road.kind);
       const material = surface.kind !== 'sidewalk' && (osmRoadMaterial(s.road) ?? (naturalTrail || signedTrail ? 'sand' : undefined));
-      if (material) collectPaving(geometry, material, Math.atan2(s.uz, s.ux), s);
-      else if (surface.kind === 'road') collect(geometry, roadMat, s);
-      else if (surface.kind === 'sidewalk') {
-        collect(geometry, sidewalkMat);
-        clippedSidewalkPieces += pieces.length;
-      } else {
-        const cycleway = s.road.kind === 'cycleway';
-        setPavingStyle(geometry, cycleway ? 0 : 2);
-        collect(geometry, pavingMat, cycleway ? s : null);
-        clippedPedestrianPieces += pieces.length;
-      }
+      const { kind } = surface;
+      const build = target => {
+        const geometries = pieces.map(piece => edePolygonGeometry(piece, [], pavementHeight[kind]));
+        // Keep each segment batched even when clipping splits it into several fragments.
+        const joined = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
+        if (geometries.length > 1) geometries.forEach(geometry => geometry.dispose());
+        const geometry = drapeEdeSurface(joined, true, s.road.id);
+        if (material) collectPaving(geometry, material, Math.atan2(s.uz, s.ux), s, undefined, target);
+        else if (kind === 'road') collect(geometry, roadMat, s, undefined, target);
+        else if (kind === 'sidewalk') collect(geometry, sidewalkMat, undefined, undefined, target);
+        else {
+          const cycleway = s.road.kind === 'cycleway';
+          setPavingStyle(geometry, cycleway ? 0 : 2);
+          collect(geometry, pavingMat, cycleway ? s : null, undefined, target);
+        }
+      };
+      if (!material && kind === 'sidewalk') clippedSidewalkPieces += pieces.length;
+      if (!material && kind === 'path') clippedPedestrianPieces += pieces.length;
+      if (EDE_DATA.meta.fullMunicipality) pavingTiles.add(surface.bounds, build);
+      else build(collections);
     }
     if (!isCarriageway(s)) continue;
     const nx = -s.uz, nz = s.ux;
@@ -432,6 +454,8 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       }
     }
   }
+  pavementIndex.clear();
+  pavementBySegment.clear();
   const ballastWidth = RAIL_BALLAST_WIDTH;
   const maskSize = 64;
   const mask = new Uint8Array(maskSize ** 2);
@@ -653,33 +677,38 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   }
   // Merge in spatially modest batches, retaining the original TSL node materials
   // including wet asphalt and animated water.
-  for (const [material, geometries] of collections) {
-    let firstMesh;
-    for (const cell of edeGeometryGroups(geometries)) for (let i = 0; i < cell.length; i += 300) {
-      const sources = cell.slice(i, i + 300);
-      // Keep shared terrain and curb vertices when all inputs already have indices.
-      const chunk = sources.every(g => g.index) ? sources : sources.map(g => {
-        if (!g.index) return g;
-        const expanded = g.toNonIndexed(); g.dispose(); return expanded;
-      });
-      const merged = mergeGeometries(chunk, false);
-      chunk.forEach(g => g.dispose());
-      if (!merged) continue;
-      const mesh = new THREE.Mesh(merged, material);
-      mesh.receiveShadow = material !== waterMat; mesh.castShadow = material === curbMat;
-      if (terrain && material === terrainMat) mesh.name = 'Ede legacy terrain';
-      if (material === railMat) mesh.name = 'Ede rails';
-      if (material === ballastMat) mesh.name = 'Ede rail ballast';
-      if (material === waterMat) mesh.userData.keepInAerial = true;
-      if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
-      else firstMesh = mesh;
-      group.add(mesh);
+  function mergeCityBatches(source, destination) {
+    for (const [material, geometries] of source) {
+      let firstMesh;
+      for (const cell of edeGeometryGroups(geometries)) for (let i = 0; i < cell.length; i += 300) {
+        const sources = cell.slice(i, i + 300);
+        // Keep shared terrain and curb vertices when all inputs already have indices.
+        const chunk = sources.every(g => g.index) ? sources : sources.map(g => {
+          if (!g.index) return g;
+          const expanded = g.toNonIndexed(); g.dispose(); return expanded;
+        });
+        const merged = mergeGeometries(chunk, false);
+        chunk.forEach(g => g.dispose());
+        if (!merged) continue;
+        const mesh = new THREE.Mesh(merged, material);
+        mesh.receiveShadow = material !== waterMat; mesh.castShadow = material === curbMat;
+        if (terrain && material === terrainMat) mesh.name = 'Ede legacy terrain';
+        if (material === railMat) mesh.name = 'Ede rails';
+        if (material === ballastMat) mesh.name = 'Ede rail ballast';
+        if (material === waterMat) mesh.userData.keepInAerial = true;
+        if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
+        else firstMesh = mesh;
+        destination.add(mesh);
+      }
     }
   }
+  mergeCityBatches(collections, group);
+  collections.clear();
+
   group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, railways: railWays, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, northernWoodlandTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
     mappedPavingCount, clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, junctionClippedCurbs: true, junctionClippedSidewalks: true };
   scene.add(group);
-  return { group, sidewalks, footprints, highwayLanes: [], colliders,
+  return { group, sidewalks, footprints, highwayLanes: [], colliders, pavingTiles,
     get waterLevels() { return waterLevels; },
     setWaterLevels(levels) {
       for (const level of levels) {

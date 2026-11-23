@@ -1,8 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { attribute, mix } from 'three/tsl';
 import { sampleGroundColor } from './aerial-colors.js';
+import { createCoverageIndex, edeCoverage } from './ede-coverage.js';
 import { playableBoundary, playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
-import { cityUniforms, heathBloomColor } from './tsl-materials.js';
+import { cityUniforms, heathBloomColor, sampleEdeLandCover } from './tsl-materials.js';
 import { expansionSeamOffset, getExpansionTerrain, getTerrain, sampleTerrain } from './terrain.js';
 
 const SIDE = 51;
@@ -42,7 +43,7 @@ export function sizeTerrainSkirts(nodes, roots, field) {
     for (const [edge, [horizontal, fixed, start, end]] of borders.entries()) {
       const key = horizontal ? `z/${fixed}` : `x/${fixed}`;
       if (!lines.has(key)) lines.set(key, [[], []]);
-      const error = rootSet.has(node) ? Math.max(node.error, overviewEdgeError(
+      const error = rootSet.has(node) ? Math.max(node.error, node.overviewError ?? overviewEdgeError(
         at => horizontal ? sampleTerrain(field, at, fixed) : sampleTerrain(field, fixed, at),
         start, end, field.step
       )) : node.error;
@@ -313,16 +314,20 @@ export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
   return geometry;
 }
 
-export function createTerrainTiles(scene, heath) {
+export function createTerrainTiles(scene, heath, fringeLandCover) {
   const data = getExpansionTerrain();
   if (!data) return null;
-  const { manifest, field, directory, detail } = data;
+  const { manifest, field, directory, detail, overviewField, rootSamples } = data;
   const legacy = getTerrain();
-  const nodes = new Map(Object.entries(manifest.tiles).filter(([, tile]) => playableBoundsOverlap(...tile.bounds))
+  const terrainBoundary = manifest.version === 2 ? edeCoverage?.terrainBoundary : null;
+  const terrainIndex = terrainBoundary && createCoverageIndex(terrainBoundary);
+  const overlapsBounds = terrainIndex?.overlapsBounds ?? playableBoundsOverlap;
+  const coversBounds = terrainIndex?.coversBounds ?? playableBoundsCovered;
+  const nodes = new Map(Object.entries(manifest.tiles).filter(([, tile]) => overlapsBounds(...tile.bounds))
     .map(([id, tile]) => [id, { ...tile, id }]));
-  const boundary = triangulateTerrainBoundary(playableBoundary);
+  const boundary = triangulateTerrainBoundary(terrainBoundary ?? playableBoundary);
   for (const tile of nodes.values()) {
-    if (!playableBoundsCovered(...tile.bounds)) tile.boundary = {
+    if (!coversBounds(...tile.bounds)) tile.boundary = {
       parts: boundary.parts.filter(part => overlap(tile.bounds, part.bounds)),
       edges: boundary.edges.filter(edge => overlap(tile.bounds, edge)),
     };
@@ -336,7 +341,12 @@ export function createTerrainTiles(scene, heath) {
       }
     }
   }
-  const roots = manifest.roots.map(id => nodes.get(id)).filter(Boolean);
+  const rootHeights = rootSamples ? new DataView(rootSamples) : null;
+  const roots = manifest.roots.map((id, i) => {
+    const node = nodes.get(id);
+    if (node) node.rootOffset = i * OVERVIEW_SIDE ** 2 * 2;
+    return node;
+  }).filter(Boolean);
   sizeTerrainSkirts(nodes.values(), roots, field);
   const group = new THREE.Group();
   group.name = 'EdeTerrainQuadtree';
@@ -344,18 +354,34 @@ export function createTerrainTiles(scene, heath) {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.93 });
   material.colorNode = heathBloomColor(attribute('color', 'vec4').rgb, heath).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
   material.name = 'PDOK terrain tiles';
+  const official = fringeLandCover && edeCoverage && createCoverageIndex(edeCoverage.playableBoundary);
+  const fringe = official && createCoverageIndex(edeCoverage.buildingBoundary);
+  const fringeMaterial = fringe && new THREE.MeshStandardNodeMaterial({ roughness: 0.93 });
+  if (fringeMaterial) {
+    const mapped = sampleEdeLandCover(fringeLandCover);
+    const color = attribute('color', 'vec4').rgb.mul(mapped.a.mul(0.4).oneMinus()).add(mapped.rgb.mul(0.4));
+    fringeMaterial.colorNode = heathBloomColor(color, heath).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
+    fringeMaterial.name = 'PDOK terrain with BGT fringe land cover';
+  }
+  const tileMaterial = node => fringeMaterial && fringe.overlapsBounds(...node.bounds)
+    && !official.coversBounds(...node.bounds) ? fringeMaterial : material;
   const cameraMatrix = new THREE.Matrix4(), frustum = new THREE.Frustum();
   const box = new THREE.Box3();
   const lastCamera = new THREE.Vector3();
-  const stats = { residentBytes: 0, peakResidentBytes: 0, visible: 0, loading: 0,
-    collisionBytes: field.heights.byteLength + (detail?.heights.byteLength ?? 0) };
+  const stats = { residentBytes: 0, peakResidentBytes: 0, visible: 0, loading: 0, drawCalls: 0, triangles: 0,
+    collisionBytes: field.heights.byteLength + (detail?.heights.byteLength ?? 0),
+    overviewBytes: (overviewField?.heights.byteLength ?? 0) + (rootSamples?.byteLength ?? 0) };
   const resident = new Set(), shown = new Set(), ready = [];
   let pending = 0, stamp = 0;
+  function countDraw(_renderer, _scene, _camera, geometry) {
+    stats.drawCalls++;
+    stats.triangles += geometry.index.count / 3;
+  }
   function queue(node, now) {
     if (node.mesh || node.loading || node.retry > now || pending >= MAX_LOADS) return;
     node.loading = true;
     pending++;
-    fetch(new URL(`${node.id}.bin`, directory)).then(response => {
+    fetch(new URL(`${node.id}.bin?v=20261123-municipal`, directory)).then(response => {
       if (!response.ok) throw new Error(`AHN tile HTTP ${response.status}`);
       return response.arrayBuffer();
     }).then(buffer => ready.push({ node, buffer })).catch(error => {
@@ -375,15 +401,20 @@ export function createTerrainTiles(scene, heath) {
     for (let z = 0, offset = 0; z < OVERVIEW_SIDE; z++) for (let x = 0; x < OVERVIEW_SIDE; x++, offset += 5) {
       const px = west + x * (east - west) / (OVERVIEW_SIDE - 1);
       const pz = north + z * (south - north) / (OVERVIEW_SIDE - 1);
-      view.setInt16(offset, Math.round((sampleTerrain(field, px, pz) + field.napOrigin) * 100), true);
+      const height = rootHeights ? rootHeights.getInt16(node.rootOffset + (z * OVERVIEW_SIDE + x) * 2, true)
+        : Math.round((sampleTerrain(field, px, pz) + field.napOrigin) * 100);
+      view.setInt16(offset, height, true);
       sampleGroundColor(px, pz, rgb);
       for (let j = 0; j < 3; j++) view.setUint8(offset + 2 + j, Math.round(rgb[j] * 255));
     }
-    node.overview = new THREE.Mesh(tileGeometry(buffer, node, legacy, field, OVERVIEW_SIDE), material);
+    node.overview = new THREE.Mesh(tileGeometry(buffer, node, legacy, field, OVERVIEW_SIDE), tileMaterial(node));
     node.overview.visible = false;
     node.overview.receiveShadow = true;
+    node.overview.onBeforeRender = countDraw;
     group.add(node.overview);
   }
+  // The coarse roots stay available across camera jumps and after mesh eviction.
+  if (rootHeights) for (const node of roots) overview(node);
 
   function upload() {
     const job = ready.shift();
@@ -391,15 +422,19 @@ export function createTerrainTiles(scene, heath) {
     const { node, buffer } = job;
     try {
       const geometry = tileGeometry(buffer, node, legacy, field);
-      const mesh = new THREE.Mesh(geometry, material);
+      const mesh = new THREE.Mesh(geometry, tileMaterial(node));
       mesh.receiveShadow = true;
+      mesh.onBeforeRender = countDraw;
       mesh.visible = false;
       group.add(mesh);
       node.mesh = mesh;
       if (node.overview) {
-        group.remove(node.overview);
-        node.overview.geometry.dispose();
-        node.overview = null;
+        node.overview.visible = false;
+        if (!rootHeights) {
+          group.remove(node.overview);
+          node.overview.geometry.dispose();
+          node.overview = null;
+        }
       }
       node.bytesResident = geometry.index.array.byteLength + Object.values(geometry.attributes)
         .reduce((sum, attr) => sum + attr.array.byteLength, 0);
@@ -418,6 +453,7 @@ export function createTerrainTiles(scene, heath) {
   const distanceTo = (bounds, x, z) => Math.hypot(Math.max(bounds[0] - x, 0, x - bounds[2]),
     Math.max(bounds[1] - z, 0, z - bounds[3]));
   function update(camera, viewportHeight) {
+    stats.drawCalls = stats.triangles = 0;
     upload();
     stamp++;
     camera.updateMatrixWorld();
@@ -427,7 +463,7 @@ export function createTerrainTiles(scene, heath) {
     const advanceX = THREE.MathUtils.clamp((x - lastCamera.x) * 14, -150, 150);
     const advanceZ = THREE.MathUtils.clamp((z - lastCamera.z) * 14, -150, 150);
     lastCamera.copy(camera.position);
-    const near = Math.abs(y - sampleTerrain(field, x, z)) < 120 ? 300 : 180;
+    const near = Math.abs(y - sampleTerrain(overviewField ?? field, x, z)) < 120 ? 300 : 180;
     const focal = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
     const now = performance.now();
     const next = new Set(), wanted = new Map();
@@ -437,8 +473,12 @@ export function createTerrainTiles(scene, heath) {
     function visit(node, root = false) {
       const [west, north, east, south] = node.bounds;
       const horizontal = distanceTo(node.bounds, x, z);
-      box.min.set(west, field.minY - 10, north);
-      box.max.set(east, field.maxY, south);
+      const minY = node.range ? node.range[0] / 100 - field.napOrigin : field.minY;
+      const maxY = node.range ? node.range[1] / 100 - field.napOrigin : field.maxY;
+      const localMin = Math.min(minY, node.detail?.minY ?? Infinity);
+      const localMax = Math.max(maxY, node.detail?.maxY ?? -Infinity);
+      box.min.set(west, localMin - Math.max(...node.skirts) - 1, north);
+      box.max.set(east, localMax + 1, south);
       const visible = frustum.intersectsBox(box);
       if (!visible && score(node) > near) return;
       node.used = stamp;
@@ -453,7 +493,7 @@ export function createTerrainTiles(scene, heath) {
         }
         return;
       }
-      const vertical = Math.max(field.minY - y, 0, y - field.maxY);
+      const vertical = Math.max(localMin - y, 0, y - localMax);
       const pixels = node.error * focal / Math.max(20, Math.hypot(horizontal, vertical));
       if (node.children?.length && (horizontal < near || pixels > 5) && next.size < MAX_ACTIVE_TILES) {
         const children = node.children.map(id => nodes.get(id)).sort((a, b) => score(a) - score(b));

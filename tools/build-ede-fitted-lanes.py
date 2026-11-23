@@ -23,6 +23,7 @@ from ede_motorway_infrastructure import ROOT, read_json, write_json
 OUT = ROOT / 'assets/ede-fitted-lanes.json.gz'
 REVIEW = ROOT / 'tools/data/ede-fitted-lanes.review.json.gz'
 BGT = ROOT / 'assets/ede-road-surfaces.json.gz'
+BGT_EXTENSIONS = tuple(ROOT / f'assets/ede-{area}-paving.json.gz' for area in ('corridor', 'north', 'fringe'))
 RWS = ROOT / 'tools/data/ede-1gis.snapshot.json.gz'
 NWB = ROOT / 'tools/data/ede-motorway-lanes.snapshot.json'
 AERIAL = ROOT / 'tools/data/ede-lane-aerial-traces.json'
@@ -34,6 +35,7 @@ PROTECTED_BGT = {'fietspad', 'parkeervlak', 'verkeerseiland'}
 LEVELS = {'Maaiveld': 0, 'MaaiveldPlus1': 1, 'MaaiveldPlus2': 2,
           'MaaiveldMin1': -1, 'MaaiveldMin2': -2}
 MIN_EDGE = 4.0
+EXTENSION_FIT_ROADS = {'Harderwijkerweg'}
 
 
 def import_graph():
@@ -665,13 +667,18 @@ def connector_rows(move_spec, edges, lane_rows, surfaces, frame):
     return (rd, end_changes) if swept(rounded_rd(rd, frame), pavement, bus) else None
 
 
-def fit_many(graph, surfaces, markings, evidence, frame):
+def fit_many(graph, surfaces, markings, evidence, frame, extended_surfaces=None):
     edges = {row['id']: row for row in graph['edges']}
+    # Fit the reviewed expansion corridor with its own pavement. The existing
+    # town fits keep their original survey and clearance rules.
+    extended_edges = {edge['id'] for edge in edges.values()
+                      if extended_surfaces and edge.get('name') in EXTENSION_FIT_ROADS}
     counts = Counter()
     fallbacks = []
     accepted = {}
     for edge in edges.values():
-        fit, reason = prepare(edge, surfaces, markings, evidence, frame)
+        pavement = extended_surfaces if edge['id'] in extended_edges else surfaces
+        fit, reason = prepare(edge, pavement, markings, evidence, frame)
         if fit is None:
             counts[reason] += 1
             fallbacks.append([edge['key'], reason])
@@ -721,7 +728,8 @@ def fit_many(graph, surfaces, markings, evidence, frame):
             aid, i, bid, j, length, old, _, _ = row
             if (aid, i) not in lane_rows and (bid, j) not in lane_rows:
                 continue
-            result = connector_rows(row, edges, lane_rows, surfaces, frame)
+            pavement = extended_surfaces if aid in extended_edges or bid in extended_edges else surfaces
+            result = connector_rows(row, edges, lane_rows, pavement, frame)
             if result is None:
                 invalid_moves.add((aid, i, bid, j))
                 for id_, lane, side in ((aid, i, 1), (bid, j, 0)):
@@ -798,12 +806,17 @@ def main():
     raw, bgt = read_json(RWS), read_json(BGT)
     aerial = read_json(cli.aerial) if cli.aerial.exists() else None
     markings = Markings(raw, aerial, frame)
+    extensions = [read_json(path) for path in BGT_EXTENSIONS]
+    measured = [row for asset in [bgt, *extensions] for row in asset['surfaces']
+                if row.get('resolution') != 'bgt-general']
     surfaces = Surfaces(bgt['surfaces'], frame, markings.exclusions)
+    extended_surfaces = Surfaces(measured, frame, markings.exclusions)
     evidence = MotorwayEvidence(read_json(NWB), read_json(COUNTS), frame)
-    asset, report = fit_many(graph, surfaces, markings, evidence, frame)
+    asset, report = fit_many(graph, surfaces, markings, evidence, frame, extended_surfaces)
     write_json(cli.output, asset)
     report.update({'assetBytes': cli.output.stat().st_size, 'gisVersion': GIS_VERSION,
-                   'sources': {'1gis': raw['date'], 'bgt': bgt['date'], 'aerial': cli.aerial.name if aerial else None}})
+                   'sources': {'1gis': raw['date'], 'bgt': bgt['date'], 'bgtExtensions': [path.name for path in BGT_EXTENSIONS],
+                               'aerial': cli.aerial.name if aerial else None}})
     write_json(cli.report, report)
     print({k: v for k, v in report.items()
            if k not in ('fallbackEdges', 'unfittedConnectorChecks', 'evidence', 'footprintAudit')})

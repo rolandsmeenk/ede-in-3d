@@ -1,6 +1,7 @@
 import { EDE_DATA } from './ede-geodata.js';
 
 export const playableBoundary = EDE_DATA.meta.playableBoundary ?? [];
+export const travelBoundary = EDE_DATA.meta.travelBoundary ?? playableBoundary;
 const band = z => Math.floor(z / 128);
 const boundsBands = new Map(), ringBands = new Map();
 function indexEdge(bands, edge) {
@@ -17,16 +18,22 @@ function ringEdges(ring) {
   }
   return result;
 }
-const edges = [];
-for (const polygon of playableBoundary) for (const ring of polygon) {
-  const bands = new Map();
-  ringBands.set(ring, bands);
-  for (const edge of ringEdges(ring)) {
-    edges.push(edge);
-    indexEdge(bands, edge);
-    indexEdge(boundsBands, edge);
+function indexBoundary(boundary, bounds) {
+  const edges = [];
+  for (const polygon of boundary) for (const ring of polygon) {
+    const bands = new Map();
+    ringBands.set(ring, bands);
+    for (const edge of ringEdges(ring)) {
+      edges.push(edge);
+      indexEdge(bands, edge);
+      if (bounds) indexEdge(bounds, edge);
+    }
   }
+  return edges;
 }
+
+const edges = indexBoundary(playableBoundary, boundsBands);
+const travelEdges = travelBoundary === playableBoundary ? edges : indexBoundary(travelBoundary);
 
 function crossing(x, z, ax, az, bx, bz) {
   if (x >= Math.min(ax, bx) && x <= Math.max(ax, bx) && z >= Math.min(az, bz) && z <= Math.max(az, bz)
@@ -45,12 +52,7 @@ function inRing(x, z, ring) {
   return inside;
 }
 
-export function containsPlayablePoint(x, z, boundary = playableBoundary) {
-  if (!boundary.length) return true;
-  if (boundary === playableBoundary) {
-    const core = EDE_DATA.meta.baseBounds;
-    if (core && x > core[0] && x < core[2] && z > core[1] && z < core[3]) return true;
-  }
+function inBoundary(x, z, boundary) {
   return boundary.some(([outer, ...holes]) => inRing(x, z, outer) > 0 && !holes.some(hole => inRing(x, z, hole) === 1));
 }
 
@@ -63,6 +65,16 @@ function touchesBounds(minX, minZ, maxX, maxZ) {
   return false;
 }
 
+const core = EDE_DATA.meta.baseBounds;
+const coveredCore = core && inBoundary(core[0], core[1], playableBoundary) && !touchesBounds(...core) ? core : null;
+
+export function containsPlayablePoint(x, z, boundary = playableBoundary) {
+  if (!boundary.length) return true;
+  if (boundary === playableBoundary && coveredCore &&
+      x > coveredCore[0] && x < coveredCore[2] && z > coveredCore[1] && z < coveredCore[3]) return true;
+  return inBoundary(x, z, boundary);
+}
+
 export function playableBoundsOverlap(minX, minZ, maxX, maxZ) {
   return containsPlayablePoint(minX, minZ) || touchesBounds(minX, minZ, maxX, maxZ);
 }
@@ -71,8 +83,19 @@ export function playableBoundsCovered(minX, minZ, maxX, maxZ) {
   return containsPlayablePoint(minX, minZ) && !touchesBounds(minX, minZ, maxX, maxZ);
 }
 
+export const containsTravelPoint = (x, z) =>
+  containsPlayablePoint(x, z) || containsPlayablePoint(x, z, travelBoundary);
+
 export function constrainToPlayableArea(x, z) {
-  if (containsPlayablePoint(x, z)) return { x, z };
+  return constrain(x, z, containsPlayablePoint, edges);
+}
+
+export function constrainToTravelArea(x, z) {
+  return constrain(x, z, containsTravelPoint, travelEdges);
+}
+
+function constrain(x, z, contains, edges) {
+  if (contains(x, z)) return { x, z };
   let best = Infinity, nearest;
   for (const [ax, az, bx, bz] of edges) {
     const dx = bx - ax, dz = bz - az, length2 = dx * dx + dz * dz;
@@ -87,7 +110,7 @@ export function constrainToPlayableArea(x, z) {
   }
   const [px, pz, dx, dz] = nearest;
   for (const [nx, nz] of [[px - dz, pz + dx], [px + dz, pz - dx]]) {
-    if (containsPlayablePoint(nx, nz)) return { x: nx, z: nz };
+    if (contains(nx, nz)) return { x: nx, z: nz };
   }
   return { x: px, z: pz };
 }

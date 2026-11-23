@@ -103,7 +103,7 @@ test('streamed tiles exclude the surveyed buildings for every grouped heritage l
   const cases = [
     ['fischerhuis', 3], ['boerderij-de-driehoek', 2], ['historische-winkelpuien', 4], ['van-essenkazerne', 2],
     ['de-lange-weide', 4], ['waterzoom-kernhem', 1], ['winkelcentrum-parkweide', 2],
-    ['p-bos-veevoeders', 1], ['rembrandtlaan-hat', 18],
+    ['p-bos-veevoeders', 1], ['rembrandtlaan-hat', 18], ['jachthuis-sint-hubertus', 4],
   ];
   for (const [id, count] of cases) {
     const site = EDE_MODELED_LANDMARKS.find(landmark => landmark.id === id);

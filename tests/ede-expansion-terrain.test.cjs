@@ -3,6 +3,7 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const test = require('node:test');
+const { gunzipSync } = require('node:zlib');
 const { loadModule } = require('./helpers/module.cjs');
 
 const assets = path.resolve(__dirname, '../assets');
@@ -12,8 +13,9 @@ const terrainFile = name => read(`ede-terrain-tiles/${name}`);
 const canopyFile = name => read(`ede-forest-canopy/${name}`);
 
 test('expansion collision uses measured 5 m terrain and retains the original town and local patches', async ({ mock }) => {
-  let manifestStatus = 200;
+  let manifestStatus = 200, expandedRequests = 0;
   mock.method(globalThis, 'fetch', async url => {
+    if (url.pathname.includes('/ede-terrain-tiles/')) expandedRequests++;
     if (url.pathname.endsWith('/ede-terrain-tiles/manifest.json') && manifestStatus !== 200) {
       return new Response(null, { status: manifestStatus });
     }
@@ -25,7 +27,13 @@ test('expansion collision uses measured 5 m terrain and retains the original tow
   assert.ok(edition);
   const { field, manifest } = edition;
   assert.equal(field.step, 5);
-  assert.deepEqual([field.minX, field.minZ, field.maxX, field.maxZ], manifest.bounds);
+  assert.deepEqual([field.minX, field.minZ, field.maxX, field.maxZ], manifest.collisionBounds);
+  assert.ok(field.heights instanceof Int16Array);
+  const { overviewField, rootSamples } = edition;
+  assert.equal(overviewField.step, 40);
+  assert.equal(rootSamples.byteLength, manifest.roots.length * 13 ** 2 * 2);
+  const [east, z] = [manifest.bounds[2] - 100, 0];
+  assert.equal(terrain.terrainHeightAt(east, z), terrain.sampleTerrain(overviewField, east, z));
   assert.equal(Number(field.napOrigin.toFixed(2)), 22.54);
   assert.equal(terrain.terrainHeightAt(0, 0), 0);
   assert.equal(terrain.getTerrainPatches().length, 3);
@@ -49,15 +57,21 @@ test('expansion collision uses measured 5 m terrain and retains the original tow
   await terrain.loadTerrain({ expanded: true });
   assert.equal(terrain.getExpansionTerrain(), null);
   assert.equal(terrain.terrainHeightAt(8090, 3337), terrain.sampleTerrain(town, 8090, 3337));
+
+  expandedRequests = 0;
+  await terrain.loadTerrain();
+  assert.equal(expandedRequests, 0);
+  assert.equal(terrain.getExpansionTerrain(), null);
+  assert.equal(terrain.getTerrainPatches().length, 3);
 });
 
-test('the northern expansion covers the planned sites and shares the original terrain seam', async () => {
+test('buffered terrain covers the northern sites and adjoining 5 m tiles share vertices', async () => {
   const { geographicBounds, northDetail } = require('../tools/data/ede-outer-coverage.json');
   const { EDE_DATA } = await import('../js/ede-geodata.js');
   const { projectLonLatInto } = await import('../js/ede-scene-coordinates.js');
   const { decodeTerrain, sampleTerrain } = await import('../js/terrain.js');
   const manifest = json('ede-terrain-tiles/manifest.json');
-  const field = decodeTerrain(Uint8Array.from(terrainFile('collision.bin')).buffer);
+  const field = decodeTerrain(Uint8Array.from(gunzipSync(terrainFile(manifest.collisionFile))).buffer, true);
   const project = ([lon, lat]) => projectLonLatInto(EDE_DATA.meta.lonLatAffine, lon, lat, {});
   const [south, west, north, east] = geographicBounds;
   for (const [lon, lat] of [[west, north], [east, north], [west, south], [east, south], ...northDetail.arrivals]) {
@@ -69,23 +83,30 @@ test('the northern expansion covers the planned sites and shares the original te
   const summit = project(northDetail.arrivals[1]);
   assert.ok(sampleTerrain(field, summit.x, summit.z) - sampleTerrain(field, station.x, station.z) > 20,
     'Goudsberg rises above the station');
-  for (let x = field.minX; x < field.maxX; x += 250) {
-    const northId = `250_${x}_-4250`;
+  let seams = 0;
+  for (const id of Object.keys(manifest.tiles)) {
+    const [size, x, z] = id.split('_').map(Number);
+    if (size !== 250 || z !== -4250) continue;
     const southId = `250_${x}_-4000`;
-    assert.ok(manifest.tiles[northId] && manifest.tiles[southId]);
-    assert.deepEqual(terrainFile(`${northId}.bin`).subarray(50 * 51 * 5),
+    if (!manifest.tiles[southId]) continue;
+    assert.deepEqual(terrainFile(`${id}.bin`).subarray(50 * 51 * 5),
       terrainFile(`${southId}.bin`).subarray(0, 51 * 5), `seam at ${x}`);
+    seams++;
   }
+  assert.ok(seams > 40);
 });
 
-test('terrain hierarchy covers the expansion and stores the collision vertices at every level', () => {
+test('terrain hierarchy covers the 2 km envelope and uses exact collision vertices at every level', async () => {
   const manifest = json('ede-terrain-tiles/manifest.json');
-  const collision = terrainFile('collision.bin');
+  const { createCoverageIndex, edeCoverage } = await import('../js/ede-coverage.js');
+  const coverage = createCoverageIndex(edeCoverage.terrainBoundary);
+  const { decodeTerrain } = await import('../js/terrain.js');
+  const collision = decodeTerrain(Uint8Array.from(gunzipSync(terrainFile(manifest.collisionFile))).buffer, true);
   const [west, north, east, south] = manifest.bounds;
-  const columns = collision.readUInt32LE(4);
-  const rows = collision.readUInt32LE(8);
-  assert.equal(columns, (east - west) / 5 + 1);
-  assert.equal(rows, (south - north) / 5 + 1);
+  const { columns, rows, minX, minZ, maxX, maxZ } = collision;
+  assert.deepEqual([minX, minZ, maxX, maxZ], manifest.collisionBounds);
+  assert.equal(columns, (maxX - minX) / 5 + 1);
+  assert.equal(rows, (maxZ - minZ) / 5 + 1);
   const town = read('ede-ahn.bin');
   const townWest = town.readFloatLE(12), townNorth = town.readFloatLE(16);
   const townStep = town.readFloatLE(20);
@@ -99,6 +120,10 @@ test('terrain hierarchy covers the expansion and stores the collision vertices a
     const [x, z, maxX, maxZ] = tile.bounds, size = maxX - x;
     assert.equal(size, maxZ - z);
     assert.ok(x >= west && z >= north && maxX <= east && maxZ <= south);
+    assert.equal(x % size || 0, 0);
+    assert.equal(z % size || 0, 0);
+    assert.ok(coverage.overlapsBounds(...tile.bounds));
+    assert.ok(tile.range[0] <= tile.range[1]);
     if (parent) {
       assert.equal(size * 2, parent[2] - parent[0]);
       assert.ok(x === parent[0] || x === parent[0] + size);
@@ -109,8 +134,10 @@ test('terrain hierarchy covers the expansion and stores the collision vertices a
     assert.equal(raw.length, 51 * 51 * 5);
     const stride = size / 250;
     for (const row of [0, 1, 25, 49, 50]) for (const col of [0, 1, 25, 49, 50]) {
-      const collisionIndex = ((z - north) / 5 + row * stride) * columns + (x - west) / 5 + col * stride;
-      assert.equal(raw.readInt16LE((row * 51 + col) * 5), collision.readInt16LE(28 + collisionIndex * 2));
+      const gx = (x - minX) / 5 + col * stride, gz = (z - minZ) / 5 + row * stride;
+      const sample = raw.readInt16LE((row * 51 + col) * 5);
+      assert.ok(sample >= tile.range[0] && sample <= tile.range[1]);
+      if (gx >= 0 && gz >= 0 && gx < columns && gz < rows) assert.equal(sample, collision.heights[gz * columns + gx]);
     }
     if (size === 250) {
       assert.equal(tile.error, 0);
@@ -123,7 +150,10 @@ test('terrain hierarchy covers the expansion and stores the collision vertices a
   assert.equal(visited.size, Object.keys(manifest.tiles).length);
   for (let x = west; x < east; x += 250) for (let z = north; z < south; z += 250) {
     const insideTown = x >= townWest && z >= townNorth && x + 250 <= townEast && z + 250 <= townSouth;
-    assert.equal(leaves.has(`${x}/${z}`), !insideTown, `coverage at ${x}, ${z}`);
+    if (insideTown) assert.equal(leaves.has(`${x}/${z}`), false);
+    else if (coverage.coversBounds(x, z, x + 250, z + 250)) {
+      assert.ok(leaves.has(`${x}/${z}`), `coverage at ${x}, ${z}`);
+    }
   }
 });
 
@@ -133,16 +163,56 @@ async function terrainRenderer() {
   const filename = path.resolve(__dirname, '../js/ede-terrain-tiles.js');
   const tiles = loadModule(readFileSync(filename, 'utf8'), { filename, imports: {
     'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
-    './tsl-materials.js': {}, './ede-playable-boundary.js': {},
+    './tsl-materials.js': {}, './ede-playable-boundary.js': {}, './ede-coverage.js': {},
     './terrain.js': { ...terrain, expansionSeamOffset: () => 0 },
   } });
   return { three, terrain, ...tiles };
 }
 
+test('buffered roots draw immediately after camera jumps while detail fetches wait', async ({ mock }) => {
+  const [three, tsl, terrain, coverage] = await Promise.all([
+    import('../vendor/three/build/three.webgpu.js'), import('../vendor/three/build/three.tsl.js'),
+    import('../js/terrain.js'), import('../js/ede-coverage.js'),
+  ]);
+  mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
+  await terrain.loadTerrain({ expanded: true });
+  let pending = 0;
+  const fetchTile = () => { pending++; return new Promise(() => {}); };
+  const filename = path.resolve(__dirname, '../js/ede-terrain-tiles.js');
+  const { createTerrainTiles } = loadModule(readFileSync(filename, 'utf8'), {
+    filename, globals: { URL, performance, fetch: fetchTile },
+    imports: {
+      'three/webgpu': three, 'three/tsl': tsl, './aerial-colors.js': { sampleGroundColor: () => false },
+      './tsl-materials.js': { heathBloomColor: color => color, cityUniforms: { uRoadWetness: tsl.float(0) } },
+      './ede-playable-boundary.js': {}, './ede-coverage.js': coverage, './terrain.js': terrain,
+    },
+  });
+  const scene = new three.Scene();
+  const renderer = createTerrainTiles(scene, null);
+  const group = scene.getObjectByName('EdeTerrainQuadtree');
+  const camera = new three.PerspectiveCamera(56, 1.6, .35, 60000);
+  for (const [eye, target] of [
+    [[18000, 700, -6000], [20300, 22, -6000]], [[-6750, 550, 250], [-8800, 16, 500]],
+    [[10700, 750, -11200], [10600, 21, -13100]],
+  ]) {
+    camera.position.set(...eye);
+    camera.lookAt(...target);
+    renderer.update(camera, 700);
+    const visible = group.children.filter(mesh => mesh.visible);
+    assert.ok(visible.length > 0);
+    assert.equal(renderer.stats.residentBytes, 0);
+    assert.equal(renderer.stats.drawCalls, 0);
+    for (const mesh of visible) mesh.onBeforeRender(null, null, null, mesh.geometry);
+    assert.equal(renderer.stats.drawCalls, visible.length);
+    assert.ok(renderer.stats.triangles >= visible.length);
+  }
+  assert.equal(pending, 4);
+});
+
 test('the finer tile skirt reaches below a much coarser neighbour and faces the gap', async () => {
   const { three, terrain, sizeTerrainSkirts, tileGeometry } = await terrainRenderer();
   const { roots, tiles } = json('ede-terrain-tiles/manifest.json');
-  const field = terrain.decodeTerrain(Uint8Array.from(terrainFile('collision.bin')).buffer);
+  const field = terrain.decodeTerrain(Uint8Array.from(gunzipSync(terrainFile('collision.bin.gz'))).buffer);
   const town = terrain.decodeTerrain(Uint8Array.from(read('ede-ahn.bin')).buffer);
   sizeTerrainSkirts(Object.values(tiles), roots.map(id => tiles[id]), field);
   const fineId = '250_6500_0', coarseId = '4000_4000_-4000';
@@ -212,6 +282,34 @@ test('both terrain resolutions follow the municipal edge and retain holes', asyn
   }
 });
 
+test('measured woodland canopy reaches the terrain buffer and stays inside its outer edge', async () => {
+  const { createCoverageIndex, edeCoverage } = await import('../js/ede-coverage.js');
+  const terrain = createCoverageIndex(edeCoverage.terrainBoundary);
+  const playable = createCoverageIndex(edeCoverage.playableBoundary);
+  const { version, cells, cover } = json('ede-forest-canopy/manifest.json');
+  assert.equal(version, 2);
+  assert.equal(cover.step, 20);
+  const image = canopyFile('cover.png');
+  assert.equal(image.readUInt32BE(16) * 20, cover.bounds[2] - cover.bounds[0]);
+  assert.equal(image.readUInt32BE(20) * 20, cover.bounds[3] - cover.bounds[1]);
+  let exterior = 0;
+  for (const { id, bounds, step, maxY } of cells) {
+    assert.ok(Number.isFinite(maxY));
+    const [west, north] = bounds;
+    if (terrain.coversBounds(...bounds) && playable.coversBounds(...bounds)) continue;
+    const data = canopyFile(id + '.bin');
+    for (let i = 0; i < 2500; i += 23) {
+      if (!data[i]) continue;
+      const x = west + i % 50 * step, z = north + Math.floor(i / 50) * step;
+      for (const dx of [0, step]) for (const dz of [0, step]) {
+        assert.ok(terrain.contains(x + dx, z + dz), `outside terrain: ${id} ${x}/${z}`);
+      }
+      if (!playable.contains(x + step / 2, z + step / 2)) exterior++;
+    }
+  }
+  assert.ok(exterior > 1000);
+});
+
 test('canopy mesh payloads share exact top heights along equal-resolution tile seams', () => {
   const { cells } = json('ede-forest-canopy/manifest.json');
   const [west, north, east, south] = json('ede-terrain-tiles/manifest.json').bounds;
@@ -274,7 +372,12 @@ test('canopy walls reach the ground along connected crowns and leave continued t
     .replace('export async function loadForestCanopy', 'async function loadForestCanopy');
   const { canopyGeometry } = loadModule(source, { filename, globals: { URL }, imports: {
     'three/webgpu': three, 'three/tsl': {}, './ede-scene-coordinates.js': { SCENE_NAP_ORIGIN: 0 },
-    './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {}, './ede-playable-boundary.js': {},
+    './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {},
+    './ede-playable-boundary.js': {
+      containsPlayablePoint: x => x < 250,
+      playableBoundsCovered: (_minX, _minZ, maxX) => maxX < 250,
+      playableBoundsOverlap: minX => minX < 250,
+    },
   } });
   const buffer = new ArrayBuffer(2500 + 51 * 51 * 2);
   const mask = new Uint8Array(buffer, 0, 2500);
@@ -292,4 +395,9 @@ test('canopy walls reach the ground along connected crowns and leave continued t
   assert.equal(hits([205, 7, 198], [0, 0, 1]).length, 0, 'isolated crowns stay out of the forest walls');
   assert.ok(hits([205, 17, 205], [0, -1, 0]).length, 'the measured crown surface is retained');
   assert.equal(hits([19.8, 17, 100.2], [0, -1, 0]).length, 0, 'outward corners are bevelled');
+  const buffered = canopyGeometry(buffer, { bounds: [0, 0, 500, 500], step: 10, buffered: true }).geometry;
+  const exterior = buffered.getAttribute('exteriorCanopy');
+  assert.equal(exterior.count, buffered.getAttribute('position').count);
+  assert.equal(exterior.getX(0), 0, 'interior canopy can yield to nearby individual trees');
+  assert.equal(exterior.getX(50), 1, 'exterior canopy stays visible near the municipal edge');
 });

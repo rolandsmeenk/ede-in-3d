@@ -17,6 +17,7 @@ from urllib.request import urlopen
 from shapely import STRtree, force_2d, make_valid, transform, union_all
 from shapely.geometry import LineString, Point, Polygon, box, shape
 
+from ede_height_field import expansion_collision_path
 from ede_gis import Frame, SCENE_NAP_ORIGIN, source_crs
 from ede_map import ROOT, load_playable_boundary
 
@@ -136,9 +137,9 @@ def unit_tangent(line, point):
 
 def build(scene, frame, area, docs):
     to_rd = lambda geometry: transform(geometry, frame.scene_to_rd, interleaved=False)
-    tiles = [TERRAIN(ASSETS / name) for name in (
-        'ede-a12-embankment.bin', 'ede-wvede-terrain.bin', 'ede-ahn.bin', 'ede-terrain-tiles/collision.bin',
-    ) if (ASSETS / name).exists()]
+    terrain_paths = [ASSETS / name for name in ('ede-a12-embankment.bin', 'ede-wvede-terrain.bin', 'ede-ahn.bin')]
+    terrain_paths.append(expansion_collision_path())
+    tiles = [TERRAIN(path) for path in terrain_paths if path.exists()]
 
     def ground(x, z):
         for g in tiles:

@@ -521,6 +521,177 @@
       ],
       "style": "prefab",
       "styleSource": "approximate exterior type from aerial view"
+    },
+    "0228100000001179": {
+      "center": [
+        170483.5,
+        455907.0
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000002290": {
+      "center": [
+        174866.4,
+        458999.5
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000003034": {
+      "center": [
+        166376.5,
+        458244.7
+      ],
+      "style": "brick",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000010901": {
+      "center": [
+        174144.2,
+        460251.6
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000011458": {
+      "center": [
+        167316.9,
+        456999.3
+      ],
+      "style": "brick",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000015131": {
+      "center": [
+        170048.8,
+        453121.7
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000019111": {
+      "center": [
+        178905.4,
+        462117.5
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000031744": {
+      "center": [
+        180709.2,
+        457055.1
+      ],
+      "style": "brick",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000033790": {
+      "center": [
+        171513.7,
+        457273.6
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000035588": {
+      "center": [
+        168125.5,
+        453362.5
+      ],
+      "style": "brick",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000039491": {
+      "center": [
+        174693.3,
+        446316.1
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000046018": {
+      "center": [
+        170639.0,
+        446353.3
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000047017": {
+      "center": [
+        170268.7,
+        454516.5
+      ],
+      "style": "brick",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000051617": {
+      "center": [
+        168017.6,
+        458767.4
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000056965": {
+      "center": [
+        169098.1,
+        454155.5
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000057053": {
+      "center": [
+        172777.8,
+        458284.0
+      ],
+      "style": "brick",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000058125": {
+      "center": [
+        178625.1,
+        459986.2
+      ],
+      "style": "brick",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000069604": {
+      "center": [
+        168971.3,
+        453307.4
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
+    },
+    "0228100000098550": {
+      "center": [
+        177150.7,
+        457990.7
+      ],
+      "style": "prefab",
+      "date": "2026-11-23",
+      "styleSource": "separate roof visible in PDOK 2026 imagery; exterior finish approximate"
     }
   },
   "withheld": [

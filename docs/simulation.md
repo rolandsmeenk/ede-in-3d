@@ -70,7 +70,7 @@ In headless Chrome WebGPU at 960 × 537, two 100-frame passes along the same str
 
 ## Refresh the bus routes
 
-The game loads a local timetable and lane matches for both directions of Ede lines 1–4, 103 and 303. Stop signs use the GTFS boarding coordinates and platform letters. Buses display the GTFS trip headsign, and dwell at stops they can reach on connected lanes. Fresh OVapi positions guide the same scheduled actor along its route. Buses approach and leave the camera area at their current route positions. If no service is running at startup, the simulation opens at the next mapped departure.
+The game loads a local timetable and lane matches for bus services with stops in Gemeente Ede, including both directions of Ede lines 1–4, 103 and 303. Stop signs use the GTFS boarding coordinates and platform letters. Buses display the GTFS trip headsign, and dwell at stops they can reach on connected lanes. Fresh OVapi positions guide the same scheduled actor along its route. Buses approach and leave the camera area at their current route positions. If no service is running at startup, the simulation opens at the next mapped departure.
 
 ```sh
 curl -fL https://gtfs.ovapi.nl/nl/gtfs-nl.zip -o /tmp/ede-gtfs.zip
@@ -81,7 +81,7 @@ node tools/build-ede-bus-routes.mjs /tmp/ede-gtfs.json /tmp/ede-bus-graph.json a
 
 The match report lists gaps by variant, including coordinates and affected boarding points. Matching uses actual graph turns, with separate edges for the mapped busways and selected underpasses. Buses are hidden inside tunnels whose interiors are outside the terrain model. Sections with no reliable connected lane are omitted from the driving simulation.
 
-The November 2026 snapshot contains 81 variants, 64 of which enter the playable map. Of the 125 marked GTFS boarding locations, 121 have a reliable driving-lane match. See the [junction and route audit](../tools/data/ede-junction-route-audit.md) for checks at the station forecourt, Oosttunnel and Stadspoort.
+OVapi feed 9712 includes 184 variants from 29 route IDs. The matcher found playable segments for 167 variants and boarding lanes for 320 of 339 local stop IDs, including stops in Bennekom, Harskamp and De Valk. See the [junction and route audit](../tools/data/ede-junction-route-audit.md) for checks at the station forecourt, Oosttunnel and Stadspoort.
 
 ## Mountain bikers
 
@@ -119,7 +119,7 @@ The server publishes local services at `/api/ede-trains`. NS position reports co
 
 OVapi supplies RS34 delays, changes to station times and platforms, skipped stops and cancellations. The server polls every minute. After three minutes, timing switches to a timetable estimate. The server retains dated cancellations through feed gaps. Train status reads **GPS**, **estimated from live updates**, or **timetable**. Service dates follow Europe/Amsterdam, including trips continuing after midnight, regardless of the lighting mode. [OVapi rail updates](https://gtfs.ovapi.nl/nl/)
 
-The bundled timetable covers 18 November 2026 through 11 December 2027. Offline mode and static hosting use that timetable for both operators. Outside the bundled dates, the simulator reuses the closest bundled service pattern for the same weekday. Refresh the local asset from the [OVapi GTFS archive](https://gtfs.ovapi.nl/nl/).
+The bundled timetable contains 2,497 scheduled trips from 21 November 2026 through 11 December 2027. Offline mode and static hosting use that timetable for both operators. Outside the bundled dates, the simulator reuses the closest bundled service pattern for the same weekday. Refresh the local asset from the [OVapi GTFS archive](https://gtfs.ovapi.nl/nl/).
 
 ```sh
 python3 tools/import-ede-trains.py ./gtfs-nl.zip assets/ede-train-timetable.json

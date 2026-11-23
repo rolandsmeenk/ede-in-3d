@@ -1,3 +1,4 @@
+const { gunzipSync } = require('node:zlib');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
@@ -11,7 +12,7 @@ test('Westhoffhuis keeps its exact building collision and usable approach treads
   const three = await import('../vendor/three/build/three.webgpu.js');
   const tsl = await import('../vendor/three/build/three.tsl.js');
   const { decodeTerrain, sampleTerrain } = await import('../js/terrain.js');
-  const packed = file('assets/ede-terrain-tiles/collision.bin');
+  const packed = gunzipSync(file('assets/ede-terrain-tiles/collision.bin.gz'));
   const field = decodeTerrain(packed.buffer.slice(packed.byteOffset, packed.byteOffset + packed.byteLength));
   const terrainHeightAt = (x, z) => sampleTerrain(field, x, z);
   const terrain = { terrainHeightAt, getTerrain: () => field };

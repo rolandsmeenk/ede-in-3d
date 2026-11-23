@@ -8,6 +8,7 @@ from pathlib import Path
 MAP_ASSET = 'assets/ede-map-v1.json.gz'
 SHORELINE_ASSET = 'assets/ede-shorelines.json.gz'
 MUNICIPAL_ASSET = 'assets/ede-municipality-v1.json.gz'
+COMPLETION_ASSET = 'assets/ede-complete-v1.json.gz'
 ROOT = Path(__file__).resolve().parents[1]
 LAYERS = ('buildings', 'roads', 'railways', 'water', 'parks', 'squares', 'trees', 'signals')
 GRAPHS = ('roadGraph', 'activeGraph')
@@ -50,7 +51,7 @@ def load_scene_metadata():
     return load_scene(include_shorelines=False)['meta']
 
 
-def load_playable_scene(include_shorelines=True, *, municipal=True):
+def load_playable_scene(include_shorelines=True, *, municipal=True, complete=True):
     """Read the two OSM expansion overlays and the municipal bake, preserving the original core prefix."""
     scene = load_scene(include_shorelines)
     meta = scene['meta']
@@ -81,17 +82,40 @@ def load_playable_scene(include_shorelines=True, *, municipal=True):
             for field in ('arrivals', 'routes'):
                 meta['corridorDetail'][field].extend(overlay['detail'][field])
             meta['corridorDetail']['zones'] = overlay['detail']['zones']
-    if include_shorelines and municipal and (ROOT / MUNICIPAL_ASSET).exists():
-        apply_municipal_coverage(scene, read_packed(MUNICIPAL_ASSET))
-    elif municipal and (ROOT / MUNICIPAL_ASSET).exists():
-        # The vector patch's shoreline indices refer to the normal, refined map.
-        refined = load_playable_scene()
+    completion = read_packed(COMPLETION_ASSET) if complete and (ROOT / COMPLETION_ASSET).is_file() else None
+    if include_shorelines:
+        if completion:
+            apply_complete_coverage(scene, completion)
+        patch = completion['municipality'] if completion else (
+            read_packed(MUNICIPAL_ASSET) if (ROOT / MUNICIPAL_ASSET).exists() else None)
+        if municipal and patch:
+            apply_municipal_coverage(scene, patch)
+    elif completion or (municipal and (ROOT / MUNICIPAL_ASSET).exists()):
+        # Shoreline-indexed overlays require the normal refined base before application.
+        refined = load_playable_scene(municipal=municipal, complete=complete)
         scene['meta'] = refined['meta']
         for key in (*LAYERS, *GRAPHS):
             if key not in ('water', 'parks', 'squares'):
                 scene[key] = refined[key]
     scene['meta']['counts'] = {key: len(scene[key]) for key in LAYERS}
     return scene
+
+
+def apply_complete_coverage(scene, completion):
+    if completion['version'] != 1 or completion['base'] != municipal_base(scene):
+        raise ValueError('Ede completion bake does not match the existing map assets')
+    for key in LAYERS:
+        layer = completion['layers'][key]
+        rows = scene[key].copy()
+        for index, replacement in layer['replace']:
+            rows[index] = replacement
+        rows.extend(layer['add'])
+        scene[key] = rows
+    scene.update(completion['graphs'])
+    scene['meta'].update(bounds=completion['bounds'], geographicBounds=completion['geographicBounds'],
+                         areas=completion['areas'], fullMunicipality=True, osmCompletion=completion['source'])
+    if 'travelBounds' in completion:
+        scene['meta']['travelBounds'] = completion['travelBounds']
 
 
 def apply_municipal_coverage(scene, patch):
@@ -134,9 +158,18 @@ def municipal_base(scene):
 
 
 @cache
-def load_playable_boundary():
-    """The official GM0228 footprint clipped to the expanded map, in Oude Kerk scene metres."""
+def load_coverage_polygon(field):
     from shapely.geometry import MultiPolygon, Polygon
-    polygons = read_packed(MUNICIPAL_ASSET)['boundary']
+    rows = json.loads((ROOT / 'assets/ede-coverage-v1.json').read_bytes())[field]
+    return MultiPolygon([Polygon(list(zip(outer[::2], outer[1::2])),
+                                 [list(zip(ring[::2], ring[1::2])) for ring in holes]) for outer, *holes in rows])
+
+
+@cache
+def load_playable_boundary():
+    """The playable GM0228 footprint in Oude Kerk scene metres."""
+    from shapely.geometry import MultiPolygon, Polygon
+    polygons = (read_packed(COMPLETION_ASSET)['municipality'] if (ROOT / COMPLETION_ASSET).exists()
+                else read_packed(MUNICIPAL_ASSET))['boundary']
     return MultiPolygon([Polygon(list(zip(outer[::2], outer[1::2])),
                                  [list(zip(ring[::2], ring[1::2])) for ring in holes]) for outer, *holes in polygons])

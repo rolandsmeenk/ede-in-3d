@@ -41,6 +41,10 @@ export const EDE_OUTER_MEMORIALS = [
   // https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1294/otterlo-rode-kruismonument
   memorial('otterlo-rode-kruismonument', 'Rode-Kruismonument Otterlo', 'Otterlo',
     5.7717741, 52.1030884, 2.9, 1.0, 1.80, true),
+  // Monument coordinates from the published monument list; shape documented by the National Committee.
+  // https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1298/harskamp-bevrijding-op-de-veluwe
+  memorial('harskamp-bevrijding-veluwe', 'Bevrijding op de Veluwe', 'Harskamp',
+    5.758333, 52.124167, 1.7, -1.1, 1.48, true),
   // The unveiling photograph puts the panel across Dorpsstraat from the hotel's entrance.
   // https://www.ede.nl/nieuws/nieuwe-marker-vertelt-geschiedenis-van-hotel-de-wormshoef
   memorial('wormshoef-geschiedenismarker', 'Geschiedenismarker De Wormshoef', 'Lunteren',

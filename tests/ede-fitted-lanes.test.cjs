@@ -35,6 +35,24 @@ test('shipped lane paths and junction connectors bind to the unchanged street an
   assert.ok(Math.abs(Math.hypot(p.dx, p.dz) - 1) < 1e-6);
   assert.ok(p.width > 2 && p.stationScale > 0);
 
+  const { createCoverageIndex } = await import('../js/ede-coverage.js');
+  const pavedRoads = load('north-paving', true).surfaces.filter(surface =>
+    surface.layer === 0 && surface.function.startsWith('rijbaan '));
+  for (const [way, x, z] of [['w6850526', 4945, -10720], ['w299229745', 10065, 1202]]) {
+    const motorPavement = createCoverageIndex(pavedRoads.flatMap(surface =>
+      surface.polygons.filter(([outer]) => outer.some((coordinate, i) => i % 2 === 0
+        && Math.abs(coordinate - x) < 250 && Math.abs(outer[i + 1] - z) < 250))));
+    const approaches = network.edges.filter(e => e.wayId === way && e.len > 250 &&
+      Math.abs(e.sx + e.dx * e.len / 2 - x) < 150 && Math.abs(e.sz + e.dz * e.len / 2 - z) < 150);
+    assert.equal(approaches.length, 2, way);
+    for (const approach of approaches) {
+      for (const portion of [0.3, 0.4, 0.5, 0.6, 0.7]) {
+        const { x, z, dx, dz } = fittedLanePoint(approach, 0, approach.len * portion, {});
+        assert.ok(motorPavement.contains(x - dz, z + dx) && motorPavement.contains(x + dz, z - dx), way);
+      }
+    }
+  }
+
   const kolkakkerweg = network.edges.find(e => streetRoadKey(e) === '-859.20,857.60,-959.50,874.30|w6953286|0');
   assert.ok(kolkakkerweg?.fittedLanes?.[0]);
   assert.equal(kolkakkerweg.sourceRoadKey, '-859.20,857.60,-978.80,873.80|w6953286|0');

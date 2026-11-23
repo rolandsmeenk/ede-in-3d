@@ -133,3 +133,60 @@ test('paving coverage keeps segment indices shared by the core and outer surveys
   const result = await loadEdeRoadSurfaces({ north: true });
   assert.deepEqual(result.covered.w1, [0, 1, 2]);
 });
+
+test('the atlas and 3D scene share loaded pavement in the playable exterior', async t => {
+  const { loadEdeRoadSurfaces, loadEdeFringePaving } = await import('../js/ede-road-surfaces.js');
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async url => {
+    if (url.pathname.endsWith('/ede-fringe-paving.json.gz')) requests++;
+    return new Response(readFileSync(url));
+  });
+  const [fringe, merged] = await Promise.all([loadEdeFringePaving(), loadEdeRoadSurfaces({ north: true, fringe: true })]);
+  assert.equal(requests, 1);
+  assert.equal(merged.fringeSurfaces, fringe.surfaces);
+  assert.ok(fringe.surfaces.length > 9000);
+  assert.ok(fringe.surfaces.some(surface => surface.function === 'spoorbaan'));
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const roads = new Map(EDE_DATA.roads.map(road => [road.id, road]));
+  for (const [id, covered] of Object.entries(fringe.covered)) {
+    const road = roads.get(id);
+    assert.ok(road && covered.every(i => i >= 0 && i < road.pts.length / 2 - 1), id);
+  }
+});
+
+test('paving tiles build near the camera, evict under the byte budget, and rebuild after a jump', async () => {
+  const THREE = await import('../vendor/three/build/three.webgpu.js');
+  const { loadModule } = require('./helpers/module.cjs');
+  const { createPavingTiles } = loadModule(readFileSync(join(__dirname, '../js/ede-paving-tiles.js'), 'utf8'), {
+    imports: { 'three/webgpu': THREE }, globals: { performance },
+  });
+  const scene = new THREE.Scene();
+  const builds = [], disposals = [];
+  const stream = createPavingTiles(scene, (batches, group) => {
+    for (const geometry of batches.get('paving')) group.add(new THREE.Mesh(geometry));
+  }, 36);
+  for (const x of [0, 600]) {
+    stream.add({ minX: x, maxX: x + 1, minZ: 0, maxZ: 1 }, batches => {
+      builds.push(x);
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(9, 3));
+      geometry.addEventListener('dispose', () => disposals.push(x));
+      batches.set('paving', [geometry]);
+    });
+  }
+  assert.deepEqual(builds, []);
+  assert.ok(stream.update({ x: 0, z: 0 }, 100));
+  assert.ok(!stream.update({ x: 0, z: 0 }, 100));
+  assert.deepEqual(builds, [0]);
+
+  assert.ok(stream.update({ x: 0, z: 0 }));
+  assert.ok(!stream.update({ x: 0, z: 0 }));
+  assert.deepEqual(disposals, [600]);
+  assert.equal(stream.stats.residentBytes, 36);
+
+  assert.ok(stream.update({ x: 600, z: 0 }, 100));
+  assert.deepEqual(builds, [0, 600, 600]);
+  assert.deepEqual(disposals, [600, 0]);
+  assert.equal(stream.stats.resident, 1);
+  assert.equal(stream.stats.peakResidentBytes, 36);
+});

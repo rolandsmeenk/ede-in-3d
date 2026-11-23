@@ -57,6 +57,15 @@ def town_sites(bounds):
             for i, (left, right) in enumerate(zip(xs, xs[1:]))}
 
 
+def municipal_sites(boundary):
+    left, top, right, bottom = boundary.bounds
+    step = 3500
+    return {f'municipality-{x}-{z}': (x, z, x + step, z + step)
+            for x in range(math.floor(left / step) * step, math.ceil(right), step)
+            for z in range(math.floor(top / step) * step, math.ceil(bottom), step)
+            if boundary.intersects(box(x, z, x + step, z + step))}
+
+
 def collection_sites(sites, town=False):
     for collection in COLLECTIONS + (TOWN_COLLECTIONS if town else ()):
         for site, bounds in sites.items():
@@ -160,16 +169,17 @@ def fetch(directory, sites, affine, day, town=False, osm=None):
 
     def fetch_one(job):
         site, collection, bounds = job
+        path = directory / f'{site}-{collection}.geojson'
+        if path.is_file() and json.loads(path.read_bytes()).get('date') == day:
+            return
         _, features = BGT['fetch_tile'](collection, bounds, day)
-        write_json(directory / f'{site}-{collection}.geojson', {
-            'type': 'FeatureCollection', 'features': features,
-        })
+        write_json(path, {'type': 'FeatureCollection', 'date': day, 'features': features})
         print(f'{site} {collection}: {len(features)}', flush=True)
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         gate_job = pool.submit(extract_gates, directory, osm, geographic_bounds(
-            union_all([box(*bounds) for bounds in sites.values()]).bounds, affine)) if osm else None
-        if not town and not osm:
+            union_all([box(*bounds) for bounds in sites.values()]).bounds, affine)) if osm and not (directory / 'gates.json').is_file() else None
+        if not town and not osm and not (directory / 'gates.json').is_file():
             gate_job = pool.submit(fetch_gates, directory, sites, affine)
         list(pool.map(fetch_one, jobs))
         if gate_job:
@@ -256,7 +266,7 @@ def tree_positions(path):
         raise ValueError(f'Invalid Ede tree inventory length: {path}')
 
 
-def build_evidence(scene, area, *, tree_path=ROOT / 'assets/ede-trees.bin'):
+def build_evidence(scene, area, *, tree_path=ROOT / 'assets/ede-trees.bin', exterior=False):
     route_rows = []
     bus_roads = []
 
@@ -331,6 +341,8 @@ def build_evidence(scene, area, *, tree_path=ROOT / 'assets/ede-trees.bin'):
         if len(xs) < 3 or not border.intersects(box(min(xs), min(zs), max(xs), max(zs))):
             continue
         building_polygons.append(flat_polygon(ring, record.get('holes', [])))
+    if exterior:
+        building_polygons.extend(geometry for geometry in BGT['exterior_building_footprints']() if geometry.intersects(border))
     return (route_rows, STRtree([row[3] for row in route_rows]), boarding, structures,
             STRtree([row[1] for row in structures]), STRtree(trees), STRtree(lamps), STRtree(building_polygons))
 
@@ -709,16 +721,16 @@ def land_class(collection, properties):
     return None
 
 
-def bake_land(directory, sites, scene, day, path):
+def bake_land(directory, sites, scene, day, path, boundary=None):
     import numpy as np
 
     bounds, affine = scene['meta']['bounds'], scene['meta']['lonLatAffine']
     x0, z0, x1, z1 = bounds
-    step = 2
+    step = 4 if boundary is not None else 2
     cols, rows = math.ceil((x1 - x0) / step), math.ceil((z1 - z0) / step)
     cells = np.zeros((rows, cols), dtype=np.uint8)
     xs, zs = x0 + (np.arange(cols) + .5) * step, z0 + (np.arange(rows) + .5) * step
-    area = box(*bounds)
+    area = boundary if boundary is not None else box(*bounds)
     # Prefer surveyed vegetation over overlapping erf interiors. The shared water pass stays clear.
     grouped = defaultdict(list)
     source_counts = Counter()
@@ -756,12 +768,17 @@ def bake_land(directory, sites, scene, day, path):
             'pixels': {kind: int(counts[value]) for kind, value in LAND_CLASSES.items()}}
 
 
-def bake(directory, sites, scene, day, town=False):
+def bake(directory, sites, scene, day, town=False, boundary=None, exterior=False):
     affine = scene['meta']['lonLatAffine']
-    site_areas = {key: box(*bounds) for key, bounds in sites.items()}
-    area = union_all(list(site_areas.values())).intersection(box(*scene['meta']['bounds']))
-    roads, road_tree, boarding, structures, structure_tree, trees, lamps, buildings = build_evidence(scene, area.buffer(25))
+    site_names = list(sites)
+    site_tree = STRtree([box(*sites[name]) for name in site_names])
+    playable = boundary if boundary is not None else box(*scene['meta']['bounds'])
+    area = union_all(site_tree.geometries).intersection(playable)
+    roads, road_tree, boarding, structures, structure_tree, trees, lamps, buildings = build_evidence(
+        scene, area.buffer(25), exterior=exterior,
+        tree_path=ROOT / 'assets' / ('ede-trees-expanded.bin' if boundary is not None else 'ede-trees.bin'))
     gates, gate_date = load_gates(directory, affine, area)
+    gate_tree = STRtree([row[2] for row in gates])
     stops = {key: point for key, point, _ in boarding}
     boarding_tree = STRtree([corridor for _, _, corridor in boarding])
     decks = []
@@ -774,11 +791,11 @@ def bake(directory, sites, scene, day, town=False):
     profiles = fitted_profiles(scene)
     motorway = motorway_barriers() if town else None
     records = list(read_records(directory, sites, day, town))
-    playable = box(*scene['meta']['bounds'])
     water_tree = STRtree([flat_polygon(row['ring'], row.get('holes', [])) for row in scene['water']])
+    source_extent = box(*playable.bounds).buffer(5) if exterior else playable
     water_lines = [part.boundary for collection, _, raw in records
                    if collection == 'waterdeel' and classify(collection, raw['properties']) == 'waterEdge'
-                   and not (part := BGT['world_geometry'](raw, affine, playable)).is_empty]
+                   and not (part := BGT['world_geometry'](raw, affine, source_extent)).is_empty]
     water_line_tree = STRtree(water_lines)
     mapped_banks, bank_tree = [], None
     canopy = station_heights(directory, affine) if town else None
@@ -797,7 +814,7 @@ def bake(directory, sites, scene, day, town=False):
             continue
         if geometry.is_empty:
             continue
-        covered = [site for site, bounds in site_areas.items() if bounds.intersects(geometry)]
+        covered = [site_names[i] for i in sorted(site_tree.query(geometry, predicate='intersects'))]
         for site in covered:
             site_counts[site][collection] += 1
         if kind is None:
@@ -813,7 +830,8 @@ def bake(directory, sites, scene, day, town=False):
         route_clear = union_all(lane_space, grid_size=.01)
         old_assets = union_all([structures[i][1] for i in structure_tree.query(geometry, predicate='dwithin', distance=.55)
                                 if structures[i][0] == level], grid_size=.01)
-        matched_gates = [row for row in gates if row[1] == level and geometry.distance(row[2]) <= .65]
+        matched_gates = [gates[i] for i in sorted(gate_tree.query(geometry, predicate='dwithin', distance=.65))
+                         if gates[i][1] == level]
         review_point = geometry.representative_point()
         info = {'id': identity, 'type': kind, 'level': level, 'site': covered, 'collection': collection,
                 'position': round_xy((review_point.x, review_point.y)),
@@ -859,9 +877,15 @@ def bake(directory, sites, scene, day, town=False):
                     reviews.append({**info, 'reason': 'unverified-station-height'})
         elif kind == 'waterEdge':
             # Use the original exterior shoreline, never the artificial pilot clip edge.
-            original = BGT['world_geometry'](raw, affine, playable)
-            shoreline = union_all([polygon.exterior for polygon in parts(original, 'Polygon')])
-            shoreline = shoreline.intersection(area).intersection(route_clear.buffer(9)).difference(route_clear.buffer(.5))
+            original = BGT['world_geometry'](raw, affine, source_extent)
+            edges = [polygon.exterior for polygon in parts(original, 'Polygon')]
+            if not edges or route_clear.is_empty:
+                continue
+            shoreline = union_all(edges).intersection(area)
+            sections = list(parts(shoreline, 'LineString'))
+            if not sections:
+                continue
+            shoreline = union_all(sections).intersection(route_clear.buffer(9)).difference(route_clear.buffer(.5))
             shoreline = shoreline.difference(old_assets.buffer(.75))
             if collection == 'ondersteunendwaterdeel':
                 waters = BGT['nearby_union'](water_line_tree, shoreline, .85)
@@ -918,9 +942,10 @@ def main():
     parser.add_argument('snapshot', type=Path, nargs='?', help='dated PDOK snapshot directory')
     parser.add_argument('--fetch', action='store_true', help='download a dated PDOK snapshot first')
     parser.add_argument('--date', type=date.fromisoformat, default=date.today())
-    parser.add_argument('--coverage', choices=('pilot', 'expanded', 'town'), default='town')
+    parser.add_argument('--coverage', choices=('pilot', 'expanded', 'town', 'municipality', 'belt'), default='town')
     parser.add_argument('--osm', type=Path, nargs='+', help='local OSM PBF extracts for mapped gate openings')
     parser.add_argument('--station-ahn', action='store_true', help='download native DSM and DTM for the station pilot')
+    parser.add_argument('--retain-detail', type=Path, help='Previously reviewed street details to preserve in the core')
     parser.add_argument('--skip-land', action='store_true', help='omit the separate BGT land mask when benchmarking')
     parser.add_argument('--output', type=Path, default=ROOT / 'assets/ede-bgt-detail.json.gz')
     parser.add_argument('--review', type=Path, default=ROOT / 'tools/data/ede-bgt-detail.review.json')
@@ -934,9 +959,24 @@ def main():
     args = parser.parse_args()
     if not args.snapshot and not args.municipal_snapshot:
         parser.error('Provide a PDOK or municipal snapshot.')
-    scene = load_scene()
-    town = args.coverage == 'town'
-    sites = town_sites(scene['meta']['bounds']) if town else PILOTS | EXTRA if args.coverage == 'expanded' else PILOTS
+    exterior = args.coverage == 'belt'
+    full = args.coverage in ('municipality', 'belt')
+    boundary = None
+    if full:
+        from ede_map import load_coverage_polygon, load_playable_boundary, load_playable_scene
+        scene = load_playable_scene()
+        boundary = load_playable_boundary()
+        if exterior:
+            if not args.retain_detail:
+                parser.error('The 500 m belt must be merged into existing municipal detail with --retain-detail.')
+            municipality = load_coverage_polygon('playableBoundary')
+            boundary = load_coverage_polygon('buildingBoundary').difference(municipality)
+        sites = municipal_sites(boundary)
+    else:
+        scene = load_scene()
+        sites = town_sites(scene['meta']['bounds']) if args.coverage == 'town' else (
+            PILOTS | EXTRA if args.coverage == 'expanded' else PILOTS)
+    town = full or args.coverage == 'town'
     affine = scene['meta']['lonLatAffine']
     if args.snapshot:
         gates = args.snapshot / 'gates.json'
@@ -952,9 +992,26 @@ def main():
         snapshot = json.loads((args.snapshot / 'snapshot.json').read_bytes())
         if snapshot['date'] != day or any(snapshot['sites'].get(site) != list(bounds) for site, bounds in sites.items()):
             parser.error('Snapshot date or site bounds differ. Use the original options or run --fetch.')
-        asset, review = bake(args.snapshot, sites, scene, day, town)
-        if town and not args.skip_land:
-            review['landMask'] = bake_land(args.snapshot, sites, scene, day, args.land_output)
+        asset, review = bake(args.snapshot, sites, scene, day, town, boundary, exterior)
+        if args.retain_detail:
+            raw = args.retain_detail.read_bytes()
+            previous = json.loads(gzip.decompress(raw) if args.retain_detail.suffix == '.gz' else raw)
+            known = {row['id']: row for row in previous['features']}
+            additions = []
+            for row in asset['features']:
+                original = known.get(row['id'])
+                if original is None:
+                    additions.append(row)
+                elif exterior and not any(row.get(key) is not None and row[key] == original.get(key)
+                                          for key in ('position', 'points', 'polygon')):
+                    additions.append({**row, 'id': f"{row['id']}:belt"})
+            asset['features'] = [*previous['features'], *additions]
+            review['retained'] = len(known)
+            if exterior:
+                asset['source']['coverage'] = 'GM0228 municipality and 500 m belt'
+                review['addedExterior'] = len(additions)
+        if town and not args.skip_land and not exterior:
+            review['landMask'] = bake_land(args.snapshot, sites, scene, day, args.land_output, boundary)
         write_json(args.output, asset)
         write_json(args.review, review)
         print(f"Ede BGT street detail: {len(asset['features'])} placements, {len(review['reviews'])} review records")

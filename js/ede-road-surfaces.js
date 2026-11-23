@@ -101,16 +101,30 @@ async function readSurfaces(name, optional = false) {
   return asset;
 }
 
-export async function loadEdeRoadSurfaces({ north = false } = {}) {
-  const [asset, ...extensions] = await Promise.all([
+let fringePaving;
+export function loadEdeFringePaving() {
+  fringePaving ??= readSurfaces('ede-fringe-paving.json.gz', true).catch(error => {
+    fringePaving = undefined;
+    throw error;
+  });
+  return fringePaving;
+}
+
+export async function loadEdeRoadSurfaces({ north = false, fringe = false } = {}) {
+  const [asset, corridors, northern, exterior] = await Promise.all([
     readSurfaces('ede-road-surfaces.json.gz'),
     readSurfaces('ede-corridor-paving.json.gz', true),
     north ? readSurfaces('ede-north-paving.json.gz', true).catch(error => {
       console.warn('[Ede north paving] using mapped road centerlines:', error);
       return null;
     }) : null,
+    fringe ? loadEdeFringePaving().catch(error => {
+      console.warn('[Ede fringe paving] using mapped road centerlines:', error);
+      return null;
+    }) : null,
   ]);
-  for (const extension of extensions) {
+  asset.fringeSurfaces = exterior?.surfaces ?? [];
+  for (const extension of [corridors, northern, exterior]) {
     if (!extension) continue;
     asset.surfaces = asset.surfaces.concat(extension.surfaces);
     for (const [way, indices] of Object.entries(extension.covered)) {

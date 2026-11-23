@@ -122,8 +122,9 @@ test('every explicitly painted crossing in the shipped asset reaches the mapped 
   const asset = JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets/ede-street-features.json.gz'))));
   const { surfaces } = JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets/ede-road-surfaces.json.gz'))));
   const { group } = await buildEdeStreetFeaturesWorld(new THREE.Scene(), { crossings: asset.crossings }, surfaces);
-  assert.equal(group.userData.crossings, 187);
-  assert.equal(group.userData.zebras, 119);
+  const marked = new Set(['dashes', 'dots', 'zebra']);
+  assert.equal(group.userData.crossings, asset.crossings.filter(row => marked.has(row.markings)).length);
+  assert.equal(group.userData.zebras, asset.crossings.filter(row => row.markings === 'zebra').length);
   assert.ok(group.children.every(mesh => mesh.material.name === 'Ede crossing paint'));
 });
 

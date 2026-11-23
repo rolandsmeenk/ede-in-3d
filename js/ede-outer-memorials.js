@@ -237,6 +237,25 @@ function wormshoef(batch, labels, block) {
       tilt, background: '#89a1ae', color: '#26343e' });
 }
 
+function liberationVeluwe(batch, labels, block) {
+  // Square stone column, flanked by the two grey commemorative plaques.
+  box(batch, 0, 0.70, -0.01, 0.49, 1.34, 0.49, 0x777873);
+  box(batch, 0, 1.405, -0.01, 0.43, 0.07, 0.43, 0x777873, 0.16);
+  for (const [x, side, lines] of [
+    [-0.56, -1, ['APRIL 1945', 'BEVRIJDING VELUWE']],
+    [0.56, 1, ['THE CANADIAN', 'ARMY CORPS']],
+  ]) {
+    box(batch, x, 0.73, -0.01, 0.13, 1.38, 0.48, 0x999a96);
+    box(batch, x + side * 0.074, 0.73, 0.015, 0.018, 1.25, 0.40, 0xa6a7a1);
+    labels.push({ lines, x: x + side * 0.085, y: 0.82, z: 0.23, w: 0.35, h: 0.44,
+      color: pale, background: '#9b9c96' });
+    block(x, 0, 0.14, 0.48, 1.42);
+  }
+  labels.push({ lines: ['1945', 'APRIL', '1985', '27 APRIL 1985'],
+    y: 0.78, z: 0.241, w: 0.34, h: 0.68, color: pale });
+  block(0, 0, 0.49, 0.49, 1.48);
+}
+
 const memorialShapes = {
   'airborne-landing-boulder': airborneBoulder,
   'stirling-monument': stirling,
@@ -245,6 +264,7 @@ const memorialShapes = {
   'otterlo-oorlogsmonument': otterlo,
   'slag-in-otterlo': battle,
   'otterlo-rode-kruismonument': redCross,
+  'harskamp-bevrijding-veluwe': liberationVeluwe,
   'wormshoef-geschiedenismarker': wormshoef,
 };
 

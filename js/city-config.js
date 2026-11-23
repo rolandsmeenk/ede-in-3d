@@ -1,5 +1,6 @@
 import { EDE_MODELED_LANDMARKS, modeledLandmarkFootprints } from './ede-landmark-sites.js';
-import { containsPlayablePoint, constrainToPlayableArea } from './ede-playable-boundary.js';
+import { containsPlayablePoint, constrainToPlayableArea, playableBoundary, playableBoundsCovered,
+  containsTravelPoint, constrainToTravelArea, travelBoundary } from './ede-playable-boundary.js';
 import { GEO } from './nyc-geodata.js';
 import { projectLonLatInto, unprojectScene } from './ede-scene-coordinates.js';
 import { FOOT } from './road-access.js?v=20261122-startup';
@@ -11,7 +12,7 @@ const EDE_DATA = GEO.ede;
 const toPts = (flat) => { const out=[]; for(let i=0;i<flat.length;i+=2)out.push({x:flat[i],z:flat[i+1]});return out; };
 const AFF = EDE_DATA.meta.lonLatAffine;
 const projectLonLat = (lon, lat) => projectLonLatInto(AFF, lon, lat, {});
-const [minX,minZ,maxX,maxZ] = EDE_DATA.meta.bounds;
+const [minX,minZ,maxX,maxZ] = (EDE_DATA.meta.travelBounds ?? EDE_DATA.meta.bounds);
 const ISLAND_BOUNDS = {minX,maxX,minZ,maxZ,sidewalkHeight:0.22,waterLevel:-2.2};
 const CUT_Z=minZ;
 const MANHATTAN_COASTLINE=toPts(GEO.manhattan);
@@ -319,6 +320,9 @@ const LANDMARK_APPROACHES={
  astrant:[5.6686318,52.0450327],
  'enka-westhal':[5.67843,52.02564],
  'pegasus-flat':[5.6488113,52.0240750],
+ 'kroller-muller-museum':[5.8179782,52.0960366],
+ 'kijk-luistermuseum':[5.6751139,51.9977077],
+ 'alexanderkerk-bennekom':[5.6760763,51.9978903],
 };
 // Scene metres for the viewpoint and the part of each landmark the chase camera frames.
 const SCENIC_ARRIVALS = {
@@ -380,8 +384,8 @@ for(const lm of NYC_LANDMARKS){
  const streetPoint=point&&nearestRoadPoint(point.x,point.z,ROADS.filter(r=>r.name===lm.road));
  const t=streetPoint?{x:streetPoint.x,z:streetPoint.z,name:streetPoint.road.name}:arrival(lm.lon,lm.lat,lm.road);
  t.heading=Math.atan2(lm.x-t.x,lm.z-t.z);
- const scenic = SCENIC_ARRIVALS[lm.id] ?? (lm.mapScenic && lm.approach &&
-   [lm.approach.x, lm.approach.z, lm.x, lm.z, lm.focusHeight ?? Math.max(1, Math.min(12, lm.height / 2)), lm.road, lm.focusOffset]);
+ const scenic = SCENIC_ARRIVALS[lm.id] ?? (lm.mapScenic && point &&
+   [point.x, point.z, lm.x, lm.z, lm.focusHeight ?? Math.max(1, Math.min(12, lm.height / 2)), lm.road ?? t.name, lm.focusOffset]);
  if (scenic) {
    const [x, z, tx, tz, height, name, offset] = scenic;
    TELEPORT_LOCATIONS[lm.id] = { x, z, name, heading: Math.atan2(tx - x, tz - z), focus: { x: tx, z: tz, height, offset } };
@@ -433,7 +437,8 @@ function walkSignal(time, isAvenue) {
 }
 export {
   EDE_DATA, EDE_AREAS, toPts, projectLonLat, pointInPoly, waterAt, waterAtExact, nearestDrivingPoint, defaultSpawn, sidewalkAt,
-  containsPlayablePoint, constrainToPlayableArea,
+  containsPlayablePoint, constrainToPlayableArea, playableBoundary, playableBoundsCovered,
+  containsTravelPoint, constrainToTravelArea, travelBoundary,
   AVENUES,
   ALL_AVENUES,
   CENTRAL_PARK_BOUNDS,

@@ -63,19 +63,39 @@ def fetch_expansion(directory, snapshot_date, playable=False):
                            typeNames='Ede:mor_bomen', outputFormat='application/json', count=100000)
     if not municipal.get('features') or len(municipal['features']) != municipal['numberMatched']:
         raise ValueError('Incomplete MOR tree snapshot')
-    roadside = fetch_json(
-        GELDERLAND, f='json', where='1=1', geometry=','.join(f'{value:.3f}' for value in envelope),
-        geometryType='esriGeometryEnvelope', inSR=28992, outSR=28992, returnGeometry='true',
-        spatialRel='esriSpatialRelIntersects',
-        outFields='boo_id,soortnaam_boom,boomhoogteklasse_actueel,stamdiameterklasse,status,weg,'
-                  'bgt_status,relatieve_hoogteligging,jaar_van_aanleg,lastupdate')
-    if not roadside.get('features') or roadside.get('exceededTransferLimit'):
-        raise ValueError('Incomplete provincial tree snapshot')
     directory.mkdir(parents=True, exist_ok=True)
-    for name, data in (('mor', municipal), ('gelderland', roadside)):
-        target = directory / f'{name}-{snapshot_date}.geojson'
-        target.write_text(json.dumps(data, separators=(',', ':')) + '\n')
-        print(f'{target}: {len(data["features"]):,} features')
+    target = directory / f'mor-{snapshot_date}.geojson'
+    target.write_text(json.dumps(municipal, separators=(',', ':')) + '\n')
+    print(f'{target}: {len(municipal["features"]):,} features', flush=True)
+
+    # ArcGIS applies its page limit to features, but returns the complete ID set.
+    inventory = fetch_json(GELDERLAND, f='json', where='1=1',
+                           geometry=','.join(f'{value:.3f}' for value in envelope),
+                           geometryType='esriGeometryEnvelope', inSR=28992,
+                           spatialRel='esriSpatialRelIntersects', returnIdsOnly='true')
+    id_field = inventory.get('objectIdFieldName')
+    ids = sorted(set(inventory.get('objectIds') or []))
+    if not id_field or not ids:
+        raise ValueError('No provincial tree IDs for the extraction envelope')
+    out_fields = (f'{id_field},boo_id,soortnaam_boom,boomhoogteklasse_actueel,stamdiameterklasse,status,weg,'
+                  'bgt_status,relatieve_hoogteligging,jaar_van_aanleg,lastupdate')
+
+    def page(batch):
+        data = fetch_json(GELDERLAND, f='json', objectIds=','.join(map(str, batch)), outSR=28992,
+                          returnGeometry='true', orderByFields=id_field, outFields=out_fields)
+        features = data.get('features') or []
+        returned_ids = [feature['attributes'].get(id_field) for feature in features]
+        if returned_ids != batch or data.get('exceededTransferLimit'):
+            raise ValueError(f'Incomplete provincial tree page starting at {batch[0]}')
+        return data
+
+    batches = [ids[start:start + 500] for start in range(0, len(ids), 500)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        pages = list(pool.map(page, batches))
+    roadside = {**pages[0], 'features': [feature for page in pages for feature in page['features']]}
+    target = directory / f'gelderland-{snapshot_date}.geojson'
+    target.write_text(json.dumps(roadside, separators=(',', ':')) + '\n')
+    print(f'{target}: {len(roadside["features"]):,} features', flush=True)
 
 
 def main():

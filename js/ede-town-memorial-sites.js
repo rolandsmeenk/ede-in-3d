@@ -20,6 +20,8 @@ export const EDE_TOWN_MEMORIALS = [
     [5.67002, 52.043739], [5.6699828, 52.0437589], 0.12, 0.08, 2.85],
   ['leijdesdorff-hoek-gedenksteen', 'Gedenksteen Leijdesdorff-Hoek', 'Centrum', 'Molenstraat',
     [5.6691282, 52.047018], [5.669142, 52.047], 1.58, 0.29, -0.22],
+  ['bart-van-elst-monument', 'Monument Bart van Elstplantsoen', 'Bennekom', 'Dorpsstraat',
+    [5.67610, 51.99676], [5.67608, 51.99669], 1.40, 0.77, 0],
 ].map(([id, name, district, road, position, arrival, height, focusHeight, heading]) => {
   const { x, z } = project(position);
   const approach = project(arrival);

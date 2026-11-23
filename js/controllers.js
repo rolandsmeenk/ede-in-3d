@@ -4,6 +4,9 @@ import {
   CENTRAL_PARK_BOUNDS,
   getIslandBoundsAtZ,
   constrainToPlayableArea,
+  playableBoundary,
+  constrainToTravelArea,
+  travelBoundary,
   isTypingInField,
   blockAt,
   streetZ,
@@ -394,6 +397,9 @@ function createTaxiDoorDecalTexture() {
   return tex;
 }
 
+const navigationBoundary = travelBoundary ?? playableBoundary;
+const constrainNavigation = constrainToTravelArea ?? constrainToPlayableArea;
+
 class ThirdPersonControllerManager {
   constructor(scene, colliders = []) {
     this.scene = scene;
@@ -627,6 +633,7 @@ class ThirdPersonControllerManager {
     const cameraBack = Math.cos(0.09) * entity.chaseDistance;
     const cameraUp = entity.chaseHeight + Math.sin(0.09) * entity.chaseDistance * 0.85;
     const clampPoint = (px, pz) => {
+      if (navigationBoundary?.length) return constrainNavigation(px, pz);
       pz = Math.max(ISLAND_BOUNDS.minZ + (heli ? -6000 : 30), Math.min(ISLAND_BOUNDS.maxZ + margin, pz));
       px = Math.max(ISLAND_BOUNDS.minX - margin, Math.min(ISLAND_BOUNDS.maxX + margin, px));
       if (!heli && getIslandBoundsAtZ) {
@@ -1705,8 +1712,12 @@ class ThirdPersonControllerManager {
   }
 
   resolveHorizontalCollision(pos, radius, carEntity = null, entity = carEntity, groundOffset = null) {
-    // The detailed island (the helicopter may roam out over the harbour & the boroughs)
     const heli = this.activeMode === 'helicopter';
+    if (navigationBoundary?.length) {
+      const limit = constrainNavigation(pos.x, pos.z);
+      pos.x = limit.x;
+      pos.z = limit.z;
+    }
     if (!heli && this.isUnbridgedWater(pos.x, pos.z)) {
       const last = entity?._lastDryPosition;
       if (last) { pos.x = last.x; pos.z = last.z; }
@@ -1715,25 +1726,27 @@ class ThirdPersonControllerManager {
       entity._lastDryPosition ??= {x: pos.x, z: pos.z};
       entity._lastDryPosition.x = pos.x; entity._lastDryPosition.z = pos.z;
     }
-    const m = heli ? 1200 : 0;
-    pos.x = Math.max(ISLAND_BOUNDS.minX - m, Math.min(ISLAND_BOUNDS.maxX + m, pos.x));
-    pos.z = Math.max(ISLAND_BOUNDS.minZ + (heli ? -6000 : 30), Math.min(ISLAND_BOUNDS.maxZ + m, pos.z));
-    if (this.activeMode !== 'helicopter' && getIslandBoundsAtZ) {
-      const shore = getIslandBoundsAtZ(pos.z);
-      const minShoreX = shore.westX + 8.0;
-      const maxShoreX = shore.eastX - 8.0;
-      if (pos.x < minShoreX) {
-        pos.x = minShoreX;
-        if (carEntity && carEntity.speed) carEntity.speed *= 0.4;
-      } else if (pos.x > maxShoreX) {
-        pos.x = maxShoreX;
-        if (carEntity && carEntity.speed) carEntity.speed *= 0.4;
+    if (!navigationBoundary?.length) {
+      const m = heli ? 1200 : 0;
+      pos.x = Math.max(ISLAND_BOUNDS.minX - m, Math.min(ISLAND_BOUNDS.maxX + m, pos.x));
+      pos.z = Math.max(ISLAND_BOUNDS.minZ + (heli ? -6000 : 30), Math.min(ISLAND_BOUNDS.maxZ + m, pos.z));
+      if (this.activeMode !== 'helicopter' && getIslandBoundsAtZ) {
+        const shore = getIslandBoundsAtZ(pos.z);
+        const minShoreX = shore.westX + 8.0;
+        const maxShoreX = shore.eastX - 8.0;
+        if (pos.x < minShoreX) {
+          pos.x = minShoreX;
+          if (carEntity && carEntity.speed) carEntity.speed *= 0.4;
+        } else if (pos.x > maxShoreX) {
+          pos.x = maxShoreX;
+          if (carEntity && carEntity.speed) carEntity.speed *= 0.4;
+        }
       }
-    }
-    if (constrainToPlayableArea) {
-      const limit = constrainToPlayableArea(pos.x, pos.z);
-      pos.x = limit.x;
-      pos.z = limit.z;
+      if (constrainToPlayableArea) {
+        const limit = constrainNavigation(pos.x, pos.z);
+        pos.x = limit.x;
+        pos.z = limit.z;
+      }
     }
 
     const collisionEntity = entity || this.entities?.[this.activeMode];
@@ -1742,8 +1755,9 @@ class ThirdPersonControllerManager {
     const contact = this._buildingContact ??= { nx: 0, nz: 0, depth: 0 };
 
     const reach = Math.max(extX, extZ) + 6;
-    let gx = pos.x;
-    let gz = pos.z;
+    const startX = pos.x, startZ = pos.z;
+    let gx = startX;
+    let gz = startZ;
     let y = this.collisionHeight(pos, groundOffset);
     let near = this.nearColliders(gx, gz, reach);
     for (let i = 0; i < near.length; i++) {
@@ -1807,6 +1821,11 @@ class ThirdPersonControllerManager {
           while (i + 1 < near.length && near[i + 1]._order <= order) i++;
         }
       }
+    }
+    if (navigationBoundary?.length && (pos.x !== startX || pos.z !== startZ)) {
+      const limit = constrainNavigation(pos.x, pos.z);
+      pos.x = limit.x;
+      pos.z = limit.z;
     }
   }
 

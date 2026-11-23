@@ -9,7 +9,6 @@ from functools import cache
 import json
 import math
 from pathlib import Path
-import struct
 from statistics import median
 from urllib.parse import parse_qsl, urlencode, urljoin
 from urllib.request import urlopen
@@ -17,6 +16,7 @@ from urllib.request import urlopen
 from shapely import prepare
 from shapely.geometry import LineString, Point
 
+from ede_height_field import expansion_collision_path, read_height_field
 from ede_gis import Frame, SCENE_NAP_ORIGIN, source_crs
 from ede_map import ROOT, load_playable_boundary, load_playable_scene
 from ede_motorway_infrastructure import points, project, read_json, segments, snap, write_json
@@ -95,9 +95,8 @@ def fetch(directory, bounds, frame):
 
 class TerrainGrid:
     def __init__(self, path):
-        self.data = path.read_bytes()
-        magic, self.cols, self.rows, self.x, self.z, self.step, datum = struct.unpack_from('<4sIIffff', self.data)
-        if magic != b'AHN1' or round(datum, 2) != SCENE_NAP_ORIGIN:
+        self.cols, self.rows, self.x, self.z, self.step, datum, self.heights = read_height_field(path)
+        if round(datum, 2) != SCENE_NAP_ORIGIN:
             raise ValueError(f'Invalid AHN grid or NAP datum: {path}')
 
     def at(self, x, z):
@@ -106,9 +105,9 @@ class TerrainGrid:
         if not (0 <= lo_x < self.cols - 1 and 0 <= lo_z < self.rows - 1):
             return None
         u, v = cx - lo_x, cz - lo_z
-        i = 28 + 2 * (lo_z * self.cols + lo_x)
-        a, b = struct.unpack_from('<hh', self.data, i)
-        c, d = struct.unpack_from('<hh', self.data, i + self.cols * 2)
+        i = lo_z * self.cols + lo_x
+        a, b = self.heights[i:i + 2]
+        c, d = self.heights[i + self.cols:i + self.cols + 2]
         if u + v <= 1:
             return (a + (b - a) * u + (c - a) * v) / 100
         return (d + (c - d) * (1 - u) + (b - d) * (1 - v)) / 100
@@ -142,7 +141,7 @@ def observed_z(z):
 class SignalRoads:
     def __init__(self, scene):
         self.terrain = TerrainGrid(ROOT / 'assets/ede-ahn.bin')
-        self.expansion = TerrainGrid(ROOT / 'assets/ede-terrain-tiles/collision.bin')
+        self.expansion = TerrainGrid(expansion_collision_path())
         self.profiles = defaultdict(list)
         for site in read_json(ROOT / 'assets/ede-grade.json')['sites']:
             if site['kind'] not in ('bridge', 'underpass'):

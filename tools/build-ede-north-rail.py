@@ -13,14 +13,17 @@ import numpy as np
 import rasterio
 
 from ede_gis import Frame, source_crs
+from ede_map import load_playable_scene
 from ede_raster import require_rd_raster, sample_bilinear
 from ede_scene import SCENE_NAP_ORIGIN
 
 ROOT = Path(__file__).resolve().parents[1]
 SOUTH = 'w431762038'
 LOOP = ('w431760849', 'w431760850')
+NORTH_APPROACH = 'w1299229167'
+NORTH_EDGE_BRIDGE = 'w6305163'
 TRACKS = {SOUTH: 7794, 'w431760968': 7794, LOOP[0]: None, LOOP[1]: None,
-          'w227525838': 1075, 'w431725851': 1075, 'w1299229167': 1075}
+          'w227525838': 1075, 'w431725851': 1075, NORTH_APPROACH: 1075}
 CONCRETE_PLATFORM_RISE = .89  # Above base of ballast. Railhead is 0.13 m above the same base.
 ROAD_TOP = .055
 PRORAIL = 'https://maps.prorail.nl/arcgis/rest/services/'
@@ -133,6 +136,45 @@ def rounded(point, digits=3):
     return [round(value, digits) for value in point]
 
 
+def extend_municipal_rails(profiles, ways, survey):
+    """Continue the northbound track to the municipal edge on the same ProRail centerline."""
+    by_id = {way['id']: way for way in ways}
+    if NORTH_EDGE_BRIDGE not in by_id:
+        return
+    approach = next(profile for profile in profiles if profile['wayId'] == NORTH_APPROACH)
+    line = Line(geometry(by_id[NORTH_APPROACH]['pts']))
+    x, z, anchor_y = approach['points'][-1]
+    seam_error, start, _ = line.project(x, z)
+    if seam_error > 1 or not start < line.length:
+        raise ValueError('Old northern rail end does not align with the full OSM way')
+    _, _, old_seam = survey.project(x, z)
+    offset = anchor_y - old_seam[2]
+
+    def measured(x, z):
+        distance, _, point = survey.project(x, z)
+        if distance > 5:
+            raise ValueError(f'Northern rail leaves ProRail survey at {(x, z)} by {distance:.2f} m')
+        return point[2]
+
+    for distance in line.samples(6, start)[1:]:
+        x, z = line.at(distance)
+        weight = max(0, 1 - (distance - start) / 30)
+        approach['points'].append(rounded((x, z, measured(x, z) + offset * weight)))
+
+    edge = by_id[NORTH_EDGE_BRIDGE]
+    xy = geometry(edge['pts'])
+    anchor = tuple(approach['points'][-1][:2])
+    if xy[-1] == anchor:
+        xy.reverse()
+    if xy[0] != anchor:
+        raise ValueError('Disconnected bridge at the northern municipal rail boundary')
+    points = [approach['points'][-1], *(rounded((x, z, measured(x, z))) for x, z in xy[1:])]
+    for vertices in (approach['points'], points):
+        if any(abs(a[2] - b[2]) > .03 * hypot(a[0] - b[0], a[1] - b[1]) for a, b in zip(vertices, vertices[1:])):
+            raise ValueError('Extended northern rail grade exceeds 3%')
+    profiles.append(dict(wayId=NORTH_EDGE_BRIDGE, bridge=edge['bridge'], points=points))
+
+
 def bake(args):
     base = read(ROOT / 'assets/ede-map-v1.json.gz')
     corridor = read(ROOT / 'assets/ede-corridors-v1.json.gz')
@@ -194,6 +236,9 @@ def bake(args):
             points = [p for p in existing.points if p[1] >= -1350] + [p for p in points if p[1] < -1350]
         fits[key] = Line(points)
         rail_corridors.append(dict(wayId=key, bridge=False, points=points))
+
+    municipality = load_playable_scene(include_shorelines=False)
+    extend_municipal_rails(rail_corridors, municipality['railways'], surveyed[TRACKS[NORTH_APPROACH]])
 
     platform_faces, face_xy = source('transfer-2')
     deck_features, deck_xy = source('transfer-7')

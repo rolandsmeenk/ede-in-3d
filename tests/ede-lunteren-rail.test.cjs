@@ -41,7 +41,13 @@ test('both RS34 directions use their published Lunteren platform and reach the p
     assert.ok(Math.abs(train.y + grade.datumNAP - 16.8) < 0.12);
     assert.ok(Math.hypot(train.x - platform.stop[0], train.z - platform.stop[1]) < 0.004);
     const edge = path.sample(direction === 1 ? 0 : path.length);
-    assert.ok(Math.abs(edge.z - EDE_DATA.meta.bounds[1]) < 0.02);
+    if (EDE_DATA.meta.fullMunicipality) {
+      const bridge = EDE_DATA.railways.find(way => way.id === 'w6305163');
+      assert.ok(bridge?.municipalClip);
+      assert.ok(Math.hypot(edge.x - bridge.pts.at(-2), edge.z - bridge.pts.at(-1)) < 0.02);
+    } else {
+      assert.ok(Math.abs(edge.z - EDE_DATA.meta.bounds[1]) < 0.02);
+    }
   }
   assert.ok(Math.hypot(points[0].x - points[1].x, points[0].z - points[1].z) > 5);
 
