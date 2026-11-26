@@ -5,11 +5,39 @@ const test = require('node:test');
 const { loadModule } = require('./helpers/module.cjs');
 
 const liveSky = import('../js/live-sky.js');
+const lunarSky = import('../js/ede-moon.js');
 
 function shadowOnLevelGround([x, y, z]) {
   assert.ok(y > 0);
   return [-x / y, -z / y];
 }
+
+test('Moon position, angular size and phase agree with JPL Horizons at Oude Kerk', async () => {
+  const { edeMoon } = await lunarSky;
+  const { edeSun } = await liveSky;
+  // JPL Horizons, target 301, airless apparent AZ and EL, site 5.671553 E / 52.0460029 N.
+  const samples = [
+    ['2026-06-21T20:00Z', 222.850353, 26.754057, 49.28167, 1861.219],
+    ['2026-11-26T12:00Z', 342.387018, -9.631354, 94.79510, 1987.038],
+    ['2026-11-26T16:39Z', 40.524278, -1.699697, 93.40971, 1990.575],
+    ['2026-11-26T16:55Z', 43.543380, -0.138034, 93.33003, 1991.452],
+    ['2026-11-26T23:00Z', 112.346804, 49.175373, 91.73571, 2016.139],
+    ['2026-12-09T12:00Z', 182.137872, 9.445979, 0.41051, 1773.225],
+  ];
+  for (const [utc, azimuth, elevation, illuminated, diameter] of samples) {
+    const date = new Date(utc);
+    const moon = edeMoon(date);
+    const sun = edeSun(date).direction;
+    const phase = (1 - moon.direction.reduce((sum, axis, i) => sum + axis * sun[i], 0)) * 50;
+    assert.ok(Math.abs(moon.azimuth - azimuth) < 0.12, `azimuth at ${utc}`);
+    assert.ok(Math.abs(moon.elevation - elevation) < 0.12, `elevation at ${utc}`);
+    assert.ok(Math.abs(moon.angularRadius * 2 * 648000 / Math.PI - diameter) < 5, `diameter at ${utc}`);
+    assert.ok(Math.abs(phase - illuminated) < 0.5, `illuminated fraction at ${utc}`);
+    assert.ok(Math.abs(Math.hypot(...moon.direction) - 1) < 1e-12);
+  }
+  assert.ok(edeMoon(new Date('2026-11-26T16:39Z')).direction[1] < 0);
+  assert.ok(edeMoon(new Date('2026-11-26T16:55Z')).direction[1] > 0, 'near-horizon refraction lifts the apparent disc');
+});
 
 test('a morning sun casts westward shadows and an afternoon sun casts eastward shadows in Ede', async () => {
   const { edeSun } = await liveSky;
@@ -40,17 +68,23 @@ test('direct sunlight fades at dusk as the blend reaches the Night preset', asyn
 });
 
 test('Live Time blends in the Night fill and uses the complete Night preset after dusk', async () => {
+  const THREE = await import('../vendor/three/build/three.core.js');
   const { LightingSystem } = loadModule(readFileSync(join(__dirname, '../js/lighting.js'), 'utf8'), { imports: {
-    'three/webgpu': await import('../vendor/three/build/three.core.js'),
+    'three/webgpu': THREE,
     'three/tsl': {},
-    'three/addons/objects/SkyMesh.js': {},
+    'three/addons/objects/SkyMesh.js?v=20261126-moon': {},
     'three/addons/lights/SunLight.js': {},
     'three/addons/lights/SunLightNode.js': {},
     './tsl-materials.js': { cityUniforms: { uWindowLights: { value: { set() {} } } } },
     './live-sky.js': await liveSky,
+    './ede-moon.js': await lunarSky,
     './ede-window-lights.js': await import('../js/ede-window-lights.js'),
   } });
   const lighting = Object.create(LightingSystem.prototype);
+  lighting.uShowMoon = { value: 0 };
+  lighting.uMoonDirection = { value: new THREE.Vector3() };
+  lighting.uMoonSun = { value: new THREE.Vector3() };
+  lighting.uMoonRadius = { value: 0 };
   lighting.applyValues = (preset) => { lighting.basePreset = preset; };
   lighting.applyPreset('midnight');
   const night = lighting.basePreset;
@@ -63,6 +97,18 @@ test('Live Time blends in the Night fill and uses the complete Night preset afte
   lighting.applyLive(new Date('2026-11-21T22:15:00Z'));
   assert.equal(lighting.basePreset, night);
   assert.equal(lighting.live, true);
+
+  lighting.applyLive(new Date('2026-11-26T18:00:00Z'));
+  assert.equal(lighting.uShowMoon.value, 1);
+  const rising = lighting.uMoonDirection.value.clone();
+  lighting.applyLive(new Date('2026-11-26T23:00:00Z'));
+  assert.ok(lighting.uMoonDirection.value.y > rising.y, 'the Moon keeps moving in the Night preset blend');
+  lighting.applyLive(new Date('2026-11-26T14:50:00Z'));
+  assert.equal(lighting.uShowMoon.value, 0, 'below the horizon');
+  lighting.applyLive(new Date('2026-06-21T20:00:00Z'));
+  assert.equal(lighting.uShowMoon.value, 1, 'the Moon can appear during daylight');
+  lighting.applyPreset('midnight');
+  assert.equal(lighting.uShowMoon.value, 0);
 });
 
 test('the Ede clock follows Amsterdam standard and daylight saving time', async () => {

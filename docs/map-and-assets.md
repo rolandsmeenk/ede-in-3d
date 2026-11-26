@@ -362,6 +362,10 @@ python3 tools/build-ede-motorway-lanes.py --fetch
 
 Set `--date` to the BGT snapshot date. The shared lane definition supplies both painted markings and traffic lane centres. It retains turn lanes, bus permissions, and cycle and advisory strips. Accepted A12 and A30 sections link to the original NWB offsets and WEGGEG counts. The [motorway evidence and imagery review](../tools/data/ede-motorway-lanes.sources.md) records ambiguous matches and confirmed tapers. Rebuild the reviewed motorway asset offline by omitting `--fetch`.
 
+### Refresh curb heights
+
+Reviewed curb profiles cover the Kastelenlaan refuge crossings, the Klinkenbergerweg raised zebra and a driveway on Heideoordlaan. The Albertstunnel pilot uses the preserved fitted profiles for its lower roadway and side paths. Run `uv run --with shapely==2.2.0 python -B tools/build-ede-curbs.py`. [Curb audit, evidence and verification](../tools/data/ede-curb-review.md)
+
 ### Refresh fitted vehicle lanes
 
 The offline bake fits A12 and A30 lanes to 1GIS markings, cross-checks available NWB/WEGGEG lane counts, and fits town lanes to same-level BGT carriageway polygons and reviewed PDOK traces. It retains the routing graph, directed edge keys, lane permissions, and the original along-edge stations. The game uses the compact local asset for vehicle trajectories, junction connectors, and generated paint. Surveyed paint keeps priority.

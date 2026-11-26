@@ -3,6 +3,7 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const test = require('node:test');
+const { gunzipSync } = require('node:zlib');
 const { loadModule } = require('./helpers/module.cjs');
 
 async function loadWorld(overlapsEdeTravelPavement = () => false) {
@@ -17,6 +18,7 @@ async function loadWorld(overlapsEdeTravelPavement = () => false) {
     'three/tsl': { texture },
     './ede-grade.js': { gradeProfileAt: () => null, gradeWayAt: id => id === 'grade' ? { y: 8 } : null },
     './terrain.js': { terrainHeightAt: () => 2 },
+    './ede-curbs.js': await import('../js/ede-curbs.js'),
     './tsl-materials.js': { createRoadSurfaceMaterial: () => new THREE.MeshStandardNodeMaterial() },
     './ede-geometry.js': { nearestEdeRoad: () => null, overlapsEdeTravelPavement }
   } });
@@ -56,6 +58,27 @@ test('zebra evidence controls paint independently from signals, with measured fo
     assert.ok(Math.abs(z) >= 1);
     assert.ok(z < 0 || (x >= -0.5001 && x <= 0.7001));
   }
+});
+
+test('the baked Klinkenbergerweg landings meet the rendered table at both seams', async t => {
+  const { setEdeCurbs, curbHeightAt } = await import('../js/ede-curbs.js');
+  const { THREE, buildEdeStreetFeaturesWorld } = await loadWorld();
+  const read = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets', name))));
+  const baked = read('ede-curbs-v1.json.gz');
+  setEdeCurbs(baked);
+  t.after(() => setEdeCurbs(null));
+  const { bumps, crossings } = read('ede-street-features.json.gz');
+  const bump = bumps.find(b => b.id === baked.table);
+  await buildEdeStreetFeaturesWorld(new THREE.Scene(), {
+    bumps: [bump], crossings: crossings.filter(c => c.bumpId === bump.id)
+  });
+  const [a, b] = [[18.8, 1325.45], [30.2, 1322.31]];
+  for (let i = 0; i <= 2400; i++) {
+    const t = i / 2400;
+    const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
+    assert.ok(Math.abs(curbHeightAt(x, z, 2, 0) - 2.143) < 1e-5, `mismatched landing near ${x}, ${z}`);
+  }
+  assert.equal(Object.keys(baked.tactile).length, 2);
 });
 
 test('explicit crossing patterns draw distinct geometry without inventing markings at signals', async () => {

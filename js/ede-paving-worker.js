@@ -2,6 +2,7 @@ import * as THREE from '../vendor/three/build/three.core.js';
 import { mergeGeometries } from '../vendor/three/examples/jsm/utils/BufferGeometryUtils.js?v=20261124-workers';
 import { createTerrainSampler } from './terrain.js?v=20261124-workers';
 import { drapeSurface, edeGeometryGroups, edePoints, polygonGeometry } from './ede-surface-geometry.js';
+import { curbFaceGeometry, curbTopGeometry } from './ede-curb-geometry.js';
 import { clipEdeGround, nearestEdeSpan } from './ede-grade-query.js';
 import { nearestRoadInCells } from './ede-road-cell-query.js';
 import { applyAsphaltLanes } from './ede-asphalt-attributes.js';
@@ -11,10 +12,10 @@ const CHUNK_BYTES = 4 * 1024 * 1024;
 
 function pavingGeometry(job, terrain, roads, ground) {
   const { rise, material, style, angle, layer, segment, cuts, local, roadColor, groundColor } = job;
-  const surfaces = job.outer
+  const surfaces = job.top ? [] : job.outer
     ? [polygonGeometry(THREE, edePoints(job.outer), job.holes.map(edePoints), rise)]
     : job.pieces.map(points => polygonGeometry(THREE, points, [], rise));
-  const joined = surfaces.length === 1 ? surfaces[0] : mergeGeometries(surfaces);
+  const joined = job.top ? curbTopGeometry(THREE, job.top) : surfaces.length === 1 ? surfaces[0] : mergeGeometries(surfaces);
   const grade = {
     gradeCuts: () => cuts,
     clipEdeGround,
@@ -22,7 +23,8 @@ function pavingGeometry(job, terrain, roads, ground) {
       ...local, heightAt: (x, z) => nearestEdeSpan(local.spans, x, z, terrain.terrainHeightAt)?.y ?? terrain.terrainHeightAt(x, z),
     },
   };
-  let geometry = drapeSurface(THREE, terrain, grade, joined, true, job.wayId, Boolean(job.outer));
+  let geometry = drapeSurface(THREE, terrain, grade, joined, true, job.wayId, Boolean(job.outer),
+    undefined, undefined, !!job.top);
   if (!geometry?.attributes.position.count) return null;
   if (material === 'asphalt') {
     geometry = applyAsphaltLanes(THREE, geometry, segment, layer,
@@ -83,6 +85,17 @@ export function buildPavingTile({ context, jobs, roads, ground }) {
     if (!geometry) continue;
     if (!batches.has(job.material)) batches.set(job.material, []);
     batches.get(job.material).push(geometry);
+    if (job.top) {
+      const baseHeightAt = (x, z) => ((job.local ? nearestEdeSpan(job.local.spans, x, z, terrain.terrainHeightAt)?.y : undefined)
+        ?? terrain.terrainHeightAt(x, z)) + job.rise;
+      const wall = curbFaceGeometry(THREE, geometry, job.outer, job.holes, baseHeightAt);
+      const tactile = job.tactile && pavingGeometry({ ...job, top: job.tactile, material: 'curb' }, terrain, roads, []);
+      if (wall || tactile) {
+        if (!batches.has('curb')) batches.set('curb', []);
+        if (wall) batches.get('curb').push(wall);
+        if (tactile) batches.get('curb').push(tactile);
+      }
+    }
   }
   const chunks = [];
   for (const [material, geometries] of batches) {

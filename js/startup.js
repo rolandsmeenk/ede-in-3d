@@ -1,4 +1,4 @@
-import('./main.js?v=20261126-mobile-boot')
+import('./main.js?v=20261126-moon-wind')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

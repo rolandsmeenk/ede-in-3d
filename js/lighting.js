@@ -3,7 +3,6 @@ import {
   Fn,
   float,
   vec3,
-  vec4,
   uniform,
   mix,
   fog,
@@ -15,13 +14,18 @@ import {
   max,
   exp,
   abs,
-  select
+  select,
+  dot,
+  smoothstep,
+  sqrt,
+  If
 } from 'three/tsl';
-import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
+import { SkyMesh } from 'three/addons/objects/SkyMesh.js?v=20261126-moon';
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 import { cityUniforms } from './tsl-materials.js';
 import { directSunFactor, edeSun, livePresetBlend } from './live-sky.js';
+import { edeMoon } from './ede-moon.js';
 import { liveWindowLights, PRESET_WINDOW_LIGHTS } from './ede-window-lights.js';
 
 // Atmospheric sky, environment lighting, sunlight and time-of-day presets.
@@ -160,7 +164,30 @@ class LightingSystem {
     // Physical Preetham SkyMesh + Beer-Powder Clouds (from three/addons/objects/SkyMesh.js). Its unit box must contain
     // the camera wherever it flies over the 1:1 harbour (Manhattan alone is 13.6 km long; it renders at the far plane
     // whatever its size)
-    this.sky = new SkyMesh();
+    // Calibrate raw sky radiance and composite the Moon behind the existing cloud layer.
+    this.uSkyExposure = uniform(0.148);
+    this.uNightFactor = uniform(0.0);
+    this.uNightSkyColor = uniform(new THREE.Color(0x0b1528));
+    this.uShowMoon = uniform(0.0);
+    this.uMoonDirection = uniform(new THREE.Vector3());
+    this.uMoonSun = uniform(new THREE.Vector3());
+    this.uMoonRadius = uniform(0.0045);
+    this.uMoonVisibility = uniform(1.0);
+    this.sky = new SkyMesh((raw, ray, cloudTransmission, extinction) => {
+      const sky = mix(raw.mul(this.uSkyExposure), this.uNightSkyColor, this.uNightFactor).toVar();
+      const alignment = dot(ray, this.uMoonDirection);
+      If(this.uShowMoon.greaterThan(0).and(ray.y.greaterThan(0)).and(alignment.greaterThan(0.99995)), () => {
+        const offset = ray.sub(this.uMoonDirection.mul(alignment)).div(this.uMoonRadius);
+        const radiusSquared = dot(offset, offset);
+        const edge = smoothstep(0.82, 1, radiusSquared).oneMinus();
+        // Reconstruct the visible sphere and shade its sun-facing hemisphere.
+        const normal = offset.sub(this.uMoonDirection.mul(sqrt(radiusSquared.oneMinus().max(0))));
+        const incidence = dot(normal, this.uMoonSun);
+        const lit = smoothstep(0, 0.08, incidence).mul(incidence.max(0.25));
+        sky.addAssign(extinction.mul(lit.mul(edge).mul(cloudTransmission).mul(this.uMoonVisibility)));
+      });
+      return sky;
+    });
     this.sky.scale.setScalar(200000);
     this.sky.turbidity.value = 8.0;
     this.sky.rayleigh.value = 2.8;
@@ -171,18 +198,6 @@ class LightingSystem {
     this.sky.cloudCoverage.value = 0.36;
     this.sky.cloudDensity.value = 0.38;
     this.sky.cloudElevation.value = 0.52;
-
-    // Calibrate SkyMesh raw radiance (EE=1000 * 0.04) into standard exposure=1.0 HDR range
-    this.uSkyExposure = uniform(0.148);
-    this.uNightFactor = uniform(0.0);
-    this.uNightSkyColor = uniform(new THREE.Color(0x0b1528));
-    const rawSkyNode = this.sky.material.colorNode;
-    this.sky.material.colorNode = Fn(() => {
-      const raw = rawSkyNode;
-      const dayCol = raw.rgb.mul(this.uSkyExposure);
-      const finalSky = mix(dayCol, this.uNightSkyColor, this.uNightFactor);
-      return vec4(finalSky, float(1.0));
-    })();
 
     // In reversedDepthBuffer mode ([1..0]), camera.far is z = 0.0 (whereas SkyMesh defaults to z = w)
     if (renderer && renderer.reversedDepthBuffer) {
@@ -252,10 +267,12 @@ class LightingSystem {
 
   bakeEnvironmentMap() {
     if (!this.pmremGenerator) return;
-    // Bake physical SkyMesh (without solar disc) into scene.environment for realistic canyon IBL.
+    // Exclude the sun and moon discs from the environment map to avoid reflection artifacts.
     // Reuses a single RenderTarget so texture identity never changes.
     const showDisc = this.sky.showSunDisc.value;
+    const showMoon = this.uShowMoon.value;
     this.sky.showSunDisc.value = 0;
+    this.uShowMoon.value = 0;
     this.envScene.add(this.sky);
     this.envRenderTarget = this.pmremGenerator.fromScene(this.envScene, 0, 0.1, 100, {
       renderTarget: this.envRenderTarget
@@ -264,6 +281,7 @@ class LightingSystem {
     this.bakedCloudCoverage = this.sky.cloudCoverage.value;
     this.bakedCloudDensity = this.sky.cloudDensity.value;
     this.sky.showSunDisc.value = showDisc;
+    this.uShowMoon.value = showMoon;
     this.scene.add(this.sky);
   }
 
@@ -273,12 +291,18 @@ class LightingSystem {
       return;
     }
     this.live = false;
+    this.uShowMoon.value = 0;
     cityUniforms.uWindowLights.value.set(...PRESET_WINDOW_LIGHTS[p.id]);
     this.applyValues(p);
   }
 
   applyLive(date) {
     const { elevation, direction } = edeSun(date);
+    const moon = edeMoon(date);
+    this.uMoonDirection.value.set(...moon.direction);
+    this.uMoonSun.value.set(...direction);
+    this.uMoonRadius.value = Math.sin(moon.angularRadius);
+    this.uShowMoon.value = Number(moon.direction[1] > -this.uMoonRadius.value);
     cityUniforms.uWindowLights.value.set(...liveWindowLights(date, elevation));
     const blend = livePresetBlend(elevation);
     const { from, to, weight } = blend;
@@ -343,7 +367,10 @@ class LightingSystem {
     const weight = this.weather?.blend ?? 0;
     const cloud = this.weather?.cloud ?? 0;
     const fog = (this.weather?.fog ?? 0) * weight;
-    const { lerp } = THREE.MathUtils;
+    const { lerp, smoothstep } = THREE.MathUtils;
+    // An overcast weather reading can still leave small gaps in the procedural clouds.
+    const overcast = smoothstep(cloud, 0.85, 1) * weight;
+    this.uMoonVisibility.value = (1 - fog) * (1 - overcast);
 
     this.sunLight.intensity = p.sunIntensity * (1 - (0.64 * cloud) * weight - 0.17 * fog);
     this.hemiLight.intensity = p.hemiIntensity * lerp(1, 0.96 + 0.10 * cloud, weight);

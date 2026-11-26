@@ -31,7 +31,7 @@ The game can stay on GitHub Pages while the feed server runs separately over HTT
 
 ## Graphics and profiling
 
-The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and keeps color grading. Standard enables screen-space reflections and multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
+**Graphics quality** in the **Menu** offers **Fast** and **Standard**. Fast is the default and keeps color grading. Standard enables screen-space reflections and multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
 
 Fast keeps bloom and dynamic shadows on desktop. On iPhone and iPad, both presets use WebGL 2 for startup reliability. Fast on those devices uses a lower internal resolution, sparser woodland, and fallback buildings in town, with bloom and dynamic shadows disabled.
 

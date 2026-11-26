@@ -12,6 +12,9 @@ const source = name => readFileSync(file(name), 'utf8');
 async function fixture(grade = {}, fetch = globalThis.fetch, roadPavement = () => false) {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const imports = { 'three/webgpu': THREE };
+  const strokes = loadModule(source('ede-mast-strokes.js'), { imports: {
+    ...imports, 'three/tsl': await import('../vendor/three/build/three.tsl.js'), './tsl-materials.js': {},
+  } });
   const geometry = loadModule(source('ede-geometry.js').replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
     imports: { ...imports, './city-config.js': { EDE_DATA: { roads: [] } }, './ede-road-surfaces.js': { isEdeTrafficPavement: roadPavement },
       './terrain.js': { getTerrain: () => null }, './ede-grade.js': {},
@@ -27,6 +30,7 @@ async function fixture(grade = {}, fetch = globalThis.fetch, roadPavement = () =
       imports: { ...imports, './ede-geometry.js': geometry, './ede-grade.js': grade,
         './ede-signal-hardware.js?v=20261121-hospital-signals': await import('../js/ede-signal-hardware.js'),
         './ede-playground-equipment.js': loadModule(source('ede-playground-equipment.js')),
+        './ede-mast-strokes.js': strokes, './tsl-materials.js': {},
         './ede-scene-coordinates.js': loadModule(source('ede-scene-coordinates.js')),
         './terrain.js': { getTerrain: () => ({ napOrigin: 22.54 }), terrainHeightAt: () => 2 } },
       globals: { fetch, URL, Response, DecompressionStream, AbortController }
@@ -76,7 +80,11 @@ test('parcel styles use tiled close detail and keep inferred boundaries decorati
   const wire = result.group.getObjectByName('PARCEL detail wireFence');
   assert.equal(wire.geometry.attributes.uv.count, 4);
   assert.equal(wire.material.map.generateMipmaps, true);
+  assert.equal(wire.material.alphaTest, 0);
+  assert.ok(wire.material.transparent && !wire.material.depthWrite);
   assert.equal(wire.userData.cullDistance, 105);
+  assert.equal(result.group.getObjectByName('PARCEL detail fenceRail').geometry.instanceCount, 2);
+  assert.equal(result.group.getObjectByName('PARCEL detail fencePost').geometry.instanceCount, 3);
   assert.equal(result.group.getObjectByName('PARCEL detail tuft').userData.cullDistance, 75);
 });
 
@@ -222,6 +230,10 @@ test('a full gantry has three truss chords and keeps its destination panel in fr
   ], { nbdTexture: new THREE.Texture() });
   const [gantry] = gantries;
   assert.equal(gantry.halfDepth, 0.8);
+  const braces = group.getObjectByName('1GIS detail gantryBrace');
+  assert.equal(braces.geometry.instanceCount, 39);
+  assert.ok(braces.material.positionNode && braces.material.opacityNode && braces.material.normalNode);
+  assert.ok(braces.geometry.boundingBox.max.x >= 24);
   const chords = group.getObjectByName('1GIS detail round');
   assert.equal(chords.count, 3);
   const centers = [];

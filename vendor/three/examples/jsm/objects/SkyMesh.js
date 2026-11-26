@@ -43,8 +43,10 @@ class SkyMesh extends Mesh {
 
 	/**
 	 * Constructs a new skydome.
+	 *
+	 * @param {?Function} [composite=null] - Optional color node factory taking sky color, view direction, cloud transmission and atmospheric extinction.
 	 */
-	constructor() {
+	constructor( composite = null ) {
 
 		const material = new NodeMaterial();
 
@@ -329,6 +331,8 @@ class SkyMesh extends Mesh {
 
 			}, { position: 'vec2', drift: 'vec2', return: 'float' } );
 
+			const cloudTransmission = composite ? float( 1.0 ).toVar() : null;
+
 			// Clouds
 			If( direction.y.greaterThan( 0.0 ).and( this.cloudCoverage.greaterThan( 0.0 ) ), () => {
 
@@ -376,6 +380,8 @@ class SkyMesh extends Mesh {
 				// Cloud opacity via Beer's law: density sets how solid the clouds get
 				const alpha = sub( 1.0, exp( depth.mul( this.cloudDensity ).mul( - 12.0 ) ) ).mul( horizonFade ).toVar();
 
+				if ( cloudTransmission ) cloudTransmission.assign( sub( 1.0, alpha ) );
+
 				// Occlude the sun disc/glow behind opaque cloud
 				texColor.subAssign( L0.mul( 0.04 ).add( sundiscColor ).mul( alpha ) );
 
@@ -385,7 +391,8 @@ class SkyMesh extends Mesh {
 
 			} );
 
-			return vec4( texColor, 1.0 );
+			const color = composite ? composite( texColor, direction, cloudTransmission, Fex ) : texColor;
+			return vec4( color, 1.0 );
 
 		} )();
 

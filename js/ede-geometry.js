@@ -270,8 +270,8 @@ export function* edeTerrainGeometries(y, waterCuts) {
   yield rim(rows, i => [minX, maxZ - i * step], t => [-border, border - 2 * border * t]);
 }
 
-export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false, keepAttribute, surfaceCuts) {
-  return drapeSurface(THREE, surfaceTerrain, surfaceGrade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts);
+export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false, keepAttribute, surfaceCuts, vertexLift) {
+  return drapeSurface(THREE, surfaceTerrain, surfaceGrade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts, vertexLift);
 }
 
 export function drapeEdeVertices(geometry) {

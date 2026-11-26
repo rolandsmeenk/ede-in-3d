@@ -39,7 +39,7 @@ import { HEADLIGHTS, createVehicleHeadlight, placeVehicleHeadlight } from './veh
 import { bryantParkLawn } from './landmarks.js';
 import { polygonContact, polygonContains } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
-import { buildingPassageHeadingAt, gradeDeckAt, gradeGroundHeightAt, gradeHeightAt, gradeProfileAt, heliLandingHeightAt } from './ede-grade.js';
+import { buildingPassageHeadingAt, gradeDeckAt, gradeContactHeight, gradeCurbHeightAt, gradeGroundHeightAt, gradeHeightAt, gradeProfileAt, heliLandingHeightAt } from './ede-grade.js';
 
 // js/controllers.js
 // Sculpted, non-blocky GTA 6-style 3D models, animations, and physics controllers
@@ -72,16 +72,37 @@ function placeEntityMesh(entity) {
   mesh.rotation.y = heading;
   if (type !== 'car' && type !== 'cyclist' && type !== 'cargobike') return;
   const sin = Math.sin(heading), cos = Math.cos(heading);
-  const halfLength = type === 'car' ? 1.38 : 0.72;
-  const halfWidth = type === 'car' ? 0.85 : 0.3;
-  const sample = (dx, dz) => gradeHeightAt(x + dx, z + dz, entity.position.y, type);
-  const front = sample(sin * halfLength, cos * halfLength);
-  const back = sample(-sin * halfLength, -cos * halfLength);
-  const right = sample(cos * halfWidth, -sin * halfWidth);
-  const left = sample(-cos * halfWidth, sin * halfWidth);
+  const sample = (side, along) => gradeHeightAt(x + side * cos + along * sin, z - side * sin + along * cos, entity.position.y, type);
   mesh.rotation.order = 'YXZ';
-  mesh.rotation.x = -Math.atan2(front - back, 2 * halfLength);
-  mesh.rotation.z = Math.atan2(right - left, 2 * halfWidth);
+  if (type === 'car') {
+    let front = 0, rear = 0, left = 0, right = 0;
+    for (const wheel of entity.wheels) {
+      const { x: side, z: along } = wheel.steerPivot.position;
+      const y = sample(side, along);
+      wheel.surfaceY = y;
+      if (wheel.isFront) front += y;
+      else rear += y;
+      if (side < 0) left += y;
+      else right += y;
+    }
+    const { x: side, z: along } = entity.wheels[0].steerPivot.position;
+    mesh.rotation.x = -Math.atan2(front - rear, 4 * Math.abs(along));
+    mesh.rotation.z = Math.atan2(right - left, 4 * Math.abs(side));
+    const { x: pitch, z: roll } = mesh.rotation;
+    const up = Math.cos(pitch) * Math.cos(roll);
+    const sideRise = Math.cos(pitch) * Math.sin(roll), lengthRise = -Math.sin(pitch);
+    for (const { steerPivot, radius, surfaceY } of entity.wheels) {
+      const { x: side, z: along } = steerPivot.position;
+      steerPivot.position.y = (surfaceY + radius - mesh.position.y - side * sideRise - along * lengthRise) / up;
+    }
+    return;
+  }
+  const frontZ = entity.frontSteerPivot.position.z + entity.frontWheel.position.z;
+  const rearZ = entity.rearWheel.position.z;
+  const front = sample(0, frontZ), rear = sample(0, rearZ);
+  mesh.rotation.x = -Math.atan2(front - rear, frontZ - rearZ);
+  mesh.rotation.z = 0;
+  mesh.position.y = rear - (front - rear) * rearZ / (frontZ - rearZ);
 }
 
 const CAR_DRIVE = {
@@ -823,7 +844,7 @@ class ThirdPersonControllerManager {
       tire.receiveShadow = true;
       steerPivot.add(tire);
       root.add(steerPivot);
-      wheels.push({ steerPivot, tire, isFront: wc.isFront });
+      wheels.push({ steerPivot, tire, isFront: wc.isFront, radius: spec.wheelRadius });
     }
 
     // 5. Ground contact shadow and paired headlight spotlights
@@ -1677,8 +1698,11 @@ class ThirdPersonControllerManager {
 
   getGroundHeight(x, z, mode = 'person', referenceY = this.entities?.[mode]?.position.y) {
     const surface = gradeProfileAt(x, z, mode, this.entities?.[mode]?.heading, referenceY ?? terrainHeightAt(x, z));
-    if (surface) return surface.y;
-    const y = gradeGroundHeightAt(x, z, referenceY);
+    if (surface && surface.kind !== 'surface') return gradeContactHeight(surface.id, surface.y);
+    const y = surface?.y ?? gradeGroundHeightAt(x, z, referenceY);
+    const curb = gradeCurbHeightAt(x, z, y, referenceY, surface ? 0 : undefined);
+    if (curb !== undefined) return curb;
+    if (surface) return y;
     // Inside Central Park (5th Ave to Central Park West, 59th St to 110th St)
     const cp = CENTRAL_PARK_BOUNDS;
     if (x > cp.minX && x < cp.maxX && z > cp.minZ && z < cp.maxZ) {

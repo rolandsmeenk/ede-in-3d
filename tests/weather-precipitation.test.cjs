@@ -9,10 +9,14 @@ test('precipitation reuses one capped mesh and follows camera exposure through t
   const tsl = await import('../vendor/three/build/three.tsl.js');
   const grade = await import('../js/ede-grade.js');
   const transparentEffectMRT = tsl.mrt({ normal: tsl.vec4(0), metalRough: tsl.vec4(0) });
+  const flow = [];
   const { createWeatherPrecipitation } = loadModule(
     readFileSync(join(__dirname, '../js/weather-precipitation.js'), 'utf8'),
     { imports: {
-      'three/webgpu': THREE, 'three/tsl': tsl,
+      'three/webgpu': THREE, 'three/tsl': { ...tsl, uniform(value) {
+        if (value?.isVector2) flow.push(value);
+        return tsl.uniform(value);
+      } },
       './ede-grade.js': grade, './tsl-materials.js': { transparentEffectMRT }
     } }
   );
@@ -57,6 +61,22 @@ test('precipitation reuses one capped mesh and follows camera exposure through t
   assert.equal(mesh.material.depthTest, true);
   assert.equal(mesh.material.depthWrite, false);
   assert.equal(mesh.material.mrtNode, transparentEffectMRT);
+
+  const [rainWind, rainDrift, snowDrift] = flow;
+  rainDrift.set(16, 16);
+  snowDrift.set(16, 16);
+  precipitation.update(1, camera, { rain: 0.5, snow: 0.5, windX: 4, windZ: -2 });
+  assert.ok(rainWind.x > 0 && rainWind.y < 0);
+  assert.ok(snowDrift.x > rainDrift.x && snowDrift.y < rainDrift.y);
+  const rainX = rainDrift.x, snowX = snowDrift.x;
+  precipitation.update(1, camera, { rain: 0.5, snow: 0.5, windX: -8, windZ: 4 });
+  assert.ok(rainWind.x < 0 && rainWind.y > 0);
+  assert.ok(rainX - rainDrift.x > rainX - 16, 'stronger opposing winds reverse and increase rain drift');
+  assert.ok(snowX - snowDrift.x > snowX - 16, 'stronger opposing winds reverse and increase snow drift');
+  const calm = [rainDrift.x, rainDrift.y, snowDrift.x, snowDrift.y];
+  precipitation.update(1, camera, { rain: 0.5, snow: 0.5, windX: 0, windZ: 0 });
+  assert.equal(rainWind.lengthSq(), 0);
+  assert.deepEqual([rainDrift.x, rainDrift.y, snowDrift.x, snowDrift.y], calm);
 });
 
 test('mapped decks and open sheds block precipitation below the roof and leave openings exposed', async () => {

@@ -9,11 +9,17 @@ import { transparentEffectMRT } from './tsl-materials.js';
 const WIDTH = 32, HEIGHT = 22;
 const MAX_PARTICLES = 1200;
 const RAIN_SPEED = 9, SNOW_SPEED = 1.2;
+const RAIN_WIND_RESPONSE = 0.7;
 const wrap = (value, period) => value - Math.floor(value / period) * period;
 
+function driftWithWind(drift, windX, windZ, dt) {
+  drift.set(wrap(drift.x + windX * dt, WIDTH), wrap(drift.y + windZ * dt, WIDTH));
+}
+
 export function createWeatherPrecipitation(scene) {
-  const wind = uniform(new THREE.Vector2());
-  const drift = uniform(new THREE.Vector2());
+  const rainWind = uniform(new THREE.Vector2());
+  const rainDrift = uniform(new THREE.Vector2());
+  const snowDrift = uniform(new THREE.Vector2());
   const rainFall = uniform(0), snowFall = uniform(0), flutter = uniform(0);
   const snowFraction = uniform(0);
   const material = new THREE.SpriteNodeMaterial({ transparent: true, depthWrite: false });
@@ -25,12 +31,12 @@ export function createWeatherPrecipitation(scene) {
   const snow = hash(id.add(73)).lessThan(snowFraction);
   const box = vec3(WIDTH, HEIGHT, WIDTH);
   const sway = vec2(seed.x.mul(40).add(flutter).sin(), seed.z.mul(40).add(flutter).cos()).mul(0.35);
-  const horizontal = drift.add(snow.select(sway, vec2(0)));
+  const horizontal = snow.select(snowDrift.add(sway), rainDrift);
   const travel = vec3(horizontal.x, snow.select(snowFall, rainFall).negate(), horizontal.y);
   const local = fract(seed.add(travel.sub(cameraPosition).div(box))).sub(0.5).mul(box);
   material.positionNode = cameraPosition.add(local);
 
-  const streak = cameraViewMatrix.mul(vec4(wind.x, -RAIN_SPEED, wind.y, 0)).xy;
+  const streak = cameraViewMatrix.mul(vec4(rainWind.x, -RAIN_SPEED, rainWind.y, 0)).xy;
   const flakeSize = mix(0.065, 0.15, seed.y);
   material.scaleNode = snow.select(vec2(flakeSize), vec2(mix(0.016, 0.028, seed.y), streak.length().mul(0.095).max(0.08)));
   material.rotationNode = snow.select(0, atan(streak.x.negate(), streak.y.add(0.0001)));
@@ -67,8 +73,9 @@ export function createWeatherPrecipitation(scene) {
     mesh.count = count;
     mesh.visible = true;
     snowFraction.value = 0.72 * snow / (rain + 0.72 * snow);
-    wind.value.set(weather.windX * 0.6, weather.windZ * 0.6);
-    drift.value.set(wrap(drift.value.x + wind.value.x * dt, WIDTH), wrap(drift.value.y + wind.value.y * dt, WIDTH));
+    rainWind.value.set(weather.windX * RAIN_WIND_RESPONSE, weather.windZ * RAIN_WIND_RESPONSE);
+    driftWithWind(rainDrift.value, rainWind.value.x, rainWind.value.y, dt);
+    driftWithWind(snowDrift.value, weather.windX, weather.windZ, dt);
     rainFall.value = wrap(rainFall.value + RAIN_SPEED * dt, HEIGHT);
     snowFall.value = wrap(snowFall.value + SNOW_SPEED * dt, HEIGHT);
     flutter.value = wrap(flutter.value + 1.5 * dt, Math.PI * 2);

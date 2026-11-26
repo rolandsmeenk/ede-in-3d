@@ -21,7 +21,7 @@ import { bikeStyleFor, createBikeParkingState, renderBikeParking } from './ede-b
 import { createEdeTrips } from './ede-trips.js';
 import { createEdeDrivingControls } from './ede-driving-controls.js';
 import { CAR, VAN, BUS, BICYCLE } from './road-access.js?v=20261122-startup';
-import { getEdeGrade, gradeHeightAt, gradeWayAt } from './ede-grade.js';
+import { getEdeGrade, gradeContactHeight, gradeCurbHeightAt, gradeGroundHeightAt, gradeHeightAt, gradeWayAt } from './ede-grade.js';
 import { createPedestrianSystem } from './pedestrian-system.js';
 import { vehicleContact, resolveVehicleContact, sweptVehicleContact } from './vehicle-physics.js';
 import { signalPhase, walkSignal } from './city-config.js';
@@ -579,6 +579,16 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     pickFoot: () => pickByArea(footSpawns),
     mappedGround: (track, x, z) => gradeWayAt(track.wayId, x, z, 1.2)?.y
       ?? gradeHeightAt(x, z, terrainHeightAt(x, z), 'foot'),
+    mappedSurfaceGround: (track, x, z) => {
+      const grade = gradeWayAt(track.wayId, x, z, 1.2);
+      if (grade && grade.span.profile.site.kind !== 'surface') {
+        const y = gradeContactHeight(grade.span.profile.id, grade.y);
+        return y === grade.y ? undefined : y;
+      }
+      if (track.structure) return;
+      const base = grade?.y ?? gradeGroundHeightAt(x, z);
+      return gradeCurbHeightAt(x, z, base, undefined, track.layer || undefined);
+    },
     mayCross, mayCrossMapped, walkOn, visible, nearView, trips, railStop
   });
   group.add(...pedestrianSystem.meshes);
@@ -2723,7 +2733,11 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   function roadGround(edge, x, z, next = null) {
     const a = gradeWayAt(edge.wayId, x, z, 1.2);
     const b = next && next.wayId !== edge.wayId ? gradeWayAt(next.wayId, x, z, 1.2) : null;
-    return (b && (!a || b.distance < a.distance) ? b : a)?.y ?? terrainHeightAt(x, z);
+    const grade = b && (!a || b.distance < a.distance) ? b : a;
+    if (grade && grade.span.profile.site.kind !== 'surface') return gradeContactHeight(grade.span.profile.id, grade.y);
+    const base = grade?.y ?? terrainHeightAt(x, z);
+    if (edge.structure || edge.bridge || edge.underpass) return base;
+    return gradeCurbHeightAt(x, z, base, undefined, edge.layer ?? 0, edge.mapped) ?? base;
   }
 
   function fitVehicleGrade(v, sinY, cosY) {
@@ -2912,9 +2926,11 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   function renderBike(b) {
     if (hasView && !visible(b.x, b.z, 6, b.y)) return;
     const yaw = b.yaw + b.yawOffset;
-    fitVehicleGrade(b, Math.sin(yaw), Math.cos(yaw));
-    dummy.position.set(b.x, b.y, b.z);
-    dummy.rotation.set(b.roadPitch + b.pitch, yaw, b.roadRoll + b.roll, 'YXZ');
+    const dx = Math.sin(yaw) * b.axle, dz = Math.cos(yaw) * b.axle;
+    const front = roadGround(b.edge, b.x + dx, b.z + dz);
+    const rear = roadGround(b.edge, b.x - dx, b.z - dz);
+    dummy.position.set(b.x, (front + rear) / 2, b.z);
+    dummy.rotation.set(Math.atan2(rear - front, 2 * b.axle) + b.pitch, yaw, b.roll, 'YXZ');
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     b.model.setMatrixAt(b.model.count++, dummy.matrix);

@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { texture } from 'three/tsl';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
+import { registerCurbTable } from './ede-curbs.js';
 import { createRoadSurfaceMaterial } from './tsl-materials.js';
 import { nearestEdeRoad, overlapsEdeTravelPavement } from './ede-geometry.js';
 
@@ -292,6 +293,7 @@ function collectRoadSurfaces({ bumps = [], crossings = [] }, quad, roadSurfaces)
       }
     }
   }
+  for (const [id, triangles] of bumpPlanes) registerCurbTable(id, triangles);
 
   for (const crossing of strips) {
     const frame = crossingFrame(crossing);

@@ -16,14 +16,16 @@
         "three/addons/": "./vendor/three/examples/jsm/",
         "three/addons/libs/meshopt_decoder.module.js": "./vendor/three/examples/jsm/libs/meshopt_decoder.module.js?v=20261124-workers",
         "three/addons/utils/BufferGeometryUtils.js": "./vendor/three/examples/jsm/utils/BufferGeometryUtils.js?v=20261124-workers",
-        "./js/ede-surface-geometry.js": "./js/ede-surface-geometry.js?v=20261126-pond-levels",
+        "./js/ede-surface-geometry.js": "./js/ede-surface-geometry.js?v=20261126-curbs",
         "./js/ede-water-levels.js": "./js/ede-water-levels.js?v=20261126-pond-levels",
+        "./js/ede-mast-strokes.js": "./js/ede-mast-strokes.js?v=20261126-filtered-members",
+        "./js/ede-bgt-world.js": "./js/ede-bgt-world.js?v=20261126-filtered-members",
         "./js/ede-geometry.js": "./js/ede-geometry.js?v=20261126-pond-levels",
         "./js/ede-grade-query.js": "./js/ede-grade-query.js?v=20261126-motorway-grades",
         "./js/ede-grade-world.js": "./js/ede-grade-world.js?v=20261126-small-bridges",
         "./js/ede-landscape-geometry.js": "./js/ede-landscape-geometry.js?v=20261126-motorway-grades",
         "./js/ede-landscape-jobs.js": "./js/ede-landscape-jobs.js?v=20261126-motorway-grades",
-        "./js/ede-grade.js": "./js/ede-grade.js?v=20261126-small-bridges",
+        "./js/ede-grade.js": "./js/ede-grade.js?v=20261126-curbs",
         "./js/aerial-colors.js": "./js/aerial-colors.js?v=20261124-workers",
         "./js/ede-paving-tiles.js": "./js/ede-paving-tiles.js?v=20261124-workers",
         "./js/ede-asphalt-lanes.js": "./js/ede-asphalt-lanes.js?v=20261124-workers",
@@ -38,7 +40,7 @@
         "./js/ede-survey-landmark.js": "./js/ede-survey-landmark.js?v=20261126-roof-landing",
         "./js/helicopter.js": "./js/helicopter.js?v=20261126-helicopter",
         "./js/ede-bus-schedule.js": "./js/ede-bus-schedule.js?v=20261123-harderwijkerweg",
-        "./js/ede-detail.js?v=20261122-truecolor-signs": "./js/ede-detail.js?v=20261123-municipal",
+        "./js/ede-detail.js?v=20261122-truecolor-signs": "./js/ede-detail.js?v=20261126-filtered-members",
         "./js/ede-forest-canopy.js": "./js/ede-forest-canopy.js?v=20261124-workers",
         "./js/ede-geodata.js": "./js/ede-geodata.js?v=20261123-municipal",
         "./js/ede-landmark-sites.js": "./js/ede-landmark-sites.js?v=20261126-rural",
@@ -60,7 +62,7 @@
         "./js/terrain.js?v=20261124-workers": "./js/terrain.js?v=20261126-motorway-grades",
         "./js/ede-road-furniture-placement.js": "./js/ede-road-furniture-placement.js?v=20261126-a12-lukkien",
         "./js/road-furniture-atlas.js": "./js/road-furniture-atlas.js?v=20261126-atlas-gutters",
-        "./js/road-furniture-manager.js": "./js/road-furniture-manager.js?v=20261126-a12-lukkien",
+        "./js/road-furniture-manager.js": "./js/road-furniture-manager.js?v=20261126-filtered-members",
         "./js/road-network.js?v=20261122-startup": "./js/road-network.js?v=20261126-apeldoornseweg",
         "./js/cars.js": "./js/cars.js?v=20261126-dutch-fleet",
         "./js/audio-sources.js?v=20261122-p2000": "./js/audio-sources.js?v=20261126-motorway-grades",
@@ -81,7 +83,7 @@
   <link rel="modulepreload" href="./js/ede-landscape-jobs.js?v=20261126-motorway-grades" />
   <link rel="modulepreload" href="./js/ede-paving-client.js" />
   <link rel="modulepreload" href="./js/ede-road-cell-query.js" />
-  <link rel="modulepreload" href="./js/ede-surface-geometry.js?v=20261126-pond-levels" />
+  <link rel="modulepreload" href="./js/ede-surface-geometry.js?v=20261126-curbs" />
   <link rel="modulepreload" href="./js/bag3d-coverage.js" />
   <link rel="modulepreload" href="./js/bag3d-projection.js" />
   <link rel="modulepreload" href="./js/bag3d-worker-client.js?v=20261124-coverage" />
@@ -139,7 +141,7 @@
   <link rel="modulepreload" href="./js/ede-village-skyline-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-mast-sites.js" />
   <link rel="modulepreload" href="./js/ede-mast-models.js" />
-  <link rel="modulepreload" href="./js/ede-mast-strokes.js" />
+  <link rel="modulepreload" href="./js/ede-mast-strokes.js?v=20261126-filtered-members" />
   <link rel="modulepreload" href="./js/ede-playable-boundary.js?v=20261123-municipal" />
   <link rel="modulepreload" href="./js/ede-industrial-skyline-survey.js" />
   <link rel="modulepreload" href="./js/ede-industrial-skyline-landmarks.js" />
@@ -162,14 +164,16 @@
   <link rel="modulepreload" href="./js/ede-terrain-tiles.js?v=20261126-pond-levels" />
   <link rel="modulepreload" href="./js/ede-heath.js" />
   <link rel="modulepreload" href="./js/terrain.js?v=20261126-motorway-grades" />
-  <link rel="modulepreload" href="./js/ede-grade.js?v=20261126-small-bridges" />
+  <link rel="modulepreload" href="./js/ede-curbs.js" />
+  <link rel="modulepreload" href="./js/ede-curb-geometry.js" />
+  <link rel="modulepreload" href="./js/ede-grade.js?v=20261126-curbs" />
   <link rel="modulepreload" href="./js/ede-grade-world.js?v=20261126-small-bridges" />
-  <link rel="modulepreload" href="./js/ede-bgt-world.js" />
+  <link rel="modulepreload" href="./js/ede-bgt-world.js?v=20261126-filtered-members" />
   <link rel="modulepreload" href="./js/ede-bridge.js" />
   <link rel="modulepreload" href="./js/ede-fuel-sites.js" />
   <link rel="modulepreload" href="./js/ede-fuel-stations.js" />
   <link rel="modulepreload" href="./js/ede-fuel-prices.js" />
-  <link rel="modulepreload" href="./js/ede-detail.js?v=20261123-municipal" />
+  <link rel="modulepreload" href="./js/ede-detail.js?v=20261126-filtered-members" />
   <link rel="modulepreload" href="./js/ede-playground-equipment.js" />
   <link rel="modulepreload" href="./js/aerial-colors.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/city-config.js?v=20261123-municipal" />
@@ -217,11 +221,12 @@
   <link rel="modulepreload" href="./js/vehicle-lights.js" />
   <link rel="modulepreload" href="./js/vehicle-physics.js" />
   <link rel="modulepreload" href="./js/pedestrians.js" />
-  <link rel="modulepreload" href="./js/lighting.js?v=20261121-night-lighting" />
+  <link rel="modulepreload" href="./js/lighting.js?v=20261126-moon" />
   <link rel="modulepreload" href="./js/live-sky.js" />
+  <link rel="modulepreload" href="./js/ede-moon.js" />
   <link rel="modulepreload" href="./js/ede-window-lights.js" />
-  <link rel="modulepreload" href="./js/ede-weather.js?v=20261122-rink-ice" />
-  <link rel="modulepreload" href="./js/weather-precipitation.js" />
+  <link rel="modulepreload" href="./js/ede-weather.js?v=20261126-photo-weather" />
+  <link rel="modulepreload" href="./js/weather-precipitation.js?v=20261126-wind" />
   <link rel="modulepreload" href="./js/ede-kites.js" />
   <link rel="modulepreload" href="./js/city-grid.js?v=20261126-safari-startup" />
   <link rel="modulepreload" href="./js/ede-paving-tiles.js?v=20261124-workers" />
@@ -390,15 +395,15 @@
   <link rel="modulepreload" href="./js/ede-road-furniture-placement.js?v=20261126-a12-lukkien" />
   <link rel="modulepreload" href="./js/retroreflective-sign-material.js" />
   <link rel="modulepreload" href="./js/road-furniture-atlas.js?v=20261126-atlas-gutters" />
-  <link rel="modulepreload" href="./js/road-furniture-manager.js?v=20261126-a12-lukkien" />
-  <link rel="modulepreload" href="./js/main.js?v=20261126-mobile-boot" />
-  <link rel="modulepreload" href="./js/startup.js?v=20261126-mobile-boot" />
-  <script type="module" src="./js/startup.js?v=20261126-mobile-boot"></script>
+  <link rel="modulepreload" href="./js/road-furniture-manager.js?v=20261126-filtered-members" />
+  <link rel="modulepreload" href="./js/main.js?v=20261126-moon-wind" />
+  <link rel="modulepreload" href="./js/startup.js?v=20261126-moon-wind" />
+  <script type="module" src="./js/startup.js?v=20261126-moon-wind"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261126-safari-startup" />
+  <link rel="stylesheet" href="./css/style.css?v=20261126-credits-details" />
 </head>
 <body>
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
@@ -449,31 +454,6 @@
     <span>Outside Gemeente Ede · 500 m travel area</span>
   </div>
   <div id="municipal-warning-status" class="municipal-warning-status" role="status" aria-live="polite"></div>
-  <details class="map-attribution" id="map-attribution" open>
-    <summary>© OpenStreetMap contributors · Map credits</summary>
-    <div class="map-attribution-links">
-      <a href="https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html" target="_blank" rel="noopener noreferrer">Structures and streets via PDOK BGT</a>
-      <a href="./docs/map-and-assets.md#refresh-water-works" target="_blank" rel="noopener noreferrer">Water works by Waterschap Vallei en Veluwe</a>
-      <a href="https://geo.ede.nl/geoserver/Ede/wfs?service=WFS&amp;request=GetCapabilities" target="_blank" rel="noopener noreferrer">Bins and play sites by Gemeente Ede</a>
-      <a id="ede-parcel-credit" href="https://api.pdok.nl/kadaster/brk-kadastrale-kaart/ogc/v1/" target="_blank" rel="noopener noreferrer" hidden>Parcels by Kadaster</a>
-      <a id="ede-utility-credit" href="https://www.arcgis.com/home/item.html?id=11b7bcf1b78b4462b91db0dff234cf78" target="_blank" rel="noopener noreferrer" hidden>Liander station data by Alliander</a>
-      <a href="https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer" target="_blank" rel="noopener noreferrer">Motorway detail via Rijkswaterstaat 1GIS</a>
-      <a href="https://downloads.rijkswaterstaatdata.nl/bewegwijzering/" target="_blank" rel="noopener noreferrer">Motorway direction signs via NBd</a>
-      <a href="https://verkeersveiligheid.ndw.nu/" target="_blank" rel="noopener noreferrer">Traffic signs, bumps and zebras via NDW</a>
-      <a href="https://gtfs.ovapi.nl/nl/" target="_blank" rel="noopener noreferrer">Bus data via OVapi</a>
-      <a href="https://112-nu.nl/regio/gemeente-ede/alles/0" target="_blank" rel="noopener noreferrer">P2000 dispatches via 112-nu.nl</a>
-      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
-      <a href="https://docs.3dbag.nl/en/copyright/" target="_blank" rel="noopener noreferrer">© 3DBAG by tudelft3d and 3DGI</a>
-      <a href="https://www.ahn.nl/dataroom" target="_blank" rel="noopener noreferrer">Terrain © AHN via PDOK</a>
-      <a href="https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566" target="_blank" rel="noopener noreferrer">2025 aerial imagery © Beeldmateriaal.nl via PDOK</a>
-      <a href="https://www.mapillary.com/" target="_blank" rel="noopener noreferrer">Façade evidence via Mapillary</a>
-      <a href="./assets/ede-facades.SOURCES.md" target="_blank" rel="noopener noreferrer">Façade evidence credits</a>
-      <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html" target="_blank" rel="noopener noreferrer">BGT lamp posts via PDOK</a>
-      <a href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/vegetatieobject_punt?f=html" target="_blank" rel="noopener noreferrer">BGT trees via PDOK</a>
-      <a href="https://www.klimaateffectatlas.nl/nl/boomkroonbedekking" target="_blank" rel="noopener noreferrer">Canopy by Friedenau Society and Klimaateffectatlas (CC BY 4.0)</a>
-      <a id="ede-tree-inventory-credit" href="https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f" target="_blank" rel="noopener noreferrer">Tree inventory by Gemeente Ede</a>
-    </div>
-  </details>
 
   <!-- Top-Left: Brand & Renderer Telemetry -->
   <header class="hud hud-top-left">
@@ -506,7 +486,7 @@
         <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label">Map</span><kbd>M</kbd>
       </button>
       <span class="toolbar-divider" aria-hidden="true"></span>
-      <button id="btn-graphics-quality" class="tool-btn" type="button" popovertarget="graphics-quality-popover" title="Graphics quality">Graphics</button>
+      <button id="btn-menu" class="tool-btn" type="button" popovertarget="menu-popover">Menu</button>
       <button id="btn-sound" class="tool-btn icon-only" type="button" title="Mute sound [N]" aria-label="Mute sound" aria-pressed="true">
         <svg class="icon" aria-hidden="true"><use href="#i-sound"/></svg>
       </button>
@@ -556,6 +536,10 @@
         <time id="live-weather-time" title="Model update time in Europe/Amsterdam" hidden></time>
       </div>
       <div id="live-water-status" role="status" hidden></div>
+      <div id="photo-weather" hidden>
+        <h2>Photogenic weather</h2>
+        <div id="photo-weather-status" role="status"></div>
+      </div>
     </div>
   </div>
 
@@ -587,13 +571,98 @@
     <div id="crossing-debug-teleports" hidden></div>
   </div>
 
-  <div id="graphics-quality-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Graphics quality">
+  <div id="menu-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Menu">
+    <button class="pop-item" type="button" popovertarget="map-attribution">Map credits</button>
     <div class="pop-title">Graphics quality</div>
     <button class="pop-item active" data-graphics-quality="fast" aria-pressed="true" type="button">Fast</button>
     <button class="pop-item" data-graphics-quality="standard" aria-pressed="false" type="button">Standard</button>
     <div class="pop-title">Tree quality</div>
     <button class="pop-item active" data-tree-quality="auto" aria-pressed="true" type="button">Auto</button>
     <button class="pop-item" data-tree-quality="high" aria-pressed="false" type="button">High</button>
+  </div>
+
+  <div id="map-attribution" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-labelledby="map-attribution-title">
+    <h2 id="map-attribution-title" class="pop-title">Map credits</h2>
+    <a class="pop-item" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">© OpenStreetMap contributors</span>
+      <span class="pop-sub">Supplies streets, paths, parks, waterways and fallback building footprints.</span>
+    </a>
+    <a class="pop-item" href="https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Structures and streets via PDOK BGT</span>
+      <span class="pop-sub">Surveyed boundaries shape roads, bridges, platforms and shorelines.</span>
+    </a>
+    <a class="pop-item" href="./docs/map-and-assets.md#refresh-water-works" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Water works by Waterschap Vallei en Veluwe</span>
+      <span class="pop-sub">Mapped weirs are aligned to local channels and fitted to the terrain.</span>
+    </a>
+    <a class="pop-item" href="https://geo.ede.nl/geoserver/Ede/wfs?service=WFS&amp;request=GetCapabilities" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Bins and play sites by Gemeente Ede</span>
+      <span class="pop-sub">Municipal records place litter bins, waste containers and play equipment.</span>
+    </a>
+    <a class="pop-item" id="ede-parcel-credit" href="https://api.pdok.nl/kadaster/brk-kadastrale-kaart/ogc/v1/" target="_blank" rel="noopener noreferrer" hidden>
+      <span class="pop-name">Parcels by Kadaster</span>
+      <span class="pop-sub">Property boundaries guide the placement of hedges and fences.</span>
+    </a>
+    <a class="pop-item" id="ede-utility-credit" href="https://www.arcgis.com/home/item.html?id=11b7bcf1b78b4462b91db0dff234cf78" target="_blank" rel="noopener noreferrer" hidden>
+      <span class="pop-name">Liander station data by Alliander</span>
+      <span class="pop-sub">Station locations helped identify freestanding transformer houses.</span>
+    </a>
+    <a class="pop-item" href="https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Motorway detail via Rijkswaterstaat 1GIS</span>
+      <span class="pop-sub">Surveyed markings, barriers, gantries and hectometre posts detail the A12 and A30.</span>
+    </a>
+    <a class="pop-item" href="https://downloads.rijkswaterstaatdata.nl/bewegwijzering/" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Motorway direction signs via NBd</span>
+      <span class="pop-sub">Published drawings supply sign faces and destinations on the A12 and A30.</span>
+    </a>
+    <a class="pop-item" href="https://verkeersveiligheid.ndw.nu/" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Traffic signs, bumps and zebras via NDW</span>
+      <span class="pop-sub">Mapped records guide the placement of signs, speed bumps and zebra crossings.</span>
+    </a>
+    <a class="pop-item" href="https://gtfs.ovapi.nl/nl/" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Bus data via OVapi</span>
+      <span class="pop-sub">GTFS routes, stops and timetables guide the simulated bus services.</span>
+    </a>
+    <a class="pop-item" href="https://112-nu.nl/regio/gemeente-ede/alles/0" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">P2000 dispatches via 112-nu.nl</span>
+      <span class="pop-sub">Recent public dispatches can trigger simulated emergency responses.</span>
+    </a>
+    <a class="pop-item" href="https://docs.3dbag.nl/en/copyright/" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">© 3DBAG by tudelft3d and 3DGI</span>
+      <span class="pop-sub">Building models supply 3D walls and roofs, fitted to the terrain and styled for the scene.</span>
+    </a>
+    <a class="pop-item" href="https://www.ahn.nl/dataroom" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Terrain © AHN via PDOK</span>
+      <span class="pop-sub">Measured ground heights shape the terrain and help set local elevations.</span>
+    </a>
+    <a class="pop-item" href="https://nationaalgeoregister.nl/geonetwork/srv/metadata/7b424340-25c5-4c95-8dbf-bf1d87888566" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">2025 aerial imagery © Beeldmateriaal.nl via PDOK</span>
+      <span class="pop-sub">Colour samples from aerial photos tint roofs, roads and ground surfaces.</span>
+    </a>
+    <a class="pop-item" href="https://www.mapillary.com/" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Façade evidence via Mapillary</span>
+      <span class="pop-sub">Street-level photos guided offline measurements of windows, doors and storefronts.</span>
+    </a>
+    <a class="pop-item" href="./assets/ede-facades.SOURCES.md" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Façade evidence credits</span>
+      <span class="pop-sub">Image creators and references for the modelled façades.</span>
+    </a>
+    <a class="pop-item" href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/paal?f=html" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">BGT lamp posts via PDOK</span>
+      <span class="pop-sub">Surveyed lamp-post locations place street lights in the scene.</span>
+    </a>
+    <a class="pop-item" href="https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/vegetatieobject_punt?f=html" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">BGT trees via PDOK</span>
+      <span class="pop-sub">Surveyed tree points locate individual trunks.</span>
+    </a>
+    <a class="pop-item" href="https://www.klimaateffectatlas.nl/nl/boomkroonbedekking" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Canopy by Friedenau Society and Klimaateffectatlas (CC BY 4.0)</span>
+      <span class="pop-sub">Crown coverage and height data shape distant woodland canopies.</span>
+    </a>
+    <a class="pop-item" id="ede-tree-inventory-credit" href="https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f" target="_blank" rel="noopener noreferrer">
+      <span class="pop-name">Tree inventory by Gemeente Ede</span>
+      <span class="pop-sub">Municipal tree records fill gaps in the mapped inventory.</span>
+    </a>
   </div>
 
   <!-- Bottom-Left: Street-Name Signs & Live GPS Radar Minimap -->
@@ -714,6 +783,7 @@
       <button id="close-fullmap-btn" class="panel tool-btn fullmap-close" type="button" title="Close map [M / Esc]">
         <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg><span class="tool-label">Close</span><kbd>Esc</kbd>
       </button>
+      <a class="panel fullmap-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
     </div>
 
     <div class="map-controls">

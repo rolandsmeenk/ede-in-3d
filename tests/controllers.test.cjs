@@ -43,7 +43,8 @@ function keyboardHarness(nyc = {}, terrainHeightAt = () => 0, buildingPassageHea
       './building-collision.js': polygonCollision,
       './terrain.js': { terrainHeightAt },
       './ede-grade.js': { gradeHeightAt: terrainHeightAt, gradeGroundHeightAt: terrainHeightAt,
-        gradeDeckAt: () => undefined, gradeProfileAt: () => null, heliLandingHeightAt: () => undefined, buildingPassageHeadingAt }
+        gradeDeckAt: () => undefined, gradeProfileAt: () => null, gradeCurbHeightAt: () => undefined,
+        gradeContactHeight: (_id, y) => y, heliLandingHeightAt: () => undefined, buildingPassageHeadingAt }
     }
   });
   // Exercise the production event handlers without constructing the scene's 3D models.
@@ -475,9 +476,14 @@ function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eas
     verticalVel: 5, vx: 3, vz: -4, angularVel: 2, steerAngle: 0.4,
     pitchVel: 3, rollVel: 4, heaveY: 0.1, heaveVel: 2, chassisPivot: pivot(),
     lastCollisionSpark: { speed: 5 }, carState: { value: { x: 1, w: 1 } }, wheelSpin: 1,
-    wheels: [{ isFront: true, steerPivot: { rotation: { y: 0.4 } }, tire: { rotation: { x: 0 } } }],
+    wheels: [[-0.85, 1.38], [0.85, 1.38], [-0.85, -1.38], [0.85, -1.38]].map(([x, z]) => ({
+      isFront: z > 0, radius: 0.35, steerPivot: { position: position(x, 0.35, z), rotation: { y: 0.4 } },
+      tire: { rotation: { x: 0 } }
+    })),
     leanAngle: 0.3, leanPivot: pivot(), pedalPhase: 0.7,
-    frontWheel: { rotation: { x: 0 } }, rearWheel: { rotation: { x: 0 } },
+    frontSteerPivot: { position: position(0, 0.6, 0.45), rotation: { y: 0 } },
+    frontWheel: { position: position(0, -0.25, 0.1), rotation: { x: 0 } },
+    rearWheel: { position: position(0, 0.35, -0.55), rotation: { x: 0 } },
     crankPivot: { rotation: { x: 0 } }, pedals: [],
     verticalSpeed: -8, pitchAngle: 0.2, rollAngle: -0.2, tiltPivot: pivot(),
     rig: { reset(...args) { this.resetArgs = args; } },

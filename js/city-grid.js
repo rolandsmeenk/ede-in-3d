@@ -26,6 +26,8 @@ import { addAsphaltLanes, describePavingLane } from './ede-asphalt-lanes.js';
 import { createPavingTiles } from './ede-paving-tiles.js';
 import { createPavingWorker } from './ede-paving-client.js';
 import { captureGroundColor } from './ede-aerial-sampling.js';
+import { curbGeometryFor, curbTactileFor } from './ede-curbs.js';
+import { curbFaceGeometry, curbTopGeometry } from './ede-curb-geometry.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
 import { EDE_MTB_WAYS } from './ede-active-travel.js';
 
@@ -116,7 +118,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const polygon = (ring, holes, y, wayId) => drapeEdeSurface(edePolygonGeometry(ring, holes, y), true, wayId);
   const strip = (a, b, half, y, offset, wayId) => drapeEdeSurface(edeStrip(a, b, half, y, offset), true, wayId);
   const collections = new Map();
-  const pavingMaterials = { asphalt: roadMat, mapped: mappedPavingMat, path: pavingMat, sidewalk: sidewalkMat };
+  const pavingMaterials = { asphalt: roadMat, mapped: mappedPavingMat, path: pavingMat, sidewalk: sidewalkMat, curb: curbMat };
   const pavingTiles = createPavingTiles(scene, mergeCityBatches, undefined, createPavingWorker(preparePavingTile), pavingMaterials);
 
   function preparePavingTile(tile) {
@@ -274,16 +276,27 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   let mappedPavingCount = 0;
   const surveyedPaving = getEdeRoadSurfaces();
   const fringeSurfaces = new Set(surveyedPaving.fringeSurfaces);
-  function addSurveyedPaving({ outer, holes, material, angle, motor }, target) {
-    const geometry = drapeEdeSurface(edePolygonGeometry(edePoints(outer), holes.map(edePoints), 0.065), true, undefined, true);
+  function addSurveyedPaving({ outer, holes, material, angle, motor, top, tactile }, target) {
+    const flat = top ? curbTopGeometry(THREE, top) : edePolygonGeometry(edePoints(outer), holes.map(edePoints), 0.065);
+    const geometry = drapeEdeSurface(flat, true, undefined, true, undefined, undefined, !!top);
+    if (top) {
+      const local = localGradeSurface(null, edeBounds(edePoints(outer)));
+      collect(curbFaceGeometry(THREE, geometry, outer, holes,
+        (x, z) => (local?.heightAt(x, z) ?? terrainHeightAt(x, z)) + 0.065), curbMat, undefined, undefined, target);
+    }
+    if (tactile) {
+      collect(drapeEdeSurface(curbTopGeometry(THREE, tactile), true, undefined, true), curbMat, undefined, undefined, target);
+    }
     collectPaving(geometry, material, angle, undefined, motor ? 0 : undefined, target);
   }
   for (const surface of surveyedPaving.surfaces) {
     const { layer, material, angle, polygons, function: use } = surface;
     if (layer !== 0) continue;
     const motor = use.startsWith('rijbaan ') || ['ov-baan', 'verbindingsweg', 'overweg', 'verkeersdrempel', 'woonerf'].includes(use);
-    for (const [outer, ...holes] of polygons) {
-      const entry = { outer, holes, material, angle, motor };
+    for (const [index, [outer, ...holes]] of polygons.entries()) {
+      const top = curbGeometryFor(surface.id, index);
+      const tactile = index === 0 ? curbTactileFor(surface.id) : undefined;
+      const entry = { outer, holes, material, angle, motor, top, tactile };
       if (EDE_DATA.meta.fullMunicipality || fringeSurfaces.has(surface)) {
         const bounds = { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity };
         for (let i = 0; i < outer.length; i += 2) {

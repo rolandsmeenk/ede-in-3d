@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { color, length, smoothstep, uniform, uv } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
-import { mastStrokeMesh } from './ede-mast-strokes.js';
+import { addMemberStroke, createMemberStrokes, mastStrokeMesh, memberStrokeMaterial, memberStrokeMesh } from './ede-mast-strokes.js';
 import { edeBounds, edePoints, edePolygonGeometry, EDE_RENDER_CELL } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
 import { createWindmillRig } from './ede-windmill.js';
@@ -110,6 +110,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   group.name = 'Ede BGT structures';
   const colliders = [], platforms = [], weatherCovers = [], batches = new Map(), materials = new Map();
   const turbineUpdates = [], turbineBeacons = [];
+  const bridgeStrokes = new Map();
   const mastDetails = [], mastCutoff = uniform(150), mastNight = uniform(0);
   const mastStrokes = { start: [], end: [], centre: [], bounds: new THREE.Box3() };
   const strokeEndpoint = new THREE.Vector3();
@@ -178,6 +179,12 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   }
 
   function beam(kind, a, b, radius, topRadius = radius, target) {
+    if (kind === 'bridgeRail' && radius <= 0.024) {
+      const key = `${Math.floor((a[0] + b[0]) / (2 * EDE_RENDER_CELL))}/${Math.floor((a[2] + b[2]) / (2 * EDE_RENDER_CELL))}`;
+      if (!bridgeStrokes.has(key)) bridgeStrokes.set(key, createMemberStrokes());
+      addMemberStroke(bridgeStrokes.get(key), a, b, radius, PALETTE.bridgeRail);
+      return;
+    }
     const p = new THREE.Vector3(...a), q = new THREE.Vector3(...b);
     const direction = q.clone().sub(p), length = direction.length();
     if (length < 0.02) return;
@@ -459,6 +466,17 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     if (firstMeshes.has(kind)) mesh.userData.sharesPipelineWith = firstMeshes.get(kind);
     else firstMeshes.set(kind, mesh);
     group.add(mesh);
+  }
+  if (bridgeStrokes.size) {
+    const material = memberStrokeMaterial();
+    let first;
+    for (const strokes of bridgeStrokes.values()) {
+      const mesh = memberStrokeMesh(strokes, material);
+      mesh.name = 'Ede filtered bridge railings';
+      if (first) mesh.userData.sharesPipelineWith = first;
+      else first = mesh;
+      group.add(mesh);
+    }
   }
   if (mastDetails.length) {
     const filtered = mastStrokeMesh(mastStrokes, mastCutoff, mastNight);

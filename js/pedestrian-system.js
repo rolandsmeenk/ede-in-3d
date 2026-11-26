@@ -13,7 +13,7 @@ const PED_SPAWN_DISTANCE = 150;
 const PED_AVOID_INTERVAL = 0.12;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearFoot, pickFoot, mappedGround, mayCross, mayCrossMapped, walkOn, visible, nearView, trips, railStop }) {
+function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearFoot, pickFoot, mappedGround, mappedSurfaceGround, mayCross, mayCrossMapped, walkOn, visible, nearView, trips, railStop }) {
   let clock = 0;
   let focusX = 0, focusZ = 140;
   let hasView = false;
@@ -635,7 +635,7 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, nearF
   function pedGround(p, x, z) {
     if (p.route?.mapped) {
       const surface = p.route.structure ? 0 : p.route.sidewalk ? 0.025 : p.route.crossing ? 0.06 : 0.055;
-      return mappedGround(p.route, x, z) + surface;
+      return mappedSurfaceGround?.(p.route, x, z) ?? mappedGround(p.route, x, z) + surface;
     }
     const ground = terrainHeightAt(x, z);
     if (!p.node) return ground + SIDEWALK_Y;

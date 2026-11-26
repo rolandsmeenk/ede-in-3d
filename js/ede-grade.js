@@ -1,6 +1,7 @@
 import { EDE_DATA } from './ede-geodata.js';
 import { EDE_NORTH_RAIL, hasNorthRail } from './ede-north-rail-data.js';
 import { MOTOR } from './road-access.js?v=20261122-startup';
+import { curbGradeLift, curbHeightAt } from './ede-curbs.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 import { clipEdeGround, gradeApproachHeight, modeGroup, nearestEdeSpan } from './ede-grade-query.js';
 
@@ -417,7 +418,21 @@ export function isUnderEdeRoof(x, y, z) {
 }
 
 export function gradeHeightAt(x, z, referenceY, mode = 'motor', profileId) {
-  return gradeProfileAt(x, z, mode, undefined, referenceY, profileId)?.y ?? gradeGroundHeightAt(x, z, referenceY);
+  const profile = gradeProfileAt(x, z, mode, undefined, referenceY, profileId);
+  if (profile && profile.kind !== 'surface') return gradeContactHeight(profile.id, profile.y);
+  const base = profile?.y ?? gradeGroundHeightAt(x, z, referenceY);
+  return gradeCurbHeightAt(x, z, base, referenceY, profile ? 0 : undefined) ?? base;
+}
+
+export const gradeContactHeight = (id, base) => base + (curbGradeLift(id) ?? 0);
+
+export function gradeCurbHeightAt(x, z, base, referenceY, layer, allowCurbs = true) {
+  const height = curbHeightAt(x, z, base, layer, allowCurbs);
+  if (height !== undefined && layer === undefined) {
+    const terrain = terrainHeightAt(x, z);
+    if (Math.abs(base - terrain) > 0.35 || Number.isFinite(referenceY) && Math.abs(referenceY - terrain) > 0.65) return;
+  }
+  return height;
 }
 
 export function gradeGroundHeightAt(x, z, referenceY) {

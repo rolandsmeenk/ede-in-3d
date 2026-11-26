@@ -1,4 +1,6 @@
 import * as THREE from 'three/webgpu';
+import { userData } from 'three/tsl';
+import { addMemberStroke, createMemberStrokes, memberStrokeMaterial, memberStrokeMesh } from './ede-mast-strokes.js';
 import { createRoadFurnitureAtlases } from './road-furniture-atlas.js';
 import {
   SIGN_FOIL, createSignRetroreflection, createRetroreflectiveSignMaterial, createSurveyedSignMaterial, roadFurnitureVisibility
@@ -126,6 +128,7 @@ export function buildEdeRoadFurniture(scene, cells, { surfaces, detail, gantries
   const steel = new THREE.MeshStandardNodeMaterial({ color: 0x919da2, roughness: 0.66, metalness: 0.42, alphaTest: 0.5 });
   steel.opacityNode = roadFurnitureVisibility();
   const materials = new Map();
+  let filteredSteel;
   const object = new THREE.Object3D();
   const axis = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
   const active = new Set();
@@ -176,7 +179,7 @@ export function buildEdeRoadFurniture(scene, cells, { surfaces, detail, gantries
   }
 
   function buildCell(cell) {
-    const support = [], truss = [], panels = new Map();
+    const support = [], truss = [], panels = new Map(), braces = createMemberStrokes();
     const addFace = (feature, x, y, z, yaw) => {
       const face = faces.get(feature.id);
       if (!face) return;
@@ -184,6 +187,10 @@ export function buildEdeRoadFurniture(scene, cells, { surfaces, detail, gantries
       panels.get(face.texture).push({ x, y, z, yaw, face, type: feature.type, reflector: /^BB1[45]/.test(feature.rvvCode ?? '') });
     };
     function member(start, end, width, rail = false) {
+      if (rail && width < 0.12) {
+        addMemberStroke(braces, start, end, width / 2, 0x919da2);
+        return;
+      }
       const length = axis.set(end[0] - start[0], end[1] - start[1], end[2] - start[2]).length();
       if (length < 0.025) return;
       object.position.set((start[0] + end[0]) / 2, (start[1] + end[1]) / 2, (start[2] + end[2]) / 2);
@@ -342,6 +349,15 @@ export function buildEdeRoadFurniture(scene, cells, { surfaces, detail, gantries
       mesh.computeBoundingSphere();
       mesh.updateMatrixWorld(true);
     }
+    if (braces.start.length) {
+      filteredSteel ??= memberStrokeMaterial(userData('spawnAlpha', 'float'));
+      const mesh = memberStrokeMesh(braces, filteredSteel);
+      mesh.name = 'OSM detail gantryBrace';
+      mesh.userData.spawnAlpha = 0;
+      mesh.visible = false;
+      mesh.updateMatrixWorld(true);
+      meshes.push(mesh);
+    }
     stats.builtCells++;
     return meshes;
   }
@@ -385,7 +401,7 @@ export function buildEdeRoadFurniture(scene, cells, { surfaces, detail, gantries
           mesh.visible = cell.spawnAlpha > 0;
           if (mesh.visible) {
             batches++;
-            instances += mesh.count;
+            instances += mesh.isInstancedMesh ? mesh.count : mesh.geometry.instanceCount;
           }
         }
         if (cell.spawnAlpha === 0) {

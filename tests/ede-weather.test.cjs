@@ -29,6 +29,78 @@ test('current conditions preserve model time, source and wind and format Ede tim
   assert.throws(() => parseWeather(reading({}, observedAt + 6 * minute), observedAt));
 });
 
+test('photogenic weather combines fresh local light with weather and lunar conditions', async () => {
+  const { parseWeather, photogenicWeather } = await import('../js/ede-weather.js');
+  const at = time => Date.parse(`2026-11-26T${time}:00Z`);
+  const moments = (time, values, daily) => {
+    const now = at(time);
+    return photogenicWeather(parseWeather({ ...reading(values, now), daily }, now), now);
+  };
+
+  assert.deepEqual(moments('06:50', { cloud_cover: 25 }), ['Blue hour']);
+  assert.deepEqual(moments('06:50', { cloud_cover: 26 }), []);
+  assert.deepEqual(moments('08:00'), ['Golden hour']);
+  assert.deepEqual(moments('08:00', { weather_code: 3, cloud_cover: 100 }), []);
+  assert.deepEqual(moments('08:00', { weather_code: 2, cloud_cover: 60 }),
+    ['Possible red sky', 'Possible sunbeams through clouds']);
+  assert.deepEqual(moments('08:30', {
+    weather_code: 48, cloud_cover: 85, temperature_2m: -2,
+    relative_humidity_2m: 96, dew_point_2m: -2.5, wind_speed_10m: 7.2
+  }), ['Possible mist in low sunlight', 'Possible rime or hoar frost']);
+  assert.deepEqual(moments('08:30', {
+    cloud_cover: 85, temperature_2m: 4, dew_point_2m: 3, wind_speed_10m: 7.3
+  }), []);
+  assert.deepEqual(moments('08:30', { weather_code: 80, cloud_cover: 75 }),
+    ['Possible rainbow (look away from the sun)']);
+  assert.deepEqual(moments('08:30', { weather_code: 95, cloud_cover: 70, showers: 1 }),
+    ['Storm light (view from indoors)']);
+  assert.deepEqual(moments('08:30', { weather_code: 85, cloud_cover: 50, temperature_2m: 2 }),
+    ['Possible red sky', 'Possible sunbeams through clouds', 'Snow in sunlight']);
+
+  const start = at('00:00') / 1000;
+  const daily = {
+    time: [start - 86400, start], moon_phase: [0.49, 0.5],
+    moonrise: [start - 7200, at('20:00') / 1000], moonset: [null, at('06:00') / 1000]
+  };
+  assert.deepEqual(moments('03:00', {}, daily), ['Nearly full moon']);
+  assert.deepEqual(moments('16:00', { cloud_cover: 40 }, daily), []);
+  assert.deepEqual(moments('18:00', {}, daily), ['Nearly full moon rises at 21:00']);
+  assert.deepEqual(moments('22:00', {}, daily), ['Nearly full moon']);
+  const newMoon = { ...daily, moon_phase: [0.09, 0.1] };
+  assert.deepEqual(moments('18:00', { relative_humidity_2m: 85 }, newMoon), ['Clear, dark sky for stargazing']);
+  assert.deepEqual(moments('18:00', { relative_humidity_2m: 86 }, newMoon), []);
+  assert.deepEqual(moments('18:00'), []);
+
+  const now = at('08:00');
+  const invalidOptional = parseWeather(reading({ relative_humidity_2m: 120, dew_point_2m: null }, now), now);
+  assert.equal(invalidOptional.humidity, undefined);
+  assert.equal(invalidOptional.dewPoint, undefined);
+  const stale = parseWeather(reading({}, now - 30 * minute), now);
+  assert.deepEqual(photogenicWeather(stale, now), []);
+});
+
+test('static hosting requests photography inputs alongside the existing weather fields', async t => {
+  const { createLiveWeather } = await import('../js/ede-weather.js');
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    requests.push(url);
+    return requests.length === 1 ? { status: 404 } : { ok: true, json: async () => [reading(), {}] };
+  });
+  const weather = createLiveWeather({
+    now: () => observedAt, page: { hidden: false, addEventListener() {} }
+  });
+  t.after(() => weather.setEnabled(false));
+  weather.setEnabled(true);
+  await setImmediate();
+  assert.equal(weather.state.status, 'fresh');
+  assert.match(requests[0].pathname, /api\/ede-weather$/);
+  const forecast = requests[1];
+  assert.equal(forecast.hostname, 'api.open-meteo.com');
+  assert.ok(forecast.searchParams.get('current').split(',').includes('dew_point_2m'));
+  assert.equal(forecast.searchParams.get('daily'), 'moonrise,moonset,moon_phase');
+  assert.equal(forecast.searchParams.get('past_hours'), '48');
+});
+
 test('rink ice accumulates through frost and recedes through thaw without using forecasts', async () => {
   const { parseWeather, presetRinkIce } = await import('../js/ede-weather.js');
   const hour = 3600;

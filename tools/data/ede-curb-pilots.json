@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "defaults": { "sidewalk": 0.12, "island": 0.12, "roadLift": 0.065, "tableLift": 0.063, "gradeLift": 0.055 },
+  "sites": [
+    {
+      "id": "kastelenlaan",
+      "center": [-1894.6, 573.6],
+      "radius": 42,
+      "evidence": { "date": "2026-11-19", "sources": ["BGT 2026-11-18", "OSM crossing paths", "PDOK 2026 orthophoto"], "confidence": "high for layout, low for vertical dimensions", "height": "default" },
+      "crossings": [
+        {
+          "id": "osm-crossing-n270772153",
+          "lowered": ["fe246f4a4a40d6d6e0400a0a35020533", "fe246f4a4a41d6d6e0400a0a35020533", "fe246f4a4a47d6d6e0400a0a35020533", "fe246f4a4a49d6d6e0400a0a35020533", "fe246f4a4a4ad6d6e0400a0a35020533"],
+          "cutThrough": "fe246f4a4a48d6d6e0400a0a35020533",
+          "raised": ["fe246f4a4a64d6d6e0400a0a35020533", "fe246f4a4a42d6d6e0400a0a35020533", "fe246f4a4a46d6d6e0400a0a35020533"]
+        },
+        {
+          "id": "osm-crossing-n271607961",
+          "lowered": ["fe246f4a4a58d6d6e0400a0a35020533", "fe246f4a4a59d6d6e0400a0a35020533", "fe246f4a4a5fd6d6e0400a0a35020533", "fe246f4a4a60d6d6e0400a0a35020533", "fe246f4a4a62d6d6e0400a0a35020533", "fe246f4a4a63d6d6e0400a0a35020533"],
+          "cutThrough": "fe246f4a4a5ad6d6e0400a0a35020533",
+          "raised": ["fe246f4a4a57d6d6e0400a0a35020533", "fe246f4a4a5dd6d6e0400a0a35020533", "fe246f4a4a53d6d6e0400a0a35020533"]
+        }
+      ]
+    },
+    {
+      "id": "klinkenbergerweg",
+      "center": [24.68, 1323.83],
+      "radius": 24,
+      "evidence": { "date": "2026-11-19", "sources": ["BGT 2026-11-18", "NDW VOP 22686", "NDW Drempels 264233", "OSM n12496796646", "PDOK 2026 orthophoto"], "confidence": "high for footprint and layout, low for vertical dimensions", "height": "default and existing table estimate", "kerbObservation": { "osmNode": 12496796646, "date": "2026-09-29", "kerb": "flush", "tactile_paving": "yes" } },
+      "crossing": "ndw-vop-22686",
+      "table": "ndw-drempel-264233",
+      "tableSurface": "8787556b578b4f81a0e24c2c6c80cb6a",
+      "tactile": [
+        ["fe246f4978dfd6d6e0400a0a35020533", 20.03, 1325.11],
+        ["0cde45a1439f4d01a97d30bf68057571", 29.44, 1322.61]
+      ],
+      "sidewalks": ["fe246f4978dfd6d6e0400a0a35020533", "0cde45a1439f4d01a97d30bf68057571", "fe246f4a7a70d6d6e0400a0a35020533", "1b803c572d114429a80b8c7593f0451f", "a92c4f5926d74e7398156cecae0ba00c"]
+    },
+    {
+      "id": "heideoordlaan",
+      "center": [-232.55, 1276.01],
+      "radius": 16,
+      "evidence": { "date": "2026-11-26", "sources": ["BGT 2026-11-18", "OSM w6953530 and w646986372", "PDOK 2026 orthophoto"], "confidence": "high for sidewalk and access intersection, low for vertical dimensions", "height": "default" },
+      "roadSeam": [[-234.46, 1277.74], [-229.74, 1276.74]],
+      "driveway": "fe246f2da260d6d6e0400a0a35020533",
+      "drivewayDepth": 2.6,
+      "sidewalks": ["7d86bad01f3c478090953c365506b1f5", "24c6060875f64ec6ae7dc3c90f999ec4"]
+    },
+    {
+      "id": "albertstunnel",
+      "center": [108.1, 2054.61],
+      "radius": 45,
+      "evidence": { "date": "2026-11-21", "sources": ["Existing Albertstunnel grade profiles", "BGT L0004.a868e3a0aea840a98f3d77833a6f3ac5", "Native AHN at exposed approaches"], "confidence": "high for level separation, medium for fitted slope, low for concealed floor and curb dimensions", "height": "existing fitted profile" },
+      "gradeProfiles": ["alberts-west-path", "alberts-east-path", "alberts-southbound", "alberts-northbound"],
+      "review": "Curb width, exposed curb step and concealed floor need a survey. The existing side-path and carriageway profiles remain the source for the two travel heights."
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { EDE_DATA } from './ede-geodata.js';
+import { edeSun, formatEdeTime } from './live-sky.js';
 
 const REFRESH_MS = 15 * 60 * 1000;
 const RETRY_MS = 60 * 1000;
@@ -6,6 +7,7 @@ const STALE_MS = 30 * 60 * 1000;
 const EXPIRE_MS = 60 * 60 * 1000;
 const RINK_HISTORY_HOURS = 48;
 const HOUR_SECONDS = 3600;
+const DAY_SECONDS = 24 * HOUR_SECONDS;
 const PRESET_WIND = Object.freeze({ windSpeed: 18, windDirection: 225 });
 const dry = { interval: 900, rain: 0, showers: 0, snowfall: 0, windGusts: 22, ...PRESET_WIND };
 const breezy = { windSpeed: 39, windDirection: 250, windGusts: 58 };
@@ -26,6 +28,9 @@ const CURRENT_FIELDS = [
   'temperature_2m', 'weather_code', 'cloud_cover', 'rain', 'showers', 'snowfall',
   'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m'
 ];
+
+const PHOTO_FIELDS = ['relative_humidity_2m', 'dew_point_2m'];
+const MOON_FIELDS = 'moonrise,moonset,moon_phase';
 
 const weatherTime = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Amsterdam', day: 'numeric', month: 'short',
@@ -89,6 +94,16 @@ export function presetRinkIce(season) {
   return changeRinkIce(0, season === 'winter' ? -4 : 10, RINK_HISTORY_HOURS);
 }
 
+function parseLunarDays(daily) {
+  if (!Array.isArray(daily?.time)) return [];
+  return daily.time.flatMap((start, i) => {
+    const phase = daily.moon_phase?.[i];
+    if (!Number.isInteger(start) || !Number.isFinite(phase) || phase < 0 || phase > 1) return [];
+    const eventTime = time => Number.isInteger(time) && time >= start && time < start + DAY_SECONDS ? time : null;
+    return [Object.freeze({ start, phase, rise: eventTime(daily.moonrise?.[i]), set: eventTime(daily.moonset?.[i]) })];
+  });
+}
+
 export function parseWeather(payload, now = Date.now()) {
   const [town, park] = Array.isArray(payload) ? payload : [payload];
   const p = town?.current;
@@ -104,14 +119,70 @@ export function parseWeather(payload, now = Date.now()) {
   }
   const turbineWind = parseTurbineWind(park?.current ?? town.parkWind, p.time);
   const rinkIce = rinkIceFromHistory(town.hourly, p.time, p.temperature_2m);
+  const { relative_humidity_2m: humidity, dew_point_2m: dewPoint } = p;
+  const lunarDays = parseLunarDays(town.daily);
   return Object.freeze({
     source: 'Open-Meteo', observedAt,
     fetchedAt: Number.isFinite(town.fetchedAt) ? town.fetchedAt : now,
     interval: p.interval, temperature: p.temperature_2m, code: p.weather_code, cloudCover: p.cloud_cover,
     rain: p.rain, showers: p.showers, snowfall: p.snowfall,
     windSpeed: p.wind_speed_10m, windDirection: p.wind_direction_10m, windGusts: p.wind_gusts_10m,
-    ...(turbineWind && { turbineWind }), ...(rinkIce !== undefined && { rinkIce })
+    ...(turbineWind && { turbineWind }), ...(rinkIce !== undefined && { rinkIce }),
+    ...(Number.isFinite(humidity) && humidity >= 0 && humidity <= 100 && { humidity }),
+    ...(Number.isFinite(dewPoint) && dewPoint >= -100 && dewPoint <= 70 && { dewPoint }),
+    ...(lunarDays.length && { lunarDays: Object.freeze(lunarDays) })
   });
+}
+
+export function photogenicWeather(reading, now = Date.now()) {
+  if (!reading || now - reading.observedAt >= STALE_MS) return [];
+  const { elevation } = edeSun(new Date(now));
+  const { cloudCover, temperature, humidity, dewPoint, windSpeed } = reading;
+  const cloudOktas = cloudCover * 8 / 100;
+  const condition = weatherCondition(reading.code);
+  const thunder = condition === 'Thunderstorms';
+  const rainy = reading.rain + reading.showers > 0 || ['Drizzle', 'Rain', 'Showers'].includes(condition);
+  const moments = [];
+
+  if (thunder && elevation > 0 && elevation < 15) moments.push('Storm light (view from indoors)');
+  if (!rainy && cloudOktas >= 1 && cloudOktas <= 6 && elevation > -4 && elevation < 12) moments.push('Possible red sky');
+  if (!rainy && windSpeed <= 7.2 && temperature - dewPoint <= 2 && elevation > 0 && elevation < 15) {
+    moments.push('Possible mist in low sunlight');
+  }
+  if (temperature >= -8 && temperature <= 0 && humidity >= 90 && windSpeed <= 10.8 && elevation > -6 && elevation < 15) {
+    moments.push('Possible rime or hoar frost');
+  }
+  if (rainy && !thunder && cloudOktas <= 6 && elevation > 2 && elevation < 42) {
+    moments.push('Possible rainbow (look away from the sun)');
+  }
+  if (cloudOktas <= 2 && elevation > 0 && elevation < 6) moments.push('Golden hour');
+  if (cloudOktas <= 2 && elevation >= -8 && elevation <= -4) moments.push('Blue hour');
+  if (!rainy && cloudOktas >= 4 && cloudOktas <= 6 && elevation > 0 && elevation < 10) {
+    moments.push('Possible sunbeams through clouds');
+  }
+  if (condition === 'Snow' && temperature <= 2 && cloudOktas <= 5 && elevation > 5) moments.push('Snow in sunlight');
+
+  const time = now / 1000;
+  const day = reading.lunarDays?.find(({ start }) => start <= time && time < start + DAY_SECONDS);
+  if (day) {
+    const illuminated = (1 - Math.cos(2 * Math.PI * day.phase)) / 2;
+    if (illuminated >= 0.95 && cloudOktas <= 6) {
+      let lastRise = -Infinity, lastSet = -Infinity, nextRise = Infinity;
+      for (const { rise, set } of reading.lunarDays) {
+        if (rise !== null && rise <= time) lastRise = Math.max(lastRise, rise);
+        if (set !== null && set <= time) lastSet = Math.max(lastSet, set);
+        if (rise !== null && rise > time) nextRise = Math.min(nextRise, rise);
+      }
+      if (lastRise > lastSet) moments.push('Nearly full moon');
+      else if (nextRise - time <= 3 * HOUR_SECONDS) {
+        moments.push('Nearly full moon rises at ' + formatEdeTime(nextRise * 1000));
+      }
+    }
+    if (illuminated <= 0.1 && cloudOktas <= 1 && elevation < -18 && humidity <= 85) {
+      moments.push('Clear, dark sky for stargazing');
+    }
+  }
+  return moments;
 }
 
 async function fetchWeather(signal) {
@@ -124,8 +195,9 @@ async function fetchWeather(signal) {
     url.search = new URLSearchParams({
       latitude: [lat0, MAANDERBROEK.latitude].join(','),
       longitude: [lon0, MAANDERBROEK.longitude].join(','),
-      current: [...CURRENT_FIELDS, ...PARK_FIELDS].join(','),
+      current: [...CURRENT_FIELDS, ...PARK_FIELDS, ...PHOTO_FIELDS].join(','),
       hourly: 'temperature_2m', past_hours: RINK_HISTORY_HOURS, forecast_hours: 1,
+      daily: MOON_FIELDS, past_days: 1, forecast_days: 2,
       timezone: 'GMT', timeformat: 'unixtime', temperature_unit: 'celsius',
       wind_speed_unit: 'kmh', precipitation_unit: 'mm'
     });

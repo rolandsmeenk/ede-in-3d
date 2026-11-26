@@ -130,6 +130,13 @@ const shots = newLandmarks ? newLandmarks.flatMap(site => {
   facadeWalk('Torenstraat storefront', [-44.66, -5.50], [-55.49, -10.00], 7, 2.4),
   facadeWalk('Oude Kerk west entrance', [-24.63, -13.35], [-27.15, -3.66], 9, 4.6),
   facadeWalk('Shopping street', [-86.95, -23.08], [-99.42, -28.27], 9, 3.0),
+] : suite === 'curb-pilot' ? [
+  { name: 'Kastelenlaan refuge at street level', from: [-1878.74, 1.65, 587.58], to: [-1897.30, 1.65, 595.70], look: [-1901, 1, 557] },
+  { name: 'Kastelenlaan refuge from above', from: [-1889, 19, 607], to: [-1894, 19, 562], look: [-1895, 0, 573] },
+  { name: 'Klinkenbergerweg raised zebra', from: [18.8, 1.65, 1325.5], to: [31, 1.65, 1322.6], look: [24.5, 0.5, 1319] },
+  { name: 'Heideoordlaan driveway', from: [-237, 1.65, 1279], to: [-228, 1.65, 1277], look: [-232.55, 0.15, 1276.01] },
+  { name: 'Albertstunnel cycle', way: 'w25098905', travel: ['cyclist', 98.17, 2041.51, -0.084] },
+  { name: 'Albertstunnel drive', way: 'w6952984', travel: ['car', 104.1, 2042, -0.09, -6.69] },
 ] : suite === 'lane-fits' ? [
   { name: 'Maanderbroek A12 east', way: 'w750476158', from: [-4256, 2.4, 2138], to: [-4216, 2.4, 2164], look: [-4137, 2, 2216] },
   { name: 'Maanderbroek A30', from: [-4174, 10, 2190], to: [-4168, 8, 2138], look: [-4166, 1.5, 2083] },
@@ -481,7 +488,7 @@ async function run(search, cache, trial) {
     if (!startupOnly && (cache === 'warm' || expansionOnly || municipalCoverage)) {
       for (const shot of shots) {
         samples.push({ name: shot.name, ...await sampleShot(shot, frameCount) });
-        if (screenshots && ['facades', 'trees', 'municipal', 'municipality-coverage', 'expansion', 'parcels', 'parcel-map', 'expansion-landmarks', 'lunteren', 'lunteren-landmarks'].includes(suite)) {
+        if (screenshots && ['facades', 'trees', 'municipal', 'municipality-coverage', 'expansion', 'parcels', 'parcel-map', 'expansion-landmarks', 'lunteren', 'lunteren-landmarks', 'curb-pilot'].includes(suite)) {
           const label = shot.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
           const { data } = await send('Page.captureScreenshot', { format: 'jpeg', quality: 90 });
           const variant = suite === 'trees'
@@ -489,7 +496,7 @@ async function run(search, cache, trial) {
             : suite === 'municipal' ? [url.port, url.searchParams.get('municipalDetail') ?? 'on', trial].join('-')
               : ['parcels', 'parcel-map'].includes(suite) ? [url.searchParams.get('parcelDetail') ?? 'on', url.searchParams.get('parcelTiles') ?? 'on',
                 url.searchParams.get('utilityDetail') ?? 'on', trial].join('-')
-                : url.port;
+                : suite === 'curb-pilot' ? [url.searchParams.get('curbs') ?? 'on', trial].join('-') : url.port;
           await writeFile(join(screenshots, `${variant}-${label}.jpg`), Buffer.from(data, 'base64'));
         }
       }

@@ -86,7 +86,7 @@ export function emitSurface(polygon, positions, terrainHeightAt, lift = 0) {
   }
 }
 
-export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts) {
+export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts, vertexLift = false) {
   const { getTerrain, getExpansionTerrain, getExpansionTerrainPatch, getTerrainPatch, terrainHeightAt } = terrain;
   const { gradeCuts, localGradeSurface, clipEdeGround } = grade;
   const field = getTerrain();
@@ -95,6 +95,7 @@ export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, m
   const position = geometry.getAttribute('position'), index = geometry.index;
   if (!position.count) return geometry;
   const lift = position.getY(0), positions = [];
+  let liftAt = () => lift;
   const candidate = wayId && localGradeSurface(wayId);
   let local;
   let cuts = [];
@@ -111,10 +112,11 @@ export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, m
   }
   const emitCoarse = polygon => {
     if (!cuts.length) {
-      emitSurface(polygon, positions, terrainHeightAt, lift);
+      emitSurface(vertexLift ? polygon.map(p => ({ ...p, y: terrainHeightAt(p.x, p.z) + liftAt(p) })) : polygon,
+        positions, terrainHeightAt, lift);
       return;
     }
-    const surface = polygon.map(p => ({ ...p, y: terrainHeightAt(p.x, p.z) + lift }));
+    const surface = polygon.map(p => ({ ...p, y: terrainHeightAt(p.x, p.z) + liftAt(p) }));
     for (const part of clipEdeGround(surface, cuts)) emitSurface(part, positions, terrainHeightAt);
   };
   const emit = !local ? emitCoarse : polygon => {
@@ -127,7 +129,7 @@ export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, m
         ? [clipSurface(piece, d), clipSurface(piece, p => -d(p))] : [piece]);
     }
     for (const piece of pieces) {
-      const surface = piece.map(p => ({ ...p, y: local.heightAt(p.x, p.z) + lift }));
+      const surface = piece.map(p => ({ ...p, y: local.heightAt(p.x, p.z) + liftAt(p) }));
       for (const part of cuts.length ? clipEdeGround(surface, cuts) : [surface]) emitSurface(part, positions, terrainHeightAt);
     }
   };
@@ -209,6 +211,14 @@ export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, m
   for (let i = 0; i < count; i += 3) {
     const ia = vertexIndex(i), ib = vertexIndex(i + 1), ic = vertexIndex(i + 2);
     const a = point(ia), b = point(ib), c = point(ic);
+    if (vertexLift) {
+      const dx = b.x - a.x, dz = b.z - a.z, ex = c.x - a.x, ez = c.z - a.z;
+      const det = dx * ez - dz * ex;
+      if (Math.abs(det) < 1e-9) continue;
+      const ay = position.getY(ia), dy = position.getY(ib) - ay, ey = position.getY(ic) - ay;
+      liftAt = p => ay + (dy * ((p.x - a.x) * ez - (p.z - a.z) * ex) +
+        ey * (dx * (p.z - a.z) - dz * (p.x - a.x))) / det;
+    }
     const start = positions.length;
     drapeTriangle([a, b, c]);
     if (!source || positions.length === start) continue;

@@ -4,7 +4,7 @@ export function createPavingWorker(prepare) {
   return function request(tile) {
     if (!available) return null;
     try {
-      worker ??= new Worker(new URL('./ede-paving-worker.js?v=20261124-workers', import.meta.url), { type: 'module' });
+      worker ??= new Worker(new URL('./ede-paving-worker.js?v=20261126-curbs', import.meta.url), { type: 'module' });
       const current = worker;
       const { input, transfers } = prepare(tile);
       let resolve;

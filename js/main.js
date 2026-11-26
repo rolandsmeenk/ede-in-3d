@@ -21,11 +21,11 @@ import { EDE_BIKE_STYLES } from './ede-bikes.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
-import { LightingSystem } from './lighting.js?v=20261121-night-lighting';
-import { createLiveWeather, formatWeatherTime, presetRinkIce, weatherCondition } from './ede-weather.js?v=20261122-rink-ice';
+import { LightingSystem } from './lighting.js?v=20261126-moon';
+import { createLiveWeather, formatWeatherTime, photogenicWeather, presetRinkIce, weatherCondition } from './ede-weather.js?v=20261126-photo-weather';
 import { loadEdePondLevels, resolveFrankenengLevels, watchFrankenengLevels } from './ede-water-levels.js';
 import { loadEdeWaterWorks, buildEdeWaterWorks } from './ede-water-works-world.js';
-import { createWeatherPrecipitation } from './weather-precipitation.js';
+import { createWeatherPrecipitation } from './weather-precipitation.js?v=20261126-wind';
 import { updateSceneWind } from './tsl-materials.js';
 import { createKiteFlyers } from './ede-kites.js';
 import { formatEdeTime } from './live-sky.js';
@@ -59,6 +59,7 @@ import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js?v=20
 import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
+import { loadEdeCurbs } from './ede-curbs.js';
 import { buildEdeRoadFurniture, loadEdeRoadFurniture, roadFurnitureReplacementIds } from './road-furniture-manager.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
 import { loadEdeCorridorFallbacks } from './ede-facades.js';
@@ -173,7 +174,7 @@ export async function initApp() {
   await showLoadingStage('Loading Ede’s map and timetables…');
   const useUtilityDetails = enabled('detail') && enabled('utilityDetail');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult] = await Promise.allSettled([
     loadTerrain({ expanded: query.get('terrainTiles') !== 'off' }), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces({ north: EDE_DATA.meta.north, fringe: Boolean(EDE_DATA.meta.travelBounds) }), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
@@ -189,7 +190,9 @@ export async function initApp() {
     loadExteriorBagFootprints(),
     enabled('roadFurniture') ? loadEdeRoadFurniture() : null,
     loadEdePondLevels(),
+    enabled('curbs') ? loadEdeCurbs() : null,
   ]);
+  if (curbResult.status === 'rejected') console.warn('[curbs] using original pavement:', curbResult.reason);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
     container.dataset.napOrigin = String(terrainResult.value.napOrigin);
@@ -589,8 +592,20 @@ export async function initApp() {
   const waterStatus = document.getElementById('live-water-status');
   const weatherStatus = document.getElementById('live-weather-status');
   const weatherClock = document.getElementById('live-weather-time');
+  const photoWeather = document.getElementById('photo-weather');
+  const photoWeatherStatus = document.getElementById('photo-weather-status');
+
+  function updatePhotoWeather(current, now = Date.now()) {
+    photoWeather.hidden = !current;
+    if (!current) return;
+    const moments = photogenicWeather(current, now);
+    const text = moments.join(' · ') || 'No photo opportunities flagged right now.';
+    if (photoWeatherStatus.textContent !== text) photoWeatherStatus.textContent = text;
+  }
+
   const liveWeather = createLiveWeather({
     onChange({ status, current }) {
+      updatePhotoWeather(status === 'fresh' ? current : null);
       if (status !== 'off') setEdeSportsIceCover(status === 'fresh' || status === 'stale' ? (current?.rinkIce ?? 0) : 0);
       weatherClock.hidden = !current;
       weatherClock.textContent = current ? formatWeatherTime(current.observedAt) : '';
@@ -612,12 +627,7 @@ export async function initApp() {
   if (lunterenButton) lunterenButton.hidden = !TELEPORT_LOCATIONS['lunteren-centrum'];
   const hudToggleBtn = document.getElementById('btn-toggle-hud');
   const modeSwitch = document.getElementById('mode-switch');
-  const mapAttribution = document.getElementById('map-attribution');
-  mapAttribution.open = !touchControls.available;
-  touchControls.onAvailabilityChange = available => {
-    mapAttribution.open = !available;
-    placeModeIndicator();
-  };
+  touchControls.onAvailabilityChange = () => placeModeIndicator();
 
   const elFps = document.getElementById('hud-fps');
   const elMode = document.getElementById('hud-active-mode');
@@ -734,6 +744,7 @@ export async function initApp() {
     liveClock.dateTime = now.toISOString();
     liveDate.textContent = localDate.format(now);
     liveDate.dateTime = liveClock.dateTime;
+    updatePhotoWeather(liveWeather.state.status === 'fresh' ? liveWeather.state.current : null, now.getTime());
     if (!document.hidden) {
       liveTimeTimer = setTimeout(refreshLiveTime, 60000 - Date.now() % 60000);
     }

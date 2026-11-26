@@ -18,6 +18,7 @@ FIELDS = (
 PARK_LATITUDE = 52.03207
 PARK_LONGITUDE = 5.61268
 PARK_FIELDS = ('wind_speed_80m', 'wind_direction_80m', 'wind_speed_120m', 'wind_direction_120m')
+PHOTO_FIELDS = ('relative_humidity_2m', 'dew_point_2m')
 FRESH_SECONDS = 900
 RETRY_SECONDS = 60
 
@@ -28,8 +29,9 @@ def fetch_weather():
     url = 'https://api.open-meteo.com/v1/forecast?' + urlencode({
         'latitude': f"{affine['lat0']},{PARK_LATITUDE}",
         'longitude': f"{affine['lon0']},{PARK_LONGITUDE}",
-        'current': ','.join((*FIELDS, *PARK_FIELDS)), 'timezone': 'GMT', 'timeformat': 'unixtime',
+        'current': ','.join((*FIELDS, *PARK_FIELDS, *PHOTO_FIELDS)), 'timezone': 'GMT', 'timeformat': 'unixtime',
         'hourly': 'temperature_2m', 'past_hours': 48, 'forecast_hours': 1,
+        'daily': 'moonrise,moonset,moon_phase', 'past_days': 1, 'forecast_days': 2,
         'temperature_unit': 'celsius', 'wind_speed_unit': 'kmh', 'precipitation_unit': 'mm',
     })
     with urlopen(url, timeout=5) as response:

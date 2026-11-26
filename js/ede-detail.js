@@ -1,4 +1,6 @@
 import * as THREE from 'three/webgpu';
+import { addMemberStroke, createMemberStrokes, memberStrokeMaterial, memberStrokeMesh } from './ede-mast-strokes.js';
+import { transparentEffectMRT } from './tsl-materials.js';
 import { drapeEdeSurface, edeBounds, edePolygonGeometry, overlapsEdeTravelPavement } from './ede-geometry.js';
 import { playgroundEquipment } from './ede-playground-equipment.js';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
@@ -303,6 +305,11 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     batch(kind, x, z, source, range).instances.push([x, y, z, sx, sy, sz, angle, paint]);
   }
 
+  function stroke(source, kind, a, b, radius, paint, range) {
+    const target = batch(kind, (a.x + b.x) / 2, (a.z + b.z) / 2, source, range);
+    addMemberStroke(target.strokes ??= createMemberStrokes(), [a.x, a.y, a.z], [b.x, b.y, b.z], radius, paint);
+  }
+
   function face(target, points, paint) {
     const base = target.positions.length / 3;
     for (const p of points) target.positions.push(p.x, p.y, p.z);
@@ -416,6 +423,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const solidRail = feature.solid;
     const rail = feature.type === 'guardrail' && !solidRail;
     const fence = feature.type === 'fence' || feature.type === 'balustrade';
+    const openFence = fence && !style?.solid && !solidRail;
     const width = dimension(feature.width, solidRail ? 0.45 : spec.width), height = dimension(feature.height, spec.height);
     const paint = Number.isInteger(feature.color) ? feature.color : style?.color ?? (solidRail ? 0x9a9a94 : spec.color);
     const crossSection = parcelTile ? { taper: style?.taper, caps: true, range: 112 }
@@ -447,9 +455,15 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1], b = points[i], size = Math.hypot(b.x - a.x, b.z - a.z);
       const low = rail ? Math.max(0, height - 0.29) : fence && !style?.solid ? height - 0.06 : -0.025;
-      stripe(feature.source, edges[i - 1], edges[i], low, height, paint, crossSection);
-      if (fence && !style?.solid) {
-        stripe(feature.source, edges[i - 1], edges[i], height * 0.42, height * 0.42 + 0.045, paint, crossSection);
+      if (openFence) {
+        for (const [lift, radius] of [[height - 0.03, 0.03], [height * 0.42 + 0.0225, 0.0225]]) {
+          stroke(feature.source, 'fenceRail', at(a, lift), at(b, lift), radius, paint, crossSection?.range);
+        }
+      } else {
+        stripe(feature.source, edges[i - 1], edges[i], low, height, paint, crossSection);
+        if (fence && !style?.solid) {
+          stripe(feature.source, edges[i - 1], edges[i], height * 0.42, height * 0.42 + 0.045, paint, crossSection);
+        }
       }
       if (feature.collidable && feature.status !== 'inferred') lineCollider(a, b, width, height);
       if (style?.mesh) {
@@ -470,9 +484,11 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       if (!spacing || solidRail) continue;
       for (; nextPost < size; nextPost += spacing) {
         const t = nextPost / size, thickness = rail ? 0.12 : 0.075;
-        instance(feature.source, 'box', lerp(a.x, b.x, t), lerp(a.y, b.y, t) + height / 2, lerp(a.z, b.z, t),
-          thickness, height, thickness, Math.atan2(b.x - a.x, b.z - a.z), paint,
-          parcelTile ? 60 : feature.source === 'parcel' ? (style?.solid ? 75 : 175) : undefined);
+        const x = lerp(a.x, b.x, t), y = lerp(a.y, b.y, t), z = lerp(a.z, b.z, t);
+        const range = parcelTile ? 60 : feature.source === 'parcel' ? (style?.solid ? 75 : 175) : undefined;
+        if (openFence) stroke(feature.source, 'fencePost', { x, y, z }, { x, y: y + height, z }, thickness / 2, paint, range);
+        else instance(feature.source, 'box', x, y + height / 2, z, thickness, height, thickness,
+          Math.atan2(b.x - a.x, b.z - a.z), paint, range);
       }
       nextPost -= size;
     }
@@ -627,6 +643,10 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const lower = (along, side) => position(along, beam, side * halfDepth);
     const upper = along => position(along, beam + rise, 0);
     function member(a, b, diameter, shape = 'pole') {
+      if (shape === 'pole') {
+        stroke(feature.source, 'gantryBrace', at(a, 0), at(b, 0), diameter / 2, GALVANIZED);
+        return;
+      }
       axis.set(b.x - a.x, b.y - a.y, b.z - a.z);
       const size = axis.length();
       const rotation = new THREE.Quaternion().setFromUnitVectors(up, axis.divideScalar(size));
@@ -934,7 +954,12 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     const { kind, source, range } = target;
     const signFace = kind === 'sign' || kind === 'directionalSign';
     let mesh;
-    if (target.instances.length) {
+    if (target.strokes) {
+      if (!target.strokes.start.length) continue;
+      resources.strokes ??= memberStrokeMaterial();
+      mesh = memberStrokeMesh(target.strokes, resources.strokes);
+      stats.triangles += mesh.geometry.instanceCount * 2;
+    } else if (target.instances.length) {
       const geometry = shapes[kind];
       mesh = new THREE.InstancedMesh(geometry, kind === 'glass' ? glass : material, target.instances.length);
       target.instances.forEach(([x, y, z, sx, sy, sz, angle, paint], index) => {
@@ -956,9 +981,14 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       if (signFace || kind === 'wireFence') geometry.setAttribute('uv', new THREE.Float32BufferAttribute(target.uv, 2));
       if (!signFace) geometry.setAttribute('color', new THREE.Float32BufferAttribute(target.colors, 3));
       geometry.computeVertexNormals();
-      if (kind === 'wireFence') resources.wire ??= new THREE.MeshStandardNodeMaterial({
-        map: fenceMeshTexture(), vertexColors: true, side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.24,
-      });
+      if (kind === 'wireFence' && !resources.wire) {
+        // Mip levels average the wire coverage. Blend that fraction through to the background.
+        resources.wire = new THREE.MeshStandardNodeMaterial({
+          map: fenceMeshTexture(), vertexColors: true, side: THREE.DoubleSide, roughness: 0.8,
+          transparent: true, depthWrite: false, forceSinglePass: true,
+        });
+        resources.wire.mrtNode = transparentEffectMRT;
+      }
       mesh = new THREE.Mesh(geometry, kind === 'directionalSign' ? directionalSigns : kind === 'sign' ? signs
         : kind === 'wireFence' ? resources.wire : surface);
       stats.triangles += target.indices.length / 3;
@@ -1072,7 +1102,7 @@ export function streamParcelTiles(scene, tiles, resources, webgpu) {
         if (mesh.isInstancedMesh) {
           if (webgpu) mesh.instanceMatrix = new THREE.StorageInstancedBufferAttribute(mesh.instanceMatrix.array, 16);
           mesh.computeBoundingSphere();
-        } else mesh.geometry.computeBoundingSphere();
+        } else if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
         const { center, radius } = mesh.boundingSphere ?? mesh.geometry.boundingSphere;
         const reach = (mesh.userData.cullDistance ?? 180) + radius;
         mesh.visible = camera.distanceToSquared(center) < reach * reach;
