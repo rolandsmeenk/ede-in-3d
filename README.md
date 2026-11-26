@@ -83,15 +83,15 @@ Open **Environment** and choose **Live** to follow Ede’s local clock, seasons,
 
 ### Four seasons at Kasteel Hoekelum
 
-All four views use the same camera position and midday lighting. The winter view shows settled snow and a frozen moat.
+All four views use the same camera. The sun is at its 13:00 local position on a representative date in each season.
 
-| Spring | Summer |
+| Spring rain | Summer sunshine |
 | --- | --- |
-| ![Fresh spring foliage around Kasteel Hoekelum and its moat](assets/screenshots/hoekelum-spring.webp) | ![Full green summer canopies around Kasteel Hoekelum and its moat](assets/screenshots/hoekelum-summer.webp) |
+| ![Spring rain over fresh foliage and the moat at Kasteel Hoekelum](assets/screenshots/hoekelum-spring.webp) | ![Clear summer sky above Kasteel Hoekelum and its green trees](assets/screenshots/hoekelum-summer.webp) |
 
-| Autumn | Winter |
+| Wind-driven autumn rain | Winter snowfall |
 | --- | --- |
-| ![Golden autumn trees along the moat at Kasteel Hoekelum](assets/screenshots/hoekelum-autumn.webp) | ![Snow on the roofs and bridge at Kasteel Hoekelum above the frozen moat](assets/screenshots/hoekelum-winter.webp) |
+| ![Wind-driven rain crosses the moat in front of golden autumn trees at Kasteel Hoekelum](assets/screenshots/hoekelum-autumn.webp) | ![Snowflakes fall over the snowy roofs, bridge and frozen moat at Kasteel Hoekelum](assets/screenshots/hoekelum-winter.webp) |
 
 ## Documentation
 
