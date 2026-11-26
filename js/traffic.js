@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { buildRoadNetwork, isMotorwayContinuation, roadEdgeKey } from './road-network.js?v=20261122-startup';
 import { ACV_TRUCK, buildAcvTruck } from './ede-refuse-truck.js';
+import { CARGO_TRUCK_SPECS, buildCargoTruckGeometry, createCargoTruckMaterial } from './ede-cargo-truck.js';
+import { dutchVehicleKind, cargoShare } from './ede-vehicle-mix.js';
 import { TRACTOR, TRACTOR_PALETTES, buildEdeTractor } from './ede-tractor.js';
 import { AMBULANCE, buildEdeAmbulance } from './ede-ambulance.js?v=20261122-p2000';
 import { AMBULANCE_STOPS } from './ede-ambulance-routes.js';
@@ -8,7 +10,7 @@ import { FIRE_ENGINE, buildEdeFireEngine } from './ede-fire-engine.js';
 import { createEmergencyAlerts } from './ede-emergency.js';
 import { TRACTOR_FARMS } from './ede-tractor-farms.js';
 import { createServiceTrips, farmTrailPose } from './ede-service-trips.js?v=20261122-p2000';
-import { bindEdeFittedLanes, fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
+import { bindApeldoornsewegCurves, bindEdeFittedLanes, fittedLanePoint, projectFittedLane } from './ede-lane-geometry.js';
 import { indexLocalRoads, localSegmentLength, pickByArea } from './traffic-area.js';
 import { busEntryAt, busRouteDistance, busTrackingSpeed, createEdeBusTracker, prepareEdeBusPaths } from './ede-bus-traffic.js?v=20261122-startup';
 import { terrainHeightAt } from './terrain.js';
@@ -51,6 +53,7 @@ import { buildEdeBike, EDE_BIKE_FIT, EDE_BIKE_STYLES, EDE_MOUNTAIN_BIKE_STYLE } 
 // Vehicles replenish around the player; pedestrian-system.js manages the nearby walking population.
 
 const NUM_CARS = 112;
+const CARGO_CAPACITY = { rigid: 5, semi: 8 };
 const NUM_BUSES = 24;
 const NUM_BIKES = 96;
 const MAX_MOUNTAIN_BIKES = 5;
@@ -72,10 +75,13 @@ const AVOID_HOLD = 1.2;
 // path, collision half-length & mass, and the engine voice (audio-sources.js)
 const CAR_KINDS = {
   taxi: { half: 2.25, halfWidth: 0.86, axle: 1.38, halfL: 2.18, mass: 1600, engine: 'sedan' },
+  hatchback: { half: 2.01, halfWidth: 0.82, axle: 1.28, halfL: 1.94, mass: 1250, engine: 'sedan' },
+  estate: { half: 2.35, halfWidth: 0.87, axle: 1.4, halfL: 2.27, mass: 1650, engine: 'sedan' },
   sedan: { half: 2.25, halfWidth: 0.86, axle: 1.38, halfL: 2.18, mass: 1600, engine: 'sedan' },
   suv: { half: 2.3, halfWidth: 0.92, axle: 1.4, halfL: 2.22, mass: 2100, engine: 'suv' },
   minivan: { half: 2.6, halfWidth: 0.92, axle: 1.52, halfL: 2.52, mass: 2000, engine: 'sedan' },
   pickup: { half: 2.86, halfWidth: 0.96, axle: 1.92, halfL: 2.78, mass: 2400, engine: 'suv' },
+  compactVan: { half: 2.22, halfWidth: 0.84, axle: 1.375, halfL: 2.14, mass: 1650, engine: 'sedan' },
   van: { half: 2.96, halfWidth: 0.95, axle: 1.8, halfL: 2.88, mass: 2700, engine: 'suv' }
 };
 
@@ -140,7 +146,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // 0. ROAD NETWORK
   // =========================================================================
   const network = buildRoadNetwork(sidewalks, obstacles, signalIntersections, getEdeGrade(), pilot.streetFeatures?.signs);
-  const fitted = bindEdeFittedLanes(network, pilot.laneFits, edge => `${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer ?? 0}`);
+  const laneKey = edge => `${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer ?? 0}`;
+  const fitted = bindEdeFittedLanes(network, pilot.laneFits, laneKey);
+  bindApeldoornsewegCurves(network, laneKey);
   const { nodes, edges, connector, curvePoint } = network;
   const farmTrips = createServiceTrips(network, roadTraffic, TRACTOR_FARMS, 'tractor');
   const ambulanceTrips = createServiceTrips(network, roadTraffic, AMBULANCE_STOPS, 'ambulance');
@@ -190,7 +198,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const controls=pilot.enabled ? createEdeDrivingControls(pilot.streetFeatures,network) : null;
   const railStop=pilot.railStop;
   function trafficProfile(v) {
-    return v.roadProfile ?? (v.bodyType === 'van' ? 'van' : 'ambient');
+    return v.roadProfile ?? (v.bodyType === 'van' || v.bodyType === 'compactVan' || v.bodyType === 'pickup' ? 'van' : 'ambient');
   }
   const roadMode = v => v.bus ? BUS : trafficProfile(v) === 'ambient' ? CAR : VAN;
   function ambientLanes(v, e) {
@@ -261,119 +269,42 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   carWheelRightGeo.setAttribute('wheelStyle', carWheelStyles);
   const carWheelMat = createCarWheelMaterial({ instanced: true });
 
-  const taxiYellow = new THREE.Color(0xffbe14);
-  const boroGreen = new THREE.Color(0x5cae3e);
   const policeWhite = new THREE.Color(0xf6f9fc);
-  // NYC street fleet palettes: white/black/grey/silver dominate with TLC black cars, blue/red/green accents,
-  // metallic vs solid clearcoat, chrome/blackout trim & multi-spoke wheel styles encoded in carState.w.
+  const palette = (colors, trim = 0) => colors.map((hex, i) => ({
+    col: new THREE.Color(hex), style: carStyleCode({ metallic: i % 3 !== 0, trim, wheel: i % 4 })
+  }));
+  const carPalette = palette([
+    0x181b21, 0xb6bbc3, 0x454a51, 0xf2f3f4, 0x262b31, 0x8b919a,
+    0x203e66, 0x62676f, 0xecedef, 0x22252b, 0x8c272f, 0x46554f, 0xb3bdc8
+  ]);
+  const vanPalette = palette([0xf2f3f4, 0xe8eaed, 0xaeb5bf, 0xf3f4f5, 0x3c424d, 0xf3f4f5, 0x243c66], 2);
   const fleetStyles = {
-    sedan: [
-      { col: new THREE.Color(0x12151a), style: carStyleCode({ livery: 3, metallic: 0, trim: 1, wheel: 1 }) }, // TLC / Uber Black Car
-      { col: new THREE.Color(0x161a20), style: carStyleCode({ livery: 3, metallic: 1, trim: 2, wheel: 2 }) }, // TLC Obsidian Blackout
-      { col: new THREE.Color(0xf2f4f7), style: carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: 0 }) }, // Alpine White Sedan
-      { col: new THREE.Color(0xe6eaef), style: carStyleCode({ livery: 4, metallic: 1, trim: 2, wheel: 2 }) }, // Pearl White Sport (black roof)
-      { col: new THREE.Color(0xc8d0d8), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }, // Liquid Silver Metallic
-      { col: new THREE.Color(0x9aa2ac), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 1 }) }, // Tungsten Silver Metallic
-      { col: new THREE.Color(0x52575e), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 2 }) }, // Graphite Grey Metallic
-      { col: new THREE.Color(0x363b42), style: carStyleCode({ livery: 0, metallic: 1, trim: 2, wheel: 3 }) }, // Charcoal Dark Grey
-      { col: new THREE.Color(0x1c2026), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }, // Jet Black Metallic
-      { col: new THREE.Color(0x1d3b6c), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) }, // Deep Navy Metallic
-      { col: new THREE.Color(0x285086), style: carStyleCode({ livery: 4, metallic: 1, trim: 2, wheel: 2 }) }, // Atlantic Blue Sport (black roof)
-      { col: new THREE.Color(0x741d22), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }  // Crimson Red Metallic
-    ],
-    suv: [
-      { col: new THREE.Color(0x101318), style: carStyleCode({ livery: 3, metallic: 0, trim: 1, wheel: 1 }) }, // Executive Black Escalade / Suburban TLC
-      { col: new THREE.Color(0x171b22), style: carStyleCode({ livery: 3, metallic: 1, trim: 2, wheel: 3 }) }, // Uber Black SUV (blackout)
-      { col: new THREE.Color(0xf0f3f7), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }, // Pearl White Luxury SUV
-      { col: new THREE.Color(0xe4e8ed), style: carStyleCode({ livery: 4, metallic: 0, trim: 2, wheel: 2 }) }, // Glacier White SUV (black roof)
-      { col: new THREE.Color(0x3a434d), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 2 }) }, // Slate Grey Metallic SUV
-      { col: new THREE.Color(0x5c636b), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) }, // Gunmetal Grey SUV
-      { col: new THREE.Color(0xbec6cf), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }, // Silver Metallic Crossover
-      { col: new THREE.Color(0x181c22), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 3 }) }, // Onyx Black SUV
-      { col: new THREE.Color(0x20385c), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) }, // Midnight Blue SUV
-      { col: new THREE.Color(0x28382e), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 0 }) }, // Forest Green Metallic SUV
-      { col: new THREE.Color(0x682024), style: carStyleCode({ livery: 4, metallic: 1, trim: 2, wheel: 2 }) }, // Burgundy Crossover (black roof)
-      { col: new THREE.Color(0x787670), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) }  // Urban Putty Grey Crossover
-    ],
-    // Minivans: family colours plus TLC / Uber XL black
-    minivan: [
-      { col: new THREE.Color(0x111419), style: carStyleCode({ livery: 3, metallic: 1, trim: 1, wheel: 1 }) }, // TLC / Uber XL Black
-      { col: new THREE.Color(0xf0f2f5), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }, // Blizzard Pearl
-      { col: new THREE.Color(0xaab2bb), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 1 }) }, // Celestial Silver
-      { col: new THREE.Color(0x4a5058), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 2 }) }, // Modern Steel Grey
-      { col: new THREE.Color(0x1a1d22), style: carStyleCode({ livery: 0, metallic: 1, trim: 2, wheel: 3 }) }, // Midnight Black
-      { col: new THREE.Color(0x26354f), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }, // Obsidian Blue
-      { col: new THREE.Color(0xe9ecef), style: carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: 1 }) }, // Super White
-      { col: new THREE.Color(0x5a1f24), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }  // Velvet Red
-    ],
-    // Pickups: black, white & silver with chrome or blackout grilles
-    pickup: [
-      { col: new THREE.Color(0x14171b), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) }, // Agate Black (chrome)
-      { col: new THREE.Color(0xf2f3f5), style: carStyleCode({ livery: 0, metallic: 0, trim: 1, wheel: 0 }) }, // Oxford White (chrome)
-      { col: new THREE.Color(0x9da4ab), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 2 }) }, // Iconic Silver
-      { col: new THREE.Color(0x3d434a), style: carStyleCode({ livery: 0, metallic: 1, trim: 2, wheel: 3 }) }, // Carbonized Grey (blackout)
-      { col: new THREE.Color(0x1e2f4f), style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) }, // Antimatter Blue
-      { col: new THREE.Color(0x8f1a1d), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) }, // Race Red (blackout)
-      { col: new THREE.Color(0xf2f3f5), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) }, // Oxford White (blackout)
-      { col: new THREE.Color(0x2c3a30), style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 0 }) }  // Forest Green
-    ],
-    // Delivery vans: mostly fleet white, black plastic trim; never two-tone, whose black roof would cover the van's
-    // cargo box (part of its glasshouse loft)
-    van: [
-      { col: new THREE.Color(0xf4f5f6), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 0 }) }, // Fleet White
-      { col: new THREE.Color(0xeef0f2), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) }, // Arctic White (dark wheels)
-      { col: new THREE.Color(0xb9c0c7), style: carStyleCode({ livery: 0, metallic: 1, trim: 2, wheel: 0 }) }, // Brilliant Silver
-      { col: new THREE.Color(0xf4f5f6), style: carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: 1 }) }, // Fleet White
-      { col: new THREE.Color(0x8e959c), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) }, // Pebble Grey
-      { col: new THREE.Color(0xf0f1f2), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) }, // Fleet White (dark wheels)
-      { col: new THREE.Color(0x15181c), style: carStyleCode({ livery: 0, metallic: 1, trim: 2, wheel: 3 }) }, // Obsidian Black
-      { col: new THREE.Color(0xf4f5f6), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 0 }) }, // Fleet White
-      { col: new THREE.Color(0x1f3354), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 0 }) }, // Navy Blue
-      { col: new THREE.Color(0xf4f5f6), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 1 }) }, // Fleet White
-      { col: new THREE.Color(0x9b1c1f), style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 0 }) }  // Flame Red
-    ]
+    taxi: palette([0x1a1d22, 0xb4b9c1, 0xf3f5f6]),
+    hatchback: carPalette, estate: carPalette, sedan: carPalette, suv: carPalette, minivan: carPalette,
+    compactVan: vanPalette, van: vanPalette, pickup: palette([0x34383d, 0xe5e6e8, 0x25384e])
   };
-  // Patrol cars use the fleet's compact crossover body. Green Boro cabs use sedans or SUVs.
-  const FLEET_MIX = ['taxi', 'sedan', 'van', 'sedan', 'suv', 'taxi', 'suv', 'minivan', 'suv', 'pickup',
-    'taxi', 'sedan', 'suv', 'van', 'suv', 'taxi', 'minivan', 'sedan', 'suv', 'sedan'];
 
   const cars = [];
   const counts = Object.fromEntries(Object.keys(CAR_KINDS).map((kind) => [kind, 0]));
   let policeCount = 0;
+  const mixOffset = Math.random();
 
   for (let i = 0; i < NUM_CARS; i++) {
-    const isPolice = (i % 50) === 6 || (i % 100) === 56;
-    const isBoroTaxi = !isPolice && (i % 25) === 3;
-    let bodyType = FLEET_MIX[i % FLEET_MIX.length];
-    if (isPolice) bodyType = 'suv';
-    else if (isBoroTaxi) bodyType = i % 2 === 0 ? 'suv' : 'sedan';
-
-    let col;
-    let style;
-    if (bodyType === 'taxi') {
-      col = taxiYellow;
-      style = carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: i % 2 });
-    } else if (isPolice) {
-      col = policeWhite;
-      style = carStyleCode({ livery: 1, metallic: 0, trim: 2, wheel: 0 });
-      policeCount++;
-    } else if (isBoroTaxi) {
-      col = boroGreen;
-      style = carStyleCode({ livery: 2, metallic: 0, trim: 0, wheel: 0 });
-    } else {
-      const palette = fleetStyles[bodyType];
-      ({ col, style } = palette[counts[bodyType] % palette.length]);
-    }
-    counts[bodyType]++;
+    const isPolice = i % 50 === 6;
+    const bodyType = isPolice ? 'suv' : dutchVehicleKind((i * 0.61803398875 + mixOffset) % 1);
+    const styles = fleetStyles[bodyType];
+    const styleIndex = counts[bodyType]++ % styles.length;
+    const { col, style } = isPolice
+      ? { col: policeWhite, style: carStyleCode({ livery: 1, trim: 2 }) }
+      : styles[styleIndex];
+    if (isPolice) policeCount++;
 
     const kind = CAR_KINDS[bodyType];
     const car = createVehicle(false, kind.half, kind.halfWidth, kind.axle, CAR_DRIVER, 10 + (i % 5) * 0.9);
-    // paint as float32 values, so renderCar() can tell whether an instance slot's paint changes by comparing
     const paint = [Math.fround(col.r), Math.fround(col.g), Math.fround(col.b)];
-    const parkingStyle = bodyType==='sedan' && !isPolice && !isBoroTaxi
-      ? fleetStyles.sedan.findIndex(entry=>entry.col===col && entry.style===style) : null;
+    const parkingStyle = bodyType === 'sedan' ? styleIndex : null;
     Object.assign(car, { isPolice, bodyType, paint, style, halfL: kind.halfL, mass: kind.mass, engine: kind.engine,
-      parkingStyle: parkingStyle>=0 && parkingStyle!==null ? parkingStyle : null, parkingTrip:null });
+      parkingStyle, parkingTrip: null });
     cars.push(car);
   }
 
@@ -450,7 +381,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   lightbarGeometry.setAttribute('beaconFlash', beaconFlash);
   const policeLightbar = new THREE.InstancedMesh(lightbarGeometry, createLightbarMaterial(), policeCount);
   policeLightbar.name = 'Dutch police blue lightbars';
-  const carShadowInst = new THREE.InstancedMesh(unitPlane, contactShadowMat, NUM_CARS);
+  const carShadowInst = new THREE.InstancedMesh(unitPlane, contactShadowMat, NUM_CARS + CARGO_CAPACITY.rigid + CARGO_CAPACITY.semi);
   carShadowInst.renderOrder = 998;
 
   for (const m of bodyMeshes) m.castShadow = m.receiveShadow = true;
@@ -605,12 +536,28 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const refuseTruck = modeledVehicle(buildAcvTruck(), ACV_TRUCK, 'refuse', BUS_DRIVER, 'bus');
   refuseTruck.refuseTruck = true;
   const refuseTrucks = [refuseTruck];
-  const tractors = Array.from({ length: 2 }, () => modeledVehicle(buildEdeTractor(), TRACTOR, 'tractor', BUS_DRIVER, 'bus'));
+  const tractors = [modeledVehicle(buildEdeTractor(), TRACTOR, 'tractor', BUS_DRIVER, 'bus')];
   const ambulances = [modeledVehicle(buildEdeAmbulance(), AMBULANCE, 'ambulance', CAR_DRIVER, 'suv')];
   const fireEngines = [modeledVehicle(buildEdeFireEngine(), FIRE_ENGINE, 'fire', BUS_DRIVER, 'bus')];
   const responseFleet = { police: cars.filter(v => v.isPolice), ambulance: ambulances, fire: fireEngines };
   const modeledVehicles = [...refuseTrucks, ...tractors, ...ambulances, ...fireEngines];
-  const vehicles = [...cars, ...buses, ...bikes, ...modeledVehicles];
+  const cargoMaterial = createCargoTruckMaterial();
+  const cargoFleets = Object.entries(CARGO_CAPACITY).map(([roadProfile, capacity]) => {
+    const spec = CARGO_TRUCK_SPECS[roadProfile];
+    const mesh = new THREE.InstancedMesh(buildCargoTruckGeometry(spec), cargoMaterial, capacity);
+    mesh.name = `Ede cargo: ${roadProfile}`;
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    mesh.count = 0;
+    group.add(mesh);
+    const pool = Array.from({ length: capacity }, () => Object.assign(
+      createVehicle(false, spec.length / 2, spec.width / 2, spec.axle, BUS_DRIVER, spec.speed),
+      { roadProfile, cargo: mesh, spec, halfL: spec.length / 2, mass: spec.mass, maxSpeed: spec.speed, engine: 'bus' }
+    ));
+    return { roadProfile, pool, mesh, population: { cursor: 0 }, target: 0 };
+  });
+  const cargoTrucks = cargoFleets.flatMap(({ pool }) => pool);
+  const vehicles = [...cars, ...buses, ...bikes, ...modeledVehicles, ...cargoTrucks];
 
   // =========================================================================
   // 3. PEDESTRIAN SYSTEM
@@ -623,7 +570,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const nearFoot = activeTravel ? [] : null;
   const nearBikes = [], nearMountainBikes = [];
   const queryLocal = indexLocalRoads(edges.filter(e => !e.busExclusive), nodes.filter(n => n.signal));
-  const vehicleSpawns = { ambient: [], van: [], refuse: [], tractor: [], ambulance: [], fire: [] };
+  const vehicleSpawns = { ambient: [], van: [], refuse: [], tractor: [], ambulance: [], fire: [], rigid: [], semi: [] };
   const vehicleSpawnPools = Object.entries(vehicleSpawns);
   const bikeSpawns = [], mountainBikeSpawns = [], footSpawns = [];
   let carTarget = 0, bikeTarget = 0, mountainBikeTarget = 0, pedTarget = 0;
@@ -854,8 +801,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         const lanes = e[`${kind}Lanes`]?.length;
         if (!lanes || (kind === 'refuse' && e.len <= 40)) continue;
         const neighborhood = e.roadKind === 'residential' || e.roadKind === 'living_street';
-        const weight = kind === 'tractor' && neighborhood ? 0.14 : 1;
-        pool.push({ segment: e, end: (pool.at(-1)?.end || 0) + lanes * areaPerLane * weight });
+        const weight = kind === 'rigid' || kind === 'semi' ? cargoShare(e, kind)
+          : kind === 'tractor' && neighborhood ? 0.14 : 1;
+        if (weight > 0) pool.push({ segment: e, end: (pool.at(-1)?.end || 0) + lanes * areaPerLane * weight });
       }
       roadArea += areaPerLane * Math.max(carLanes, vanLanes);
     }
@@ -883,6 +831,14 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     }
     const activity = Math.min(1, 0.24 + 0.76 * roadTraffic.profile);
     carTarget = Math.min(NUM_CARS, Math.round(roadArea / 640));
+    for (const fleet of cargoFleets) {
+      const expected = (vehicleSpawns[fleet.roadProfile].at(-1)?.end ?? 0) / 640;
+      // Give fractional demand time on the road, even when a corridor averages less than one truck nearby.
+      const phase = (clock / 45 + (fleet.roadProfile === 'semi' ? 0.37 : 0)) % 1;
+      const target = Math.floor(expected) + Number(expected % 1 > phase);
+      fleet.target = Math.min(fleet.pool.length, carTarget, target);
+      carTarget -= fleet.target;
+    }
     bikeTarget = Math.min(NUM_BIKES, Math.round((bikeSpawns.at(-1)?.end || 0) * activity / 285));
     mountainBikeTarget = Math.min(MAX_MOUNTAIN_BIKES, Math.round(trailLength * activity / 170));
     pedTarget = Math.min(96, Math.round(footArea * activity / 320));
@@ -1014,8 +970,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     return Math.min(roadTraffic.limit(v.edge), v.conn ? roadTraffic.limit(v.move.to) : Infinity, v.maxSpeed ?? Infinity);
   }
 
+  function vehicleCruise(v, edge) {
+    const motorwayCruise = !v.bus && !v.cargo && (edge.motorway || edge.motorwayLink);
+    const desired = motorwayCruise ? roadTraffic.limit(edge) * (0.78 + 0.015 * v.v0) : v.v0;
+    return roadTraffic.cruise(edge, desired);
+  }
   function freeAcc(v) {
-    const cruise = v.liveCruise ?? roadTraffic.cruise(v.edge, v.v0);
+    const cruise = v.liveCruise ?? vehicleCruise(v, v.edge);
     return v.driver.a * (1 - (v.speed / Math.max(0.5, Math.min(roadSpeed(v), cruise))) ** 4);
   }
   function brake(v, gap, speed, s0 = v.driver.s0, T = v.driver.T) {
@@ -1233,7 +1194,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   function alongside(f, j, v, vs, turn) {
     for (let k = Math.max(0, j - 1); k <= Math.min(f.lanes.length - 1, j + 1); k++) {
       for (const o of f.occ[k]) {
-        const swing = turn && (v.bus || o.v.bus);
+        const swing = turn && (v.bus || v.cargo || o.v.bus || o.v.cargo);
         if (o.v === v || (k !== j && !swing)) continue;
         let lo = o.s - vs; // how far ahead of v o is
         let hi = lo;
@@ -1255,7 +1216,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     const e = v.edge;
     const k = v.lane + (v.move.turn === 'R' ? -1 : 1);
     const o = v.move.turn !== 'S' && k >= 0 && k < e.lanes.length ? leadOf(e.occ[k]) : null;
-    return !!o && o.v.bus && o.v !== v && e.len - o.s - o.v.half < 2;
+    return !!o && (o.v.bus || o.v.cargo) && o.v !== v && e.len - o.s - o.v.half < 2;
   }
 
   // The lead of another of v's lanes that goes first into lane j of f or, turning where a bus is involved, into a lane
@@ -1268,9 +1229,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     for (let i = 0; i < e.lanes.length; i++) {
       const o = i === v.lane ? null : leadOf(e.occ[i]);
       if (!o || o.v === v || o.v.claimed || o.v.move?.to !== f || precedence(o.v, o.s) <= precedence(v, v.s)) continue;
-      if (o.v.bus && besideTail(o.v)) continue; // it waits for the bus beside its tail
+      if ((o.v.bus || o.v.cargo) && besideTail(o.v)) continue;
       const oj = o.v.move.out[o.v.lane];
-      if (oj < 0 || (oj !== j && !(Math.abs(oj - j) === 1 && v.move.turn !== 'S' && (v.bus || o.v.bus)))) continue;
+      if (oj < 0 || (oj !== j && !(Math.abs(oj - j) === 1 && v.move.turn !== 'S' && (v.bus || v.cargo || o.v.bus || o.v.cargo)))) continue;
       const s = o.s - e.len - connector(e, o.v.lane, f, oj).len;
       if (!merger.v || s < merger.s) {
         merger.v = o.v;
@@ -1319,7 +1280,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     if (boxBusy(n, e.axisIndex)) return false; // crossing traffic inside
     const lead = ahead(e.occ[v.lane], v.s, v);
     if (lead && lead.v.yielding) return false; // the vehicle ahead waits inside to turn: wait behind the line
-    if (v.bus && besideTail(v)) return false; // its tail would swing out over that bus as it starts to turn
+    if ((v.bus || v.cargo) && besideTail(v)) return false;
     // At a signal, the first in line to turn pulls into the intersection to wait there for the people crossing the
     // road it turns into (they walk on the same green): short of their crosswalk or, turning left across oncoming
     // traffic, short of the oncoming lanes until there is a gap. The light changing stops both for it at the latest.
@@ -1448,7 +1409,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     let dir = canRight && (!canLeft || v.slot % 2) ? 1 : -1;
     const bo = blocker.v.off || 0;
     if (blocker.v.bike && bo !== 0) dir = bo > 0 ? -1 : 1; // pass a bike on its other side
-    const mag = blocker.v.bike ? 0.8 : blocker.v.bus ? 1.8 : 1.35;
+    const mag = blocker.v.bike ? 0.8 : (blocker.v.bus || blocker.v.cargo) ? 1.8 : 1.35;
     if (!v.off || Math.abs(v.off) !== mag) v.off = dir * mag;
   }
 
@@ -2296,7 +2257,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     v.commit = null;
     v.yielding = false;
     v.wait = 0;
-    v.speed = Math.min(roadSpeed(v), roadTraffic.cruise(e, v.v0) * 0.5);
+    const approachSpeed = e.motorway ? 0.9 : 0.5;
+    v.speed = Math.min(roadSpeed(v), vehicleCruise(v, e) * approachSpeed);
     v.acc = 0;
     if (v.refuseTruck) {
       v.collectionAt = null;
@@ -2902,6 +2864,31 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     }
   }
 
+  function renderCargo(v) {
+    if (hasView && !visible(v.x, v.z, 20, v.y)) return;
+    const yaw = v.yaw + v.yawOffset;
+    const sin = Math.sin(yaw), cos = Math.cos(yaw);
+    fitVehicleGrade(v, sin, cos);
+    dummy.position.set(v.x, v.y, v.z);
+    dummy.rotation.set(v.roadPitch + v.pitch, yaw, v.roadRoll + v.roll, 'YXZ');
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    v.cargo.setMatrixAt(v.cargo.count++, dummy.matrix);
+
+    dummy.position.y += 0.018;
+    dummy.rotation.set(v.roadPitch, yaw, v.roadRoll, 'YXZ');
+    dummy.scale.set(v.spec.width + 0.32, 1, v.spec.length + 0.42);
+    dummy.updateMatrix();
+    carShadowInst.setMatrixAt(visibleCars++, dummy.matrix);
+
+    const dx = v.x - camX, dz = v.z - camZ;
+    const distance = Math.hypot(dx, v.y - camY, dz) + Math.max(0, 5 - dx * camFwdX - dz * camFwdZ) * 3.2;
+    if (distance < MAX_LIGHT_DIST) {
+      v._effDist = distance;
+      litVehicles[litVehicleCount++] = v;
+    }
+  }
+
   function renderModeledVehicle(v) {
     const yaw = v.yaw + v.yawOffset;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
@@ -3011,7 +2998,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
         const v = litVehicles[i];
         const fade = smoothDistFade(v._effDist, vehCutoff * 0.62, vehCutoff);
         if (fade <= 0.001) continue;
-        const spec = v.bus ? BUS_SPEC : BODY_SPECS[v.bodyType];
+        const spec = v.bus ? BUS_SPEC : v.spec ?? BODY_SPECS[v.bodyType];
         const fullReach = HEADLIGHTS.distance;
         let maxReach = fullReach;
         if (player.active && v.pAhead > 0 && v.pAhead < 30) {
@@ -3020,7 +3007,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
           maxReach = fullReach + (clampedReach - fullReach) * latWeight;
         }
 
-        const baseInt = (v.bus ? HEADLIGHTS.busIntensity : HEADLIGHTS.intensity) * beamScale * fade;
+        const baseInt = (v.bus || v.cargo ? HEADLIGHTS.busIntensity : HEADLIGHTS.intensity) * beamScale * fade;
         // Match the body instance, including suspension and impact rotation.
         dummy.position.set(v.x, v.y, v.z);
         dummy.rotation.set(v.roadPitch + v.pitch, v.yaw + v.yawOffset, v.roadRoll + v.roll, 'YXZ');
@@ -3103,11 +3090,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   let lastFocusZ = Infinity;
   const carPopulation={cursor:0}, bikePopulation={cursor:0}, mountainBikePopulation={cursor:0}, refusePopulation={cursor:0};
   const tractorPopulation = { cursor: 0 }, ambulancePopulation = { cursor: 0 };
-  let nextTractorPalette = 0;
+  let nextTractorPalette = 0, nextTractorSpawn = 0;
   function spawnTractor(v, min, max, protect) {
-    const nearFarms = farmTrips.rows.filter(row => !tractors.some(other => other.edge &&
-      (other.serviceTrip?.row === row || other.excursion?.goal.site === row.site)));
-    for (const row of nearFarms) {
+    if (clock < nextTractorSpawn) return false;
+    for (const row of farmTrips.rows) {
       for (const goal of row.goals) {
         const s = Math.max(v.half + 5, goal.at - 24);
         if (goal.at - s < 8 || roadTraffic.isClosed(goal.edge)) continue;
@@ -3274,7 +3260,12 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     // Departures consume the same free car slots as normal replenishment.
     parking?.tick(focusX,focusZ,clock,jump);
     populate(cars, carPopulation, carTarget, spawnCar, 100, jump);
+    for (const { mesh, pool, population, target } of cargoFleets) {
+      populate(pool, population, target, spawnVehicle, 100, jump);
+      mesh.count = 0;
+    }
     populate(refuseTrucks, refusePopulation, 1, spawnVehicle, 85, jump);
+    if (tractors[0].edge) nextTractorSpawn = clock + 45;
     populate(tractors, tractorPopulation, tractors.length, spawnTractor, 100, jump);
     populate(ambulances, ambulancePopulation, ambulances.length, spawnAmbulance, 100, jump);
     startEmergencyResponses(jump);
@@ -3349,6 +3340,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       if (v.bus) renderBus(v);
       else if (v.bike) renderBike(v);
       else if (v.model) renderModeledVehicle(v);
+      else if (v.cargo) renderCargo(v);
       else renderCar(v);
     }
     const hideEmpty = ++updates > 2;
@@ -3385,6 +3377,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       flagRange(inst.instanceMatrix, n);
     };
     if (riderInst.count > 0) flagRange(riderInst.instanceColor, riderInst.count);
+    for (const { mesh } of cargoFleets) syncInst(mesh, mesh.count);
     for (const m of bikeMeshes) syncInst(m, m.count);
     syncInst(carWheelLeftInst, wheelCars * 2);
     syncInst(carWheelRightInst, wheelCars * 2);
@@ -3420,12 +3413,14 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     group,
     update,
     setCollisionListener,
+    headlights: headlightPool,
     cars,
     buses,
     busPaths,
     roadTraffic,
     bikes,
     refuseTrucks,
+    cargoTrucks,
     tractors,
     ambulances,
     fireEngines,
@@ -3472,63 +3467,9 @@ function createHighwayTraffic(scene, lanes) {
   const group = new THREE.Group();
   group.name = 'HighwayTraffic';
   scene.add(group);
+  if (!lanes.length) return { group, cars: [], update() {} };
   const KINDS = Object.keys(CAR_KINDS);
-  const PALETTES = {
-    taxi: [
-      { hex: 0xffbe14, style: carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: 0 }) },
-      { hex: 0xffbe14, style: carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: 1 }) }
-    ],
-    sedan: [
-      { hex: 0x12151a, style: carStyleCode({ livery: 3, metallic: 0, trim: 1, wheel: 1 }) },
-      { hex: 0x161a20, style: carStyleCode({ livery: 3, metallic: 1, trim: 2, wheel: 2 }) },
-      { hex: 0xf2f4f7, style: carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: 0 }) },
-      { hex: 0xe6eaef, style: carStyleCode({ livery: 4, metallic: 1, trim: 2, wheel: 2 }) },
-      { hex: 0xcfd6de, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) },
-      { hex: 0x8a8f96, style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 1 }) },
-      { hex: 0x52575e, style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 2 }) },
-      { hex: 0x1c2026, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 3 }) },
-      { hex: 0x1d3b6c, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) },
-      { hex: 0x6e1f24, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) },
-      { hex: 0x5cae3e, style: carStyleCode({ livery: 2, metallic: 0, trim: 0, wheel: 0 }) }
-    ],
-    suv: [
-      { hex: 0x101318, style: carStyleCode({ livery: 3, metallic: 0, trim: 1, wheel: 1 }) },
-      { hex: 0x16191e, style: carStyleCode({ livery: 3, metallic: 1, trim: 2, wheel: 3 }) },
-      { hex: 0xf0f3f7, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) },
-      { hex: 0xe4e8ed, style: carStyleCode({ livery: 4, metallic: 0, trim: 2, wheel: 2 }) },
-      { hex: 0x3a434d, style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 2 }) },
-      { hex: 0xbec6cf, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) },
-      { hex: 0x28382e, style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 1 }) },
-      { hex: 0x20385c, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) },
-      { hex: 0x5b2a2a, style: carStyleCode({ livery: 4, metallic: 1, trim: 2, wheel: 2 }) },
-      { hex: 0x5cae3e, style: carStyleCode({ livery: 2, metallic: 0, trim: 0, wheel: 0 }) }
-    ],
-    minivan: [
-      { hex: 0x111419, style: carStyleCode({ livery: 3, metallic: 1, trim: 1, wheel: 1 }) },
-      { hex: 0xf0f2f5, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) },
-      { hex: 0xaab2bb, style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 1 }) },
-      { hex: 0x4a5058, style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 2 }) },
-      { hex: 0x26354f, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) },
-      { hex: 0x5a1f24, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 0 }) }
-    ],
-    pickup: [
-      { hex: 0x14171b, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) },
-      { hex: 0xf2f3f5, style: carStyleCode({ livery: 0, metallic: 0, trim: 1, wheel: 0 }) },
-      { hex: 0x9da4ab, style: carStyleCode({ livery: 0, metallic: 1, trim: 0, wheel: 2 }) },
-      { hex: 0x3d434a, style: carStyleCode({ livery: 0, metallic: 1, trim: 2, wheel: 3 }) },
-      { hex: 0x1e2f4f, style: carStyleCode({ livery: 0, metallic: 1, trim: 1, wheel: 1 }) },
-      { hex: 0x8f1a1d, style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) }
-    ],
-    // Vans: fleet white, silver, grey & black, black plastic trim; never two-tone (see the street palettes)
-    van: [
-      { hex: 0xf4f5f6, style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 0 }) },
-      { hex: 0xf0f1f2, style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) },
-      { hex: 0xf4f5f6, style: carStyleCode({ livery: 0, metallic: 0, trim: 0, wheel: 1 }) },
-      { hex: 0xb9c0c7, style: carStyleCode({ livery: 0, metallic: 1, trim: 2, wheel: 0 }) },
-      { hex: 0x8e959c, style: carStyleCode({ livery: 0, metallic: 0, trim: 2, wheel: 3 }) },
-      { hex: 0x15181c, style: carStyleCode({ livery: 0, metallic: 1, trim: 2, wheel: 3 }) }
-    ]
-  };
+  const colors = [0x181b21, 0xb6bbc3, 0x454a51, 0xf2f3f4, 0x262b31, 0x8b919a, 0x203e66, 0x62676f];
   let seed = 20240917;
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
@@ -3554,11 +3495,9 @@ function createHighwayTraffic(scene, lanes) {
     }
     lane.cars = [];
     for (let u = rand() * 30; u < lane.len - 12; u += 24 + rand() * 50) {
-      const h = rand();
-      // Fewer vans than in town: commercial vehicles are barred from the parkways
-      const kind = h < 0.2 ? 'taxi' : h < 0.56 ? 'sedan' : h < 0.82 ? 'suv' : h < 0.89 ? 'minivan' : h < 0.95 ? 'pickup' : 'van';
-      const entry = PALETTES[kind][Math.floor(rand() * PALETTES[kind].length)];
-      const col = new THREE.Color(entry.hex);
+      const kind = dutchVehicleKind(rand());
+      const colorIndex = Math.floor(rand() * colors.length);
+      const col = new THREE.Color(colors[colorIndex]);
       const spec = BODY_SPECS[kind];
       // (float32 values, so update() can tell whether an instance slot's paint changes by comparing with the buffer)
       const car = {
@@ -3566,7 +3505,7 @@ function createHighwayTraffic(scene, lanes) {
         placed: false, x: 0, y: -1000, z: 0, yaw: 0,
         len: spec.zFront - spec.zRear, engine: CAR_KINDS[kind].engine,
         col: [Math.fround(col.r), Math.fround(col.g), Math.fround(col.b)],
-        style: entry.style
+        style: carStyleCode({ metallic: colorIndex % 3 !== 0, wheel: colorIndex % 4 })
       };
       lane.cars.push(car);
       cars.push(car);

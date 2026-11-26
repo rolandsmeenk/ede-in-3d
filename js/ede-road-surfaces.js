@@ -45,7 +45,7 @@ export function isEdeTrafficPavement(x, z, layer = 0) {
   if (!trafficPolygons) {
     trafficPolygons = new Map();
     for (const surface of mapped.surfaces) {
-      if (!/^(rijbaan |fietspad$|ov-baan$|inrit$|parkeervlak$|verbindingsweg$|verkeersdrempel$|woonerf$|overweg$)/.test(surface.function)) continue;
+      if (surface.traffic !== true && !/^(rijbaan |fietspad$|ov-baan$|inrit$|parkeervlak$|verbindingsweg$|verkeersdrempel$|woonerf$|overweg$)/.test(surface.function)) continue;
       for (const polygon of surface.polygons) {
         const outer = polygon[0];
         let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -111,7 +111,7 @@ export function loadEdeFringePaving() {
 }
 
 export async function loadEdeRoadSurfaces({ north = false, fringe = false } = {}) {
-  const [asset, corridors, northern, exterior] = await Promise.all([
+  const [asset, corridors, northern, exterior, terrainAsset] = await Promise.all([
     readSurfaces('ede-road-surfaces.json.gz'),
     readSurfaces('ede-corridor-paving.json.gz', true),
     north ? readSurfaces('ede-north-paving.json.gz', true).catch(error => {
@@ -122,9 +122,15 @@ export async function loadEdeRoadSurfaces({ north = false, fringe = false } = {}
       console.warn('[Ede fringe paving] using mapped road centerlines:', error);
       return null;
     }) : null,
+    north && fringe ? readSurfaces('ede-terrain-paving.json.gz', true).catch(error => {
+      console.warn('[Ede terrain paving] using mapped road centerlines:', error);
+      return null;
+    }) : null,
   ]);
+  const terrain = corridors && northern && exterior && terrainAsset;
   asset.fringeSurfaces = exterior?.surfaces ?? [];
-  for (const extension of [corridors, northern, exterior]) {
+  asset.terrainSurfaces = terrain?.surfaces ?? [];
+  for (const extension of [corridors, northern, exterior, terrain]) {
     if (!extension) continue;
     asset.surfaces = asset.surfaces.concat(extension.surfaces);
     for (const [way, indices] of Object.entries(extension.covered)) {

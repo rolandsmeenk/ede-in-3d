@@ -190,3 +190,28 @@ test('street audio uses the simulated elevations of vehicles and walkers below s
   assert.equal(snapshot.people.find(source => source.id === player).grounded, true);
   assert.equal(snapshot.people.find(source => source.id === ped).y, -39.78);
 });
+
+test('player car audio follows the drivable surface beneath covered terrain', () => {
+  const { CityAudioSources } = loadModule(readFileSync(join(__dirname, '../js/audio-sources.js'), 'utf8'), {
+    imports: { './city-config.js': {}, './terrain.js': { terrainHeightAt: () => 14 } }
+  });
+  const player = { type: 'car', position: { x: 0, y: 8, z: 0 }, mesh: {}, speed: 20 };
+  const audio = new CityAudioSources({
+    controllerManager: {
+      entities: { player }, keys: {}, getActiveEntity: () => player,
+      getGroundHeight(x, z, type, y) {
+        assert.equal(type, 'car');
+        assert.equal(y, player.position.y);
+        return x < 10 ? 8 : 14;
+      }
+    },
+    trafficSystem: { cars: [], buses: [], peds: [] }, highwayTraffic: { cars: [] }, streetDetails: { audioSignals: [] }
+  });
+  const listener = { x: 0, y: 10, z: 0 };
+  const [source] = audio.collect(listener, 0).motors;
+  assert.equal(source.id, player);
+  assert.equal(source.y, 8.7);
+  assert.equal(source.speed, 20);
+  player.position.x = 10;
+  assert.equal(audio.collect(listener, 1).motors.length, 0);
+});

@@ -28,13 +28,16 @@ import {
   buildHelicopterBodyGeometry,
   buildHelicopterMainRotorGeometry,
   buildHelicopterTailRotorGeometry,
-  createLoftedHelicopterMaterial
+  createLoftedHelicopterMaterial,
+  createRotorDisc,
+  MAIN_ROTOR,
+  TAIL_ROTOR
 } from './helicopter.js';
 import { buildEdeBike, EDE_BIKE_FIT, EDE_BIKE_STYLES } from './ede-bikes.js';
 import { PersonCrowd, PersonRig } from './pedestrians.js';
 import { HEADLIGHTS, createVehicleHeadlight, placeVehicleHeadlight } from './vehicle-lights.js';
 import { bryantParkLawn } from './landmarks.js';
-import { polygonContact } from './building-collision.js';
+import { polygonContact, polygonContains } from './building-collision.js';
 import { terrainHeightAt } from './terrain.js';
 import { buildingPassageHeadingAt, gradeDeckAt, gradeGroundHeightAt, gradeHeightAt, gradeProfileAt, heliLandingHeightAt } from './ede-grade.js';
 
@@ -45,7 +48,7 @@ import { buildingPassageHeadingAt, gradeDeckAt, gradeGroundHeightAt, gradeHeight
 // 2. Car (Aerodynamic Sculpted NYC Medallion Yellow Taxi with Sloped Windshield & Clearcoat)
 // 3. Cyclist (Dutch city bikes with an animated rider)
 // 4. Cargo Bike (front-loader frame with an upright rider)
-// 5. Helicopter (Manhattan Sightseeing Twin-Turbine Chopper)
+// 5. Helicopter (Ede sightseeing helicopter)
 
 // Spawn on 5th Ave at 37th St, facing south down the avenue toward the Empire State Building (34th St)
 const SPAWN_Z = defaultSpawn?.z ?? streetZ(37);
@@ -56,8 +59,9 @@ function spawnPosition(lateral, forward, y) {
   return new THREE.Vector3(SPAWN_X + lateral * cs + forward * sn, y, SPAWN_Z - lateral * sn + forward * cs);
 }
 const groundCollider = { type: 'ground' };
+const HELICOPTER_CLEARANCE = 0.25;
 
-function helicopterAltitude(x, z, y, clearance = 0.25) {
+function helicopterAltitude(x, z, y, clearance = HELICOPTER_CLEARANCE) {
   const surface = Math.max(terrainHeightAt(x, z), gradeDeckAt(x, z) ?? -Infinity, heliLandingHeightAt(x, z) ?? -Infinity);
   return Math.max(surface + clearance, Math.min(380, y));
 }
@@ -321,16 +325,44 @@ function collisionBody(mode, radius, heading, margin = 0) {
     car, oriented, sin, cos, hx, hz, radius: radius + margin,
     extX: oriented ? Math.abs(cos) * hx + Math.abs(sin) * hz : radius + margin,
     extZ: oriented ? Math.abs(sin) * hx + Math.abs(cos) * hz : radius + margin,
-    bottom: mode === 'helicopter' ? -0.25 : 0,
+    helicopter: mode === 'helicopter',
+    bottom: mode === 'helicopter' ? -HELICOPTER_CLEARANCE : 0,
     top: mode === 'helicopter' ? 3.2 : car ? 1.8 : 1.9
   };
+}
+
+function flatRoofAt(collider, x, z) {
+  if (x < collider.minX || x > collider.maxX || z < collider.minZ || z > collider.maxZ) return undefined;
+  if (collider.flatRoof && polygonContains(collider.polygon, x, z)) return collider.maxY;
+  let top;
+  for (const { polygon, y } of collider.helicopterRoofs ?? []) {
+    if ((top === undefined || y > top) && polygonContains(polygon, x, z)) top = y;
+  }
+  return top;
+}
+
+function crossedRoofFloor(colliders, pos, previousY) {
+  let floor = -Infinity;
+  for (const collider of colliders) {
+    if ((!collider.flatRoof && !collider.helicopterRoofs) || collider.isRoofVisible?.() === false) continue;
+    const roof = flatRoofAt(collider, pos.x, pos.z);
+    if (roof === undefined) continue;
+    const contactY = roof + HELICOPTER_CLEARANCE;
+    if (contactY <= previousY && contactY >= pos.y) floor = Math.max(floor, contactY);
+  }
+  return floor;
 }
 
 // Movement and teleports share exact footprint checks after rejecting distant bounds.
 // Walking/cycling/flying use circles; cars use oriented rectangles.
 function buildingContact(c, x, y, z, body, contact) {
-  if (y + body.bottom >= c.maxY || y + body.top <= (c.minY ?? 0)) return false;
+  if (y >= c.maxY - body.bottom || y + body.top <= (c.minY ?? 0)) return false;
   if (x + body.extX <= c.minX || x - body.extX >= c.maxX || z + body.extZ <= c.minZ || z - body.extZ >= c.maxZ) return false;
+  if (c.isRoofVisible?.() === false) return false;
+  if (body.helicopter && c.helicopterRoofs) {
+    const roof = flatRoofAt(c, x, z);
+    if (roof !== undefined && y >= roof - body.bottom) return false;
+  }
   if (c.maxYAt && y + body.bottom >= c.maxYAt(x, z)) return false;
   if (c.minYAt && y + body.top <= c.minYAt(x, z)) return false;
   if (c.polygon) return polygonContact(c.polygon, x, z, body, contact);
@@ -1553,7 +1585,7 @@ class ThirdPersonControllerManager {
   }
 
   // =========================================================================
-  // 5. HELICOPTER (3D LOFTED MANHATTAN SIGHTSEEING TWIN-TURBINE CHOPPER)
+  // 5. HELICOPTER
   // =========================================================================
   createHelicopterEntity() {
     const root = new THREE.Group();
@@ -1563,14 +1595,6 @@ class ThirdPersonControllerManager {
     root.add(tiltPivot);
 
     const heliLoftMat = createLoftedHelicopterMaterial();
-    const blurDiscMat = new THREE.MeshBasicNodeMaterial({
-      color: 0xc8d8e8,
-      transparent: true,
-      opacity: 0.13,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-
     // 1. 3D Lofted Monocoque Fuselage + Tailboom + Twin-Turbine Cowling + Swept Fin + Stabilizers + Tubular Skids
     const heliBodyGeo = buildHelicopterBodyGeometry();
     const heliBodyMesh = new THREE.Mesh(heliBodyGeo, heliLoftMat);
@@ -1578,7 +1602,7 @@ class ThirdPersonControllerManager {
     heliBodyMesh.receiveShadow = true;
     tiltPivot.add(heliBodyMesh);
 
-    // 2. 4-Blade Main Rotor Assembly with Swashplate, Hub Dome & Yellow Safety Blade Tips
+    // 2. Main rotor hub and motion-blurred blades
     const mainRotorPivot = new THREE.Group();
     mainRotorPivot.position.set(0, 2.66, -0.35);
     const mainRotorGeo = buildHelicopterMainRotorGeometry();
@@ -1586,19 +1610,21 @@ class ThirdPersonControllerManager {
     mainRotorMesh.castShadow = true;
     mainRotorPivot.add(mainRotorMesh);
 
-    const blurDisc = new THREE.Mesh(new THREE.CylinderGeometry(4.85, 4.85, 0.015, 32), blurDiscMat);
-    mainRotorPivot.add(blurDisc);
+    const mainRotorDisc = createRotorDisc(MAIN_ROTOR);
+    mainRotorPivot.add(mainRotorDisc.mesh);
     tiltPivot.add(mainRotorPivot);
 
-    // 3. 4-Blade Tail Rotor Assembly on Swept Vertical Fin
+    // 3. Tail rotor hub and motion-blurred blades
     const tailRotorPivot = new THREE.Group();
     tailRotorPivot.position.set(0.18, 2.02, -5.62);
     const tailRotorGeo = buildHelicopterTailRotorGeometry();
     const tailRotorMesh = new THREE.Mesh(tailRotorGeo, heliLoftMat);
-    tailRotorPivot.add(tailRotorMesh);
+    const tailRotorDisc = createRotorDisc(TAIL_ROTOR);
+    tailRotorDisc.mesh.rotation.z = -Math.PI / 2; // Align the disc's +Y axis with the tail rotor's +X axis.
+    tailRotorPivot.add(tailRotorMesh, tailRotorDisc.mesh);
     tiltPivot.add(tailRotorPivot);
 
-    // 4. FAA Port (Red), Starboard (Green) & Anti-Collision Fin Beacon (Red) Navigation Strobes
+    // 4. Port and starboard navigation lights and tail beacon
     const navRed = new THREE.Mesh(
       new THREE.SphereGeometry(0.036, 8, 8),
       new THREE.MeshBasicNodeMaterial({ color: 0xff2b2b })
@@ -1620,11 +1646,13 @@ class ThirdPersonControllerManager {
 
     return {
       type: 'helicopter',
-      label: 'Sightseeing Helicopter',
+      label: 'Ede Helicopter',
       mesh: root,
       tiltPivot,
       mainRotorPivot,
       tailRotorPivot,
+      mainRotorDisc,
+      tailRotorDisc,
       position: spawnPosition(-60, -80, 96),
       heading: SPAWN_HEADING,
       speed: 0,
@@ -1711,7 +1739,7 @@ class ThirdPersonControllerManager {
     return this.getGroundHeight(pos.x, pos.z, this.activeMode) + groundOffset;
   }
 
-  resolveHorizontalCollision(pos, radius, carEntity = null, entity = carEntity, groundOffset = null) {
+  resolveHorizontalCollision(pos, radius, carEntity = null, entity = carEntity, groundOffset = null, previousY) {
     const heli = this.activeMode === 'helicopter';
     if (navigationBoundary?.length) {
       const limit = constrainNavigation(pos.x, pos.z);
@@ -1758,8 +1786,11 @@ class ThirdPersonControllerManager {
     const startX = pos.x, startZ = pos.z;
     let gx = startX;
     let gz = startZ;
-    let y = this.collisionHeight(pos, groundOffset);
     let near = this.nearColliders(gx, gz, reach);
+    // A roof crossed from above is vertical support before the wall pass can push the helicopter sideways.
+    const descending = heli && previousY >= pos.y;
+    let roofFloor = descending ? crossedRoofFloor(near, pos, previousY) : -Infinity;
+    let y = Math.max(this.collisionHeight(pos, groundOffset), roofFloor);
     for (let i = 0; i < near.length; i++) {
       const c = near[i];
       if (buildingContact(c, pos.x, y, pos.z, body, contact)) {
@@ -1809,7 +1840,6 @@ class ThirdPersonControllerManager {
           }
         }
 
-        y = this.collisionHeight(pos, groundOffset);
         // A push that carried it far from where the candidates were gathered (dropped inside a building): gather
         // them again around where it is now, carrying on in the same order
         if (Math.abs(pos.x - gx) > 5 || Math.abs(pos.z - gz) > 5) {
@@ -1820,13 +1850,19 @@ class ThirdPersonControllerManager {
           i = -1;
           while (i + 1 < near.length && near[i + 1]._order <= order) i++;
         }
+        if (descending) roofFloor = crossedRoofFloor(near, pos, previousY);
+        y = Math.max(this.collisionHeight(pos, groundOffset), roofFloor);
       }
     }
     if (navigationBoundary?.length && (pos.x !== startX || pos.z !== startZ)) {
       const limit = constrainNavigation(pos.x, pos.z);
+      if (descending && (pos.x !== limit.x || pos.z !== limit.z)) {
+        roofFloor = crossedRoofFloor(this.nearColliders(limit.x, limit.z, reach), { ...pos, x: limit.x, z: limit.z }, previousY);
+      }
       pos.x = limit.x;
       pos.z = limit.z;
     }
+    return roofFloor;
   }
 
   // Pose the skinned characters once every entity has moved: the pedestrian's rig walks (or runs, turns, jumps) it to
@@ -1906,8 +1942,11 @@ class ThirdPersonControllerManager {
 
   update(dt, elapsed, focusPos = null) {
     const heli = this.entities.helicopter;
-    heli.mainRotorPivot.rotation.y += dt * 24.0;
-    heli.tailRotorPivot.rotation.x += dt * 32.0;
+    heli.mainRotorPivot.rotation.y = (heli.mainRotorPivot.rotation.y + dt * MAIN_ROTOR.rate) % (Math.PI * 2);
+    heli.tailRotorPivot.rotation.x = (heli.tailRotorPivot.rotation.x + dt * TAIL_ROTOR.rate) % (Math.PI * 2);
+    // The blades sweep through half a frame of exposure, equivalent to a 180° shutter.
+    heli.mainRotorDisc.sweep.value = dt * 0.5 * MAIN_ROTOR.rate;
+    heli.tailRotorDisc.sweep.value = dt * 0.5 * TAIL_ROTOR.rate;
 
     if (this.activeMode === 'person') {
       this.updatePerson(dt, elapsed);
@@ -2181,10 +2220,11 @@ class ThirdPersonControllerManager {
 
     h.position.x += Math.sin(h.heading) * h.speed * dt;
     h.position.z += Math.cos(h.heading) * h.speed * dt;
+    const previousY = h.position.y;
     h.position.y += h.verticalSpeed * dt;
 
-    this.resolveHorizontalCollision(h.position, 4.5, null, h);
-    const floor = helicopterAltitude(h.position.x, h.position.z, -Infinity);
+    const roofFloor = this.resolveHorizontalCollision(h.position, 4.5, null, h, null, previousY);
+    const floor = Math.max(helicopterAltitude(h.position.x, h.position.z, -Infinity), roofFloor ?? -Infinity);
     const grounded = h.position.y <= floor;
     if (grounded && h.verticalSpeed < 0) {
       this.reportCollision(h, groundCollider, 'ground', h.position.x, floor, h.position.z, 0, 1, 0, -h.verticalSpeed);

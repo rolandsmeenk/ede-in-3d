@@ -3,7 +3,7 @@ const STRIDE = 5;
 const POINT_EPSILON = 0.08;
 
 export async function loadEdeFittedLanes() {
-  const response = await fetch(new URL('../assets/ede-fitted-lanes.json.gz?v=20261123-harderwijkerweg-fit', import.meta.url));
+  const response = await fetch(new URL('../assets/ede-fitted-lanes.json.gz?v=20261126-apeldoornseweg', import.meta.url));
   if (!response.ok) throw new Error(`Ede lane geometry HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
   const body = new Response(bytes);
@@ -102,6 +102,90 @@ export function projectFittedLane(edge, lane, x, z, from, to, out) {
   fittedLanePoint(edge, lane, station, out);
   out.station = station;
   return out;
+}
+
+// Map the original road shape onto the existing traffic edge and stop-line stations.
+export function mappedRoadPath(edge) {
+  if (!edge.paintPath || edge.bridge || edge.underpass || edge.layer) return;
+  const source = edge.direction ? edge.paintPath.toReversed() : edge.paintPath;
+  const first = source[0], last = source.at(-1);
+  const length = Math.hypot(last.x - first.x, last.z - first.z);
+  if (!length || !source.some(({ x, z }) =>
+    Math.abs((x - first.x) * (last.z - first.z) - (z - first.z) * (last.x - first.x)) > length * 0.75)) return;
+  const points = [{ x: edge.x0, z: edge.z0 }, ...source.slice(1, -1),
+    { x: edge.x0 + edge.dx * edge.span, z: edge.z0 + edge.dz * edge.span }];
+  const sections = [];
+  let distance = 0;
+  for (const point of points) {
+    const previous = sections.at(-1);
+    if (previous) {
+      const span = Math.hypot(point.x - previous.x, point.z - previous.z);
+      if (span < 0.03) continue;
+      previous.nx = (previous.z - point.z) / span;
+      previous.nz = (point.x - previous.x) / span;
+      distance += span;
+    }
+    sections.push({ ...point, distance });
+  }
+  if (sections.length < 2) return;
+  const setback = (edge.sx - edge.x0) * edge.dx + (edge.sz - edge.z0) * edge.dz;
+  return sections.map((point, i) => {
+    const before = sections[Math.max(0, i - 1)], after = i + 1 === sections.length ? before : point;
+    const miter = Math.max(0.6, 1 + before.nx * after.nx + before.nz * after.nz);
+    return { x: point.x, z: point.z, station: point.distance / distance * edge.span - setback,
+      nx: (before.nx + after.nx) / miter, nz: (before.nz + after.nz) / miter };
+  });
+}
+
+export function mappedRoadPoint(path, station, offset) {
+  const right = path.findIndex(point => point.station >= station);
+  const i = right < 0 ? path.length - 1 : Math.max(1, right);
+  const a = path[i - 1], b = path[i];
+  const t = (station - a.station) / (b.station - a.station);
+  return [a.x + (b.x - a.x) * t + (a.nx + (b.nx - a.nx) * t) * offset,
+    a.z + (b.z - a.z) * t + (a.nz + (b.nz - a.nz) * t) * offset];
+}
+
+export function bindApeldoornsewegCurves(network, edgeKey) {
+  const mapped = new Map();
+  for (const edge of network.edges) {
+    if (edge.roadName !== 'Apeldoornseweg' || edge.fittedLanes?.every(Boolean)) continue;
+    const path = mappedRoadPath(edge);
+    if (!path) continue;
+    const { sx, sz, dx, dz, rx, rz, len } = edge;
+    // The median BGT centre is offset from the mapped axis on the two long one-way carriageways.
+    const centerOffset = { w118547825: 0.9, w160287247: -1.3 }[edge.wayId] ?? 0;
+    const taper = Math.min(16, len / 3);
+    const stations = [...new Set([0, taper / 2, taper, len - taper, len - taper / 2, len,
+      ...path.map(point => point.station).filter(station => station > 0 && station < len)])].sort((a, b) => a - b);
+    edge.fittedLanes = edge.lanes.map((offset, lane) => {
+      if (edge.fittedLanes?.[lane]) return edge.fittedLanes[lane];
+      const samples = [];
+      let distance = 0, px, pz;
+      for (const station of stations) {
+        const straightX = sx + dx * station + rx * offset;
+        const straightZ = sz + dz * station + rz * offset;
+        const [x, z] = mappedRoadPoint(path, station, offset + centerOffset);
+        // Keep the archived junction endpoints while following the mapped shape between them.
+        const t = Math.min(1, station / taper, (len - station) / taper);
+        const weight = t * t * (3 - 2 * t);
+        const laneX = straightX + (x - straightX) * weight;
+        const laneZ = straightZ + (z - straightZ) * weight;
+        if (samples.length) distance += Math.hypot(laneX - px, laneZ - pz);
+        samples.push(station, laneX, laneZ, distance, edge.driveLanes?.[lane]?.width ?? 3.4);
+        px = laneX;
+        pz = laneZ;
+      }
+      return compile(samples, len);
+    });
+    mapped.set(edgeKey(edge), edge);
+  }
+  for (const edge of network.paintEdges ?? []) {
+    const runtime = mapped.get(edgeKey(edge));
+    if (!runtime || edge.lanes.length !== runtime.lanes.length) continue;
+    edge.fittedLanes = runtime.fittedLanes;
+    edge.fittedStationOffset = (edge.sx - runtime.sx) * edge.dx + (edge.sz - runtime.sz) * edge.dz;
+  }
 }
 
 export function bindEdeFittedLanes(network, asset, edgeKey) {

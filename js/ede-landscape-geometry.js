@@ -17,6 +17,27 @@ function overlap(a, b) {
   return a[0] <= b[2] && a[1] <= b[3] && a[2] >= b[0] && a[3] >= b[1];
 }
 
+function splitPolygon(points, distance) {
+  const distances = points.map(distance);
+  if (distances.every(value => value >= 0)) return [points, []];
+  if (distances.every(value => value <= 0)) return [[], points];
+  const inside = [], outside = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    const da = distances[i], db = distances[(i + 1) % points.length];
+    (da < 0 ? outside : inside).push(a);
+    if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+      const t = da / (da - db);
+      const edge = a.map((value, j) => value + (b[j] - value) * t);
+      inside.push(edge);
+      outside.push(edge);
+    } else if (da === 0) {
+      outside.push(a);
+    }
+  }
+  return [inside, outside];
+}
+
 export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, side = SIDE) {
   if (bytes.byteLength !== side * side * 5) throw new Error('Invalid AHN terrain tile size');
   const view = new DataView(bytes);
@@ -65,6 +86,61 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
   const pointAt = i => [positions[i * 3], positions[i * 3 + 1] + 0.025, positions[i * 3 + 2],
     colors[i * 4], colors[i * 4 + 1], colors[i * 4 + 2]];
 
+  const cuts = tile.gradeCuts?.map(({ minX, minZ, maxX, maxZ, planes, ceiling }) => ({
+    bounds: [minX, minZ, maxX, maxZ],
+    distances: [
+      ...planes.map(([x, z, offset]) => point => x * point[0] + z * point[2] - offset),
+      ...(Number.isFinite(ceiling) ? [point => ceiling - point[1]] : []),
+    ],
+  }));
+
+  function emitTriangle(a, b, c) {
+    if (!cuts?.length) {
+      indices.push(a, b, c);
+      return;
+    }
+    const ax = positions[a * 3], az = positions[a * 3 + 2];
+    const bx = positions[b * 3], bz = positions[b * 3 + 2];
+    const cx = positions[c * 3], cz = positions[c * 3 + 2];
+    const bounds = [Math.min(ax, bx, cx), Math.min(az, bz, cz), Math.max(ax, bx, cx), Math.max(az, bz, cz)];
+    const relevant = cuts.filter(cut => overlap(bounds, cut.bounds));
+    if (!relevant.length) {
+      indices.push(a, b, c);
+      return;
+    }
+
+    const corners = [a, b, c];
+    const points = corners.map(pointAt);
+    let fragments = [points];
+    for (const { distances } of relevant) {
+      const kept = [];
+      for (const fragment of fragments) {
+        // Subtract a convex prism. The optional height plane keeps an ecoduct's upper terrain.
+        let inside = fragment;
+        const outside = [];
+        for (const distance of distances) {
+          const [inner, outer] = splitPolygon(inside, distance);
+          inside = inner;
+          if (inside.length < 3) break;
+          if (outer.length >= 3) outside.push(outer);
+        }
+        if (inside.length < 3) kept.push(fragment);
+        else kept.push(...outside);
+      }
+      fragments = kept;
+      if (!fragments.length) return;
+    }
+    for (const fragment of fragments) {
+      const clipped = fragment.map(point => {
+        const original = points.indexOf(point);
+        if (original >= 0) return corners[original];
+        const [x, y, z, r, g, b] = point;
+        return vertex(x, y, z, Math.round(r), Math.round(g), Math.round(b));
+      });
+      for (let i = 1; i + 1 < clipped.length; i++) indices.push(clipped[0], clipped[i], clipped[i + 1]);
+    }
+  }
+
   // Boundary tiles intersect a triangulation of the municipality. Using the same polygon for
   // the overview and every tile level keeps the edge fixed while height and colour refine.
   const binsPerSide = 8;
@@ -79,14 +155,14 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
   const binAt = (value, origin) => Math.max(0, Math.min(binsPerSide - 1, Math.floor((value - origin) / binSize)));
   function addTriangle(a, b, c) {
     if (!bins) {
-      indices.push(a, b, c);
+      emitTriangle(a, b, c);
       return;
     }
     const west = Math.min(positions[a * 3], positions[b * 3], positions[c * 3]);
     const north = Math.min(positions[a * 3 + 2], positions[b * 3 + 2], positions[c * 3 + 2]);
     const bin = bins[binAt(west, minX) + binAt(north, minZ) * binsPerSide];
     if (!bin.edges.length) {
-      if (bin.inside) indices.push(a, b, c);
+      if (bin.inside) emitTriangle(a, b, c);
       return;
     }
     const east = Math.max(positions[a * 3], positions[b * 3], positions[c * 3]);
@@ -94,7 +170,7 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
     const bounds = [west, north, east, south];
     if (!bin.edges.some(edge => overlap(bounds, edge))) {
       if (bin.parts.some(part => overlap(bounds, part.bounds) && part.planes.every(([x, z, offset]) =>
-        x * positions[a * 3] + z * positions[a * 3 + 2] + offset >= 0))) indices.push(a, b, c);
+        x * positions[a * 3] + z * positions[a * 3 + 2] + offset >= 0))) emitTriangle(a, b, c);
       return;
     }
     const corners = [a, b, c];
@@ -119,7 +195,7 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
         if (fragment.length < 3) break;
       }
       if (fragment === points) {
-        indices.push(a, b, c);
+        emitTriangle(a, b, c);
         return;
       }
       if (fragment.length < 3) continue;
@@ -129,7 +205,7 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
         const [x, y, z, r, g, b] = point;
         return vertex(x, y, z, Math.round(r), Math.round(g), Math.round(b));
       });
-      for (let i = 1; i + 1 < clipped.length; i++) indices.push(clipped[0], clipped[i], clipped[i + 1]);
+      for (let i = 1; i + 1 < clipped.length; i++) emitTriangle(clipped[0], clipped[i], clipped[i + 1]);
     }
   }
 

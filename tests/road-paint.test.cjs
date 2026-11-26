@@ -167,13 +167,18 @@ const sharedMat = { name: 'RoadPaintMat', transparent: true };
 const roadPaintSrc = readFileSync(join(__dirname, '../js/road-paint.js'), 'utf8');
 const sceneCullingSrc = readFileSync(join(__dirname, '../js/scene-culling.js'), 'utf8');
 
-let sampleLane;
+let laneGeometry;
+test.before(async () => { laneGeometry = await import('../js/ede-lane-geometry.js'); });
 const { buildRoadPaint, createRoadPaintChunkBuilder } = loadModule(roadPaintSrc, {
   filename: 'road-paint.js',
   imports: {
     'three/webgpu': THREE,
     './tsl-materials.js': { createRoadPaintMaterial: () => sharedMat },
-    './ede-lane-geometry.js': { fittedLanePoint: (...args) => sampleLane(...args) }
+    './ede-lane-geometry.js': {
+      fittedLanePoint: (...args) => laneGeometry.fittedLanePoint(...args),
+      mappedRoadPath: (...args) => laneGeometry.mappedRoadPath(...args),
+      mappedRoadPoint: (...args) => laneGeometry.mappedRoadPoint(...args),
+    }
   }
 });
 
@@ -213,8 +218,7 @@ test('circulating lanes do not generate stop bars at roundabout entries', () => 
 });
 
 test('generated lane dividers follow an accepted curved lane band', async () => {
-  const { bindEdeFittedLanes, fittedLanePoint } = await import('../js/ede-lane-geometry.js');
-  sampleLane = fittedLanePoint;
+  const { bindEdeFittedLanes } = laneGeometry;
   const strips = [];
   const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };
   const laneDefinition = {

@@ -14,7 +14,7 @@ Most map layers are built offline and bundled with the game. Nearby 3DBAG tiles 
 | Buildings and façades | LoD 2.2 building shapes, offline façade measurements and neighbourhood profiles | [3DBAG](https://docs.3dbag.nl/en/) · [Façade evidence credits](../assets/ede-facades.SOURCES.md) · [CBS neighbourhood boundaries](https://www.cbs.nl/nl-nl/dossier/nederland-regionaal/geografische-data/wijk-en-buurtkaart-2025) |
 | Street art | Wall assignments, real-reference paint decals and two approved painted reconstructions | [Mural sources and wall assignments](../tools/data/ede-murals.md) |
 | Streets and greenery | Surveyed road surfaces, bridges, platforms, shorelines, street furniture, lamps and trees | [PDOK BGT](https://www.pdok.nl/introductie/-/article/basisregistratie-grootschalige-topografie-bgt-) · [Municipal tree inventory](https://data.overheid.nl/dataset/39339aa2-a7dc-4f52-bcdb-f1eff423b69f) |
-| Water works | Culvert mouths, fixed and adjustable weirs, and surveyed bank protection | [Waterschappen Kunstwerken IMWA](https://www.pdok.nl/ogc-apis/-/article/waterschappen-kunstwerken-imwa) · [Waterschappen Oppervlaktewateren IMWA](https://www.pdok.nl/ogc-apis/-/article/waterschappen-oppervlaktewateren-imwa) |
+| Water works | Fixed and adjustable weirs | [Waterschappen Kunstwerken IMWA](https://www.pdok.nl/ogc-apis/-/article/waterschappen-kunstwerken-imwa) · [Waterschappen Oppervlaktewateren IMWA](https://www.pdok.nl/ogc-apis/-/article/waterschappen-oppervlaktewateren-imwa) |
 | Motorways and traffic rules | Road sections, lane counts, infrastructure, access restrictions, signs, speed bumps and crossings | [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer) · [NWB and WEGGEG](../tools/data/ede-motorway-lanes.sources.md) · [NDW and WKD](../tools/data/ede-traffic-sources.md) · [NBd direction signs](https://downloads.rijkswaterstaatdata.nl/bewegwijzering/) |
 | Rail and buses | Rail alignment checks, local timetables, boarding points and live service updates | [ProRail Basiskaart](https://maps.prorail.nl/arcgis/rest/services/ProRail_basiskaart/FeatureServer) · [OVapi](https://gtfs.ovapi.nl/nl/) · [NDOV](https://govi.nu/realtime.html) · [RRReis Ede](https://www.rrreis.nl/reisinformatie/haltes-dienstverlening/dienstregeling-bus/regio-ede) |
 | Bus shelters | Stop locations, shelter and advertising flags, and representative shelter designs | [Gelderland stop register](https://geoportaal.gelderland.nl/gisserver/rest/services/Infra/Infra/MapServer/123) · [Ede shelter specifications](https://documenten.open.ede.nl/index.php/s/LGQLWcTMggkTp7n) |
@@ -99,7 +99,7 @@ After updating the offline wall assignments or WebP assets, run:
 node tools/build-ede-murals.mjs
 ```
 
-Map search includes De Keetmolen, De Peppel, CHE and Van der Knaaphal, and Lukkien. The marked Lukkien rooftop deck supports landing in Fly mode. See the [survey sources and in-game checks](../tools/data/ede-landmark-batch.md).
+Map search includes De Keetmolen, De Peppel, CHE and Van der Knaaphal. The marked Lukkien rooftop deck supports landing in Fly mode. See the [survey sources and in-game checks](../tools/data/ede-landmark-batch.md).
 
 Explore the memorials around the Paasberg, downtown Ede and the surrounding villages from map search. The Oude Kerk, Ede-Wageningen station, ENKA and De Eder Kuil also carry their commemorative plaques. [Memorial inventory, sources and fitted placements](../tools/data/ede-memorials.sources.md)
 
@@ -111,7 +111,7 @@ Eight searchable Stationsweg sites add thirteen surveyed exteriors, including th
 
 The skyline models cover Veldzicht at Mariëndaal, Langenhorst, the Valkestein towers, nearby Veldhuizen flats, and the Ede-Zuid high-rise group. De Veluwse Proeftuin includes planted balconies and the lower companion block. E.J. Bos Diervoeding adds the two surveyed industrial shells and rooftop equipment in north Ederveen. The residential models use shared geometry, individual façade colours and camera-distance culling for balcony and window detail. Balcony dimensions and planting layouts are fitted estimates. [Ede high-rise study](https://www.ede.nl/fileadmin/ede.nl/Pdf-en/Contourennotitie_Ontwikkelkader_Ede-Stad.pdf) · [De Veluwse Proeftuin architect](https://www.mix-architectuur.nl/werk/ede-wfc-de-veluwse-proeftuin/) · [E.J. Bos permit](https://repository.officiele-overheidspublicaties.nl/externebijlagen/exb-2022-35164/1/bijlage/exb-2022-35164.pdf) · [Skyline survey and rebuild notes](../tools/data/ede-skyline.sources.md)
 
-De Griek, De Halte · Gelria, De Kleefsehof and De Witte Hinde have surveyed shells with modeled facades. The western skyline includes Peti Protein and both the former Victoria Vesta offices and the park-side Victoria Veste tower. NIZO includes its northern block. Search the map for each site. [Central Ede survey](../tools/data/ede-centre-skyline.sources.md) · [Industrial and Victoria survey](../tools/data/ede-industrial-skyline.sources.md)
+De Griek, De Halte · Gelria, De Kleefsehof and De Witte Hinde have surveyed shells with modeled facades. The western skyline includes Peti Protein and both the former Victoria Vesta offices and the park-side Victoria Veste tower. NIZO includes its northern block. [Central Ede survey](../tools/data/ede-centre-skyline.sources.md) · [Industrial and Victoria survey](../tools/data/ede-industrial-skyline.sources.md)
 
 Wekerom adds the completed De Maalderij apartment complex and the Hervormde Kerk with its separate clock tower. In Otterlo, the Oude Kerk uses its surveyed medieval shell and an AHN-based spire. [De Maalderij construction photos](https://www.dbl-lunteren.nl/projecten/32-appartementen-supermarkt-met-winkelunits-en-een-parkeergarage/) · [Hervormde Kerk Wekerom](https://hervormdwekerom.nl/informatie/gebouwen-beheer/kerk/) · [Oude Kerk Otterlo, Rijksmonument 14486](https://kennis.cultureelerfgoed.nl/index.php/Monumenten/14486)
 
@@ -180,7 +180,7 @@ The Ginkelse Heide map pins frame the surveyed sheepfolds, Karin Colen’s open 
 
 ## Earlier outer route and terrain rebuild
 
-The first expansion covered 5.565°–5.805° E and 52.012°–52.080° N. It added detail along selected routes and at the arrivals near Doesburgermolen, Veenendaal-De Klomp, Ginkelse Heide, Boerderij Mossel and Planken Wambuis. The full map pins frame each custom exterior. The Ginkel arrivals include both historic sheepfolds, Juffrouw Tok and the Airborne Monument. [Schaapskudden and their locations](https://edeseschaapskudden.nl/schaapskudden/) · [Juffrouw Tok](https://www.juffrouwtok.nl/restaurants/ede) · [Airborne Monument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1310/ede-airborne-monument)
+The first expansion covered 5.565°–5.805° E and 52.012°–52.080° N. It added detail along selected routes and at the arrivals near Doesburgermolen, Veenendaal-De Klomp, Ginkelse Heide, Boerderij Mossel and Planken Wambuis. The Ginkel map pins frame both historic sheepfolds and the Airborne Monument. [Schaapskudden and their locations](https://edeseschaapskudden.nl/schaapskudden/) · [Juffrouw Tok](https://www.juffrouwtok.nl/restaurants/ede) · [Airborne Monument](https://www.4en5mei.nl/oorlogsmonumenten/zoeken/1310/ede-airborne-monument)
 
 The core retains its 12 m ground and surveyed local patches. The outer quadtree samples the AHN ground model on a 5 m grid and keeps its coarser parents visible while finer tiles load. The meshes carry PDOK aerial colours and use the existing RD New conversion and 22.54 m NAP datum. Soft building tiles own complete buildings, including footprints that extend across a tile edge. The canopy uses the 2022 crown coverage slice because the 2024 slice returned empty in Ede. Measured AHN crown heights shape the canopy tops. The renderer traces and smooths the canopy outline from the coverage grid. Exposed edges roll down into an inward-tapered base. The canopy manifest records neighboring crown coverage so woodland continues across tile edges. Coarse and detailed tiles use a short dithered crossfade once the incoming tiles are ready. The transition to individual trees moves closer to the camera as it climbs. BGT woodland polygons contribute to the land-cover palette. [AHN ground and surface models](https://www.ahn.nl/dataroom) · [Canopy sources and terms](../tools/data/ede-tree-inventory.md)
 
@@ -270,6 +270,20 @@ The Rietkampen embankment north of the A12 uses a 3 m terrain patch from the nat
 uv run --python 3.12 --with pyproj==3.8.0 --with rasterio python -B tools/build-ede-a12-embankment.py /tmp/ede-embankment-dtm.tif --fetch
 ```
 
+Both A12 carriageways beside Lukkien use a separate 3 m patch from the native AHN ground model. It blends into the 12 m grid at the shoulders and approaches. The pavement, markings and vehicle contact all sample the same patched terrain. [PDOK AHN](https://www.pdok.nl/ogc-webservices/-/article/actueel-hoogtebestand-nederland-ahn)
+
+```sh
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio python -B tools/build-ede-a12-embankment.py /tmp/ede-lukkien-dtm.tif --lukkien --fetch
+```
+
+Four additional 3 m AHN patches refine the exposed motorway lanes at Maanderbroek, Galvanistraat, Edeseweg/Parklaan and the Baron van Wassenaertunnel. Fitted A12 and A30 crossings use native 0.5 m AHN and Rijkswaterstaat survey observations. Pavement, markings and vehicle contact use the fitted grade, which blends across the full road width into terrain at the ends. Terrain clipping at the expanded crossings keeps travel surfaces clear and retains higher terrain over covered passages. [PDOK AHN](https://www.pdok.nl/ogc-webservices/-/article/actueel-hoogtebestand-nederland-ahn) · [Rijkswaterstaat 1GIS](../tools/data/ede-1gis.sources.md)
+
+```sh
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio --with shapely python -B tools/build-ede-motorway-grades.py /tmp/ede-motorway-ahn --fetch
+uv run --python 3.12 --with pyproj==3.8.0 --with rasterio python -B tools/build-ede-motorway-terrain.py /tmp/ede-motorway-ahn
+```
+
+
 ## Refresh structures and grade-separated routes
 
 The BGT snapshot provides decks, abutments, railway platforms, walls, pylons, tanks, open sheds and turbines. The builder joins related geometry, clips to the map extent and filters overlapping BAG/OSM structures. A second build matches BGT surfaces and widths to OSM ways at the same relative level. The road build combines that physical evidence with directional access tags and WKD.
@@ -280,6 +294,30 @@ uv run --python 3.12 --with pyproj==3.8.0 --with 'shapely>=2.1' python tools/bui
 ```
 
 Omit `--fetch` to reuse a downloaded snapshot. The road evidence builder samples the generated OSM map, so build a new OSM snapshot before matching it and rebuild the map afterward to apply the evidence. The [crossing profile notes](../tools/data/ede-grade-sources.md) give the ProRail refresh queries and record the measured and estimated heights for each modeled crossing. Road and path contact, walls, and the follow camera use those layered surfaces while the rail renderer keeps its OSM alignment. At mapped public level crossings, warnings and barriers share train progress with the simulation. See the [traffic pilot](../tools/data/ede-traffic-pilot.md) for timing and coverage.
+
+### Walking and cycling bridges
+
+Small foot and cycle bridges with aligned BGT footprints have fitted side railings and distinct deck and structural finishes. The November 26, 2026 match found 62 eligible decks. Of those, 42 have an unambiguous bridge-material record in the water-board inventory. The bake accepts points inside one deck footprint and excludes conflicting matches. OSM surface tags describe the finish underfoot. Railing profiles and materials are estimates. [BGT overbruggingsdeel](https://geonovum.github.io/IMGeo-objectenhandboek/overbruggingsdeel) · [PDOK IMWA bridge inventory](https://api.pdok.nl/hwh/waterschappen-kunstwerken-imwa/ogc/v2/collections/brug?f=html)
+
+At Witte de Withstraat, BGT records a deck about 16.9 m long and 3.1 m wide. OSM way 6954427 records asphalt. Waterschap Vallei en Veluwe record KBR-2185 gives timber construction and an underside of 15.07 m NAP. Exposed AHN returns put the deck near 15.27 m NAP at midspan. [OSM way](https://api.openstreetmap.org/api/0.6/way/6954427.json) · [IMWA object record](https://api.pdok.nl/hwh/waterschappen-kunstwerken-imwa/ogc/v2/collections/brug/items/1ef5e24f-a808-5657-b0a7-4936d0421150?f=json) · [AHN data](https://www.ahn.nl/dataroom)
+
+```sh
+uv run --with 'shapely>=2.1' python tools/build-ede-bridge-materials.py --date 2026-11-26
+```
+
+Pass `--snapshot` with a saved IMWA bridge GeoJSON to reproduce the join offline. The [walking and cycling bridge fits](../tools/build-ede-discovered-crossing-fits.py) record the Kraatsvijver elevation controls.
+
+### Pond levels and shorelines
+
+Kraatsvijver uses the water board target of 13.25 m NAP. Proosdijvijver uses 12.00 m NAP. The bake applies fixed targets to mapped standing water where one management area covers at least 98 percent of the outline and the target agrees with the surrounding bank heights. Other identifiable ponds use AHN shoreline estimates. The bundled levels include 141 water-board targets and 458 estimates. Targets describe water management, and estimated values describe the modeled banks. [Vallei en Veluwe management areas](https://services1.arcgis.com/ug8NBKcLHVNmdmdt/ArcGIS/rest/services/Peilvakken/FeatureServer/0) · [AHN data](https://www.ahn.nl/dataroom)
+
+The level surface and the terrain opening share the mapped shoreline. Cuts apply to the town grid, terrain patches, streamed terrain and its coarse overview. Bank faces close the openings and mapped islands retain their ground. The two Frankeneng reaches continue to use their gauge levels in Live mode.
+
+```sh
+uv run --with 'shapely>=2.1' python tools/build-ede-pond-levels.py --date 2026-11-26
+```
+
+Pass `--snapshot` with a saved Peilvakken GeoJSON to rebuild offline.
 
 ### Verify bridges, tunnels and passages
 
@@ -298,6 +336,15 @@ Supply a fourth argument to the Node script to test one site by name or ID. To r
 
 ```sh
 uv run --with shapely --with rasterio --with pyproj python tools/build-ede-crossing-fits.py /tmp/ede-crossing-survey
+```
+
+### Paved terrain on access roads and paths
+
+PDOK sometimes records driveways and paths as `onbegroeidterreindeel`. The terrain paving bake imports polygons with a known hard paving material where they follow a mapped access road or path. It preserves the existing road polygons at junctions, keeps the recorded material boundaries, and clips fallback strips where only part of a segment is surveyed. At Walderveense Molen the survey preserves both concrete pavers and fired brick around the loop and the existing brick entrance. [PDOK terrain collection](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/onbegroeidterreindeel)
+
+```sh
+uv run --with pyproj==3.8.0 --with 'shapely>=2.1' python -B \
+  tools/build-ede-terrain-paving.py /tmp/ede-paved-terrain-20261126 --fetch --date 2026-11-26
 ```
 
 ## Refresh road materials and lanes
@@ -378,19 +425,15 @@ Run `build-ede-shorelines.py --audit --osm` to check the original OSM water poly
 
 ### Refresh water works
 
-The 22 November 2026 snapshot covers the expanded map. The bake matches registered culvert mouths and weirs to nearby waterways, fits NAP elevations to the existing AHN grid, and checks clearance from travel surfaces. Weir orientation follows the mapped channel. Bank-protection lines retain their registered type and material where known, follow the fitted bank top, and trim overlaps with existing walls. A longer culvert can leave one visible mouth in the game while its surveyed link remains underground. [PDOK Kunstwerken](https://www.pdok.nl/ogc-apis/-/article/waterschappen-kunstwerken-imwa) · [PDOK Oppervlaktewateren](https://www.pdok.nl/ogc-apis/-/article/waterschappen-oppervlaktewateren-imwa)
+The bundled 23 November 2026 snapshot contains 52 fixed and adjustable weirs across the expanded map. The bake aligns weirs to mapped channels, checks clearance from travel surfaces, and fits crests to the AHN terrain when needed. [PDOK Kunstwerken](https://www.pdok.nl/ogc-apis/-/article/waterschappen-kunstwerken-imwa) · [PDOK Oppervlaktewateren](https://www.pdok.nl/ogc-apis/-/article/waterschappen-oppervlaktewateren-imwa)
 
-The offline asset contains 76 exposed mouths from 66 of 1,494 culvert records, 39 of 170 weirs, and 663 sections from 465 of 789 bank-protection records. The bank sections total 47.8 km. The bake removed one coincident culvert mouth and supersedes 45 BGT shoreline strips. Most omitted mouths were buried by the game terrain or lacked visible channels. Culvert sill positions and weir crests sometimes need local height fits. Bank depths and generic headwall geometry are estimates.
-
-The Frankeneng gate is fitted to the upper bank of KST-1106, about 1.1 m from its registered point. The 6.04 m NAP sill and 2.41 m overflow width come from the registered record. The gate leaf position and trim are modeled estimates. Both live water levels still come from the pilot gauges. [KST-1106 survey](https://api.pdok.nl/hwh/waterschappen-kunstwerken-imwa/ogc/v2/collections/stuw/items/64bf15fa-ee25-59ee-9c2d-15d510ae0261) · [Frankeneng water levels](simulation.md#frankeneng-water-levels)
+The Frankeneng gate (KST-1106) is on the Nieuwe Wetering near Ampèrestraat and Maxwellstraat. The model is on the upper bank, about 1.1 m from the registered point. The 6.04 m NAP sill and 2.41 m overflow width come from the registered record. The gate leaf position and trim are modeled estimates. Both live water levels still come from the pilot gauges. [KST-1106 survey](https://api.pdok.nl/hwh/waterschappen-kunstwerken-imwa/ogc/v2/collections/stuw/items/64bf15fa-ee25-59ee-9c2d-15d510ae0261) · [Frankeneng water levels](simulation.md#frankeneng-water-levels)
 
 ```sh
-uv run --with 'shapely>=2.1' --with 'pyproj==3.8.0' python tools/build-ede-water-works.py /tmp/ede-water-works --fetch --date 2026-11-22
+uv run --with 'shapely>=2.1' --with 'pyproj==3.8.0' python tools/build-ede-water-works.py /tmp/ede-water-works --fetch
 ```
 
-Omit `--fetch` to reproduce the bake from the dated RD New cache. The command prints source counts and placement results. Use `?perf=1&waterWorks=off` for a baseline with the original BGT bank strips.
-
-The 94,438-byte asset builds into 100 spatial batches. In a paired 1280 × 800 Chrome WebGPU check at Frankeneng with traffic drawing and shadows disabled, median frame time was 16.7 ms and p95 was 33.4 ms in both runs. The layer added 10 draw calls and 5,428 triangles in that view. The water-works build took 41 ms. The visual check covered the Frankeneng gate and banks and the KDU-62176 culvert beside Dwarsweg.
+Omit `--fetch` to rebuild using a local pair of dated RD New snapshots. The command prints source counts and placement results. Use `?perf=1&waterWorks=off` to profile with the weir layer disabled.
 
 Rijkswaterstaat’s Geografische Areaalregistratie supplies A12 and A30 infrastructure in RD New and metres NAP. The bake matches features to directed carriageways, NWB sections and fitted elevations. Surveyed paint replaces coincident procedural paint on the matching way. The lane graph supplies simulation lanes and access. [Rijkswaterstaat 1GIS](https://geo.rijkswaterstaat.nl/arcgis/rest/services/GDR/geografische_areaalregistratie/MapServer)
 
@@ -408,6 +451,17 @@ uv run --with pyproj==3.8.0 --with 'pillow>=12.1' python tools/build-ede-nbd-sig
 ```
 
 The game loads the baked assets locally in the Oude Kerk scene frame. Props use spatially tiled instances. Long barriers and directional sign faces use batched geometry. For a performance comparison, open the game with `?perf=1` and use `bgtStage=street`, `bgtStage=infrastructure`, or `bgtStage=all`. The existing `detail=off`, `bgtDetail=off`, `motorwayDetail=off`, and `nbdSigns=off` switches remain available. [Town and shoreline verification](../tools/data/ede-bgt-town-verification.md) · [Motorway pilot verification](../tools/data/ede-1gis-verification.md)
+
+### Refresh hectometer posts, warning signs and motorway exits
+
+The road furniture index clips RD New locations to the official GM0228 boundary and assigns each record to one 500 m cell in the Oude Kerk scene. It contains 1,354 NWB hectometer records, 407 NDW warning and dead-end signs, and 16 A12/A30 exit boards, including six surveyed overhead panels. The NDW snapshot has zero matching BB-series signs inside Ede. A12 exit 23 is outside the municipal clip. [NWB hectopunten](https://api.pdok.nl/rws/nationaal-wegenbestand-wegen/ogc/v1/collections/hectopunten) · [NDW RD New sign snapshot](https://opendata.ndw.nu/verkeersborden_actueel_beeld_rd.geojson.gz) · [Geofabrik Gelderland OSM extract](https://download.geofabrik.de/europe/netherlands/gelderland.html)
+
+```sh
+uv run --python 3.12 --with pyproj==3.8.0 --with shapely==2.1.2 --with ijson \
+  python scripts/fetch-road-furniture.py --cache /tmp/ede-road-furniture --fetch
+```
+
+Omit `--fetch` to use the cached sources. The bundled build used the Geofabrik Gelderland extract because Overpass was unavailable. To rebuild from an extract, add `--with osmium` to `uv run` and `--osm-pbf /path/to/gelderland-latest.osm.pbf` to the script. Compare against the original furniture with `?perf=1&roadFurniture=off`. In profiling mode, `__slopwaw.roadFurniture` reports active cells, batches and instances.
 
 ### Refresh parcel details and electricity houses
 
@@ -610,6 +664,19 @@ The first northern expansion extended to 52.115° N. Use **Teleport → Lunteren
 
 The 22 November 2026 OSM overlay supplies 15,582 building footprints, 4,204 road and path ways and six railway ways before municipal clipping. The 5 m terrain quadtree and woodland canopy use the same Oude Kerk scene frame as the original 12 m town grid. Measured KEA crown coverage and AHN heights guide estimated stem positions around the northern arrivals. [OpenStreetMap](https://www.openstreetmap.org/copyright) · [BGT](https://api.pdok.nl/lv/bgt/ogc/v1/collections?f=html) · [AHN](https://www.ahn.nl/dataroom)
 
+### Rural landmarks
+
+The map includes four named arrivals in the rural area. The gatehouse, school and farmyard use 3DBAG LoD 2.2 shells, with façade details fitted to photographs. Their measured footprints supply collision and match the generic building replacements by BAG and OSM ID. [3DBAG data and licence](https://docs.3dbag.nl/en/delivery/webservices/)
+
+| Map destination | Exterior |
+| --- | --- |
+| Poortgebouw Harselo · De Poort, De Kraats | The road-facing brick elevation retains the blocked carriage arch with its pale stone surround, the toothed cornice and the hipped tile roof. The model follows the surviving gatehouse at Harsloweg 5. [Monument record](https://monumentenregister.cultureelerfgoed.nl/monumenten/14454) · [Oud Bennekom location](https://oudbennekom.nl/informatiebord-bij-harslo/) |
+| Ruitenbeekschool, Overwoud | The current building at Ruitenbeekweg 111 has the surveyed stepped roof, brown masonry, dark cladding and fitted window bands. [Construction photos](https://bouwbedrijfkreeft.nl/projecten/nieuwbouw-ruitenbeekschool-lunteren/) |
+| Klein Altena, Meulunteren | The thatched main farmhouse and three surveyed outbuildings show the layout of the historic farmyard. [Monument record](https://monumentenregister.cultureelerfgoed.nl/monumenten/14482) |
+| Walderveense Molen, Walderveen | The measured octagonal plan supports a fitted brick base, thatched body and gallery. The cap and 22.2 m sails respond to the shared wind model. [Exterior photo](https://www.ede.nl/in-de-gemeente-ede/molens/walderveense-molen) · [Sail and tower measurements](https://www.collectiegelderland.nl/historischmuseumede/object/f61f0938-277c-9a1b-7767-8dff3d8737d2) |
+
+Refresh the rural surveys with `uv run --with pyproj==3.8.0 python -B tools/build-ede-rural-landmarks.py /tmp/ede-rural-landmark-survey --fetch`. Use `--check` to compare generated data with the checked-in module. Review the school’s window placement if the surveyed faces change.
+
 ### Municipal coverage
 
 The official Ede outline follows Kadaster’s complete 2026 Gemeente Ede polygon (`GM0228`), 318.62 km² in RD New. The playable area extends another 500 m around the municipality, for 361.15 km² in RD New. Walking, cycling, driving and flying share the same outer limit, and an amber frame and label appear while the player is outside Ede. The 2D map shows both boundaries and the road and path network joins to the earlier map through shared OSM node IDs. [Kadaster Bestuurlijke Gebieden](https://www.pdok.nl/ogc-apis/-/article/bestuurlijke-gebieden)
@@ -638,7 +705,7 @@ The 500 m playable border has measured BGT paving, ground cover, water, structur
 | NDW and OSM street features | 10,956 signs, 1,272 humps and tables, and 242 physical crossings |
 | OVapi bus GTFS | 29 route IDs, 184 variants and 339 stops. 322 stops have a boarding lane match |
 | OVapi rail GTFS | 2,497 trips serving the four playable stations |
-| Waterschap Vallei en Veluwe | 136 visible culvert mouths, 52 weirs and 567 bank-protection sections |
+| Waterschap Vallei en Veluwe | 52 weirs |
 
 Retain the reviewed source assets when refreshing the linked inventories. Start with dated Gelderland and Utrecht Geofabrik extracts and a local cache for the PDOK datasets.
 
@@ -662,7 +729,7 @@ The routes stay outside the temporary Goudsberg works fence. Walking trails in t
 
 The first ten custom sites are Station Lunteren, Uitkijktoren De Koepel, Oude Kerk Lunteren, Molen De Hoop, Museum Lunteren, De Hessenhut, the IJzertijdboerderij with its spieker, Pinetum De Dennenhorst, De Wormshoef and D’Eekhorst. The Middelpunt has three grass-topped steel sectors, a compacted courtyard, three boulders and a circular bench around its lime tree. Eight models use surveyed 3DBAG shells. The Hessenhut, farm and stone use mapped or aerially fitted footprints and reference photographs. The game uses shared materials, geometry and lower-detail silhouettes. [Landmark sources and fit notes](../tools/data/ede-lunteren-landmarks.sources.md)
 
-The newer models cover five school buildings and five additional churches. Search the map for De Bron, De Wegwijzer, either CNS De Triangel site, CBS Nederwoud, Bethelkerk, Maranathakerk, Protestantse Gemeente Lunteren Oranjestraat, Het Witte Kerkje or the Molukse Evangelische Kerk. Ruitenbeekschool and De Valk are beyond the playable northern boundary. [School surveys and rebuild](../tools/data/ede-lunteren-schools.sources.md) · [Church surveys and rebuild](../tools/data/ede-lunteren-churches.md)
+The newer models cover five school buildings and five additional churches. Search the map for De Bron, De Wegwijzer, either CNS De Triangel site, CBS Nederwoud, Bethelkerk, Maranathakerk, Protestantse Gemeente Lunteren Oranjestraat, Het Witte Kerkje or the Molukse Evangelische Kerk. The municipal expansion brought Ruitenbeekschool and De Valk inside the playable map. Ruitenbeekschool’s custom exterior is listed under Rural landmarks. [School surveys and rebuild](../tools/data/ede-lunteren-schools.sources.md) · [Church surveys and rebuild](../tools/data/ede-lunteren-churches.md)
 
 Search the map for **Uitkijktoren De Bult** and **Uitkijktoren Celtic Fields**. Both have walkable stairs and decks. De Bult follows its mapped 28-step approach, and the Celtic Fields platform uses dimensions fitted from aerial and ground photos. [De Bult](https://www.bezoek-ede.nl/locaties/1939613607/uitkijktoren-wekerom) · [Celtic Fields ground photo](https://panoramax.xyz/#focus=pic&pic=5d64e2c7-e709-4a2f-9103-b376a053fd27)
 

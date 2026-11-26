@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake visible Vallei en Veluwe structures into the existing Ede scene."""
+"""Bake visible Vallei en Veluwe weirs into the existing Ede scene."""
 
 import argparse
 from collections import Counter
@@ -14,8 +14,8 @@ import subprocess
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from shapely import STRtree, force_2d, make_valid, transform, union_all
-from shapely.geometry import LineString, Point, Polygon, box, shape
+from shapely import STRtree, force_2d, make_valid, transform
+from shapely.geometry import LineString, Point, Polygon, shape
 
 from ede_height_field import expansion_collision_path
 from ede_gis import Frame, SCENE_NAP_ORIGIN, source_crs
@@ -25,9 +25,7 @@ from ede_map import ROOT, load_playable_boundary
 ASSETS = ROOT / 'assets'
 PDOK = 'https://api.pdok.nl/hwh/'
 COLLECTIONS = {
-    'duiker': 'waterschappen-kunstwerken-imwa/ogc/v2',
     'stuw': 'waterschappen-kunstwerken-imwa/ogc/v2',
-    'profielverdediging': 'waterschappen-oppervlaktewateren-imwa/ogc/v1',
     'oppervlaktewaterlichaam': 'waterschappen-oppervlaktewateren-imwa/ogc/v1',
 }
 RD_CRS = 'http://www.opengis.net/def/crs/EPSG/0/28992'
@@ -38,11 +36,6 @@ MATERIALS = {
     'metselwerk': 'brick', 'grasbetontegels': 'stone', 'staal': 'steel', 'ijzer': 'steel',
     'roestvrij staal': 'steel', 'gegolfd plaatstaal': 'steel', 'aluminium': 'steel',
     'pvc': 'plastic', 'kunststof': 'plastic',
-}
-BANKS = {
-    'beschoeiing': ('timber', 'wood', .58), 'damwand': ('sheet', 'steel', .85),
-    'keer- of kademuur': ('wall', 'concrete', .85), 'taludbekleding': ('riprap', 'stone', .38),
-    'talud- en bodembekleding': ('riprap', 'stone', .38), '(perkoen)paaltjes': ('stakes', 'wood', .45),
 }
 
 
@@ -148,14 +141,8 @@ def build(scene, frame, area, docs):
 
     water = [to_rd(polygon(r['ring'], r.get('holes', []))) for r in scene['water'] if len(r['ring']) >= 6]
     water_index = STRtree(water)
-    wet_interiors = [interior for surface in water if not (interior := surface.buffer(-.90)).is_empty]
-    wet_index = STRtree(wet_interiors)
     channels = [force_2d(g) for _, _, g in rows(docs['oppervlaktewaterlichaam'], area, 'LineString') if g.length > 1.]
     channel_index = STRtree(channels)
-
-    def near_water(geometry, water_reach, channel_reach):
-        return (water_index.query(geometry, predicate='dwithin', distance=water_reach).size > 0
-                or channel_index.query(geometry, predicate='dwithin', distance=channel_reach).size > 0)
 
     def visible_channel(point, along):
         ax, az = along
@@ -187,65 +174,9 @@ def build(scene, frame, area, docs):
         for ring, *holes in structure['polygons']
     ]
     wall_index = STRtree(walls)
-    report = {key: Counter() for key in ('duiker', 'stuw', 'profielverdediging')}
-    culverts, weirs, banks = [], [], []
+    report = {'stuw': Counter()}
+    weirs = []
     occupied = set()
-
-    culvert_sources = sorted(rows(docs['duiker'], area, 'LineString'),
-                             key=lambda row: (row[1].get('tijdstipregistratie') or '', row[0]), reverse=True)
-    for identity, p, geometry in culvert_sources:
-        report['duiker']['active lines'] += 1
-        coords = list(geometry.coords)
-        width, height = p.get('breedteopening'), p.get('hoogteopening')
-        if (geometry.length < 1.5 or not credible(width, .15, 8) or not credible(height, .15, 5)
-                or p.get('aantaldoorstroomopeningen') != 1):
-            report['duiker']['unsupported opening or dimensions'] += 2
-            continue
-        profile = (p.get('vormkoker') or '').lower()
-        if profile not in ('rond', 'rechthoekig'):
-            report['duiker']['unverified bore shape'] += 2
-            continue
-        for suffix, points in [('a', coords), ('b', coords[::-1])]:
-            start = points[0]
-            pt = Point(start[:2])
-            source_nap = start[2] if len(start) > 2 else None
-            if not area.covers(pt) or not credible(source_nap, 0, 50) or not near_water(pt, 6., 4.):
-                report['duiker']['unmatched mouth or NAP'] += 1
-                continue
-            inside = next((q[:2] for q in points[1:] if pt.distance(Point(q[:2])) > .85), None)
-            along = inside and direction(inside, start[:2])
-            if not along:
-                report['duiker']['unmatched mouth or NAP'] += 1
-                continue
-            footprint = span(pt, along, width + .65, .48)
-            if road_index.query(footprint, predicate='intersects').size or wall_index.query(footprint, predicate='intersects').size:
-                report['duiker']['pavement or structure conflict'] += 1
-                continue
-            x, z = frame.rd_to_scene(*start[:2])
-            grade = ground(x, z)
-            if grade is None or not -.28 <= grade - source_nap <= .92:
-                report['duiker']['terrain obscures surveyed mouth'] += 1
-                continue
-            match = visible_channel(pt, along)
-            if not match:
-                report['duiker']['no visible channel in the game'] += 1
-                continue
-            # Dry terrain and most water surfaces share the coarse AHN grid.
-            fitted = max(source_nap, grade - min(.13, height / 4))
-            target = (start[0] + along[0], start[1] + along[1])
-            angle = heading(frame, start[:2], target)
-            if any(math.hypot(x - r['x'], z - r['z']) < .70 and math.cos(angle - r['heading']) > .97
-                   and abs(width - r['width']) < .20 and abs(height - r['height']) < .20 for r in culverts):
-                report['duiker']['coincident opening'] += 1
-                continue
-            culverts.append({
-                'id': f'{identity}/{suffix}', 'code': p.get('code'), 'x': round(x, 2), 'z': round(z, 2),
-                'y': round(fitted - SCENE_NAP_ORIGIN, 3), 'sourceNap': round(source_nap, 3),
-                'heading': angle, 'width': round(width, 3), 'height': round(height, 3),
-                'shape': 'round' if profile == 'rond' else 'box', 'match': match,
-                'material': MATERIALS.get((p.get('typemateriaal') or '').lower(), 'concrete'),
-            })
-            report['duiker']['terrain-fitted mouths' if fitted - source_nap > .02 else 'survey-height mouths'] += 1
 
     for identity, p, geometry in rows(docs['stuw'], area, 'Point'):
         report['stuw']['active points'] += 1
@@ -310,68 +241,7 @@ def build(scene, frame, area, docs):
         })
         report['stuw']['terrain-fitted crests' if crest - sill > .02 else 'survey-height crests'] += 1
 
-    bank_lines = []
-    accepted_banks = {}
-    bank_sources = sorted(rows(docs['profielverdediging'], area, 'LineString'),
-                          key=lambda row: (not row[1].get('typeprofielverdediging'), -row[2].length, row[0]))
-    bank_sources_2d = [force_2d(geometry) for _, _, geometry in bank_sources]
-    source_index = STRtree(bank_sources_2d)
-    for source_i, (identity, p, _) in enumerate(bank_sources):
-        report['profielverdediging']['active lines'] += 1
-        kind = (p.get('typeprofielverdediging') or '').lower()
-        if not kind and (p.get('opmerking') or '').casefold().strip() == 'beschoeiing':
-            kind = 'beschoeiing'
-        if kind not in BANKS or p.get('relatievehoogteligging') not in (None, 0):
-            report['profielverdediging']['bed lining, unsupported type or level'] += 1
-            continue
-        style, default_material, height = BANKS[kind]
-        material = MATERIALS.get((p.get('typemateriaaloever') or '').lower(), default_material)
-        if style == 'timber' and material != 'wood':
-            style = 'wall'
-        geometry = bank_sources_2d[source_i].intersection(area)
-        exclusions = [roads[i].buffer(.28) for i in road_index.query(geometry, predicate='dwithin', distance=.28)]
-        wet_areas = [wet_interiors[i] for i in wet_index.query(geometry, predicate='intersects')]
-        if wet_areas:
-            report['profielverdediging']['trimmed submerged runs'] += 1
-        duplicates = [walls[i] for i in wall_index.query(geometry, predicate='intersects')]
-        if duplicates:
-            report['profielverdediging']['trimmed against existing BGT walls'] += 1
-        overlapping = [
-            match.buffer(.20) for i in source_index.query(geometry, predicate='dwithin', distance=.20)
-            for match in accepted_banks.get(i, []) if match.distance(geometry) <= .20
-        ]
-        shared = [mask for mask in overlapping if geometry.intersection(mask).length > 1.2]
-        if shared:
-            report['profielverdediging']['trimmed coincident registered bank lines'] += 1
-        for j, line in enumerate(parts(geometry.difference(union_all(exclusions + wet_areas + duplicates + shared)), 'LineString')):
-            if line.length < 1.8 or not near_water(line, 4.5, 10.):
-                continue
-            sampled = line.simplify(.32, preserve_topology=False).segmentize(7)
-            points = []
-            for x, z in transform(sampled, frame.rd_to_scene, interleaved=False).coords:
-                nap = ground(x, z)
-                if nap is None:
-                    points = []
-                    break
-                points.append([round(x, 2), round(nap - SCENE_NAP_ORIGIN + .09, 3), round(z, 2)])
-            if len(points) < 2:
-                continue
-            bank_lines.append(line)
-            accepted_banks.setdefault(source_i, []).append(line)
-            banks.append({'id': f'{identity}/{j}', 'type': style, 'material': material, 'height': height, 'points': points})
-        if not banks or not banks[-1]['id'].startswith(f'{identity}/'):
-            report['profielverdediging']['no supported water-side section'] += 1
-
-    bank_index = STRtree(bank_lines)
-    suppress_edges = []
-    for feature in read(ASSETS / 'ede-bgt-detail.json.gz')['features']:
-        if feature['type'] != 'waterEdge' or feature.get('level', 0) != 0 or len(feature['points']) < 2:
-            continue
-        line = to_rd(LineString(feature['points']))
-        candidates = bank_index.query(line, predicate='dwithin', distance=.65)
-        if candidates.size and line.intersection(union_all([bank_lines[i].buffer(.65) for i in candidates])).length >= line.length * .85:
-            suppress_edges.append(feature['id'])
-    return {'culverts': culverts, 'weirs': weirs, 'banks': banks, 'suppressWaterEdges': suppress_edges}, report
+    return {'weirs': weirs}, report
 
 
 def main():

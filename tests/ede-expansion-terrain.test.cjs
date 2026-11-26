@@ -36,7 +36,8 @@ test('expansion collision uses measured 5 m terrain and retains the original tow
   assert.equal(terrain.terrainHeightAt(east, z), terrain.sampleTerrain(overviewField, east, z));
   assert.equal(Number(field.napOrigin.toFixed(2)), 22.54);
   assert.equal(terrain.terrainHeightAt(0, 0), 0);
-  assert.equal(terrain.getTerrainPatches().length, 3);
+  assert.equal(terrain.getTerrainPatches().length, 8);
+  assert.equal(terrain.getTerrainPatch(-3316.529, 2704.732)?.step, 3);
   assert.ok(terrain.terrainHeightAt(476, 651) - terrain.terrainHeightAt(476, 627) > 8);
 
   for (const [x, z] of [[-7004, -2301], [1951, -3188], [6209, 506], [8090, 3337]]) {
@@ -62,7 +63,8 @@ test('expansion collision uses measured 5 m terrain and retains the original tow
   await terrain.loadTerrain();
   assert.equal(expandedRequests, 0);
   assert.equal(terrain.getExpansionTerrain(), null);
-  assert.equal(terrain.getTerrainPatches().length, 3);
+  assert.equal(terrain.getTerrainPatches().length, 8);
+  assert.equal(terrain.getTerrainPatch(-3316.529, 2704.732)?.step, 3);
 });
 
 test('buffered terrain covers the northern sites and adjoining 5 m tiles share vertices', async () => {
@@ -163,13 +165,46 @@ async function terrainRenderer() {
   const filename = path.resolve(__dirname, '../js/ede-terrain-tiles.js');
   const tiles = loadModule(readFileSync(filename, 'utf8'), { filename, imports: {
     './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
-    './ede-landscape-jobs.js': {},
+    './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
     'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
     './tsl-materials.js': {}, './ede-playable-boundary.js': {}, './ede-coverage.js': {},
     './terrain.js': { ...terrain, expansionSeamOffset: () => 0 },
   } });
   return { three, terrain, ...tiles };
 }
+
+test('expanded terrain cuts remove lower ground and retain terrain above a covered crossing', async () => {
+  const { three, tileGeometry } = await terrainRenderer();
+  const buffer = new ArrayBuffer(4 * 5);
+  const samples = new DataView(buffer);
+  for (const [i, height] of [2200, 2400, 2200, 2400].entries()) {
+    samples.setInt16(i * 5, height, true);
+    samples.setUint8(i * 5 + 2, (i % 2) * 200);
+  }
+  const bounds = [0, 0, 10, 10], skirts = [3, 3, 3, 3];
+  const legacy = { minX: -100, minZ: -100, maxX: -50, maxZ: -50 };
+  const field = { napOrigin: 22 };
+  const cut = { minX: 2, minZ: 2, maxX: 8, maxZ: 8,
+    planes: [[1, 0, 2], [-1, 0, -8], [0, 1, 2], [0, -1, -8]] };
+  const hits = ({ gradeCuts }, x, z) => {
+    const geometry = tileGeometry(buffer, { bounds, skirts, gradeCuts }, legacy, field, 2);
+    const mesh = new three.Mesh(geometry, new three.MeshBasicMaterial());
+    const ray = new three.Raycaster(new three.Vector3(x, 20, z), new three.Vector3(0, -1, 0));
+    return ray.intersectObject(mesh);
+  };
+
+  assert.equal(hits({}, 3, 4).length, 1);
+  assert.equal(hits({ gradeCuts: [cut] }, 3, 4).length, 0);
+  assert.equal(hits({ gradeCuts: [cut] }, 7, 4).length, 0);
+  assert.equal(hits({ gradeCuts: [cut] }, 9, 4).length, 1);
+
+  const covered = { gradeCuts: [{ ...cut, ceiling: 1 }] };
+  assert.equal(hits(covered, 3, 4).length, 0);
+  const [overhead] = hits(covered, 7, 4);
+  assert.ok(Math.abs(overhead.point.y - 1.375) < 1e-6);
+  const colors = overhead.object.geometry.attributes.color.array;
+  assert.ok(colors.includes(100) && colors.includes(160), 'new edge vertices keep interpolated aerial colors');
+});
 
 test('buffered roots draw immediately after camera jumps while detail fetches wait', async ({ mock }) => {
   const [three, tsl, terrain, coverage] = await Promise.all([
@@ -189,7 +224,7 @@ test('buffered roots draw immediately after camera jumps while detail fetches wa
     filename, globals: { URL, AbortController, performance, fetch: fetchTile },
     imports: {
       './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
-    './ede-landscape-jobs.js': {},
+    './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
     'three/webgpu': three, 'three/tsl': tsl, './aerial-colors.js': { sampleGroundColor: () => false },
       './tsl-materials.js': { heathBloomColor: color => color, cityUniforms: { uRoadWetness: tsl.float(0) } },
       './ede-playable-boundary.js': {}, './ede-coverage.js': coverage, './terrain.js': terrain,
@@ -381,7 +416,7 @@ test('canopy walls reach the ground along connected crowns and leave continued t
     .replace('export async function loadForestCanopy', 'async function loadForestCanopy');
   const { canopyGeometry } = loadModule(source, { filename, globals: { URL }, imports: {
     './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
-    './ede-landscape-jobs.js': {},
+    './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
     'three/webgpu': three, 'three/tsl': {}, './ede-scene-coordinates.js': { SCENE_NAP_ORIGIN: 0 },
     './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {},
     './ede-playable-boundary.js': {

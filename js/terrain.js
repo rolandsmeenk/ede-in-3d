@@ -127,18 +127,21 @@ export async function loadTerrain({ expanded = false } = {}) {
     console.warn(`Using the town terrain grid for ${label}:`, error);
     return null;
   });
-  const [town, embankment, cyclingCircuit, edition] = await Promise.all([
+  const [town, edition, ...localPatches] = await Promise.all([
     load(new URL('../assets/ede-ahn.bin', import.meta.url)),
-    optionalPatch('../assets/ede-a12-embankment.bin', 'the A12 embankment'),
-    optionalPatch('../assets/ede-wvede-terrain.bin', 'the WVEde circuit'),
     expanded ? loadExpansion(load).catch(error => {
       console.warn('[AHN terrain tiles] using the Ede town grid:', error);
       return null;
     }) : null,
+    optionalPatch('../assets/ede-a12-embankment.bin', 'the A12 embankment'),
+    optionalPatch('../assets/ede-wvede-terrain.bin', 'the WVEde circuit'),
+    optionalPatch('../assets/ede-a12-lukkien.bin', 'the A12 at Lukkien'),
+    ...['maanderbroek', 'a30-galvanistraat', 'a12-ede-east', 'a12-wageningen'].map(site =>
+      optionalPatch(`../assets/ede-motorway-${site}.bin.gz`, site)),
   ]);
   terrain = town;
   expansion = edition;
-  patches = town.step === 12 ? [EDER_KUIL_TERRAIN, ...[embankment, cyclingCircuit].filter(Boolean)] : [];
+  patches = town.step === 12 ? [EDER_KUIL_TERRAIN, ...localPatches.filter(Boolean)] : [];
   return terrain;
 }
 

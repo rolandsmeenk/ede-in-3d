@@ -154,6 +154,38 @@ test('the atlas and 3D scene share loaded pavement in the playable exterior', as
   }
 });
 
+test('BGT terrain paving replaces the mill loop and other uncovered access roads', async t => {
+  t.mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const { hasEdeMappedSurface, isEdeTrafficPavement, loadEdeRoadSurfaces } = await import('../js/ede-road-surfaces.js');
+  const merged = await loadEdeRoadSurfaces({ north: true, fringe: true });
+  const terrain = packed('ede-terrain-paving.json.gz');
+  assert.equal(merged.terrainSurfaces.length, terrain.surfaces.length);
+  assert.ok(terrain.surfaces.length > 200);
+
+  const millMaterials = new Map(terrain.surfaces.filter(row =>
+    ['G0228.16d6e2ca5581428eb9e04b76e33d041c', 'G0228.530d1634016c40fb9f4ca6e6419e4cb1'].includes(row.id))
+    .map(row => [row.plus_fysiek_voorkomen, row.material]));
+  assert.deepEqual(millMaterials, new Map([['gebakken klinkers', 'brick'], ['betonstraatstenen', 'block']]));
+  assert.ok(merged.surfaces.some(row => row.id === 'G0228.ee4997a21360092de0530b0b0a0a0205' && row.function === 'inrit'));
+  assert.deepEqual(terrain.covered.w1479326985, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+
+  const roads = new Map(EDE_DATA.roads.map(road => [road.id, road]));
+  for (const [id, segments] of Object.entries(terrain.covered)) {
+    const road = roads.get(id);
+    assert.ok(road && !road.layer && !road.bridge && !road.tunnel, id);
+    assert.ok(segments.every(index => index >= 0 && index < road.pts.length / 2 - 1), id);
+  }
+  for (const id of ['w1479326985', 'w1081314237', 'w445865506']) {
+    const road = roads.get(id);
+    const segments = Array.from({ length: road.pts.length / 2 - 1 }, (_, index) => index);
+    assert.deepEqual(terrain.covered[id], segments, id);
+    assert.ok(segments.every(segmentIndex => hasEdeMappedSurface({ road, segmentIndex })), id);
+  }
+  assert.ok(isEdeTrafficPavement(-8085, -7421.35));
+  assert.equal(isEdeTrafficPavement(-8085, -7421.35, 1), false);
+});
+
 test('paving tiles build near the camera, evict under the byte budget, and rebuild after a jump', async () => {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const { loadModule } = require('./helpers/module.cjs');

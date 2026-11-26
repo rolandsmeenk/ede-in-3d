@@ -162,6 +162,88 @@ const BODY_SPECS = {
     rearWiper: true
   }
 };
+// Five-door supermini: a short bonnet and rear overhang, with the rear glass following the hatch.
+BODY_SPECS.hatchback = {
+  name: 'hatchback',
+  zFront: 2.06,
+  zRear: -1.96,
+  wheelRadius: 0.315,
+  wheelZ: 1.28,
+  wheelX: 0.759,
+  archGap: 0.034,
+  archFlare: 0.018,
+  tuck: 0.06,
+  halfWidth: [[2.06, 0.84], [1.28, 0.858], [0, 0.875], [-1.28, 0.87], [-1.96, 0.852]],
+  sill: [[2.06, 0.245], [1.1, 0.235], [-1.1, 0.235], [-1.96, 0.29]],
+  shoulder: [[2.06, 0.62], [1.28, 0.725], [0, 0.76], [-1.28, 0.8], [-1.96, 0.81]],
+  edge: [[1.92, 0.74], [1.48, 0.82], [0.81, 0.925], [0, 0.955], [-1.18, 1.005], [-1.86, 1.015]],
+  crown: [[1.92, 0.036], [1.22, 0.028], [0.78, 0.004], [-1.96, 0.004]],
+  tumble: [[2.06, 0.12], [0.8, 0.11], [-1.2, 0.11], [-1.96, 0.13]],
+  nose: { halfWidth: [0.3, 0.63, 2.8], edge: [0.15, 0.69, 2.6], crown: [0.15, 0.012, 2], sill: [0.15, 0.29, 2], shoulder: [0.2, 0.58, 2.6] },
+  tail: { halfWidth: [0.18, 0.687, 2.8], edge: [0.08, 0.97, 3], crown: [0.08, 0.004, 2], sill: [0.15, 0.34, 2], shoulder: [0.16, 0.75, 2.6] },
+  noseRake: { length: 0.5, y: [[0.24, 0.065], [0.38, 0], [0.53, 0], [0.68, 0.05], [0.76, 0.11]], plan: 0.075 },
+  tailRake: { length: 0.38, y: [[0.28, 0.07], [0.46, 0], [0.62, 0], [0.82, 0.018], [0.98, 0.045]], plan: 0.04 },
+  cabin: {
+    cowl: 0.81,
+    roofFront: -0.01,
+    roofRear: -1.39,
+    deck: -1.87,
+    roofY: [[-0.01, 1.46], [-0.65, 1.485], [-1.39, 1.43]],
+    rail: [0.578, 0.555],
+    inset: 0.027,
+    bulge: 0.012,
+    roofEdge: 0.05,
+    roofCrown: 0.034,
+    roofRound: 4,
+    pillars: [-0.33],
+    glassEnd: -1.67
+  },
+  doors: [0.75, -0.33, -1.13],
+  handles: [-0.19, -1.0],
+  headlight: [0.565, 0.646, 0.217, 0.05],
+  taillight: [0.62, 0.845, 0.16, 0.088],
+  grille: [0.624, 0.285, 0.033],
+  intake: [0.395, 0.44, 0.068],
+  plates: [0.43, 0.7],
+  bumperLine: [0.71, 0.54],
+  bumpers: [[0.42, 0.03], [0.47, 0.03]],
+  chrome: false,
+  cladding: 0,
+  sign: false,
+  rails: false,
+  rearWiper: true,
+  tailStrip: false
+};
+
+// Estate: share the sedan's front end and extend the roof and quarter glass over the cargo area.
+BODY_SPECS.estate = {
+  ...BODY_SPECS.sedan,
+  name: 'estate',
+  zRear: -2.47,
+  halfWidth: [[2.22, 0.9], [1.4, 0.918], [0, 0.926], [-1.4, 0.922], [-2.47, 0.911]],
+  sill: [[2.22, 0.265], [1.2, 0.245], [-1.2, 0.245], [-2.47, 0.285]],
+  shoulder: [[2.22, 0.68], [1.75, 0.76], [1.4, 0.772], [0, 0.782], [-1.4, 0.819], [-2.47, 0.823]],
+  edge: [[2.08, 0.81], [1.55, 0.865], [0.82, 0.948], [0.3, 0.97], [-0.4, 0.985], [-1.4, 1.016], [-2.0, 1.025], [-2.34, 1.019]],
+  crown: [[2.1, 0.04], [0.95, 0.035], [0.68, 0.004], [-2.47, 0.004]],
+  tail: { halfWidth: [0.22, 0.758, 2.8], edge: [0.085, 0.982, 3], crown: [0.085, 0.004, 2], sill: [0.16, 0.36, 2], shoulder: [0.2, 0.763, 2.6] },
+  tailRake: { length: 0.41, y: [[0.28, 0.076], [0.46, 0], [0.62, 0], [0.81, 0.018], [1.02, 0.05]], plan: 0.045 },
+  cabin: {
+    ...BODY_SPECS.sedan.cabin,
+    roofRear: -2.01,
+    deck: -2.32,
+    roofY: [[-0.02, 1.45], [-0.78, 1.475], [-1.54, 1.46], [-2.01, 1.425]],
+    rail: [0.62, 0.616],
+    pillars: [-0.36, -1.13],
+    glassEnd: -2.14
+  },
+  doors: [0.79, -0.36, -1.13],
+  handles: [-0.2, -0.97],
+  taillight: [0.656, 0.892, 0.19, 0.05],
+  plates: [0.46, 0.74],
+  rails: true,
+  rearWiper: true,
+  tailStrip: false
+};
 BODY_SPECS.taxi = Object.assign({}, BODY_SPECS.sedan, { name: 'taxi', sign: true });
 BODY_SPECS.pickup = {
   name: 'pickup',
@@ -286,6 +368,55 @@ BODY_SPECS.van = {
   tailStrip: false,
   barnDoors: [0.8, 2.34],
   slidingDoor: [0.33, -0.97, 2.28]
+};
+// Compact panel van: a car-height bonnet, short wheelbase and a nearly level cargo roof.
+BODY_SPECS.compactVan = {
+  ...BODY_SPECS.van,
+  name: 'compactVan',
+  zFront: 2.18,
+  zRear: -2.21,
+  wheelRadius: 0.33,
+  wheelZ: 1.375,
+  wheelX: 0.778,
+  archGap: 0.04,
+  halfWidth: [[2.18, 0.85], [1.375, 0.885], [0.8, 0.898], [-2.21, 0.9]],
+  sill: [[2.18, 0.28], [1.45, 0.3], [0.8, 0.31], [-2.21, 0.35]],
+  shoulder: [[2.18, 0.66], [1.55, 0.777], [0.65, 0.812], [-2.21, 0.815]],
+  edge: [[2.06, 0.85], [1.65, 0.934], [1.2, 1.025], [0.55, 1.045], [-2.21, 1.05]],
+  crown: [[2.06, 0.03], [1.55, 0.029], [1.2, 0.004], [-2.21, 0]],
+  tumble: [[2.18, 0.115], [1.5, 0.08], [0.75, 0.028], [-2.21, 0.028]],
+  nose: { halfWidth: [0.33, 0.68, 2.6], edge: [0.14, 0.79, 2.4], crown: [0.14, 0.013, 2], sill: [0.16, 0.34, 2], shoulder: [0.22, 0.61, 2.4] },
+  tail: { halfWidth: [0.10, 0.833, 3.2], edge: [0.04, 1.035, 3], crown: [0.04, 0, 2], sill: [0.09, 0.38, 2], shoulder: [0.08, 0.785, 3] },
+  noseRake: { length: 0.46, y: [[0.28, 0.06], [0.41, 0], [0.65, 0], [0.76, 0.035], [0.86, 0.1]], plan: 0.07 },
+  cabin: {
+    ...BODY_SPECS.van.cabin,
+    cowl: 1.2,
+    roofFront: 0.57,
+    roofRear: 0.02,
+    deck: -0.055,
+    roofY: [[0.57, 1.82], [0.02, 1.82]],
+    rail: [0.736, 0.79],
+    glassEnd: -0.01
+  },
+  cargo: {
+    rise: [[0.57, 0], [0.39, 0.035], [0.16, 0.07], [-0.18, 0.09], [-2.1, 0.09], [-2.21, 0.075]],
+    roofEdge: 0.094,
+    roofRound: 4,
+    bumper: [0.35, 0.49, 0.05]
+  },
+  doors: [1.07, -0.055, -0.15, -1.12],
+  handles: [0.1, -0.37],
+  headlight: [0.59, 0.705, 0.22, 0.063],
+  taillight: [0.778, 0.89, 0.07, 0.218],
+  grille: [0.682, 0.36, 0.06],
+  intake: [0.455, 0.46, 0.064],
+  plates: [0.465, 0.72],
+  bumperLine: [0.76, 0.53],
+  bumpers: [[0.46, 0.04], [0.43, 0.055]],
+  cladding: 0.47,
+  mirrorScale: [1.03, 1.23, 1],
+  barnDoors: [0.73, 1.73],
+  slidingDoor: [-0.15, -1.12, 1.63]
 };
 // Minivan (~Toyota Sienna / Honda Odyssey): low sloping nose, very fast windshield, long roof, sliding side doors,
 // long rear quarter glass & a steep hatch.

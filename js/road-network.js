@@ -12,6 +12,7 @@ import { GEO } from './nyc-geodata.js';
 import { polygonBoxOverlaps } from './building-collision.js';
 import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad, tractorClosedWays, tractorRoadAllowed } from './road-access.js?v=20261122-startup';
 import { buildEdeActiveTravel } from './ede-active-travel.js';
+import { CARGO_CLEARANCE, cargoRoadAllowed } from './ede-vehicle-mix.js';
 import { resolveEdeRoadLanes, permittedTurn, shareTurn } from './ede-road-lanes.js';
 import { motorwayLanesAt } from './ede-motorway-lanes.js';
 import { EDE_TURN_RESTRICTIONS } from './ede-turn-restrictions.js';
@@ -585,6 +586,8 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
         }
         // BGT splits the northbound carriageway into several polygons. The sampled width covers one lane.
         if (laneRoad?.id === 'w6954696') laneRoad = { ...laneRoad, bgtWidth: laneRoad.width };
+        // Apeldoornseweg's southbound bus lane is a separate BGT strip. Its two lanes span 7.1 m together.
+        if (laneRoad?.id === 'w118547825') laneRoad = { ...laneRoad, bgtWidth: 7.1 };
         if (laneRoad?.id === 'w6954705' && from.z < -68.8) {
           laneRoad = { ...laneRoad, bgtWidth: 6.6, laneTags: { ...laneRoad.laneTags, lanes: '2' } };
         }
@@ -708,7 +711,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
         graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
         turnTagsAtEnd: !!run.turnTagsAtEnd[direction] && laneDefinition.lanes.some(lane => lane.turns), headings: run.headings[direction] } : {}),
       osmStart: direction ? run.osmEnd : run.osmStart, osmEnd: direction ? run.osmStart : run.osmEnd,
-      roadKind: road?.kind, roadName: road?.name, extension: run.extension,
+      roadKind: road?.kind, roadName: road?.name, roadRef: road?.ref, extension: run.extension,
       motorroad: road?.motorroad === true || road?.motorroad === 'yes', agricultural: road?.agricultural,
       motorway: road?.kind === 'motorway' && (road.ref === 'A12' || road.ref === 'A30'),
       motorwayLink: road?.kind === 'motorway_link',
@@ -1324,13 +1327,20 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
   const fireClearance = { height: 3.4, width: 2.55, weight: 15, length: 7.8, axleLoad: 9 };
   const residential = e => e.roadKind === 'residential' || e.roadKind === 'living_street';
   const closedToTractors = tractorClosedWays?.(signs);
+  const closedToCargo = new Set((signs ?? []).filter(sign => /^C0?7B?$/i.test(sign.rvvCode))
+    .flatMap(sign => (sign.edges ?? []).map(match => match.key)));
+  const cargoAccess = (edge, kind) => cargoRoadAllowed(edge, kind) &&
+    !closedToCargo.has(edge.sourceRoadKey) &&
+    !closedToCargo.has(`${roadEdgeKey(edge)}|${edge.wayId}|${edge.layer}`);
   for (const [mode, vehicle, lanes, moves, allowed] of [
     [CAR, VEHICLE_CLEARANCE.car, 'ambientLanes', 'ambientMoves'],
     [VAN, VEHICLE_CLEARANCE.van, 'vanLanes', 'vanMoves'],
     [VAN, refuseClearance, 'refuseLanes', 'refuseMoves', residential],
     [VAN, VEHICLE_CLEARANCE.tractor, 'tractorLanes', 'tractorMoves', e => tractorRoadAllowed(e, closedToTractors)],
     [VAN, VEHICLE_CLEARANCE.ambulance, 'ambulanceLanes', 'ambulanceMoves', e => e.roadKind !== 'motorway' && !e.motorwayLink],
-    [VAN, fireClearance, 'fireLanes', 'fireMoves', e => e.roadKind !== 'motorway' && !e.motorwayLink]
+    [VAN, fireClearance, 'fireLanes', 'fireMoves', e => e.roadKind !== 'motorway' && !e.motorwayLink],
+    [VAN, CARGO_CLEARANCE.rigid, 'rigidLanes', 'rigidMoves', e => cargoAccess(e, 'rigid')],
+    [VAN, CARGO_CLEARANCE.semi, 'semiLanes', 'semiMoves', e => cargoAccess(e, 'semi')]
   ]) {
     const eligible = edges.filter(e => (!allowed || allowed(e)) && !e.boundary && !e.unmodeledTunnel &&
       ((e.modes ?? MOTOR) & mode) && fitsRoad(vehicle, e.limits, mode));

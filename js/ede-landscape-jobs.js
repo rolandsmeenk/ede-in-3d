@@ -33,7 +33,7 @@ export function runLandscapeJob(type, buffer, tile, terrainBounds, signal, optio
   if (disabled || typeof Worker === 'undefined' || signal.aborted) return null;
   if (!worker) {
     try {
-      worker = new Worker(new URL('./ede-landscape-worker.js?v=20261123-landscape-workers', import.meta.url), { type: 'module' });
+      worker = new Worker(new URL('./ede-landscape-worker.js?v=20261126-motorway-grades', import.meta.url), { type: 'module' });
     } catch (error) {
       disabled = true;
       console.warn('[landscape worker] using main-thread meshes:', error);

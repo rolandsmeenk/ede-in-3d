@@ -2,7 +2,7 @@ import { EDE_DATA } from './ede-geodata.js';
 import { EDE_NORTH_RAIL, hasNorthRail } from './ede-north-rail-data.js';
 import { MOTOR } from './road-access.js?v=20261122-startup';
 import { getTerrain, terrainHeightAt } from './terrain.js';
-import { clipEdeGround, modeGroup, nearestEdeSpan } from './ede-grade-query.js';
+import { clipEdeGround, gradeApproachHeight, modeGroup, nearestEdeSpan } from './ede-grade-query.js';
 
 const CELL = 48;
 const RAIL_LOOKUP_REACH = 32;
@@ -33,6 +33,7 @@ let railCorridors = new Map();
 let corridorSpans = new Map();
 let corridorTerrainCuts;
 let cuts = new Map();
+let expansionCuts = new Map();
 let roofs = new Map();
 let wayCuts = new Map();
 let buildingPassages;
@@ -56,6 +57,14 @@ function calculateSegments(profile) {
     const dx = (endX - x) / length, dz = (endZ - z) / length;
     spans.push({ at, x, z, y, endX, endZ, endY, dx, dz, length, profile });
     at += length;
+  }
+  if (profile.approachBlend && spans.length) {
+    const first = spans[0], last = spans.at(-1);
+    const ends = [[first.x, first.z, first.dx, first.dz], [last.endX, last.endZ, last.dx, last.dz]];
+    for (const span of spans) {
+      span.totalLength = at;
+      span.ends = ends;
+    }
   }
   return spans;
 }
@@ -152,7 +161,7 @@ export function setEdeGrade(data) {
   const nextSegments = new Map(), nextProfiles = new Map(), nextWays = new Map(), nextTracks = new Map();
   const nextLocalSurfaceWays = new Map();
   const nextLocalSurfaces = [];
-  const nextCuts = new Map(), nextRoofs = new Map();
+  const nextCuts = new Map(), nextRoofs = new Map(), nextExpansionCuts = new Map();
   const nextWayCuts = new Map();
   const nextFittedPassages = new Map();
   for (const site of data.sites) {
@@ -172,7 +181,8 @@ export function setEdeGrade(data) {
         nextLocalSurfaces.push(surface);
         for (const id of entry.wayIds || []) nextLocalSurfaceWays.set(id, surface);
       }
-      const outline = site.kind === 'surface' ? [] : gradeSections(entry).map(sectionCut);
+      const sections = site.kind === 'surface' ? [] : gradeSections(entry);
+      const outline = sections.map(sectionCut);
       if (entry.cutBuildings) {
         for (const section of gradeSections(entry, 3)) {
           if (section.covered) {
@@ -181,7 +191,16 @@ export function setEdeGrade(data) {
         }
       }
       for (const id of entry.wayIds || []) addWay(nextWayCuts, id, outline);
-      if (site.kind === 'level') for (const cut of outline) indexCut(nextCuts, cut);
+      for (const [i, section] of sections.entries()) {
+        const mid = (section.a.distance + section.b.distance) / 2;
+        const onBridge = entry.span && mid >= entry.span[0] && mid <= entry.span[1];
+        if (site.kind !== 'level' && !(entry.replaceGround && !onBridge && site.kind === 'bridge')) continue;
+        const cut = outline[i];
+        if (entry.approachBlend) {
+          indexCut(nextCuts, { ...cut, floorAt: (x, z) => nearestSpan(spans, x, z)?.y ?? terrainHeightAt(x, z) });
+        } else indexCut(nextCuts, cut);
+        if (site.expandedTerrainCut) indexCut(nextExpansionCuts, cut);
+      }
       for (const span of spans) {
         const pad = profile.half + 1;
         const minX = Math.floor((Math.min(span.x, span.endX) - pad) / CELL);
@@ -203,6 +222,9 @@ export function setEdeGrade(data) {
         const dx = b.x - a.x, dz = b.z - a.z;
         const runSquared = dx * dx + dz * dz;
         const floorAt = (x, z) => a.y + (b.y - a.y) * clamp(((x - a.x) * dx + (z - a.z) * dz) / runSquared, 0, 1);
+        if (site.expandedTerrainCut) indexCut(nextExpansionCuts, section.covered
+          ? { ...cut, ceiling: Math.max(a.y, b.y) + (entry.clearance || site.clearance || 3) }
+          : cut);
         if (section.covered && site.kind === 'underpass') {
           indexCut(nextRoofs, { ...cut, floorAt, clearance: entry.clearance || site.clearance || 3 });
         }
@@ -263,6 +285,7 @@ export function setEdeGrade(data) {
   corridorSpans = nextCorridorSpans;
   corridorTerrainCuts = undefined;
   cuts = nextCuts;
+  expansionCuts = nextExpansionCuts;
   roofs = nextRoofs;
   wayCuts = nextWayCuts;
   fittedPassageCells = nextFittedPassages;
@@ -275,13 +298,23 @@ export async function loadEdeGrade({ localSurfaces = true } = {}) {
     if (!response.ok) throw new Error(`${path} returned HTTP ${response.status}`);
     return response.json();
   }
-  const [data, corrections] = await Promise.all([
-    read('../assets/ede-grade.json'),
+  const [data, corrections, motorway] = await Promise.all([
+    read('../assets/ede-grade.json?v=20261126-small-bridges'),
     localSurfaces ? read('../assets/ede-ahn-surfaces.json').catch(error => {
       console.warn('[grade] using coarse surfaces for exposed approaches:', error.message);
       return null;
     }) : null,
+    read('../assets/ede-motorway-grades.json?v=20261126-motorway').catch(error => {
+      console.warn('[grade] using the base motorway grades:', error.message);
+      return null;
+    }),
   ]);
+  if (motorway?.version === 1 && motorway.datumNAP === data.datumNAP) {
+    const profiles = new Map(motorway.profiles.map(profile => [profile.id, profile]));
+    data.sites = [...data.sites.map(site => ({
+      ...site, profiles: site.profiles?.map(profile => profiles.get(profile.id) ?? profile),
+    })), ...motorway.sites];
+  }
   if (corrections?.version === 1 && Array.isArray(corrections.sites)) {
     data.sites = [...data.sites, ...corrections.sites];
   }
@@ -493,7 +526,7 @@ export function gradeSections(entry, spacing = 6) {
   const border = [...covers.flat(), ...(entry.span || [])];
   const centers = [];
   for (const span of spans) {
-    const subdivisions = Math.max(1, Math.ceil(span.length / spacing));
+    const subdivisions = Math.max(1, Math.ceil(span.length / (entry.approachBlend ? Math.min(spacing, 3) : spacing)));
     const marks = Array.from({ length: subdivisions }, (_, i) => span.at + i * span.length / subdivisions);
     for (const limit of border) if (limit > span.at && limit < span.at + span.length) marks.push(limit);
     for (const distance of [...new Set(marks)].sort((a, b) => a - b)) {
@@ -508,6 +541,7 @@ export function gradeSections(entry, spacing = 6) {
   if (!last) return [];
   centers.push({ x: last.endX, z: last.endZ, y: last.endY, distance: last.at + last.length });
   const half = entry.width / 2;
+  const totalLength = last.at + last.length;
   for (const [i, p] of centers.entries()) {
     const prev = centers[i - 1] || p, next = centers[i + 1] || p;
     const a = Math.hypot(p.x - prev.x, p.z - prev.z) || 1;
@@ -519,10 +553,14 @@ export function gradeSections(entry, spacing = 6) {
     const offset = i === 0 || i === centers.length - 1 ? half : width;
     p.left = { x: p.x - offset * nx / length, z: p.z - offset * nz / length, y: p.y };
     p.right = { x: p.x + offset * nx / length, z: p.z + offset * nz / length, y: p.y };
+    if (entry.approachBlend) for (const point of [p.left, p, p.right]) {
+      point.y = gradeApproachHeight(entry, totalLength, p.distance, point.y, point.x, point.z, terrainHeightAt);
+    }
   }
   return centers.slice(1).map((b, i) => {
     const a = centers[i], middle = (a.distance + b.distance) / 2;
-    return { a, b, covered: covers.some(([from, to]) => middle > from && middle < to) };
+    return { a, b, covered: covers.some(([from, to]) => middle > from && middle < to),
+      splitAcross: Boolean(entry.approachBlend) };
   });
 }
 
@@ -675,6 +713,12 @@ function collectGradeCuts(index, bounds, result) {
 export function gradeCuts(bounds, wayId) {
   const result = new Set((wayCuts.get(wayId) || []).filter(cut => overlaps(bounds, cut)));
   collectGradeCuts(cuts, bounds, result);
+  return [...result];
+}
+
+export function expansionGradeCuts(bounds) {
+  const result = new Set();
+  collectGradeCuts(expansionCuts, bounds, result);
   return [...result];
 }
 

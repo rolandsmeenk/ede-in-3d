@@ -207,3 +207,61 @@ test('the Lukkien roof deck supplies helicopter contact only inside its surveyed
     setEdeHelipads([]);
   }
 });
+
+test('motorway fits keep surveyed decks, approach edges and covered road floors continuous', async ({ mock }) => {
+  const { readFileSync } = require('node:fs');
+  const terrain = await import('../js/terrain.js');
+  const grade = await import('../js/ede-grade.js');
+  mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
+  await Promise.all([terrain.loadTerrain({ expanded: true }), grade.loadEdeGrade()]);
+  const samples = [
+    ['w6960104', -4168.4, 2254, 15.22],
+    ['w6960110', -3981.4, 2375.4, 14.99],
+    ['w6920865', 98.4, 3720.9, 23.24],
+    ['w6919291', 1073, 3707.7, 28.84],
+    ['w6952603', 2943, 2894.8, 38.31],
+    ['w6850995', 3535, 2674.9, 31.39],
+    ['w259328716', 5105, 2718.1, 25.36],
+    ['w509484014', 6787, 2697.5, 31.00],
+    ['w6960734', -4807.3, -3307, 16.15],
+    ['w6960743', -5153.6, -4621.8, 16.46],
+    ['w1092220607', -7235.8, -8492.4, 14.65],
+    ['w509484018', -6151, 969.9, 7.39],
+    ['w491674572', 8890, 2592.6, 32.75],
+    ['w829732187', 7535.9, 2644.9, 32.38],
+  ];
+  const datum = grade.getEdeGrade().datumNAP;
+  for (const [id, x, z, nap] of samples) {
+    const fitted = grade.gradeWayAt(id, x, z);
+    assert.ok(fitted && Math.abs(fitted.y + datum - nap) < 0.23, id);
+  }
+  const motorway = grade.getEdeGrade().sites.flatMap(site => site.profiles)
+    .find(profile => profile.id === 'maanderbroek-a30-a12-upper-w6960104');
+  const sections = grade.gradeSections(motorway);
+  for (const edge of [sections[0].a, sections.at(-1).b]) {
+    for (const { x, y, z } of [edge.left, edge, edge.right]) {
+      assert.ok(Math.abs(y - terrain.terrainHeightAt(x, z)) < 1e-8);
+    }
+  }
+  const [start, next] = motorway.points;
+  const run = Math.hypot(next[0] - start[0], next[1] - start[1]);
+  assert.equal(grade.gradeWayAt(motorway.wayIds[0], start[0] - (next[0] - start[0]) / run,
+    start[1] - (next[1] - start[1]) / run, 1.2), null);
+  const [x, z] = [7535.9, 2644.9];
+  const covered = grade.gradeProfileAt(x, z, 'car', undefined, 32.38 - datum);
+  assert.ok(covered.roof - covered.y > 5.1);
+  assert.ok(grade.expansionGradeCuts({ minX: x - 1, maxX: x + 1, minZ: z - 1, maxZ: z + 1 })
+    .some(cut => cut.ceiling >= covered.roof - 0.01));
+  assert.ok(grade.isUnderEdeRoof(x, covered.y + 1, z));
+  const coveredBounds = { minX: x - 0.1, maxX: x + 0.1, minZ: z - 0.1, maxZ: z + 0.1 };
+  const wrongLevelPavement = [[-0.1, -0.1], [0.1, -0.1], [0.1, 0.1], [-0.1, 0.1]]
+    .map(([dx, dz]) => ({ x: x + dx, y: covered.roof + 1, z: z + dz }));
+  const residuals = grade.clipEdeGround(wrongLevelPavement, grade.gradeCuts(coveredBounds));
+  for (const ring of residuals) {
+    const area = ring.reduce((sum, point, i) => {
+      const next = ring[(i + 1) % ring.length];
+      return sum + (point.x - x) * (next.z - z) - (next.x - x) * (point.z - z);
+    }, 0);
+    assert.ok(Math.abs(area) < 1e-8);
+  }
+});

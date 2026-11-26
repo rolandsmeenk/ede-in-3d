@@ -10,6 +10,15 @@ const boundsOf = (points) => ({
 });
 const overlaps = (a, b) => a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
 
+export function gradeApproachHeight(entry, length, distance, y, x, z, terrainHeightAt) {
+  if (!entry.approachBlend) return y;
+  const [start, end] = entry.approachBlend;
+  const t = Math.max(0, Math.min(1, start ? distance / start : 1, end ? (length - distance) / end : 1));
+  if (t >= 1) return y;
+  const terrain = terrainHeightAt(x, z);
+  return terrain + (y - terrain) * t * t * (3 - 2 * t);
+}
+
 export function nearestEdeSpan(spans, x, z, terrainHeightAt, { mode, kind, referenceY, reach = 0.3, heading, wayId } = {}) {
   let picked = null, best = Infinity;
   const useMode = modeGroup(mode);
@@ -18,6 +27,10 @@ export function nearestEdeSpan(spans, x, z, terrainHeightAt, { mode, kind, refer
     if (wayId && wayId !== profile.wayId) continue;
     if (useMode && !profile.modes.includes(useMode)) continue;
     if (kind && profile.site?.kind !== kind) continue;
+    if (span.ends) {
+      const [[ax, az, ux, uz], [bx, bz, vx, vz]] = span.ends;
+      if ((x - ax) * ux + (z - az) * uz < -0.002 || (x - bx) * vx + (z - bz) * vz > 0.002) continue;
+    }
     const raw = (x - span.x) * span.dx + (z - span.z) * span.dz;
     const along = clamp(raw, 0, span.length);
     const lateral = -(x - span.x) * span.dz + (z - span.z) * span.dx;
@@ -30,6 +43,7 @@ export function nearestEdeSpan(spans, x, z, terrainHeightAt, { mode, kind, refer
       const weight = clamp((profile.half - Math.abs(lateral)) / profile.shoulder, 0, 1);
       y = terrainHeightAt(x, z) + y * weight;
     }
+    y = gradeApproachHeight(profile, span.totalLength, span.at + along, y, x, z, terrainHeightAt);
     const delta = Number.isFinite(referenceY) ? Math.abs(referenceY - y) : 0;
     if (delta > STEP_HEIGHT) continue;
     const alignment = Number.isFinite(heading) ? Math.abs(Math.sin(heading) * span.dx + Math.cos(heading) * span.dz) : 1;

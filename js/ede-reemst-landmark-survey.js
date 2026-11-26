@@ -50,7 +50,7 @@ export const EDE_REEMST_LANDMARKS = [
   },
   { id: 'wildkijkscherm-nieuw-reemst', name: 'Wildkijkscherm Nieuw Reemst', road: 'Planken Wambuisweg',
     district: 'Planken Wambuis', osmId: 'n8069014299', x: 7519.52, z: 122.95, height: 1.8,
-    approach: { x: 7514.5, z: 130.3 }, focusHeight: 1.23, worldSpace: true, mapScenic: true,
+    approach: { x: 7514.5, z: 130.3 }, focusHeight: 1.23, worldSpace: true, mapScenic: true, hideOnMap: true,
     replaceParcelSources: ['OSM:w1146967317'],
   },
 ];

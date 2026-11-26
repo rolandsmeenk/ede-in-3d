@@ -70,6 +70,51 @@ test('shipped lane paths and junction connectors bind to the unchanged street an
   assert.ok(westbound.driveLanes[2].busOnly && !westbound.ambientLanes.includes(2));
 });
 
+test('Apeldoornseweg follows the mapped curves while retaining bus references and junction endpoints', async () => {
+  const { bindApeldoornsewegCurves, fittedLanePoint } = await import('../js/ede-lane-geometry.js');
+  const { buildRoadNetwork } = await import('../js/road-network.js');
+  const { streetRoadKey } = await import('../js/ede-street-features.js');
+  const { setEdeMotorwayLanes } = await import('../js/ede-motorway-lanes.js');
+  const { prepareEdeBusPaths } = await import('../js/ede-bus-traffic.js');
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  setEdeMotorwayLanes(load('motorway-lanes'));
+  const network = buildRoadNetwork([], [], [], load('grade'));
+  const schedule = load('bus-routes');
+  const before = prepareEdeBusPaths(schedule, network.edges, network.alternateBusMove);
+  assert.ok([...before.values()].some(path => path.legs.some(leg => leg.road.roadName === 'Apeldoornseweg')));
+  const roads = new Map(EDE_DATA.roads.map(road => [road.id, road]));
+  const approaches = ['w118547825', 'w160287247', 'w6952730', 'w32824992'].map(id =>
+    network.edges.filter(edge => edge.wayId === id).sort((a, b) => b.len - a.len)[0]);
+  const stops = approaches.map(edge => [fittedLanePoint(edge, 0, 0, {}), fittedLanePoint(edge, 0, edge.len, {})]);
+  const distance = ({ x, z }, edge) => {
+    const { pts } = roads.get(edge.wayId);
+    let nearest = Infinity;
+    for (let i = 0; i + 2 < pts.length; i += 2) {
+      const a = pts[i], b = pts[i + 1], dx = pts[i + 2] - a, dz = pts[i + 3] - b;
+      const t = Math.max(0, Math.min(1, ((x - a) * dx + (z - b) * dz) / (dx * dx + dz * dz)));
+      nearest = Math.min(nearest, Math.hypot(x - a - dx * t, z - b - dz * t));
+    }
+    return nearest;
+  };
+  const stations = [0.2, 0.35, 0.5, 0.65, 0.8];
+  assert.ok(approaches.every(edge => Math.max(...stations.map(t =>
+    distance(fittedLanePoint(edge, 0, edge.len * t, {}), edge))) > 12));
+  bindApeldoornsewegCurves(network, streetRoadKey);
+  for (const [i, edge] of approaches.entries()) {
+    assert.ok(edge.fittedLanes?.[0], edge.wayId);
+    for (const t of stations) {
+      const p = fittedLanePoint(edge, 0, edge.len * t, {});
+      assert.ok(distance(p, edge) < 3.5, edge.wayId);
+    }
+    for (const [end, station] of [0, edge.len].entries()) {
+      const p = fittedLanePoint(edge, 0, station, {});
+      assert.ok(Math.hypot(stops[i][end].x - p.x, stops[i][end].z - p.z) < 0.002, edge.wayId);
+    }
+  }
+  const after = prepareEdeBusPaths(schedule, network.edges, network.alternateBusMove);
+  assert.deepEqual([...after.keys()], [...before.keys()]);
+});
+
 test('through lanes at A12 exit 24, Maanderbroek and Ede-Noord taper before merging', async () => {
   const { bindEdeFittedLanes } = await import('../js/ede-lane-geometry.js');
   const { buildRoadNetwork } = await import('../js/road-network.js');

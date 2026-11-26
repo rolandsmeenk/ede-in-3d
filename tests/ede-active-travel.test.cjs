@@ -158,7 +158,18 @@ test('mountain bikers use the four signed routes and keep their travel direction
       }
     }
   }
-  const regular = [];
-  travel.bikes(0, 0, 18000, regular);
-  assert.ok(regular.every(track => !track.mountain));
+  const signedWays = new Set([...signed].map(id => `w${Math.abs(id)}`));
+  const offRoadWays = new Set(EDE_DATA.roads
+    .filter(road => signedWays.has(road.id) && /^(path|track)$/.test(road.kind)).map(road => road.id));
+  assert.ok(trailTracks.some(track => offRoadWays.has(track.wayId)));
+  assert.ok(EDE_DATA.roadGraph.links.every(link => !offRoadWays.has(EDE_DATA.roads[link[7]]?.id)),
+    'motor traffic has no lanes on the signed forest trails');
+  for (const mode of ['bikes', 'foot']) {
+    const regular = [];
+    travel[mode](0, 0, 18000, regular);
+    assert.ok(regular.some(track => track.wayId === 'w25099291'), mode + ' can use the shared cycleway');
+    assert.ok(regular.every(track => !track.mountain && !offRoadWays.has(track.wayId)), mode + ' excludes forest trails');
+    assert.ok(regular.every(track => track.links.flat(2).every(leg => !offRoadWays.has(leg.track.wayId))),
+      mode + ' cannot enter a forest trail via a connector');
+  }
 });

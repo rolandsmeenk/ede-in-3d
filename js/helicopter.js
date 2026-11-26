@@ -14,13 +14,27 @@ import {
   step,
   smoothstep,
   length,
-  fwidth
+  fwidth,
+  atan,
+  round,
+  dot,
+  normalize,
+  vec4,
+  select,
+  uniform,
+  vec3,
+  sign,
+  positionLocal,
+  cameraPosition,
+  modelWorldMatrixInverse,
+  transformNormalToView
 } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LoftGeometry } from 'three/addons/geometries/LoftGeometry.js';
 import { part } from './vehicles.js';
+import { transparentEffectMRT } from './tsl-materials.js';
 
-// The player's Manhattan sightseeing helicopter: a lofted fuselage with tube skids, rotors and its TSL material.
+// The player's Ede sightseeing helicopter, with a lofted fuselage and tube skids.
 
 const _down = new THREE.Vector3(0, -1, 0);
 
@@ -243,56 +257,99 @@ function buildHelicopterBodyGeometry() {
 }
 
 /**
- * Builds the 4-Bladed Main Rotor Hub, Swashplate, and Tapered Airfoil Rotor Blades.
+ * Builds the Main Rotor Mast, Swashplate & Hub; its blades are a rotor disc (createRotorDisc).
  */
 function buildHelicopterMainRotorGeometry() {
-  const parts = [];
-
   // Rotor mast, swashplate collar & aerodynamic hub dome
   const mast = new THREE.CylinderGeometry(0.11, 0.14, 0.52, 14).translate(0, -0.18, 0);
   const swash = new THREE.CylinderGeometry(0.24, 0.26, 0.08, 16).translate(0, -0.12, 0);
   const hubCap = new THREE.SphereGeometry(0.28, 16, 10)
     .scale(1.0, 0.42, 1.0)
     .translate(0, 0.04, 0);
-  parts.push(
+  return mergeGeometries([
     part(mast, HELI_PARTS.SKID),
     part(swash, HELI_PARTS.EXHAUST),
     part(hubCap, HELI_PARTS.ROTOR)
-  );
-
-  // 4 Tapered Airfoil Main Rotor Blades with pitch cuff grips
-  for (let b = 0; b < 4; b++) {
-    const angle = (b * Math.PI) / 2;
-    const cuff = new THREE.BoxGeometry(0.65, 0.045, 0.14)
-      .translate(0.52, 0, 0)
-      .rotateY(angle);
-    const blade = new THREE.BoxGeometry(4.45, 0.024, 0.26)
-      .rotateX(0.08) // Realistic collective blade pitch
-      .translate(2.68, 0, 0)
-      .rotateY(angle);
-    parts.push(part(cuff, HELI_PARTS.SKID), part(blade, HELI_PARTS.ROTOR));
-  }
-
-  return mergeGeometries(parts);
+  ]);
 }
 
 /**
- * Builds the 4-Bladed Tail Rotor Assembly.
+ * Builds the Tail Rotor Hub; its blades are a rotor disc (createRotorDisc).
  */
 function buildHelicopterTailRotorGeometry() {
-  const parts = [];
   const hub = new THREE.CylinderGeometry(0.09, 0.09, 0.18, 12)
     .rotateZ(Math.PI * 0.5);
-  parts.push(part(hub, HELI_PARTS.EXHAUST));
+  return mergeGeometries([part(hub, HELI_PARTS.EXHAUST)]);
+}
 
-  for (let b = 0; b < 4; b++) {
-    const angle = (b * Math.PI) / 2;
-    const blade = new THREE.BoxGeometry(0.022, 0.76, 0.13)
-      .translate(0, 0.42, 0)
-      .rotateX(angle);
-    parts.push(part(blade, HELI_PARTS.ROTOR));
+// The rotors' blades (radii in m from the shaft). The main rotor turns at the rate of its sound (5.2 rev/s,
+// audio-synthesis.js), the tail rotor 6 times as fast; both cone up a little under lift. `thickness` is how
+// deep a blade looks seen edge-on: its own thickness plus its chord's rise at the blades' pitch.
+const MAIN_ROTOR = {
+  blades: 4, inner: 0.2, tip: 4.905, gripTo: 0.46, gripChord: 0.14, chord: 0.26, thickness: 0.045,
+  tipPaint: 4.35, coning: 0.05, rate: 2 * Math.PI * 5.2
+};
+const TAIL_ROTOR = {
+  blades: 4, inner: 0.09, tip: 0.8, gripTo: 0, gripChord: 0.13, chord: 0.13, thickness: 0.03,
+  tipPaint: 0.73, coning: 0, rate: 2 * Math.PI * 5.2 * 6
+};
+
+/**
+ * A rotor's blades as a disc turning about its +y, seen as a camera sees spinning blades: each point is as opaque as
+ * the share of the frame's exposure a blade spends over it. Sharp blades tens of degrees apart in successive frames
+ * strobe; smeared over the angle they turn while the frame is exposed (`sweep`, set each frame), they trail into
+ * blurred sectors, darker towards the hub, where a blade covers more of each circle, and once they turn further than
+ * the gap between them, into a faint even disc. Seen edge-on, the blades' depth makes the disc a dark line.
+ */
+function createRotorDisc(spec) {
+  const geometry = new THREE.RingGeometry(spec.inner, spec.tip + 0.05, 96, 1).rotateX(-Math.PI / 2);
+  const position = geometry.attributes.position;
+  for (let i = 0; i < position.count; i++) {
+    position.setY(i, Math.hypot(position.getX(i), position.getZ(i)) * Math.tan(spec.coning));
   }
-  return mergeGeometries(parts);
+  geometry.computeVertexNormals();
+
+  const sweep = uniform(0);
+  const material = new THREE.MeshStandardNodeMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    roughness: 0.55,
+    metalness: 0.0
+  });
+
+  const p = positionLocal;
+  const r = length(p.xz);
+  // Angle in the direction the rotor turns: the blades sat at smaller angles earlier in the exposure
+  const angle = atan(p.z.negate(), p.x);
+  const period = float((2 * Math.PI) / spec.blades);
+  // A slanting view ray passes through a blade's depth too, which widens the blade along its path: seen edge-on,
+  // most of what shows is the blades' leading & trailing edges, which face along that path rather than up
+  const view = normalize(modelWorldMatrixInverse.mul(vec4(cameraPosition, 1.0)).xyz.sub(p));
+  const path = vec2(p.z.negate(), p.x).div(r);
+  const edges = abs(dot(view.xz, path)).div(max(abs(view.y), 0.05)).mul(spec.thickness);
+  const surface = select(r.lessThan(spec.gripTo), float(spec.gripChord), float(spec.chord));
+  const chord = surface.add(edges);
+  const half = min(chord.div(r).mul(0.5), period.mul(0.5));
+  const face = vec3(0.0, sign(view.y), 0.0);
+  const edge = vec3(path.x, 0.0, path.y).mul(sign(dot(view.xz, path)));
+  material.normalNode = transformNormalToView(normalize(mix(face, edge, edges.div(chord))));
+  // Share of the angle from 0 to x that the blades cover
+  const covered = (x) => {
+    const turns = round(x.div(period));
+    return turns.mul(half.mul(2.0)).add(clamp(x.sub(turns.mul(period)), half.negate(), half));
+  };
+  const exposure = max(sweep, 0.001);
+  const coverage = covered(angle.add(exposure)).sub(covered(angle)).div(exposure);
+  const tipEdge = fwidth(r);
+  material.opacityNode = coverage.mul(smoothstep(tipEdge.negate().add(spec.tip), tipEdge.add(spec.tip), r).oneMinus());
+  // Matte anthracite blades with high-visibility yellow tips
+  material.colorNode = mix(color(0x1e232a), color(0xffbe28), smoothstep(spec.tipPaint, spec.tipPaint + 0.07, r));
+  material.mrtNode = transparentEffectMRT; // SSR & AO keep seeing what is behind the disc
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'RotorDisc';
+  return { mesh, sweep };
 }
 
 let _heliLoftedMat = null;
@@ -301,9 +358,8 @@ let _heliLoftedMat = null;
  * Creates the TSL procedural material for the 3D Lofted Sightseeing Helicopter:
  * - Renders wrap-around panoramic windscreen, chin bubble windows, sightseeing cabin side windows,
  *   and overhead skylight glass using anti-aliased `roundedRect` SDFs with rubber seals & frame pillars.
- * - Renders a sleek flush executive NYC Sightseeing livery (Pearl Aviation White upper cabin,
- *   Deep Midnight Navy belly/tailboom, and a sweeping Metallic Gold & Crimson accent stripe).
- * - Renders slatted turbine air intakes on the engine cowling and high-visibility yellow tips on rotor blades.
+ * - Paints the fuselage in white and orange with a blue stripe and the Dutch tricolour on the tail.
+ * - Renders slatted turbine air intakes on the engine cowling.
  */
 function createLoftedHelicopterMaterial() {
   if (_heliLoftedMat) return _heliLoftedMat;
@@ -360,14 +416,11 @@ function createLoftedHelicopterMaterial() {
       .mul(isFuselage)
       .toVar();
 
-    // 2. Flush Executive NYC Sightseeing Livery (Aviation White + Midnight Navy + Sweeping Gold Ribbon)
-    const navyCurveY = float(1.00).add(p.z.mul(-0.085));
-    const edgeW = max(fwidth(p.y), 0.008);
-    const isLowerNavy = smoothstep(navyCurveY.add(edgeW), navyCurveY.sub(edgeW), p.y);
-    const goldStripeDist = abs(p.y.sub(navyCurveY.add(0.065)));
-    const isGoldStripe = smoothstep(0.055, 0.038, goldStripeDist);
-    const redPinDist = abs(p.y.sub(navyCurveY.add(0.145)));
-    const isRedPin = smoothstep(0.022, 0.012, redPinDist);
+    // 2. Orange lower fuselage with a blue stripe following the shoulder of the paint.
+    const paintHeight = p.y.sub(float(1.12).sub(p.z.mul(0.085)));
+    const edgeW = max(fwidth(paintHeight), 0.008);
+    const isWhite = smoothstep(edgeW.negate(), edgeW, paintHeight);
+    const isBlueStripe = smoothstep(edgeW.negate(), edgeW, abs(paintHeight).sub(0.04)).oneMinus();
 
     // Cabin door panel seams & handles
     const doorSeam1 = smoothstep(0.012, 0.004, abs(p.z.sub(1.06)));
@@ -380,39 +433,29 @@ function createLoftedHelicopterMaterial() {
       .mul(smoothstep(1.75, 1.65, p.y));
 
     const whitePaint = color(0xf4f7fb);
-    const navyPaint = color(0x132c58);
-    const goldPaint = color(0xffbe28);
-    const redPaint = color(0xd8222b);
+    const orangePaint = color(0xf36c16);
+    const bluePaint = color(0x21468b);
+    const redPaint = color(0xae1c28);
 
-    const baseLivery = mix(
-      mix(mix(whitePaint, navyPaint, isLowerNavy), goldPaint, isGoldStripe),
-      redPaint,
-      isRedPin
-    ).mul(float(1.0).sub(panelLines.mul(0.45)));
+    const baseLivery = mix(mix(orangePaint, whitePaint, isWhite), bluePaint, isBlueStripe)
+      .mul(float(1.0).sub(panelLines.mul(0.45)));
 
     const glassCol = mix(color(0x102234), color(0x1e3c58), clamp(n.y.mul(0.5).add(0.5), 0.0, 1.0));
     const fuselageCol = mix(mix(baseLivery, color(0x14181e), rawSealMask), glassCol, rawWindowMask);
 
-    // 3. Engine Cowling: Aviation White with Dark Slatted Turbine Intake Grille
+    // 3. Orange engine cowling with a dark slatted turbine intake.
     const intakeGrille = roundedRect(vec2(p.z.sub(-0.45), p.y.sub(2.18)), vec2(0.52, 0.13), 0.04)
       .mul(step(0.35, abs(n.x)));
     const louverSlats = step(0.45, fract(p.y.mul(55.0))).mul(0.4).add(0.35);
-    const cowlingCol = mix(
-      mix(whitePaint, goldPaint, smoothstep(2.02, 1.97, p.y)),
-      color(0x181c22).mul(louverSlats),
-      intakeGrille
-    );
+    const cowlingCol = mix(orangePaint, color(0x181c22).mul(louverSlats), intakeGrille);
 
-    // 4. Swept Tail Fin & Stabilizer: Deep Navy with Gold Tip Accent
-    const finGoldBand = smoothstep(2.42, 2.45, p.y).mul(smoothstep(2.62, 2.59, p.y));
-    const finCol = mix(navyPaint, goldPaint, finGoldBand);
+    // 4. Dutch flag across the upper tail fin, above the blue stabilizer.
+    const finEdge = max(fwidth(p.y), 0.008);
+    const flagWhite = smoothstep(finEdge.negate(), finEdge, p.y.sub(2.36));
+    const flagRed = smoothstep(finEdge.negate(), finEdge, p.y.sub(2.59));
+    const finCol = mix(mix(bluePaint, whitePaint, flagWhite), redPaint, flagRed);
 
-    // 5. Rotor Blades: Matte Anthracite Carbon with High-Visibility Yellow Safety Tips
-    const radialDist = length(vec2(p.x, p.z));
-    const isBladeTip = smoothstep(4.35, 4.42, radialDist).add(
-      smoothstep(0.65, 0.68, abs(p.y)).mul(step(radialDist, 0.35))
-    );
-    const rotorCol = mix(color(0x1e232a), goldPaint, clamp(isBladeTip, 0.0, 1.0));
+    const rotorCol = color(0x1e232a);
 
     const skidCol = color(0x22272e);
     const exhaustBore = step(0.65, n.z.negate());
@@ -450,5 +493,8 @@ export {
   buildHelicopterBodyGeometry,
   buildHelicopterMainRotorGeometry,
   buildHelicopterTailRotorGeometry,
-  createLoftedHelicopterMaterial
+  createLoftedHelicopterMaterial,
+  createRotorDisc,
+  MAIN_ROTOR,
+  TAIL_ROTOR
 };

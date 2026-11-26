@@ -7,6 +7,7 @@ import { cityUniforms, heathBloomColor, sampleEdeLandCover } from './tsl-materia
 import { expansionSeamOffset, getExpansionTerrain, getTerrain, sampleTerrain } from './terrain.js';
 import { buildTerrainGeometry, restoreLandscapeGeometry, SIDE } from './ede-landscape-geometry.js';
 import { runLandscapeJob } from './ede-landscape-jobs.js';
+import { expansionGradeCuts } from './ede-grade.js';
 
 const OVERVIEW_SIDE = 13;
 const MAX_LOADS = 4;
@@ -90,7 +91,7 @@ export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
   return buildTerrainGeometry(bytes, tile, legacy, field, expansionSeamOffset, side);
 }
 
-export function createTerrainTiles(scene, heath, fringeLandCover) {
+export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts) {
   const data = getExpansionTerrain();
   if (!data) return null;
   const { manifest, field, directory, detail, overviewField, rootSamples } = data;
@@ -107,6 +108,11 @@ export function createTerrainTiles(scene, heath, fringeLandCover) {
       parts: boundary.parts.filter(part => overlap(tile.bounds, part.bounds)),
       edges: boundary.edges.filter(edge => overlap(tile.bounds, edge)),
     };
+    const [minX, minZ, maxX, maxZ] = tile.bounds;
+    const bounds = { minX, minZ, maxX, maxZ };
+    const outsideTown = minX < legacy.minX || minZ < legacy.minZ || maxX > legacy.maxX || maxZ > legacy.maxZ;
+    const cuts = expansionGradeCuts(bounds).concat(outsideTown ? shorelineCuts?.(bounds) ?? [] : []);
+    if (cuts.length) tile.gradeCuts = cuts;
     if (tile.children) tile.children = tile.children.filter(id => nodes.has(id));
   }
   if (detail) {
@@ -171,9 +177,9 @@ export function createTerrainTiles(scene, heath, fringeLandCover) {
       return response.arrayBuffer();
     }).then(async buffer => {
       if (signal.aborted) return;
-      const { bounds, skirts, boundary } = node;
+      const { bounds, skirts, boundary, gradeCuts } = node;
       const result = typeof Worker === 'undefined' ? null : await runLandscapeJob('terrain', buffer,
-        { bounds, skirts, boundary, detail: Boolean(node.detail) }, bounds, signal);
+        { bounds, skirts, boundary, gradeCuts, detail: Boolean(node.detail) }, bounds, signal);
       if (!signal.aborted) ready.push({ node, buffer: result ? null : buffer, result, signal });
     }).catch(error => {
       if (signal.aborted) return;

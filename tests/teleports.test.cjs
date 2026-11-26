@@ -30,7 +30,7 @@ test('the area menu uses a subset of clear, framed arrivals', () => {
   }
 });
 
-test('expansion map pins have clear scenic approaches that face the surveyed landmark', () => {
+test('expansion scenic approaches face their surveyed landmarks', () => {
   const landmarks = NYC_LANDMARKS.filter(site => site.mapScenic);
   for (const id of ['schaapskooi-ginkelse-heide', 'juffrouw-tok', 'mossel', 'planken-wambuis',
     'airborne-monument-ginkel', 'vensters-op-het-verleden', 'huzarenmonument', 'amadeus',
@@ -42,7 +42,7 @@ test('expansion map pins have clear scenic approaches that face the surveyed lan
     'lunteren-de-bron', 'lunteren-de-wegwijzer', 'lunteren-de-triangel', 'lunteren-de-triangel-marterlaan',
     'lunteren-nederwoud', 'bethelkerk-lunteren', 'maranathakerk-lunteren', 'oranjestraat-kerk-lunteren',
     'witte-kerkje-lunteren', 'molukse-kerk-lunteren']) {
-    assert.ok(landmarks.some(landmark => landmark.id === id), id + ' has a scenic map pin');
+    assert.ok(landmarks.some(landmark => landmark.id === id), id + ' has a scenic approach');
   }
   for (const landmark of landmarks) {
     const { x, z, focus, heading } = TELEPORT_LOCATIONS[landmark.id];
@@ -55,6 +55,18 @@ test('expansion map pins have clear scenic approaches that face the surveyed lan
     assert.equal(focus.z, landmark.z);
     assert.equal(heading, Math.atan2(focus.x - x, focus.z - z));
     assert.ok(focus.height > 0, landmark.id);
+  }
+});
+
+test('selected buildings stay modeled when their atlas landmarks are hidden', async () => {
+  const { EDE_MODELED_LANDMARKS } = await import('../js/ede-landmark-sites.js');
+  for (const id of ['pegasus-flat', 'valkestein-west', 'de-brugge-flat', 'work-garden', 'wildkijkscherm-nieuw-reemst']) {
+    assert.ok(EDE_MODELED_LANDMARKS.some(site => site.id === id), id + ' stays modeled');
+    assert.equal(NYC_LANDMARKS.find(site => site.id === id)?.hideOnMap, true, id);
+    assert.ok(TELEPORT_LOCATIONS[id], id + ' keeps its arrival');
+  }
+  for (const id of ['nieuw-reemst', 'veluwse-proeftuin', 'ej-bos-diervoeding']) {
+    assert.ok(NYC_LANDMARKS.some(site => site.id === id && !site.hideOnMap), id + ' stays visible');
   }
 });
 

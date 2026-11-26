@@ -1,4 +1,4 @@
-import('./main.js?v=20261124-workers')
+import('./main.js?v=20261126-mobile-boot')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

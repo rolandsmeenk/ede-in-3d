@@ -52,6 +52,9 @@ const constrainNavigation = constrainToTravelArea ?? constrainToPlayableArea;
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const MAX_ZOOM = 3.0; // single lots
 const LANDMARK_PIN_ZOOM = 0.055;
+const LOCAL_DETAIL_ZOOM = 0.08;
+const BUILDING_FOOTPRINT_ZOOM = 0.18;
+const OVERVIEW_ROAD_KINDS = /^(?:trunk|primary|secondary|tertiary)(?:_link)?$/;
 const RADAR_SCALE = 0.32; // radar pixels per metre on the ground (zooms out with altitude)
 const GRID_BEARING = (GEO.frame && GEO.frame.bearingDeg) ?? 0; // Ede axes follow true north
 
@@ -62,7 +65,7 @@ const MAP = {
   water: '#0a1118',
   land: '#151a20',
   exteriorLand: '#171e1d',
-  exteriorBuilding: '#45494c',
+  exteriorBuilding: '#343638',
   landEdge: '#252c35',
   islands: '#162019',
   islandsEdge: '#26392c',
@@ -91,9 +94,46 @@ const MAP = {
   halo: 'rgba(8, 11, 15, 0.9)'
 };
 
-const MAP_LANDMARKS = (NYC_LANDMARKS || []).filter(l => !l.hideOnMap);
+// Hide commercial destinations and use the place name alone for shared landmarks.
+const LANDMARK_NAME_OVERRIDES = new Map([
+  ['amadeus', null],
+  ['bennekomseweg-41', null],
+  ['bennekomseweg-43', null],
+  ['boerderij-hoekelum', 'Boerderij Hoekelum'],
+  ['crop-office', null],
+  ['de-langenberg', null],
+  ['de-wormshoef', null],
+  ['ej-bos-diervoeding', null],
+  ['hora-sanatorium', 'HORA Sanatorium'],
+  ['horapark-vpva', null],
+  ['johannus-orgelbouw', null],
+  ['juffrouw-tok', null],
+  ['kappa-docie', null],
+  ['lukkien', null],
+  ['moeke-ede', 'Oud Politiebureau'],
+  ['nizo', null],
+  ['p-bos-veevoeders', null],
+  ['pathe-ede', null],
+  ['peti-protein', null],
+  ['planken-wambuis', null],
+  ['plantion', null],
+  ['reehorst', null],
+  ['riedel-silos', null],
+  ['sporthal-t-riet', 'Sporthal ’t Riet'],
+  ['tesqua', null],
+]);
+
+const MAP_LANDMARKS = (NYC_LANDMARKS || []).flatMap(site => {
+  const name = LANDMARK_NAME_OVERRIDES.get(site.id);
+  if (site.hideOnMap || name === null) return [];
+  return [name ? { ...site, name, short: name, siteName: site.name } : site];
+});
+const HIDDEN_BUILDING_IDS = new Set((NYC_LANDMARKS || []).filter(l => l.hideOnMap).flatMap(site => [
+  site.osmId, ...(site.annexOsmIds ?? []),
+  ...(site.replaceParcelSources ?? []).filter(source => source.startsWith('OSM:')).map(source => source.slice(4)),
+]).filter(Boolean));
 // Landmarks modelled by landmarks.js on their real OpenStreetMap lots (outlined in amber)
-const MODELLED_LANDMARKS = MAP_LANDMARKS.map(l => l.name);
+const MODELLED_LANDMARKS = MAP_LANDMARKS.map(l => l.siteName ?? l.name);
 
 // Labels use the same east/south metre frame as the street network.
 const placeRank = ['city', 'town', 'village', 'hamlet'];
@@ -279,6 +319,47 @@ class TiledLayer {
   }
 }
 
+function overviewRing(points) {
+  const { n, X, Z } = accessor(points);
+  const simplified = [];
+  let lastX = Infinity, lastZ = Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = X(i), z = Z(i);
+    // At overview scale 12.5 metres projects to one CSS pixel or less.
+    if ((x - lastX) ** 2 + (z - lastZ) ** 2 < (1 / LOCAL_DETAIL_ZOOM) ** 2) continue;
+    simplified.push(x, z);
+    lastX = x;
+    lastZ = z;
+  }
+  return simplified;
+}
+
+function overviewLandCover(layers) {
+  if (!layers.overview) {
+    const parks = new TiledLayer(1500);
+    const water = new TiledLayer(1500);
+    for (const block of BLOCKS) {
+      if (block.park > 0.6 && block.area >= 1200) {
+        parks.ring(overviewRing(block.poly), (block.holes || []).map(overviewRing));
+      }
+    }
+    for (const feature of GEO.centralPark?.water || []) {
+      water.ring(overviewRing(feature.ring), (feature.holes || []).map(overviewRing));
+    }
+    // Park outlines dominate overview redraws. Render them once at the largest overview scale.
+    const { minX, minZ, maxX, maxZ } = ISLAND_BOUNDS;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil((maxX - minX) * LOCAL_DETAIL_ZOOM);
+    canvas.height = Math.ceil((maxZ - minZ) * LOCAL_DETAIL_ZOOM);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(LOCAL_DETAIL_ZOOM, 0, 0, LOCAL_DETAIL_ZOOM, -minX * LOCAL_DETAIL_ZOOM, -minZ * LOCAL_DETAIL_ZOOM);
+    ctx.fillStyle = MAP.park;
+    parks.each(ISLAND_BOUNDS, path => ctx.fill(path));
+    layers.overview = { parkCanvas: canvas, water };
+  }
+  return layers.overview;
+}
+
 let LAYERS = null;
 function mapLayers() {
   if (LAYERS) return LAYERS;
@@ -328,7 +409,10 @@ function mapLayers() {
   for (const park of GEO.parks || []) for (const ring of park.rings || []) L.parkLand.polygon(ring,park.holes||[]);
   L.blocks = new TiledLayer();
   L.parkBlocks = new TiledLayer();
-  for (const b of BLOCKS) (b.park > 0.6 && !b.median ? L.parkBlocks : L.blocks).polygon(b.poly,b.holes||[]);
+  for (const b of BLOCKS) {
+    if (HIDDEN_BUILDING_IDS.has(b.osmId) || HIDDEN_BUILDING_IDS.has(b.source?.osmId)) continue;
+    (b.park > 0.6 && !b.median ? L.parkBlocks : L.blocks).polygon(b.poly, b.holes || []);
+  }
 
   // Central Park: meadows, water bodies, the drives and the sunken transverse roads
   const cp = GEO.centralPark || {};
@@ -366,10 +450,11 @@ function mapLayers() {
     const widths=new Map();
     for(const r of ROADS){
       const pedestrian=['footway','path','pedestrian','steps','cycleway'].includes(r.kind);
-      const key=`${r.bridge?'bridge':'road'}:${r.w}:${pedestrian}`;
+      const major = r.highway || OVERVIEW_ROAD_KINDS.test(r.kind);
+      const key=`${r.bridge?'bridge':'road'}:${r.w}:${pedestrian}:${major}`;
       let item=widths.get(key);
       if (!item) {
-        item = { layer: new TiledLayer(1500), width: r.w, pedestrian };
+        item = { layer: new TiledLayer(1500), width: r.w, pedestrian, major };
         widths.set(key, item);
         (r.bridge ? L.edeBridges : L.edeRoads).push(item);
       }
@@ -408,6 +493,7 @@ function footprintLayers(all) {
   if (FOOTPRINTS && FOOTPRINTS.src === all && FOOTPRINTS.n === all.length) return FOOTPRINTS;
   const tones = [new TiledLayer(), new TiledLayer(), new TiledLayer()];
   for (const blk of all) {
+    if (HIDDEN_BUILDING_IDS.has(blk.id)) continue;
     for (const f of blk.footprints || []) {
       const layer = tones[f.h > 95 ? 2 : f.h > 45 ? 1 : 0];
       layer.polygon(f.pts, f.holes || []);
@@ -760,10 +846,6 @@ class NYCMapSystem {
       this.fullCanvas.addEventListener('pointermove', (e) => {
         if (!this.isFullMapOpen || !this.fullCanvas) return;
         if (this.isPanning ? e.pointerId !== this.panPointerId : e.pointerType !== 'mouse') return;
-        const rect = this.fullCanvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-
         if (this.isPanning) {
           e.preventDefault();
           const dx = e.clientX - this.panStart.x;
@@ -771,10 +853,12 @@ class NYCMapSystem {
           if (Math.hypot(dx, dy) > 5) this.dragMoved = true;
           this.viewCenterX = this.panStart.cx - dx / this.viewZoom;
           this.viewCenterZ = this.panStart.cz - dy / this.viewZoom;
-          this.renderFullMap();
           return;
         }
 
+        const rect = this.fullCanvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
         if (mx >= 0 && mx <= rect.width && my >= 0 && my <= rect.height) {
           const wPos = this.screenToWorld(mx, my, rect.width, rect.height);
           if (this.elHoverInfo) {
@@ -837,15 +921,17 @@ class NYCMapSystem {
       // Wheel zoom about the cursor (the place under it stays put)
       this.fullCanvas.addEventListener('wheel', (e) => {
         e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
+        const zoom = Math.max(Math.min(0.06, this.cityOverviewZoom()), Math.min(MAX_ZOOM, this.viewZoom * factor));
+        if (zoom === this.viewZoom) return;
         const rect = this.fullCanvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
         const before = this.screenToWorld(mx, my, rect.width, rect.height);
-        const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
-        this.viewZoom = Math.max(Math.min(0.06, this.cityOverviewZoom()), Math.min(MAX_ZOOM, this.viewZoom * factor));
+        this.viewZoom = zoom;
         this.viewCenterX = before.x - (mx - rect.width * 0.5) / this.viewZoom;
         this.viewCenterZ = before.z - (my - rect.height * 0.5) / this.viewZoom;
-        this.renderFullMap();
+        // The animation loop draws the latest pan and wheel state once per frame.
       }, { passive: false });
     }
   }
@@ -1022,6 +1108,8 @@ class NYCMapSystem {
   drawWorld(ctx, v, isMinimap) {
     const L = mapLayers();
     const s = v.s;
+    const overview = GEO.city === 'Ede' && s < LOCAL_DETAIL_ZOOM;
+    const landCover = overview ? overviewLandCover(L) : null;
     const px = (n) => n / s; // screen pixels -> metres (line widths)
     v.world(ctx);
     if (L.exterior) {
@@ -1066,27 +1154,33 @@ class NYCMapSystem {
     ctx.fill(L.piers);
     ctx.fillStyle = GEO.city === 'Ede' ? MAP.land : MAP.streets;
     ctx.fill(L.manhattan);
-    if (this.fringePavingMap) {
+    if (!overview && this.fringePavingMap) {
       ctx.fillStyle = MAP.streets;
       this.fringePavingMap.each(v, path => ctx.fill(path));
     }
 
     // 3. Parkland, blocks (curb islands) and park blocks
     ctx.fillStyle = MAP.park;
-    L.parkLand.each(v, (p) => ctx.fill(p));
-    ctx.fillStyle = MAP.block;
-    L.blocks.each(v, (p) => ctx.fill(p));
-    if (s >= 0.22) {
-      ctx.strokeStyle = MAP.blockEdge;
-      ctx.lineWidth = px(Math.min(1.2, 0.5 + s));
-      L.blocks.each(v, (p) => ctx.stroke(p));
-    }
-    ctx.fillStyle = MAP.park;
-    L.parkBlocks.each(v, (p) => ctx.fill(p));
-    if (s >= 0.1) {
-      ctx.strokeStyle = MAP.parkEdge;
-      ctx.lineWidth = px(1);
-      L.parkBlocks.each(v, (p) => ctx.stroke(p));
+    if (landCover) {
+      const { parkCanvas } = landCover;
+      ctx.drawImage(parkCanvas, ISLAND_BOUNDS.minX, ISLAND_BOUNDS.minZ,
+        parkCanvas.width / LOCAL_DETAIL_ZOOM, parkCanvas.height / LOCAL_DETAIL_ZOOM);
+    } else {
+      L.parkLand.each(v, (p) => ctx.fill(p));
+      ctx.fillStyle = MAP.block;
+      L.blocks.each(v, (p) => ctx.fill(p));
+      if (s >= 0.22) {
+        ctx.strokeStyle = MAP.blockEdge;
+        ctx.lineWidth = px(Math.min(1.2, 0.5 + s));
+        L.blocks.each(v, (p) => ctx.stroke(p));
+      }
+      ctx.fillStyle = MAP.park;
+      L.parkBlocks.each(v, (p) => ctx.fill(p));
+      if (s >= 0.1) {
+        ctx.strokeStyle = MAP.parkEdge;
+        ctx.lineWidth = px(1);
+        L.parkBlocks.each(v, (p) => ctx.stroke(p));
+      }
     }
 
     ctx.fillStyle = MAP.streets;
@@ -1096,14 +1190,18 @@ class NYCMapSystem {
       else { ctx.lineWidth = Math.max(field.width, px(0.5)); ctx.stroke(field.path); }
     }
     for (const road of L.edeRoads) {
+      if (overview && !road.major) continue;
       if (road.pedestrian && s < 0.07) continue;
       ctx.strokeStyle = road.pedestrian ? MAP.blockEdge : MAP.streets;
-      ctx.lineWidth = Math.max(road.width, px(0.5));
+      ctx.lineWidth = Math.max(road.width, px(overview ? 0.8 : 0.5));
       road.layer.each(v, path => ctx.stroke(path));
     }
 
     // 4. Mapped water bodies
-    if (v.sees(L.cpBounds)) {
+    if (landCover) {
+      ctx.fillStyle = MAP.pond;
+      landCover.water.each(v, path => ctx.fill(path));
+    } else if (v.sees(L.cpBounds)) {
       ctx.fillStyle = MAP.lawn;
       ctx.fill(L.cpLawns);
       ctx.strokeStyle = MAP.drive;
@@ -1121,12 +1219,13 @@ class NYCMapSystem {
 
     ctx.strokeStyle = MAP.streets;
     for (const road of L.edeBridges) {
+      if (overview && !road.major) continue;
       ctx.lineWidth = Math.max(road.width, px(0.5));
       road.layer.each(v, path => ctx.stroke(path));
     }
 
     // 5. Building footprints, lowest first
-    if (s >= 0.18) {
+    if (s >= BUILDING_FOOTPRINT_ZOOM) {
       const fp = footprintLayers(this.allBlocks);
       if (fp) {
         for (let i = 0; i < 3; i++) {
@@ -1191,7 +1290,7 @@ class NYCMapSystem {
       ctx.stroke(this.searchPath);
     }
     ctx.restore();
-    if (this.exteriorBuildingMap) {
+    if (!overview && this.exteriorBuildingMap) {
       ctx.fillStyle = MAP.exteriorBuilding;
       this.exteriorBuildingMap.each(v, path => ctx.fill(path));
     }
@@ -1442,7 +1541,7 @@ class NYCMapSystem {
     }
 
     // Ground layers, names & landmark pins: re-rendered only when the view, the search or the buildings change
-    const fp = footprintLayers(this.allBlocks);
+    const fp = v.s >= BUILDING_FOOTPRINT_ZOOM ? footprintLayers(this.allBlocks) : null;
     const key = `${v.cx}|${v.cz}|${v.s}|${this.fullCanvas.width}|${this.fullCanvas.height}|${this.searchHighlight}|${fp ? fp.version : 0}`;
     if (!this.fullStatic) this.fullStatic = document.createElement('canvas');
     if (key !== this.fullStaticKey) {

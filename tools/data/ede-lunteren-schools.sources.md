@@ -1,6 +1,6 @@
 # Lunteren primary school exteriors
 
-Ede’s *Integraal Huisvestingsplan 2026–2045* lists six primary schools in Lunteren and confirms that CNS De Triangel uses four classrooms at Marterlaan 20, the former De Sprong, as a second site. This yields seven physical sites. Five are inside the current scene. [Ede housing plan, §6.10](https://bouwstenen.nl/sites/default/files/uploads/Bijlage%201%20Integraal%20Huisvestingsplan%202026-2045%20%287%29.pdf)
+Ede’s *Integraal Huisvestingsplan 2026–2045* lists six primary schools in Lunteren and confirms that CNS De Triangel uses four classrooms at Marterlaan 20, the former De Sprong, as a second site. This yields seven physical sites. Five use the original northern school survey. [Ede housing plan, §6.10](https://bouwstenen.nl/sites/default/files/uploads/Bijlage%201%20Integraal%20Huisvestingsplan%202026-2045%20%287%29.pdf)
 
 | School | Address | BAG pand | OSM building |
 | --- | --- | --- | --- |
@@ -20,9 +20,9 @@ The school addresses were matched in the [PDOK Locatieserver](https://www.pdok.n
 
 Window layouts and trim on façades with incomplete photographic coverage are approximate. School grounds, temporary classroom units and rooftop equipment beyond the surveyed shells are outside this bake.
 
-## Coverage beyond the map
+## Municipal expansion
 
-Ruitenbeekschool’s current building at Ruitenbeekweg 111 is at approximately scene `(-2567, -8578)`, and De Valk at Hoge Valkseweg 37 is at approximately `(859, -8119)`. The playable northern boundary is `z = -7680.7`. The build contains no school geometry or pins at those addresses. [Ruitenbeek’s 2022 build](https://bouwbedrijfkreeft.nl/projecten/nieuwbouw-ruitenbeekschool-lunteren/) · [De Valk contact and address](https://www.schooldevalk.nl/contact/)
+Ruitenbeekschool at Ruitenbeekweg 111 and De Valk at Hoge Valkseweg 37 are inside the current playable boundary. Ruitenbeekschool uses the separate rural landmark survey and has a scenic map arrival. [Rural landmark models](../../docs/map-and-assets.md#rural-landmarks) · [De Valk contact and address](https://www.schooldevalk.nl/contact/)
 
 ## Reproduce the survey bake
 

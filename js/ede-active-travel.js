@@ -223,8 +223,9 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
 
     for (const [a, b, , , , , inner, roadIndex, footOffsets] of links) {
       const road = data.roads[roadIndex], [forward, reverse] = road.modes;
-      const signed = mountain && EDE_MTB_WAYS.get(road.id);
-      if (mountain && !signed) continue;
+      const signed = EDE_MTB_WAYS.get(road.id);
+      const trail = signed && /^(path|track)$/.test(road.kind);
+      if (mountain ? !signed : trail) continue;
       if ((road.bridge || road.tunnel && road.tunnelType !== 'building_passage') && !profiles.has(road.id)) continue;
       const footProfile = mode === FOOT && separateFootways.get(road.id);
       const width = road.bgtWidth ?? road.bgt?.width ?? road.width;
@@ -236,7 +237,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
         : mode === BICYCLE ? edeBikeFacilities(road).filter(lane => lane.kind !== 'advisory') : [];
       if (mountain) {
         const direction = [Boolean(signed & 1), Boolean(signed & 2)];
-        if (/^(path|track)$/.test(road.kind) || !((forward | reverse) & MOTOR)) {
+        if (trail || !((forward | reverse) & MOTOR)) {
           surfaces = [{ offset: 0, width, allowed: direction, kind: 'trail' }];
         } else {
           surfaces = surfaces.map(lane => ({ ...lane, allowed: direction.map((yes, i) => yes && lane.allowed[i]) }))

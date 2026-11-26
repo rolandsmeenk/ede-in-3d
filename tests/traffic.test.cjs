@@ -220,7 +220,8 @@ function populationContext() {
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
     nearEdges: [], nearSignals: [], fittedA: {}, activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
-    vehicleSpawns: { ambient: [], van: [], refuse: [], tractor: [], ambulance: [] },
+    vehicleSpawns: { ambient: [], van: [], refuse: [], tractor: [], ambulance: [], rigid: [], semi: [] },
+    cargoFleets: [],
     bikeSpawns: [], mountainBikeSpawns: [], footSpawns: [],
     nearMountainBikes: [], roadTraffic: { isClosed: () => false, demand: () => 1, profile: 1 },
     pickByArea: entries => entries[0]?.segment,
@@ -299,6 +300,52 @@ test('tractors and ambulances use their own eligible spawn lanes', () => {
     assert.equal(vehicle.edge, edge);
     assert.equal(vehicle.lane, 1);
   }
+});
+
+test('Dutch light weights favor hatchbacks and keep pickups rare', async () => {
+  const { dutchVehicleKind } = await import('../js/ede-vehicle-mix.js');
+  const counts = {};
+  for (let i = 0; i < 1000; i++) {
+    const kind = dutchVehicleKind((i + 0.5) / 1000);
+    counts[kind] = (counts[kind] ?? 0) + 1;
+  }
+  assert.equal(counts.pickup, 3);
+  assert.ok(counts.hatchback > counts.suv && counts.estate > counts.sedan);
+  assert.ok(counts.compactVan > counts.van && counts.taxi < 10);
+});
+
+test('local freight displaces light traffic only on eligible routes', async () => {
+  const context = populationContext();
+  const { cargoRoadAllowed, cargoShare } = await import('../js/ede-vehicle-mix.js');
+  const { indexLocalRoads, localSegmentLength } = await import('../js/traffic-area.js');
+  const provincial = Object.assign(straightEdge(15, 320), { roadRef: 'N304', roadKind: 'primary', rigidLanes: [0] });
+  const motorway = Object.assign(straightEdge(-350, 350), {
+    roadKind: 'motorway', motorway: true, lanes: [0, 3, 6], ambientLanes: [0, 1, 2], rigidLanes: [0, 1, 2], semiLanes: [0, 1, 2]
+  });
+  assert.equal(cargoRoadAllowed({ roadKind: 'residential' }, 'rigid'), false);
+  assert.equal(cargoRoadAllowed({ ...provincial, underpass: true }, 'rigid'), false);
+  assert.equal(cargoShare(provincial, 'semi'), 0);
+  assert.equal(cargoShare(provincial, 'rigid'), 0.09);
+  Object.assign(context, {
+    cargoShare, cargoFleets: ['rigid', 'semi'].map(roadProfile => ({ roadProfile, pool: Array(5) })),
+    roadTraffic: { ...context.roadTraffic, demand: () => 3 },
+    queryLocal: indexLocalRoads([provincial, motorway], []), nearX: Infinity, nearZ: Infinity, nextDemandCheck: 0,
+    carTarget: 0, bikeTarget: 0, mountainBikeTarget: 0, pedTarget: 0, NUM_CARS: 112, NUM_BIKES: 96, MAX_MOUNTAIN_BIKES: 5,
+    nearLength: (...args) => localSegmentLength(0, 0, 350, ...args)
+  });
+  trafficFunction('refreshNear', context)();
+  assert.equal(context.vehicleSpawns.rigid.length, 2);
+  assert.equal(context.vehicleSpawns.semi.length, 1);
+  assert.equal(context.vehicleSpawns.semi[0].segment, motorway);
+  assert.deepEqual(context.cargoFleets.map(fleet => fleet.target), [1, 1]);
+  assert.equal(context.carTarget, 18);
+  context.roadTraffic.demand = () => 1;
+  context.clock = 1;
+  trafficFunction('refreshNear', context)();
+  assert.equal(context.cargoFleets[0].target, 1, 'a fractional freight share still gets a truck');
+  context.clock = 24;
+  trafficFunction('refreshNear', context)();
+  assert.equal(context.cargoFleets[0].target, 0, 'the fractional truck takes turns with light traffic');
 });
 
 test('a scheduled collection stop leaves room at intersections and mapped crossings', () => {

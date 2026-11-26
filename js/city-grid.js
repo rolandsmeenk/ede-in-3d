@@ -13,8 +13,8 @@ import {
   createParkPavingMaterial
 } from './tsl-materials.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
-import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeRoadCells, edeGeometryGroups, edeTerrainGeometries, edeWaterBanks, edeWaterCut, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
-import { captureTerrainContext, getTerrain, terrainHeightAt } from './terrain.js';
+import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeRoadCells, edeGeometryGroups, edeTerrainGeometries, edeWaterBanks, edeSurfaceCuts, indexEdeSurfaceCuts, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
+import { captureTerrainContext, getExpansionTerrain, getTerrain, terrainHeightAt } from './terrain.js';
 import { FRANKENENG_GAUGES, resolveFrankenengLevels } from './ede-water-levels.js';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { getRailCorridors, gradeCuts, gradeWayAt, localGradeSurface, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
@@ -66,7 +66,8 @@ function setAerialSurfaceColors(geometry, segment, asphalt, sampleGround = true)
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4, true));
 }
 
-function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches, forestCells, northernTreeSamples = [], heath) {
+function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches, forestCells, northernTreeSamples = [], heath, pondLevels = new Map(),
+  { woodlandSpacing: spacing = 14 } = {}) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
@@ -177,10 +178,10 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   centralParkClearings = null; edeStreetSites = [];
 
   const water = (EDE_DATA.water || []).filter(w => w.ring?.length >= 6);
-  const frankenengMeshes = new Map();
-  let waterLevels = [];
+  const frankenengMeshes = new Map(), waterCuts = [];
+  let waterLevels = [], flatPonds = 0, shorelineCuts;
   if (terrain) {
-    const waterCuts = [];
+    const expanded = getExpansionTerrain();
     if (FRANKENENG_GAUGES.every(({ waterId }) => water.some(({ id }) => id === waterId))) {
       waterLevels = resolveFrankenengLevels();
       for (const [i, level] of waterLevels.entries()) {
@@ -193,14 +194,31 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
         mesh.userData.keepInAerial = true;
         group.add(mesh);
         frankenengMeshes.set(level.waterId, mesh);
-        waterCuts.push(...edeWaterCut(geometry));
+        waterCuts.push(...edeSurfaceCuts(geometry));
         collect(edeWaterBanks([ring, ...holes], FRANKENENG_GAUGES[i].minNap - SCENE_NAP_ORIGIN - 0.05), terrainMat);
       }
     }
-    for (const geometry of edeTerrainGeometries(-0.025, waterCuts)) collect(geometry, terrainMat);
+    const draped = [];
     for (const feature of water) {
       if (frankenengMeshes.has(feature.id)) continue;
-      collect(polygon(edePoints(feature.ring), (feature.holes || []).map(edePoints), 0.005), waterMat);
+      const outer = edePoints(feature.ring), holes = (feature.holes || []).map(edePoints);
+      const level = pondLevels.get(feature.id);
+      const covered = expanded || outer.every(({ x, z }) =>
+        x >= terrain.minX && x <= terrain.maxX && z >= terrain.minZ && z <= terrain.maxZ);
+      if (!level || !covered) {
+        draped.push([outer, holes]);
+        continue;
+      }
+      const mesh = edePolygonGeometry(outer, holes, level.y);
+      waterCuts.push(...edeSurfaceCuts(mesh));
+      collect(mesh, waterMat);
+      collect(edeWaterBanks([outer, ...holes], level.y - 0.08), terrainMat);
+      flatPonds++;
+    }
+    shorelineCuts = indexEdeSurfaceCuts(waterCuts);
+    for (const geometry of edeTerrainGeometries(-0.025, shorelineCuts)) collect(geometry, terrainMat);
+    for (const [outer, holes] of draped) {
+      collect(drapeEdeSurface(edePolygonGeometry(outer, holes, 0.005), true, undefined, false, undefined, shorelineCuts), waterMat);
     }
   } else {
     const waterY = ISLAND_BOUNDS.waterLevel;
@@ -231,7 +249,8 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     if (!park.ring || park.ring.length < 6 || park.kind === 'pitch' && replacedPitches?.has(park.id)) continue;
     const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints);
     const paved = ['square', 'pedestrian', 'plaza'].includes(park.kind);
-    const geometry = polygon(ring, holes, paved ? 0.05 : 0.045);
+    const geometry = drapeEdeSurface(edePolygonGeometry(ring, holes, paved ? 0.05 : 0.045),
+      true, undefined, false, undefined, shorelineCuts);
     if (park.id === 'w572342371') collectPaving(geometry, 'sand', 0);
     else {
       if (paved) setPavingStyle(geometry, 2);
@@ -308,6 +327,24 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     }
   }
 
+  function indexPavement(pavement) {
+    for (const key of pavementCells(pavement.bounds)) {
+      if (!pavementIndex.has(key)) pavementIndex.set(key, new Set());
+      pavementIndex.get(key).add(pavement);
+    }
+  }
+
+  // Cut partial fallback strips against the measured paving, including holes in the survey.
+  for (const { polygons } of surveyedPaving.terrainSurfaces ?? []) {
+    for (const [outer, ...holes] of polygons) {
+      const geometry = edePolygonGeometry(edePoints(outer), holes.map(edePoints));
+      for (const { planes, ...bounds } of edeSurfaceCuts(geometry)) {
+        indexPavement({ kind: 'surveyed', bounds, planes });
+      }
+      geometry.dispose();
+    }
+  }
+
   function addPavement(segment, kind, half, offset = 0) {
     const { a, b, ux, uz, len, road } = segment;
     const nx = -uz, nz = ux;
@@ -324,10 +361,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     const bounds = edeBounds(ring);
     const priority = kind === 'path' ? Number(road.kind === 'cycleway') : segment.width;
     const pavement = { segment, kind, ring, planes, bounds, priority };
-    for (const key of pavementCells(bounds)) {
-      if (!pavementIndex.has(key)) pavementIndex.set(key, new Set());
-      pavementIndex.get(key).add(pavement);
-    }
+    indexPavement(pavement);
     return pavement;
   }
 
@@ -365,12 +399,14 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   function visiblePavement(surface) {
     let fragments = [surface.ring];
     for (const other of nearbyPavement(surface.bounds, 0.03)) {
-      if (other.segment === surface.segment || !sameGrade(surface.segment, other.segment)) continue;
+      const surveyed = other.kind === 'surveyed';
+      if (surveyed ? (surface.segment.bridge || surface.segment.road.layer)
+        : (other.segment === surface.segment || !sameGrade(surface.segment, other.segment))) continue;
       const roadAbove = surface.kind !== 'road' && other.kind === 'road';
       // Prefer wider roads and cycle paths at junctions. Input order breaks ties.
       const overlapsPeer = surface.kind === other.kind && (other.priority > surface.priority
         || (other.priority === surface.priority && other.order < surface.order));
-      if (!roadAbove && !overlapsPeer) continue;
+      if (!surveyed && !roadAbove && !overlapsPeer) continue;
       const pad = roadAbove ? 0.03 : 0;
       const minArea = roadAbove ? 0.015 : 0.00001;
       const outside = [];
@@ -683,7 +719,6 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     return col >= 0 && col < land.width && row >= 0 && row < land.height ? land.data[row * land.width + col] : 0;
   };
   // Keep the original trunks, then fill the spaces between their grid points.
-  const spacing = 14;
   for (const offset of [0, spacing / 2]) {
     const extra = offset !== 0;
     const jitter = extra ? 7 : 10;
@@ -749,9 +784,9 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   collections.clear();
 
   group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, railways: railWays, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, northernWoodlandTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
-    mappedPavingCount, clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, junctionClippedCurbs: true, junctionClippedSidewalks: true };
+    mappedPavingCount, clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, flatPonds, junctionClippedCurbs: true, junctionClippedSidewalks: true };
   scene.add(group);
-  return { group, sidewalks, footprints, highwayLanes: [], colliders, pavingTiles,
+  return { group, sidewalks, footprints, highwayLanes: [], colliders, pavingTiles, shorelineCuts,
     get waterLevels() { return waterLevels; },
     setWaterLevels(levels) {
       for (const level of levels) {

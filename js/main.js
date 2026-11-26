@@ -12,9 +12,9 @@ import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildExteriorBagColliders, createExteriorBagStream, loadExteriorBagFootprints } from './ede-bag-exterior.js';
 import { buildStreetDetails } from './street-details.js?v=20261122-forecourt-lights';
 import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-hospital-signals';
-import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261122-startup';
+import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261126-apeldoornseweg';
 import { loadEdeParking } from './ede-parking.js';
-import { buildRoadPaint } from './road-paint.js?v=20261121-roundabouts';
+import { buildRoadPaint } from './road-paint.js?v=20261126-apeldoornseweg';
 import { overlapsEdeTravelPavement } from './ede-geometry.js';
 import { ThirdPersonControllerManager } from './controllers.js?v=20261122-municipal-coverage';
 import { EDE_BIKE_STYLES } from './ede-bikes.js';
@@ -23,7 +23,7 @@ import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
 import { LightingSystem } from './lighting.js?v=20261121-night-lighting';
 import { createLiveWeather, formatWeatherTime, presetRinkIce, weatherCondition } from './ede-weather.js?v=20261122-rink-ice';
-import { resolveFrankenengLevels, watchFrankenengLevels } from './ede-water-levels.js';
+import { loadEdePondLevels, resolveFrankenengLevels, watchFrankenengLevels } from './ede-water-levels.js';
 import { loadEdeWaterWorks, buildEdeWaterWorks } from './ede-water-works-world.js';
 import { createWeatherPrecipitation } from './weather-precipitation.js';
 import { updateSceneWind } from './tsl-materials.js';
@@ -32,7 +32,7 @@ import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js?v=20261122-municipal-coverage';
 import { createExpansionCulling, setupSceneCulling, updateSceneCulling } from './scene-culling.js?v=20261123-startup-memory';
 import { CityAudioSystem } from './audio-system.js?v=20261122-p2000';
-import { loadTerrain, terrainHeightAt } from './terrain.js';
+import { getExpansionTerrain, loadTerrain, terrainHeightAt } from './terrain.js';
 import { createTerrainTiles } from './ede-terrain-tiles.js';
 import { createEdeHeathCover } from './ede-heath.js';
 import { createForestCanopy, loadForestCanopy } from './ede-forest-canopy.js';
@@ -59,6 +59,7 @@ import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js?v=20
 import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
+import { buildEdeRoadFurniture, loadEdeRoadFurniture, roadFurnitureReplacementIds } from './road-furniture-manager.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
 import { loadEdeCorridorFallbacks } from './ede-facades.js';
 import { bikeRackGround, buildEdeDetail, loadEdeDetail, streamParcelTiles } from './ede-detail.js?v=20261122-truecolor-signs';
@@ -72,6 +73,10 @@ export async function initApp() {
   const fixedStep = profiling && query.get('bench') === '1';
   const bgtStage = profiling ? query.get('bgtStage') ?? undefined : undefined;
   const standard = query.get('quality') === 'standard';
+  const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const appleBrowser = appleMobile || navigator.vendor === 'Apple Computer, Inc.';
+  const compactGraphics = appleMobile && !standard;
   const enabled = (key, fallback = true) => {
     const value = profiling ? query.get(key) : null;
     return value === 'on' ? true : value === 'off' ? false : fallback;
@@ -80,11 +85,13 @@ export async function initApp() {
   const graphics = {
     quality: standard ? 'standard' : 'fast',
     msaa: enabled('msaa', standard), ssr: enabled('ssr', standard),
-    bloom: enabled('bloom'), shadows: enabled('shadows'), vegetation: enabled('vegetation'),
-    buildingDetail: enabled('buildingDetail'),
-    scale: scale >= 0.5 && scale <= 1 ? scale : 1,
+    bloom: enabled('bloom', !compactGraphics), shadows: enabled('shadows', !compactGraphics), vegetation: enabled('vegetation'),
+    buildingDetail: enabled('buildingDetail', !compactGraphics),
+    scale: scale >= 0.5 && scale <= 1 ? scale : compactGraphics ? 0.75 : 1,
   };
-  const treeInventory = profiling && query.get('treeInventory') === 'baseline' ? 'baseline' : undefined;
+  const requestedTreeInventory = profiling ? query.get('treeInventory') : null;
+  const treeInventory = requestedTreeInventory === 'baseline' || (compactGraphics && requestedTreeInventory !== 'expanded')
+    ? 'baseline' : undefined;
   const requestedTreeQuality = profiling ? query.get('treeQuality') : null;
   const treeQuality = ['legacy', 'high', 'auto'].includes(requestedTreeQuality) ? requestedTreeQuality : 'auto';
   const requestedTreeSeason = profiling ? query.get('treeSeason') : null;
@@ -125,6 +132,8 @@ export async function initApp() {
     antialias: graphics.msaa,
     trackTimestamp: profiling,
     powerPreference: 'high-performance',
+    // WebKit can lose its WebGPU device while uploading the first scene and shadow passes.
+    forceWebGL: appleMobile,
     reversedDepthBuffer: true
   });
   renderer.setPixelRatio(graphics.scale);
@@ -145,8 +154,10 @@ export async function initApp() {
   await renderer.init();
   markInit('renderer');
   const profiler = profiling ? (await import('./ede-perf.js')).createEdeProfiler(renderer) : null;
-  console.info(`[renderer] Three.js r${THREE.REVISION}; ${renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback'}`);
-  container.dataset.renderer = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback';
+  const backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback';
+  console.info(`[renderer] Three.js r${THREE.REVISION}; ${backend}`);
+  container.dataset.renderer = backend;
+  document.getElementById('hud-renderer').textContent = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2';
   container.dataset.threeRevision = THREE.REVISION;
   container.dataset.quality = graphics.quality;
 
@@ -162,7 +173,7 @@ export async function initApp() {
   await showLoadingStage('Loading Ede’s map and timetables…');
   const useUtilityDetails = enabled('detail') && enabled('utilityDetail');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult] = await Promise.allSettled([
     loadTerrain({ expanded: query.get('terrainTiles') !== 'off' }), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces({ north: EDE_DATA.meta.north, fringe: Boolean(EDE_DATA.meta.travelBounds) }), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
@@ -176,6 +187,8 @@ export async function initApp() {
     loadEdeSignalHardware(),
     enabled('detail') && enabled('waterWorks') ? loadEdeWaterWorks() : null,
     loadExteriorBagFootprints(),
+    enabled('roadFurniture') ? loadEdeRoadFurniture() : null,
+    loadEdePondLevels(),
   ]);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -195,6 +208,9 @@ export async function initApp() {
   const roadTraffic = createEdeRoadTraffic(speedResult.status === 'fulfilled' ? speedResult.value : undefined);
   const streetFeatures = featureResult.status === 'fulfilled' ? featureResult.value : null;
   const detailData = detailResult.value;
+  const furnitureCells = roadFurnitureResult.value;
+  const furnitureReplacements = roadFurnitureReplacementIds(furnitureCells, detailData?.features);
+  if (roadFurnitureResult.status === 'rejected') console.warn('[road furniture] using existing signs:', roadFurnitureResult.reason);
   if (!streetFeatures) console.warn('[street features] using existing road markings:', featureResult.reason);
   if (trainResult.status === 'rejected') console.warn('[trains] timetable unavailable:', trainResult.reason);
   markInit('map assets and timetables');
@@ -217,14 +233,15 @@ export async function initApp() {
   markInit('sports fields');
   await loadExpansionGroundColors();
   const heath = treeSeasonsEnabled ? createEdeHeathCover(EDE_DATA.parks, EDE_DATA.meta.bounds, detailData?.landCover) : null;
-  const terrainTiles = createTerrainTiles(scene, heath, detailData?.fringeLandCover);
   const exteriorBag = createExteriorBagStream(scene);
-  const forest = terrainTiles && forestCanopyResult.value;
+  const forest = getExpansionTerrain() && forestCanopyResult.value;
+  if (pondLevelsResult.status === 'rejected') console.warn('[water] using terrain-draped ponds:', pondLevelsResult.reason);
   const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity,
-    replacedPitches, forest?.cells, EDE_DATA.meta.north ? forest?.northernTreeSamples : undefined, heath);
+    replacedPitches, forest?.cells, EDE_DATA.meta.north ? forest?.northernTreeSamples : undefined,
+    heath, pondLevelsResult.value, { woodlandSpacing: compactGraphics ? 28 : 14 });
+  const terrainTiles = createTerrainTiles(scene, heath, detailData?.fringeLandCover, cityGrid.shorelineCuts);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
-  const gradeWorld = buildEdeGradeWorld(scene);
   let bgtWorld;
   try {
     bgtWorld = await buildEdeBgtWorld(scene, (x, z, kind) => {
@@ -254,6 +271,7 @@ export async function initApp() {
   } catch (error) {
     console.warn('[bgt] structure layer unavailable:', error);
   }
+  const gradeWorld = buildEdeGradeWorld(scene, bgtWorld?.bridgeFootprints);
   markInit('grade and BGT structures');
   let waterWorks;
   try {
@@ -263,7 +281,7 @@ export async function initApp() {
       markInit('water works');
     }
   } catch (error) {
-    console.warn('[water works] using existing banks and structures:', error);
+    console.warn('[water works] weirs unavailable:', error);
   }
   await showLoadingStage('Building landmarks...');
   if (historicUtilitiesResult.status === 'rejected') console.warn('[electricity landmarks] using existing buildings:', historicUtilitiesResult.reason);
@@ -278,8 +296,7 @@ export async function initApp() {
     if (detailResult.status === 'rejected') throw detailResult.reason;
     if (detailData?.features.length || EDE_DATA.northStreetDetail?.length) {
       const replaced = landmarks.replacements.parcelSources;
-      const waterEdges = new Set(waterWorks ? waterWorksResult.value.suppressWaterEdges : []);
-      const features = (detailData?.features ?? []).filter(feature => !waterEdges.has(feature.id)
+      const features = (detailData?.features ?? []).filter(feature => !furnitureReplacements.hectometers.has(feature.id)
         && (feature.source !== 'parcel' || !feature.sourceIds?.some(id => replaced.has(id))));
       features.push(...(EDE_DATA.northStreetDetail ?? []));
       importedDetail = buildEdeDetail(scene, features, {
@@ -387,12 +404,18 @@ export async function initApp() {
   await showLoadingStage('Adding road markings...');
   if (streetFeatures) {
     try {
-      await buildEdeStreetFeaturesWorld(scene, streetFeatures, roadSurfaceResult.value?.surfaces, importedDetail?.gantries,
+      const signs = streetFeatures.signs.filter(sign => !furnitureReplacements.ndw.has(sign.id));
+      await buildEdeStreetFeaturesWorld(scene, { ...streetFeatures, signs }, roadSurfaceResult.value?.surfaces, importedDetail?.gantries,
         [...streetDetails.signSupports, ...(importedDetail?.signSupports ?? [])]);
     } catch (error) {
       console.warn('[street features] unable to build the feature layer:', error);
     }
   }
+  const roadFurniture = buildEdeRoadFurniture(scene, furnitureCells, {
+    surfaces: roadSurfaceResult.value?.surfaces, detail: detailData?.features,
+    gantries: importedDetail?.gantries, surveyedGroup: importedDetail?.group, nbdTexture: detailData?.nbdTexture,
+    webgpu: renderer.backend.isWebGPUBackend,
+  });
   markInit('street features');
   buildRoadPaint(scene, trafficSystem.network, cityGrid.roadPaint,
     (x, z, edge) => {
@@ -589,7 +612,12 @@ export async function initApp() {
   if (lunterenButton) lunterenButton.hidden = !TELEPORT_LOCATIONS['lunteren-centrum'];
   const hudToggleBtn = document.getElementById('btn-toggle-hud');
   const modeSwitch = document.getElementById('mode-switch');
-  touchControls.onAvailabilityChange = placeModeIndicator;
+  const mapAttribution = document.getElementById('map-attribution');
+  mapAttribution.open = !touchControls.available;
+  touchControls.onAvailabilityChange = available => {
+    mapAttribution.open = !available;
+    placeModeIndicator();
+  };
 
   const elFps = document.getElementById('hud-fps');
   const elMode = document.getElementById('hud-active-mode');
@@ -1085,7 +1113,7 @@ export async function initApp() {
 
   // Compile shaders behind the loading screen. Overlapping compileAsync() jobs keep compilation moving
   // while individual jobs yield to the browser.
-  const COMPILE_POOL = 16;
+  const compilePool = appleBrowser ? 2 : 16;
   const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0)));
   async function precompileShaders(warmWholeScene) {
     await showLoadingStage('Preparing the render pipeline...');
@@ -1110,6 +1138,7 @@ export async function initApp() {
       camera.coordinateSystem, camera.reversedDepth);
     scene.traverseVisible((o) => {
       if (!o.isMesh && !o.isLine && !o.isPoints && !o.isSprite) return;
+      if (!warmWholeScene && !o.layers.test(camera.layers)) return;
       if (o.frustumCulled) {
         if (!warmWholeScene && !(o.isSprite ? startupView.intersectsSprite(o) : startupView.intersectsObject(o))) return;
         culled.push(o);
@@ -1161,10 +1190,22 @@ export async function initApp() {
         setLoadingProgress(done / jobs.length);
       }
     };
-    await Promise.all(Array.from({ length: COMPILE_POOL }, worker));
-    renderer.setMRT(null);
-    renderer.setRenderTarget(null);
-    for (const o of culled) o.frustumCulled = true;
+    // A lost WebGL context can leave the browser's shader completion query pending.
+    const listener = new AbortController();
+    try {
+      if (renderer.backend.gl?.isContextLost()) throw new Error('WebGL context lost before shader compilation');
+      const contextLost = new Promise((_, reject) => {
+        renderer.domElement.addEventListener('webglcontextlost', () => {
+          reject(new Error('WebGL context lost during shader compilation'));
+        }, { signal: listener.signal });
+      });
+      await Promise.race([Promise.all(Array.from({ length: compilePool }, worker)), contextLost]);
+    } finally {
+      listener.abort();
+      renderer.setMRT(null);
+      renderer.setRenderTarget(null);
+      for (const o of culled) o.frustumCulled = true;
+    }
   }
 
   cameraSystem.update(0, 0);
@@ -1173,11 +1214,12 @@ export async function initApp() {
     await (cityGrid.pavingTiles.pendingWork() ?? nextTask());
   }
   if (EDE_DATA.meta.fullMunicipality) expansionCulling?.update(cameraSystem.camera);
+  roadFurniture?.update(cameraSystem.camera, 0.25, lightingSystem.uNightFactor.value);
   markInit('local paving');
 
   // The full municipality would submit distant geometry before the player sees it.
-  const canPrecompile = navigator.vendor !== 'Apple Computer, Inc.' || !renderer.backend.isWebGPUBackend;
-  const warmWholeScene = canPrecompile && !EDE_DATA.meta.fullMunicipality;
+  const canPrecompile = !appleMobile && (!appleBrowser || !renderer.backend.isWebGPUBackend);
+  const warmWholeScene = !appleBrowser && !EDE_DATA.meta.fullMunicipality;
   if (canPrecompile) {
     const restoreTreeWarmup = treeField.prepareWarmup();
     const aerialShell = cityBlocks.group.children.find(object => object.userData.aerialBuildingProxy);
@@ -1190,7 +1232,7 @@ export async function initApp() {
     }
     markInit('compile');
   }
-  await showLoadingStage('Preparing shadows and the first frame...');
+  await showLoadingStage('Drawing the first frame...');
 
   // 6. Animation Loop
   let lastTime = performance.now();
@@ -1206,10 +1248,9 @@ export async function initApp() {
 
   if (elFps) elFps.textContent = '60';
 
-  renderer.setAnimationLoop((now) => {
+  function drawFrame(now) {
     const rawDt = (now - lastTime) * 0.001;
     lastTime = now;
-    if (warmedUp && initTimings) return;
     profiler?.beginFrame(now);
     const dt = fixedStep ? 1 / 60 : Math.min(Math.max(rawDt, 0.001), 0.05);
     elapsed += dt;
@@ -1293,6 +1334,11 @@ export async function initApp() {
     // Traffic collisions can move the player after controller updates; finalize moving hierarchies here.
     for (const root of dynamicRoots) root.updateMatrixWorld();
     profiler?.stage('Visibility and transforms');
+    const vehicle = controllerManager.getActiveEntity();
+    roadFurniture?.update(cameraSystem.camera, dt, lightingSystem.uNightFactor.value,
+      vehicle.headLights ?? (vehicle.headLight ? [vehicle.headLight] : null),
+      trafficSystem.group.visible ? trafficSystem.headlights : null);
+    profiler?.stage('Road furniture');
 
     // Render frame via TSL RenderPipeline (SSR + Bloom)
     if (!warmedUp && warmWholeScene) {
@@ -1330,60 +1376,6 @@ export async function initApp() {
     if (!warmedUp) {
       warmedUp = true;
       markInit('firstFrame');
-      // The loading screen stays up until the GPU has got through the first frame (and the pipelines its warm-up
-      // compiled), i.e. until the city is actually on screen
-      const device = renderer.backend.device;
-      if (loadingStatus) loadingStatus.textContent = 'Waiting for graphics to finish the first frame...';
-      Promise.resolve(device && device.queue.onSubmittedWorkDone()).catch(() => {}).then(() => {
-        markInit('gpu');
-        console.log(`[init] ${initTimings.join(', ')}`);
-        // Spike test hooks (tools/probe.mjs, evidence screenshots)
-        window.__slopwaw = {
-          ready: true, firstFrameAt: performance.now(), init: initTimings.join(', '),
-          backend: renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL fallback',
-          scene, renderer, cameraSystem, controllerManager, TELEPORT_LOCATIONS, trafficSystem, trainSystem, levelCrossings,
-          graphics,
-          perf: profiler && {
-            report: profiler.report, reset: profiler.reset,
-            setTrafficUpdates(enabled) { trafficUpdates = Boolean(enabled); },
-            setTrafficDraw,
-            setBuildingDetail: bagBuildings?.userData.setEnabled,
-            setMurals: murals.setEnabled,
-            setTreeQuality: selectTreeQuality,
-            setTreeSeason: selectTreeSeason,
-          },
-          terrainTiles: terrainTiles?.stats,
-          pavingTiles: cityGrid.pavingTiles.stats,
-          exteriorBag: exteriorBag.stats,
-          expansionCulling: expansionCulling?.stats,
-          forestCanopy: forestCanopy?.stats,
-          treeStats: treeField.stats,
-          treeInventory: {
-            source: loadedTrees?.inventory ?? 'osm', records: cityGrid.group.userData.treeInventory,
-            mapped: cityGrid.group.userData.mappedTrees, procedural: cityGrid.group.userData.proceduralWoodlandTrees,
-            canopyCells: loadedTrees?.canopyDensity?.size ?? 0,
-          },
-          get treeSeason() { return treeSeasonsEnabled ? getTreeSeason() : 'off'; },
-          get environment() { return environmentMode; },
-          get weather() { return liveWeather.state; }, streetFeatures, importedDetail, parcelTiles: parcelTiles?.stats, murals: murals.statistics,
-          get waterLevels() { return cityGrid.waterLevels; },
-          waterWorks: waterWorks?.userData.counts,
-          teleport: teleportToLandmark,
-          teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },
-          mode(m) { selectMode(m); },
-          camera(id) { selectCamera(id, true); },
-          time(id) { selectTime(id); },
-          setCamera(px, py, pz, tx, ty, tz) {
-            cameraSystem.fixedPos = new THREE.Vector3(px, py, pz); cameraSystem.fixedLook = new THREE.Vector3(tx, ty, tz);
-            selectCamera('fixed', true);
-          },
-          info() { return renderer.info ? { calls: renderer.info.render.drawCalls, triangles: renderer.info.render.triangles } : null; },
-        };
-        initTimings = null;
-        if (loadingOverlay) loadingOverlay.classList.add('hidden');
-        audioSystem.ready = true;
-        setLoadingProgress(1);
-      });
     }
 
     // Telemetry uses wall time, not the clamped simulation step, so slow frames and high-refresh displays report
@@ -1412,5 +1404,77 @@ export async function initApp() {
       const where = cameraSystem.getActivePreset().category === 'follow' ? activeEnt.position : cameraSystem.currentPos;
       renderLocation(getLocationLabel(where.x, where.z));
     }
+  }
+
+  // Route first-frame failures through the startup retry UI and stop drawing on a failed device.
+  let startFirstFrame;
+  const firstFrame = new Promise(resolve => { startFirstFrame = resolve; });
+  await renderer.setAnimationLoop(now => {
+    if (initTimings) startFirstFrame(now);
+    else drawFrame(now);
   });
+  try {
+    drawFrame(await firstFrame);
+    if (renderer.backend.gl?.isContextLost()) throw new Error('WebGL context lost during startup');
+    const device = renderer.backend.device;
+    if (device) {
+      if (loadingStatus) loadingStatus.textContent = 'Finishing the first frame...';
+      await Promise.race([
+        device.queue.onSubmittedWorkDone(),
+        device.lost.then(({ message }) => { throw new Error(message || 'WebGPU device lost during startup'); }),
+      ]);
+    }
+  } catch (error) {
+    await renderer.setAnimationLoop(null);
+    throw error;
+  }
+  markInit('gpu');
+  console.log(`[init] ${initTimings.join(', ')}`);
+  // Spike test hooks (tools/probe.mjs, evidence screenshots)
+  window.__slopwaw = {
+    ready: true, firstFrameAt: performance.now(), init: initTimings.join(', '),
+    backend,
+    scene, renderer, cameraSystem, controllerManager, TELEPORT_LOCATIONS, trafficSystem, trainSystem, levelCrossings,
+    graphics,
+    perf: profiler && {
+      report: profiler.report, reset: profiler.reset,
+      setTrafficUpdates(enabled) { trafficUpdates = Boolean(enabled); },
+      setTrafficDraw,
+      setBuildingDetail: bagBuildings?.userData.setEnabled,
+      setMurals: murals.setEnabled,
+      setTreeQuality: selectTreeQuality,
+      setTreeSeason: selectTreeSeason,
+    },
+    terrainTiles: terrainTiles?.stats,
+    pavingTiles: cityGrid.pavingTiles.stats,
+    exteriorBag: exteriorBag.stats,
+    expansionCulling: expansionCulling?.stats,
+    roadFurniture: roadFurniture?.stats,
+    forestCanopy: forestCanopy?.stats,
+    treeStats: treeField.stats,
+    treeInventory: {
+      source: loadedTrees?.inventory ?? 'osm', records: cityGrid.group.userData.treeInventory,
+      mapped: cityGrid.group.userData.mappedTrees, procedural: cityGrid.group.userData.proceduralWoodlandTrees,
+      canopyCells: loadedTrees?.canopyDensity?.size ?? 0,
+    },
+    get treeSeason() { return treeSeasonsEnabled ? getTreeSeason() : 'off'; },
+    get environment() { return environmentMode; },
+    get weather() { return liveWeather.state; }, streetFeatures, importedDetail, parcelTiles: parcelTiles?.stats, murals: murals.statistics,
+    get waterLevels() { return cityGrid.waterLevels; },
+    waterWorks: waterWorks?.userData.counts,
+    teleport: teleportToLandmark,
+    teleportXZ(x, z, heading = 0) { return teleportTo(x, z, heading); },
+    mode(m) { selectMode(m); },
+    camera(id) { selectCamera(id, true); },
+    time(id) { selectTime(id); },
+    setCamera(px, py, pz, tx, ty, tz) {
+      cameraSystem.fixedPos = new THREE.Vector3(px, py, pz); cameraSystem.fixedLook = new THREE.Vector3(tx, ty, tz);
+      selectCamera('fixed', true);
+    },
+    info() { return renderer.info ? { calls: renderer.info.render.drawCalls, triangles: renderer.info.render.triangles } : null; },
+  };
+  initTimings = null;
+  if (loadingOverlay) loadingOverlay.classList.add('hidden');
+  audioSystem.ready = true;
+  setLoadingProgress(1);
 }

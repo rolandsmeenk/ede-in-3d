@@ -130,7 +130,7 @@ function surfaceGeometry(positions, indices, uv) {
   return makeSurfaceGeometry(THREE, positions, indices, uv);
 }
 
-export function edeWaterCut(geometry) {
+export function edeSurfaceCuts(geometry) {
   const points = geometry.getAttribute('position');
   const cuts = [];
   for (let i = 0; i < geometry.index.count; i += 3) {
@@ -150,6 +150,29 @@ export function edeWaterCut(geometry) {
     cuts.push({ ...edeBounds(triangle), planes });
   }
   return cuts;
+}
+
+export function indexEdeSurfaceCuts(cuts) {
+  const cells = new Map();
+  const cell = value => Math.floor(value / 96);
+  const keys = function* ({ minX, minZ, maxX, maxZ }) {
+    for (let x = cell(minX); x <= cell(maxX); x++) {
+      for (let z = cell(minZ); z <= cell(maxZ); z++) yield x * 65536 + z;
+    }
+  };
+  for (const cut of cuts) {
+    for (const key of keys(cut)) {
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push(cut);
+    }
+  }
+  return bounds => {
+    const result = new Set();
+    for (const key of keys(bounds)) {
+      for (const cut of cells.get(key) ?? []) if (overlaps(bounds, cut)) result.add(cut);
+    }
+    return [...result];
+  };
 }
 
 export function edeWaterBanks(rings, bottomY) {
@@ -176,7 +199,7 @@ export function edeWaterBanks(rings, bottomY) {
   return surfaceGeometry(positions, indices);
 }
 
-function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y, coarse = false, waterCuts = []) {
+function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y, coarse, waterCuts) {
   const chunk = 64;
   for (let row = 0; row < rows - 1; row += chunk) for (let col = 0; col < columns - 1; col += chunk) {
     const width = Math.min(chunk, columns - 1 - col) + 1;
@@ -197,7 +220,7 @@ function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y,
       minZ: minZ + row * step, maxZ: minZ + (row + height - 1) * step
     };
     const grade = terrainGradeCuts(bounds);
-    const cuts = grade.concat(waterCuts.filter(cut => overlaps(bounds, cut)));
+    const cuts = grade.concat(waterCuts?.(bounds) ?? []);
     if (!cuts.length) {
       yield surfaceGeometry(positions, indices);
       continue;
@@ -247,8 +270,8 @@ export function* edeTerrainGeometries(y, waterCuts) {
   yield rim(rows, i => [minX, maxZ - i * step], t => [-border, border - 2 * border * t]);
 }
 
-export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false, keepAttribute) {
-  return drapeSurface(THREE, surfaceTerrain, surfaceGrade, geometry, cutGrade, wayId, mappedPavement, keepAttribute);
+export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false, keepAttribute, surfaceCuts) {
+  return drapeSurface(THREE, surfaceTerrain, surfaceGrade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts);
 }
 
 export function drapeEdeVertices(geometry) {

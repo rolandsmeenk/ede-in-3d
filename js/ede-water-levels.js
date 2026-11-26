@@ -21,6 +21,20 @@ export const FRANKENENG_GAUGES = [
   { code: 'WS000611', waterId: FRANKENENG_DOWNSTREAM.id, fallbackNap: 6.25, minNap: 5.84, maxNap: 6.95 },
 ];
 
+export async function loadEdePondLevels() {
+  const response = await fetch(new URL('../assets/ede-pond-levels.json', import.meta.url));
+  if (!response.ok) throw new Error(`Pond levels HTTP ${response.status}`);
+  const asset = await response.json();
+  if (asset.version !== 1 || !asset.levels || Array.isArray(asset.levels)) throw new Error('Invalid Ede pond levels');
+  const levels = new Map();
+  for (const [id, entry] of Object.entries(asset.levels)) {
+    const [nap, code] = Array.isArray(entry) ? entry : [];
+    if (!Number.isFinite(nap) || nap < -5 || nap > 120) throw new Error(`Invalid pond level ${id}`);
+    levels.set(id, { nap, code, y: nap - SCENE_NAP_ORIGIN });
+  }
+  return levels;
+}
+
 const SERVICE = 'https://services1.arcgis.com/ug8NBKcLHVNmdmdt/arcgis/rest/services/1ee052d2-43ba-4c3c-8e80-40bcea8c6405/FeatureServer/0';
 const REFRESH_MS = 5 * 60 * 1000;
 const EXPIRE_MS = 45 * 60 * 1000;

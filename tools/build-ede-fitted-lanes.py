@@ -35,7 +35,7 @@ PROTECTED_BGT = {'fietspad', 'parkeervlak', 'verkeerseiland'}
 LEVELS = {'Maaiveld': 0, 'MaaiveldPlus1': 1, 'MaaiveldPlus2': 2,
           'MaaiveldMin1': -1, 'MaaiveldMin2': -2}
 MIN_EDGE = 4.0
-EXTENSION_FIT_ROADS = {'Harderwijkerweg'}
+EXTENSION_FIT_ROADS = {'Apeldoornseweg', 'Harderwijkerweg'}
 
 
 def import_graph():
@@ -275,6 +275,15 @@ def bgt_section(edge, intervals):
     definition = edge['laneDefinition']
     total = definition['totalCount']
     old_width = definition['width']
+    if edge.get('name') == 'Apeldoornseweg' and edge.get('oneway') and total > 1:
+        # BGT maps the parallel bus strip separately. The swept check still checks the original paved polygons.
+        carriageways = []
+        for low, high in sorted(intervals):
+            if carriageways and low - carriageways[-1][1] <= .4:
+                carriageways[-1] = (carriageways[-1][0], max(high, carriageways[-1][1]))
+            else:
+                carriageways.append((low, high))
+        intervals = carriageways
     nominal_mean = sum(offset for offset, _ in lanes) / len(lanes)
     candidates = []
     for low, high in intervals:
@@ -487,10 +496,18 @@ def prepare(edge, pavement, markings, nwb, frame):
     sample_stations = stations(length, 4.5)
     step = sample_stations[1]
     motorway = edge['kind'].startswith('motorway')
-    legal, _, source_ids = pavement.local(edge['layer'], a, b, edge['width'] + 12)
+    mapped = [(point['station'], *frame.scene_to_rd(point['x'], point['z']), 0)
+              for point in edge.get('mappedPath', ())]
+    west, east = (min(row[1] for row in mapped), max(row[1] for row in mapped)) if mapped else (a[0], b[0])
+    south, north = (min(row[2] for row in mapped), max(row[2] for row in mapped)) if mapped else (a[1], b[1])
+    legal, _, source_ids = pavement.local(edge['layer'], (west, south), (east, north), edge['width'] + 12)
     if not source_ids:
         return None, 'no same-level BGT motor pavement'
-    dedicated_bike_space = list(bike_exclusions(edge, a, b, right))
+    if mapped and edge['laneDefinition']['bikes']:
+        dedicated_bike_space = [part for (_, x, y, _), (_, u, v, _) in pairwise(mapped)
+                                for part in bike_exclusions(edge, (x, y), (u, v), norm(unit((x, y), (u, v))))]
+    else:
+        dedicated_bike_space = list(bike_exclusions(edge, a, b, right))
     if dedicated_bike_space:
         # Keep the surveyed width for inference while treating painted cycle lanes as blocked.
         fit_pavement = legal.difference(union_all(dedicated_bike_space))
@@ -500,9 +517,16 @@ def prepare(edge, pavement, markings, nwb, frame):
     samples, markings_used, marks_sources = [], set(), set()
     matches = nwb.matches(edge, Point(move(a, axis, dist / 2))) if motorway else []
     audit_samples = []
+    centers = []
     for s in sample_stations:
-        center = move(a, axis, s / length * dist)
-        hits = markings.station_hits(edge, center, axis, motorway)
+        if mapped:
+            center = sample_path(mapped, s)[:2]
+            tangent = unit(sample_path(mapped, s - 0.5)[:2], sample_path(mapped, s + 0.5)[:2])
+            cross = norm(tangent)
+        else:
+            center, tangent, cross = move(a, axis, s / length * dist), axis, right
+        centers.append((center, cross))
+        hits = markings.station_hits(edge, center, tangent, motorway)
         section = marking_fit(edge, hits, motorway)
         if section:
             fit, observed = section
@@ -515,11 +539,11 @@ def prepare(edge, pavement, markings, nwb, frame):
         if motorway:
             samples.append(None)
         else:
-            cross_sections = legal_sections(legal, center, right, min(28, edge['width'] * .85 + 5))
+            cross_sections = legal_sections(legal, center, cross, min(28, edge['width'] * .85 + 5))
             fit = bgt_section(edge, cross_sections)
             if fit and dedicated_bike_space:
                 # The lane offsets remain in graph order. Check each allocated lane against the motor band.
-                drive_sections = legal_sections(fit_pavement, center, right, min(28, edge['width'] * .85 + 5))
+                drive_sections = legal_sections(fit_pavement, center, cross, min(28, edge['width'] * .85 + 5))
                 fit = next((inset for interval in drive_sections
                             if (inset := bgt_section(edge, [interval])) and
                             any(interval[0] <= offset <= interval[1] for offset, _ in fit)), None)
@@ -537,10 +561,9 @@ def prepare(edge, pavement, markings, nwb, frame):
         if index < 0:
             return None, 'invalid lane index'
         lane_rows = []
-        for s, section in zip(sample_stations, fitted):
-            center = move(a, axis, s / length * dist)
+        for s, section, (center, cross) in zip(sample_stations, fitted, centers):
             offset, width = section[index]
-            x, y = move(center, right, offset)
+            x, y = move(center, cross, offset)
             lane_rows.append((s, x, y, width))
         lanes.append(lane_rows)
     source = ('1gis' if '1gis' in marks_sources else 'bgt')

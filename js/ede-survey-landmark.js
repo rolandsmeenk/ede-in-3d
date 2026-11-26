@@ -63,13 +63,14 @@ export function createSurveyLandmark(site, buildings, decorate, finish) {
   for (const [buildingIndex, building] of buildings.entries()) {
     const { ground: base, points, faces, wallColor, roofColor, outline } = building;
     const foundation = (x, z) => anchored ? Math.min(base, terrainHeightAt(x, z) - 0.14) : base;
+    const helicopterRoofs = [];
     if (outline?.length) {
       const [outer, ...holes] = outline.map(ring => ring.map(([x, z]) => ({ x, z })));
       colliders.push({
         minX: Math.min(...outer.map(p => p.x)), maxX: Math.max(...outer.map(p => p.x)),
         minZ: Math.min(...outer.map(p => p.z)), maxZ: Math.max(...outer.map(p => p.z)),
         minY: Math.min(...outer.map(({ x, z }) => foundation(x, z))) - 0.08,
-        maxY: Math.max(...points.map(p => p[1])), polygon: { outer, holes },
+        maxY: Math.max(...points.map(p => p[1])), polygon: { outer, holes }, helicopterRoofs,
       });
     }
     for (const [faceIndex, [roof, ...indices]] of faces.entries()) {
@@ -77,6 +78,12 @@ export function createSurveyLandmark(site, buildings, decorate, finish) {
       const ring = rings[0];
       if (roof) {
         shell.polygon(rings, building.roofColors?.[faceIndex] ?? roofColor);
+        const low = Math.min(...rings.flatMap(points => points.map(p => p[1])));
+        const high = Math.max(...rings.flatMap(points => points.map(p => p[1])));
+        if (outline?.length && low > base + 0.5 && high - low <= 0.3 && polygonNormal(ring).y > 0.99) {
+          const [outer, ...holes] = rings.map(points => points.map(([x, , z]) => ({ x, z })));
+          helicopterRoofs.push({ polygon: { outer, holes }, y: high });
+        }
         continue;
       }
       const normal = polygonNormal(ring);

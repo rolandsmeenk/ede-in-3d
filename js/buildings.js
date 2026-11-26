@@ -2275,6 +2275,11 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
         roof.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); roof.computeVertexNormals();
       }
       if (roof) {
+        if (!pitched && !shed) {
+          const top = ground + eave + 0.035;
+          colliders.push({ ...bounds, minY: top - 0.04, maxY: top, polygon: { outer: poly, holes }, flatRoof: true,
+            isRoofVisible: replacements ? () => !replacements.get(source.id)?.tiles : undefined });
+        }
         const tiles = !shed && pitched && neighbourhood.roofColor ? new THREE.Color(neighbourhood.roofColor).toArray() : null;
         colorEdeRoof(roof, source.id, roofPalette[Math.floor(tone * 3)], aerial, tiles);
         roof.userData.buildingTile = tile;

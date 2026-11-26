@@ -567,6 +567,49 @@ test('helicopter uses local ground for landing and preserves saved world altitud
   assert.equal(ent.position.y, 380);
 });
 
+test('helicopter settles vertically onto a flat roof below a taller roof section', () => {
+  const outer = [{ x: 0, z: 0 }, { x: 32, z: 0 }, { x: 32, z: 18 }, { x: 0, z: 18 }];
+  const upper = [{ x: 24, z: 0 }, { x: 32, z: 0 }, { x: 32, z: 18 }, { x: 24, z: 18 }];
+  const polygon = { outer, holes: [] };
+  const { controller, ent } = teleportHarness('helicopter', [{
+    minX: 0, maxX: 32, minZ: 0, maxZ: 18, minY: 0, maxY: 26, polygon,
+    helicopterRoofs: [{ polygon, y: 22 }, { polygon: { outer: upper, holes: [] }, y: 26 }]
+  }]);
+  const impacts = [];
+  controller.setCollisionListener(hit => impacts.push({ ...hit }));
+  controller.teleportActiveTo(10, 9, 0, 27);
+  controller.keys.down = true;
+  for (let i = 0; i < 90; i++) controller.updateHelicopter(1 / 60, i / 60);
+
+  assert.deepEqual([ent.position.x, ent.position.y, ent.position.z], [10, 22.25, 9]);
+  assert.equal(ent.verticalSpeed, 0);
+  assert.equal(ent.tiltPivot.position.y, 0);
+  assert.deepEqual(impacts.map(({ kind, nx, ny, nz }) => [kind, nx, ny, nz]), [['ground', 0, 1, 0]]);
+  assert.deepEqual({ ...controller.teleportActiveTo(10, 9, 0, 22.25) }, { x: 10, z: 9 });
+  controller.keys.up = true;
+  controller.updateHelicopter(1 / 60, 2);
+  assert.ok(ent.position.y > 22.25);
+});
+
+test('helicopter roof landing respects courtyard holes and side collisions below roof height', () => {
+  const outer = [{ x: 0, z: 0 }, { x: 40, z: 0 }, { x: 40, z: 40 }, { x: 0, z: 40 }];
+  const hole = [{ x: 12, z: 12 }, { x: 28, z: 12 }, { x: 28, z: 28 }, { x: 12, z: 28 }];
+  const polygon = { outer, holes: [hole] };
+  const { controller, ent } = teleportHarness('helicopter', [{
+    minX: 0, maxX: 40, minZ: 0, maxZ: 40, maxY: 22, polygon, helicopterRoofs: [{ polygon, y: 22 }]
+  }]);
+  controller.teleportActiveTo(20, 20, 0, 23);
+  controller.keys.down = true;
+  for (let i = 0; i < 180; i++) controller.updateHelicopter(1 / 60, i / 60);
+  assert.deepEqual([ent.position.x, ent.position.y, ent.position.z], [20, 0.25, 20]);
+
+  controller.teleportActiveTo(-5, 6, Math.PI / 2, 21);
+  controller.keys.forward = true;
+  for (let i = 0; i < 50; i++) controller.updateHelicopter(1 / 60, i / 60);
+  assert.ok(ent.position.x <= -4.5);
+  assert.equal(ent.position.y, 21);
+});
+
 test('cargo bike teleport clearance includes its forward cargo deck and small front wheel', () => {
   const obstacle = { minX: -0.12, maxX: 0.12, minZ: 0.84, maxZ: 1.04, maxY: 20 };
   const { controller } = teleportHarness('cargobike', [obstacle]);

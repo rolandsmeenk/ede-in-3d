@@ -52,6 +52,7 @@ import { EDE_TOWN_MEMORIALS } from './ede-town-memorial-sites.js';
 import { EDE_OUTER_MEMORIALS } from './ede-outer-memorial-sites.js';
 import { EDE_OUTER_CULTURAL_LANDMARKS } from './ede-outer-cultural-sites.js';
 import { EDE_FARM_LANDMARKS } from './ede-farm-building-survey.js';
+import { EDE_RURAL_LANDMARKS } from './ede-rural-landmark-survey.js';
 
 export const EDE_MODELED_LANDMARKS = [
   { id: 'concordiamolen', name: 'Concordiamolen', district: 'Centrum', road: 'Accesweg',
@@ -66,7 +67,7 @@ export const EDE_MODELED_LANDMARKS = [
     osmId: 'w196375686', x: 601.30, z: 2462.15, heading: 0, height: 53 },
   { id: 'astrant', name: 'Astrant', district: 'Centrum', road: 'Kuiperplein',
     osmId: 'w271551819', x: -175.2, z: 92.3, heading: -1.044, height: 8.5, bagCutMargin: 0.25 },
-  { id: 'pegasus-flat', name: 'Pegasusflat · Van Eekelenflat', district: 'Ede-Zuid', road: 'Jan Th. Tooroplaan',
+  { id: 'pegasus-flat', name: 'Pegasusflat · Van Eekelenflat', district: 'Ede-Zuid', road: 'Jan Th. Tooroplaan', hideOnMap: true,
     osmId: 'w271377198', x: -1559.88, z: 2346.27, heading: 0.121464, height: 40.4, bagCutMargin: 0.25 },
   { id: 'plantion', name: 'Plantion', district: 'Ede-West', road: 'Wellensiekstraat',
     osmId: 'w271151642', annexOsmIds: ['w271151018'], x: -3863.85, z: 960.07, heading: 0, height: 42,
@@ -153,7 +154,7 @@ export const EDE_MODELED_LANDMARKS = [
   { id: 'reehorst', name: 'De ReeHorst', district: 'Stationsgebied', road: 'Bennekomseweg',
     osmId: 'w271472015', bagIds: ['0228100000004736'], x: -42.95, z: 2408.85, height: 25.84, worldSpace: true,
     approach: { x: 15, z: 2418 } },
-  { id: 'work-garden', name: 'Work Garden', district: 'Centrum', road: 'Grotestraat',
+  { id: 'work-garden', name: 'Work Garden', district: 'Centrum', road: 'Grotestraat', hideOnMap: true,
     osmId: 'w501079879', bagIds: ['0228100000077693'], x: -47.86, z: -226.77, height: 10.74, worldSpace: true,
     approach: { x: -56, z: -226.7 } },
   { id: 'buitenzorg', name: 'Buitenzorg', district: 'Centrum', road: 'Amsterdamseweg',
@@ -257,6 +258,7 @@ export const EDE_MODELED_LANDMARKS = [
   ...EDE_OUTER_MEMORIALS.filter(site => !site.north || EDE_DATA.meta.north),
   ...EDE_OUTER_CULTURAL_LANDMARKS,
   ...EDE_FARM_LANDMARKS,
+  ...EDE_RURAL_LANDMARKS,
   ...(EDE_DATA.meta.north ? [
     ...EDE_VILLAGE_SKYLINE_LANDMARKS,
     ...EDE_LUNTEREN_LANDMARKS,

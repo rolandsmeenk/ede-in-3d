@@ -89,6 +89,7 @@ class CityAudioSources {
     this.cars = trafficSystem.cars;
     this.buses = trafficSystem.buses;
     this.refuseTrucks = trafficSystem.refuseTrucks;
+    this.cargoTrucks = trafficSystem.cargoTrucks;
     this.tractors = trafficSystem.tractors;
     this.ambulances = trafficSystem.ambulances;
     this.fireEngines = trafficSystem.fireEngines;
@@ -170,9 +171,9 @@ class CityAudioSources {
     this.motors.items.length = this.sirens.items.length = this.people.items.length = this.signals.items.length = 0;
     this.snapshot.traffic = 0;
     const active = this.controllers.getActiveEntity();
-    const activeGround = terrainHeightAt(active.position.x, active.position.z);
-    const activeHeight = active.position.y - activeGround;
-    const activeVerticalSpeed = active.type === 'helicopter' ? helicopterVerticalSpeed(active, activeHeight) : 0;
+    const activeHelicopterHeight = active.type === 'helicopter'
+      ? active.position.y - terrainHeightAt(active.position.x, active.position.z) : 0;
+    const activeVerticalSpeed = active.type === 'helicopter' ? helicopterVerticalSpeed(active, activeHelicopterHeight) : 0;
     const keys = this.controllers.keys;
     this.snapshot.motion = active.type === 'person' ? active.rig.speed : Math.hypot(active.speed, activeVerticalSpeed);
 
@@ -181,11 +182,12 @@ class CityAudioSources {
       if (entity.mesh.visible === false) continue;
       const { x, y, z } = entity.position;
       const player = entity === active;
-      const height = player ? activeHeight : y - terrainHeightAt(x, z);
+      // Covered roads can carry the player below the terrain above the tunnel.
+      const height = entity.type === 'helicopter' && player ? activeHelicopterHeight
+        : y - (entity.type === 'helicopter' ? terrainHeightAt(x, z) : this.controllers.getGroundHeight(x, z, entity.type, y));
       if (height < -0.05) continue;
       if (entity.type === 'person') {
-        const ground = this.controllers.getGroundHeight(x, z, 'person');
-        const grounded = y <= ground + 0.03 && Math.abs(entity.verticalVel) < 0.1;
+        const grounded = height <= 0.03 && Math.abs(entity.verticalVel) < 0.1;
         this.person(entity, x, y, z, entity.rig.speed, grounded, entity.rig, true, player);
       } else {
         // Inactive bicycles stop updating and are silent, even if their stored speed is left over from riding.
@@ -204,6 +206,7 @@ class CityAudioSources {
     this.streetVehicles(this.cars, elapsed, 100);
     this.streetVehicles(this.buses, elapsed, 1000);
     if (this.refuseTrucks) this.streetVehicles(this.refuseTrucks, elapsed, 1100);
+    if (this.cargoTrucks) this.streetVehicles(this.cargoTrucks, elapsed, 1500);
     if (this.tractors) this.streetVehicles(this.tractors, elapsed, 1200);
     if (this.ambulances) this.streetVehicles(this.ambulances, elapsed, 1300);
     if (this.fireEngines) this.streetVehicles(this.fireEngines, elapsed, 1400);

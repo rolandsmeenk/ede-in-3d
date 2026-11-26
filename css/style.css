@@ -1370,7 +1370,7 @@ body[data-mode='helicopter'] .gauge-alt {
   z-index: 12;
   left: max(var(--edge), env(safe-area-inset-left));
   right: max(var(--edge), env(safe-area-inset-right));
-  bottom: calc(max(var(--edge), env(safe-area-inset-bottom)) + 72px);
+  bottom: calc(max(var(--edge), env(safe-area-inset-bottom)) + 96px);
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -1472,7 +1472,7 @@ body.touch-enabled .toolbar { gap: 2px; padding: 4px; }
 body.touch-enabled .tool-btn { min-width: 44px; min-height: 44px; }
 body.touch-enabled .tool-label,
 body.touch-enabled #btn-environment .tool-label { display: none; }
-body.touch-enabled .hud-bottom-center { bottom: max(var(--edge), env(safe-area-inset-bottom)); }
+body.touch-enabled .hud-bottom-center { bottom: calc(max(var(--edge), env(safe-area-inset-bottom)) + 24px); }
 body.touch-enabled .mode-label { display: block; font-size: 10px; }
 body.touch-enabled .mode-btn { width: 62px; height: 48px; padding: 0; flex-direction: column; justify-content: center; gap: 3px; }
 body.touch-enabled .hud-bottom-right { top: calc(max(var(--edge), env(safe-area-inset-top)) + 62px); right: max(var(--edge), env(safe-area-inset-right)); bottom: auto; }
@@ -1507,7 +1507,7 @@ body.touch-enabled .pop-item { min-height: 44px; }
 @media (max-height: 500px) {
   body.touch-enabled .hud-bottom-left { display: none; }
   body.touch-enabled .hud-bottom-right { top: calc(max(var(--edge), env(safe-area-inset-top)) + 58px); }
-  #touch-controls { bottom: max(var(--edge), env(safe-area-inset-bottom)); }
+  #touch-controls { bottom: calc(max(var(--edge), env(safe-area-inset-bottom)) + 24px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1525,14 +1525,21 @@ body.touch-enabled .pop-item { min-height: 44px; }
   right: max(4px, env(safe-area-inset-right));
   bottom: max(3px, env(safe-area-inset-bottom));
   z-index: 91;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 2px 9px;
   padding: 2px 5px;
   border-radius: 3px;
   background: rgba(8, 11, 15, 0.83);
   font-size: 10px;
+}
+
+body:not(.touch-enabled) .map-attribution > summary { display: none; }
+
+.map-attribution > summary { cursor: pointer; }
+
+.map-attribution-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 9px;
 }
 
 .map-attribution a { color: #e2e8ef; }

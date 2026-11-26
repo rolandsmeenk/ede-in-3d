@@ -31,7 +31,9 @@ The game can stay on GitHub Pages while the feed server runs separately over HTT
 
 ## Graphics and profiling
 
-The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and keeps bloom and color grading. Standard enables screen-space reflections and multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
+The **Graphics** menu offers **Fast** and **Standard**. Fast is the default and keeps color grading. Standard enables screen-space reflections and multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
+
+Fast keeps bloom and dynamic shadows on desktop. On iPhone and iPad, both presets use WebGL 2 for startup reliability. Fast on those devices uses a lower internal resolution, sparser woodland, and fallback buildings in town, with bloom and dynamic shadows disabled.
 
 Append `?debug=1` and choose **Debug → Traffic lanes** to see the motor traffic graph near the camera. `?laneDebug=on` opens the game with the overlay enabled. Arrows show the travel direction, thin lines show junction connections, cyan marks fitted paths, amber marks fallback paths, and purple marks paths used only by scheduled buses.
 

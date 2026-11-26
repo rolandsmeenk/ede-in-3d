@@ -1,4 +1,4 @@
-"""Build the six surveyed walking and cycling bridges over water in Ede."""
+"""Build surveyed walking and cycling bridges over water in Ede."""
 
 import argparse
 from collections import defaultdict
@@ -15,6 +15,8 @@ GRADE = SURVEY['GRADE']
 # observations exclude vegetation and parapets. DTM supplies the two short
 # approaches to 544853927 and the west approach to 24860907.
 CONTROLS = {
+    # Kraatsvijver: use DTM at the landings and exposed DSM returns between trees.
+    'w6954427': [(0, 14.97), (6, 15.25), (9, 15.27), (12, 15.20), (16.45, 15.01)],
     'w544853927': [(-2, 9.38), (6, 10.02), (12, 10.34), (18, 10.18), (26, 9.42)],
     'w225819919': [(-6, 12.95), (0, 12.98), (6, 13.18), (13, 13.26), (21, 13.15), (26, 12.93)],
     'w1249928597': [(0, 9.98), (6, 10.46), (12, 10.86), (16, 10.91), (24, 10.44), (30, 9.98), (34, 9.96)],

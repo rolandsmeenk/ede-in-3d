@@ -136,7 +136,7 @@ export function createExteriorBagStream(scene) {
   const group = new THREE.Group();
   group.name = 'ede-exterior-bag';
   scene.add(group);
-  const materials = [0xb2b2b2, 0x999999].map(color => new THREE.MeshStandardMaterial({ color, roughness: 0.95 }));
+  const materials = [0x808080, 0x6b6b6b].map(color => new THREE.MeshStandardMaterial({ color, roughness: 0.95 }));
   const point = new THREE.Vector3(), lastPoint = new THREE.Vector3(Infinity, Infinity, Infinity);
   const direction = new THREE.Vector3(), lastDirection = new THREE.Vector3();
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4();

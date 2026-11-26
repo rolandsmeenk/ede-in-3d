@@ -5,9 +5,14 @@ import { mastStrokeMesh } from './ede-mast-strokes.js';
 import { edeBounds, edePoints, edePolygonGeometry, EDE_RENDER_CELL } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
 import { createWindmillRig } from './ede-windmill.js';
+import { EDE_DATA } from './ede-geodata.js';
+import { buildSmallBridge, matchSmallBridgeDecks } from './ede-bridge.js';
+import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 
 const PALETTE = {
   deck: 0x989797, abutment: 0x98938a, platform: 0xb3aea3, platformEdge: 0xe0ddd0,
+  bridgeAsphalt: 0x5c5b56, bridgeWood: 0x8c6d4f, bridgeWoodJoint: 0x5c4939, bridgeMetal: 0x666e70,
+  bridgeBrick: 0x8e6654, bridgePaving: 0xa9a298, bridgeRail: 0x929d9b, bridgeGravel: 0x8b8275, bridgeEarth: 0x8c765b,
   noiseWall: 0x69776b, civilWall: 0x9a9489, retainingWall: 0x817f78,
   tank: 0xb7b9b6, shed: 0x777f81, footing: 0x85847c, steel: 0x797f80, turbine: 0xe1e2de,
 };
@@ -35,7 +40,7 @@ export async function loadEdeBgt() {
   return asset;
 }
 
-function makeDeckProfile(feature, gradeSurfaceAt) {
+function makeDeckProfile(feature, gradeSurfaceAt, offset = -0.14) {
   const [ax, az, bx, bz] = feature.axis;
   const length = Math.hypot(bx - ax, bz - az);
   const ux = (bx - ax) / length, uz = (bz - az) / length;
@@ -48,7 +53,7 @@ function makeDeckProfile(feature, gradeSurfaceAt) {
     for (let i = 0; i <= 8; i++) {
       const t = i / 8;
       const height = gradeSurfaceAt(ax + (bx - ax) * t, az + (bz - az) * t, kind);
-      if (Number.isFinite(height)) samples.push({ t, height: height - 0.14 });
+      if (Number.isFinite(height)) samples.push({ t, height: height + offset });
     }
     return samples;
   };
@@ -61,7 +66,7 @@ function makeDeckProfile(feature, gradeSurfaceAt) {
   const samples = measured.length >= 4 || hasRailDeck ? measured : [];
   return (x, z) => {
     const height = samples.length ? gradeSurfaceAt(x, z, kind) : undefined;
-    if (Number.isFinite(height)) return height - 0.14;
+    if (Number.isFinite(height)) return height + offset;
     const t = clamp(((x - ax) * ux + (z - az) * uz) / length, 0, 1);
     if (!samples.length) return start + (end - start) * t;
     const right = samples.findIndex(sample => sample.t >= t);
@@ -85,8 +90,22 @@ function splitRing(ring) {
   return points;
 }
 
+async function loadBridgeMaterials() {
+  const response = await fetch(new URL('../assets/ede-bridge-materials.json', import.meta.url));
+  if (!response.ok) throw new Error(`IMWA bridge material request failed: ${response.status}`);
+  const asset = await response.json();
+  if (asset.version !== 1 || !asset.decks) throw new Error('Invalid IMWA bridge material asset');
+  return asset.decks;
+}
+
 export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) {
-  const { structures, counts, source } = await loadEdeBgt();
+  const [{ structures, counts, source }, bridgeMaterials] = await Promise.all([
+    loadEdeBgt(),
+    loadBridgeMaterials().catch(error => {
+      console.warn('[bgt] using mapped path surfaces for bridge materials:', error);
+      return {};
+    }),
+  ]);
   const group = new THREE.Group();
   group.name = 'Ede BGT structures';
   const colliders = [], platforms = [], weatherCovers = [], batches = new Map(), materials = new Map();
@@ -102,13 +121,23 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   beaconMaterial.opacityNode = smoothstep(0.14, 1, radius).oneMinus();
   beaconMaterial.mrtNode = transparentEffectMRT;
   const up = new THREE.Vector3(0, 1, 0);
+  const smallBridges = matchSmallBridgeDecks(structures, EDE_DATA.roads, EDE_DATA.railways, bridgeMaterials);
+  const bridgeFootprints = new Map();
   const deckProfiles = new Map(structures
     .filter(feature => feature.kind === 'deck' && feature.axis)
-    .map(feature => [feature.ids[0], makeDeckProfile(feature, gradeSurfaceAt)]));
+    .map(feature => {
+      const bridge = smallBridges.get(feature);
+      for (const id of bridge?.wayIds ?? []) {
+        if (!bridgeFootprints.has(id)) bridgeFootprints.set(id, []);
+        bridgeFootprints.get(id).push(bridge.contains);
+      }
+      const offset = bridge ? (bridge.exposedDecking ? 0.072 : 0.044) : undefined;
+      return [feature.ids[0], makeDeckProfile(feature, gradeSurfaceAt, offset)];
+    }));
 
   function materialFor(kind) {
     if (!materials.has(kind)) {
-      const steel = kind === 'steel' || kind === 'tank';
+      const steel = ['steel', 'tank', 'bridgeRail', 'bridgeMetal'].includes(kind);
       materials.set(kind, new THREE.MeshStandardNodeMaterial({
         color: PALETTE[kind], roughness: steel ? 0.58 : 0.86, metalness: steel ? 0.26 : 0.03,
       }));
@@ -154,16 +183,16 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     if (length < 0.02) return;
     const midpoint = p.addScaledVector(direction, 0.5);
     const steel = kind === 'steel';
-    const geometry = new THREE.CylinderGeometry(topRadius, radius, length, steel ? 4 : 12, 1, steel);
+    const geometry = new THREE.CylinderGeometry(topRadius, radius, length, steel || kind === 'bridgeRail' ? 4 : 12, 1, steel);
     geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, direction.normalize()));
     geometry.translate(midpoint.x, midpoint.y, midpoint.z);
     collect(kind, geometry, midpoint.x, midpoint.z, target);
   }
 
-  function slab(kind, rings, surface, base, { solid = true, underside = false, side = kind, localHeight = false } = {}) {
+  function slab(kind, rings, surface, base, { solid = true, underside = false, side = kind, undersideMaterial = kind, localHeight = false } = {}) {
     const [outer, ...holes] = rings;
     const edges = rings.map(splitRing);
-    function cap(height, flipped) {
+    function cap(material, height, flipped) {
       const geometry = edePolygonGeometry(edges[0], edges.slice(1));
       if (flipped) {
         const index = geometry.getIndex();
@@ -176,11 +205,11 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
       const position = geometry.getAttribute('position');
       for (let i = 0; i < position.count; i++) position.setY(i, height(position.getX(i), position.getZ(i)));
       const { x, z } = outer[0];
-      collect(kind, geometry, x, z);
+      collect(material, geometry, x, z);
     }
-    cap(surface, false);
+    cap(kind, surface, false);
     if (underside) {
-      cap(base, true);
+      cap(undersideMaterial, base, true);
       weatherCovers.push({ ...edeBounds(outer), outer, holes, height: base });
     }
     let minY = Infinity, maxY = -Infinity;
@@ -340,8 +369,18 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
       const form = [outer, ...holes];
       if (kind === 'deck') {
         const surface = deckProfiles.get(ids[0]) ?? ((px, pz) => terrainHeightAt(px, pz) + 0.025);
-        const thickness = Math.hypot(maxX - minX, maxZ - minZ) > 25 ? 0.8 : 0.36;
-        slab(kind, form, surface, (px, pz) => surface(px, pz) - thickness, { solid: false, underside: true });
+        const bridge = smallBridges.get(feature);
+        if (bridge) {
+          const { survey, material, structure } = bridge;
+          const deckHeight = survey?.soffitNap && gradeSurfaceAt(...survey.position, 'road-deck');
+          const observedDepth = Number.isFinite(deckHeight) ? deckHeight + SCENE_NAP_ORIGIN - survey.soffitNap : 0;
+          const thickness = observedDepth >= 0.08 && observedDepth <= 0.8 ? observedDepth : undefined;
+          buildSmallBridge({ rings: form, axis: feature.axis, surface, material, structure, thickness },
+            { slab, beam, append, addCollider });
+        } else {
+          const thickness = Math.hypot(maxX - minX, maxZ - minZ) > 25 ? 0.8 : 0.36;
+          slab(kind, form, surface, (px, pz) => surface(px, pz) - thickness, { solid: false, underside: true });
+        }
       } else if (kind === 'platform') {
         const surface = (px, pz) => {
           const platform = gradeSurfaceAt(px, pz, layer > 0 ? 'raised-platform' : 'platform');
@@ -426,10 +465,10 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     filtered.name = 'Ede filtered mast lattice';
     group.add(filtered);
   }
-  group.userData = { counts, source: source.url, date: source.date };
+  group.userData = { counts, smallBridges: smallBridges.size, source: source.url, date: source.date };
   scene.add(group);
   return {
-    group, colliders, counts, platforms, weatherCovers, deckProfiles,
+    group, colliders, counts, platforms, weatherCovers, deckProfiles, bridgeFootprints,
     updateMastLod(camera, pixelHeight) {
       // Switch when the 16 cm cross-braces project to about one pixel.
       const focal = camera.projectionMatrix.elements[5] * pixelHeight * 0.5;

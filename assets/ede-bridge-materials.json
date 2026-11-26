@@ -1,0 +1,700 @@
+{
+  "version": 1,
+  "source": "https://api.pdok.nl/hwh/waterschappen-kunstwerken-imwa/ogc/v2/collections/brug/items",
+  "date": "2026-11-26",
+  "decks": {
+    "G0203.03b0db2b471e483bb36fad298da464da": {
+      "code": "KBR-2844",
+      "material": "concrete",
+      "position": [
+        -3009.02,
+        -9180.69
+      ],
+      "soffitNap": 12.05
+    },
+    "G0203.04c45b3a50fa4c87b94d6b25ccbe92ad": {
+      "code": "KBR-4194",
+      "material": "concrete",
+      "position": [
+        -5514.74,
+        -8824.56
+      ],
+      "soffitNap": 10.1
+    },
+    "G0203.117f8084f7e04e7087d796acbc1eaf92": {
+      "code": "KBR-1737",
+      "material": "concrete",
+      "position": [
+        -5509.73,
+        -9048.48
+      ],
+      "soffitNap": 9.97
+    },
+    "G0203.2cdba2b1f48b4b349181a706da008b48": {
+      "code": "KBR-2793",
+      "material": "concrete",
+      "position": [
+        -2421.59,
+        -9365.8
+      ],
+      "soffitNap": 12.59
+    },
+    "G0203.2fd8ec835ea14ca88ec506f97c1b5690": {
+      "code": "KBR-2281",
+      "material": "wood",
+      "position": [
+        -6957.36,
+        -8560.3
+      ],
+      "soffitNap": 9.28
+    },
+    "G0203.332f459f11ba411e89d57286a3c026f4": {
+      "code": "KBR-5177",
+      "material": "metal",
+      "position": [
+        -5501.68,
+        -8887.96
+      ],
+      "soffitNap": 9.54
+    },
+    "G0203.512f3f38b10343bca8b9c87a1379ca18": {
+      "code": "KBR-4350",
+      "material": "wood",
+      "position": [
+        -6747.58,
+        -8657.89
+      ],
+      "soffitNap": 8.58
+    },
+    "G0203.54ab47f99f9046748aa7960cbab05292": {
+      "code": "KBR-2795",
+      "material": "concrete",
+      "position": [
+        -1609.78,
+        -9446.15
+      ],
+      "soffitNap": 13.56
+    },
+    "G0203.5aab1abf0aa949c98a7b6939b0df1c20": {
+      "code": "KBR-1734",
+      "material": "concrete",
+      "position": [
+        -4921.95,
+        -8795.45
+      ],
+      "soffitNap": 10.23
+    },
+    "G0203.5eaf32c9b22f47d1b4272dfd9ab4291c": {
+      "code": "KBR-1727",
+      "material": "concrete",
+      "position": [
+        -4269.1,
+        -8818.68
+      ],
+      "soffitNap": 11.14
+    },
+    "G0203.5fe63884baa642fa96d39f4138f98cf6": {
+      "code": "KBR-1738",
+      "material": "concrete",
+      "position": [
+        -5513.99,
+        -9058.61
+      ],
+      "soffitNap": 9.96
+    },
+    "G0203.64f1e51db2f4444abcb44e9fe1c5772a": {
+      "code": "KBR-2822",
+      "material": "concrete",
+      "position": [
+        -7690.89,
+        -8417.25
+      ],
+      "soffitNap": 8.33
+    },
+    "G0203.d0c0e763b46646ccb2fa4faea5f3bced": {
+      "code": "KBR-2794",
+      "material": "concrete",
+      "position": [
+        -1720.55,
+        -9390.22
+      ],
+      "soffitNap": 13.26
+    },
+    "G0203.e821b7127316412abd84afc27c60c7c6": {
+      "code": "KBR-1725",
+      "material": "concrete",
+      "position": [
+        -3715.0,
+        -9088.21
+      ],
+      "soffitNap": 11.32
+    },
+    "G0203.eaf97a2caa79432eb1f9ca610a53c5da": {
+      "code": "KBR-2797",
+      "material": "concrete",
+      "position": [
+        -446.66,
+        -9643.44
+      ],
+      "soffitNap": 13.86
+    },
+    "G0203.f3a944ce31cf4983a7990129a0b9c6a1": {
+      "code": "KBR-4321",
+      "material": "concrete",
+      "position": [
+        -6991.28,
+        -8483.12
+      ],
+      "soffitNap": 8.06
+    },
+    "G0203.f6fd8d6ac95f4cafa177aedb4deba58b": {
+      "code": "KBR-1722",
+      "material": "concrete",
+      "position": [
+        -3235.59,
+        -9115.19
+      ],
+      "soffitNap": 11.59
+    },
+    "G0228.040b943791094031b1db4432c4799687": {
+      "code": "KBR-4551",
+      "material": "metal",
+      "position": [
+        -6648.97,
+        -1603.49
+      ],
+      "soffitNap": 7.64
+    },
+    "G0228.0601e7267d944ce48b521db93f6cd134": {
+      "code": "KBR-2188",
+      "material": "wood",
+      "position": [
+        -2232.52,
+        2682.24
+      ],
+      "soffitNap": 10.57
+    },
+    "G0228.0724b982ff3041108033a5525246c709": {
+      "code": "KBR-4327",
+      "material": "concrete",
+      "position": [
+        -2242.2,
+        -260.22
+      ],
+      "soffitNap": 12.64
+    },
+    "G0228.1d42110cbc1e4ea99eb49f92dec3eb7e": {
+      "code": "KBR-2191",
+      "material": "wood",
+      "position": [
+        -1906.04,
+        2699.6
+      ],
+      "soffitNap": 11.52
+    },
+    "G0228.23df2a3e919e43e783f49716e62ffb60": {
+      "code": "KBR-2185",
+      "material": "wood",
+      "position": [
+        -1430.82,
+        -362.47
+      ],
+      "soffitNap": 15.07
+    },
+    "G0228.26e3971861234ccba4752c82b504379e": {
+      "code": "KBR-2184",
+      "material": "concrete",
+      "position": [
+        -1817.69,
+        47.4
+      ],
+      "soffitNap": 13.47
+    },
+    "G0228.2a12f8b9628e4109b06aeada7f806d7f": {
+      "code": "KBR-4492",
+      "material": "wood",
+      "position": [
+        -2657.15,
+        539.16
+      ],
+      "soffitNap": 9.85
+    },
+    "G0228.3fffb7cbb3bf4efda1bbfcfe91919a60": {
+      "code": "KBR-5663",
+      "material": "metal",
+      "position": [
+        5346.16,
+        -9968.98
+      ],
+      "soffitNap": 23.19
+    },
+    "G0228.47c1a0dfcd7249c2b4ef8270ece8804d": {
+      "code": "KBR-2197",
+      "material": "concrete",
+      "position": [
+        -2384.64,
+        -173.21
+      ],
+      "soffitNap": 12.41
+    },
+    "G0228.484251a23f12488f91404e9b06782f68": {
+      "code": "KBR-5272",
+      "material": "concrete",
+      "position": [
+        -6442.73,
+        325.02
+      ],
+      "soffitNap": 7.37
+    },
+    "G0228.52fba06d364945838b10d86d06b03024": {
+      "code": "KBR-2799",
+      "material": "wood",
+      "position": [
+        -2536.89,
+        -9119.35
+      ],
+      "soffitNap": 12.07
+    },
+    "G0228.585897464454441998d6e82695c0ec35": {
+      "code": "KBR-2193",
+      "material": "wood",
+      "position": [
+        -2633.54,
+        729.51
+      ],
+      "soffitNap": 9.19
+    },
+    "G0228.769eeaf5ea1345658b1d5855970eb074": {
+      "code": "KBR-2737",
+      "material": "concrete",
+      "position": [
+        -6843.88,
+        -4363.0
+      ],
+      "soffitNap": 8.49
+    },
+    "G0228.786b1da7295f44bfabf91722ffdf5138": {
+      "code": "KBR-2189",
+      "material": "wood",
+      "position": [
+        -1994.41,
+        3089.08
+      ],
+      "soffitNap": 10.97
+    },
+    "G0228.792aa9b716cc4bd9b97413339dc94e21": {
+      "code": "KBR-2190",
+      "material": "concrete",
+      "position": [
+        -1945.17,
+        2945.23
+      ],
+      "soffitNap": 10.36
+    },
+    "G0228.7a0a0173d4d44009b746ea182216995c": {
+      "code": "KBR-2195",
+      "material": "wood",
+      "position": [
+        -2775.62,
+        -3.19
+      ],
+      "soffitNap": 11.15
+    },
+    "G0228.8b712ca2b11d40cc89dfa2fedb7ea062": {
+      "code": "KBR-2198",
+      "material": "concrete",
+      "position": [
+        -2227.67,
+        205.97
+      ],
+      "soffitNap": 12.41
+    },
+    "G0228.917781ee72814e7d8d53a9d1df622f0e": {
+      "code": "KBR-2182",
+      "material": "concrete",
+      "position": [
+        -2221.32,
+        2835.72
+      ],
+      "soffitNap": 9.52
+    },
+    "G0228.a7b4ed369faa4a8d9e4bdd1b696ad140": {
+      "code": "KBR-2186",
+      "material": "wood",
+      "position": [
+        -2576.0,
+        2783.09
+      ],
+      "soffitNap": 9.31
+    },
+    "G0228.b7947d12bbeb493b9377d581b37e11f4": {
+      "code": "KBR-2196",
+      "material": "wood",
+      "position": [
+        -2712.99,
+        198.92
+      ],
+      "soffitNap": 9.43
+    },
+    "G0228.c4d04911ee894893b8926cda7532fbbe": {
+      "code": "KBR-2192",
+      "material": "wood",
+      "position": [
+        -1884.39,
+        2419.89
+      ],
+      "soffitNap": 9.79
+    },
+    "G0228.eacc948dd9b44c65a84411709eff0dbb": {
+      "code": "KBR-2187",
+      "material": "wood",
+      "position": [
+        -2283.71,
+        2974.49
+      ],
+      "soffitNap": 9.95
+    },
+    "G0228.f5e71038bb3a46a095da14352c6375ca": {
+      "code": "KBR-2183",
+      "material": "concrete",
+      "position": [
+        -1933.1,
+        -234.16
+      ],
+      "soffitNap": 13.28
+    },
+    "G0228.fe246f55fe47d6d6e0400a0a35020533": {
+      "code": "KBR-4326",
+      "material": "concrete",
+      "position": [
+        -1999.76,
+        -360.77
+      ],
+      "soffitNap": 12.88
+    },
+    "G0228.fe246f561041d6d6e0400a0a35020533": {
+      "code": "KBR-3871",
+      "material": "concrete",
+      "position": [
+        -5961.76,
+        363.03
+      ],
+      "soffitNap": 7.32
+    },
+    "G0228.fe246f561043d6d6e0400a0a35020533": {
+      "code": "KBR-3870",
+      "material": "concrete",
+      "position": [
+        -5939.11,
+        364.65
+      ],
+      "soffitNap": 7.32
+    },
+    "G0228.fe246f56be17d6d6e0400a0a35020533": {
+      "code": "KBR-2200",
+      "material": "wood",
+      "position": [
+        -2507.6,
+        -556.31
+      ],
+      "soffitNap": 11.85
+    },
+    "G0228.fe246f56be57d6d6e0400a0a35020533": {
+      "code": "KBR-2199",
+      "material": "wood",
+      "position": [
+        -1887.96,
+        -835.79
+      ],
+      "soffitNap": 14.15
+    },
+    "G0339.2a9b3de84dbf4a8d8cdab9ee68681949": {
+      "code": "KBR-2752",
+      "material": "wood",
+      "position": [
+        -8003.14,
+        -4500.5
+      ],
+      "soffitNap": 9.28
+    },
+    "G0340.53f664150a46228be053800aa8c0da6b": {
+      "code": "KBR-2585",
+      "material": "concrete",
+      "position": [
+        -4792.71,
+        5603.61
+      ],
+      "soffitNap": 6.21
+    },
+    "G0345.238f65bf1bb9b9c4e063cc0014ac35e2": {
+      "code": "KBR-5273",
+      "material": "metal",
+      "position": [
+        -5636.26,
+        2853.63
+      ],
+      "soffitNap": 6.04
+    },
+    "G0345.26655e7af29c3488e0532e0310acc97f": {
+      "code": "KBR-3737",
+      "material": "wood",
+      "position": [
+        -6141.92,
+        3529.3
+      ],
+      "soffitNap": 6.17
+    },
+    "G0345.26655e7b2ae03488e0532e0310acc97f": {
+      "code": "KBR-4251",
+      "material": "concrete",
+      "position": [
+        -6091.18,
+        2634.11
+      ],
+      "soffitNap": 5.59
+    },
+    "G0345.26655e7b2ae13488e0532e0310acc97f": {
+      "code": "KBR-4249",
+      "material": "concrete",
+      "position": [
+        -6060.01,
+        2351.86
+      ],
+      "soffitNap": 5.55
+    },
+    "G0345.26655e7b2ae33488e0532e0310acc97f": {
+      "code": "KBR-4099",
+      "material": "concrete",
+      "position": [
+        -6039.31,
+        2343.24
+      ],
+      "soffitNap": 5.76
+    },
+    "G0345.26655e7b326b3488e0532e0310acc97f": {
+      "code": "KBR-3736",
+      "material": "concrete",
+      "position": [
+        -5868.29,
+        3813.09
+      ],
+      "soffitNap": 5.78
+    },
+    "G0345.26655e7b33c33488e0532e0310acc97f": {
+      "code": "KBR-1937",
+      "material": "concrete",
+      "position": [
+        -6947.57,
+        1165.16
+      ],
+      "soffitNap": 5.76
+    },
+    "G0345.26655e7b38d23488e0532e0310acc97f": {
+      "code": "KBR-4495",
+      "material": "concrete",
+      "position": [
+        -7275.24,
+        26.39
+      ],
+      "soffitNap": 7.13
+    },
+    "G0345.26655e7b3be33488e0532e0310acc97f": {
+      "code": "KBR-4250",
+      "material": "concrete",
+      "position": [
+        -6077.66,
+        2508.38
+      ],
+      "soffitNap": 5.72
+    },
+    "G0345.26655e7b598a3488e0532e0310acc97f": {
+      "code": "KBR-1951",
+      "material": "concrete",
+      "position": [
+        -6987.71,
+        165.88
+      ],
+      "soffitNap": 6.28
+    },
+    "G0345.26655e7b59973488e0532e0310acc97f": {
+      "code": "KBR-4450",
+      "material": "metal",
+      "position": [
+        -7422.14,
+        969.68
+      ],
+      "soffitNap": 6.16
+    },
+    "G0345.26655e7b5b113488e0532e0310acc97f": {
+      "code": "KBR-3873",
+      "material": "concrete",
+      "position": [
+        -7062.75,
+        276.04
+      ],
+      "soffitNap": 6.4
+    },
+    "G0345.2ef7e20d8815ed52e063cc0014ac4021": {
+      "code": "KBR-5504",
+      "material": "metal",
+      "position": [
+        -5750.79,
+        2441.04
+      ],
+      "soffitNap": 5.91
+    },
+    "G0345.492f359e403e44e5b6969ae85d24e531": {
+      "code": "KBR-5703",
+      "material": "metal",
+      "position": [
+        -5768.85,
+        3017.98
+      ],
+      "soffitNap": 6.1
+    },
+    "G0345.4b29032ddaeb39fee0532e0310acc7b7": {
+      "code": "KBR-5033",
+      "material": "concrete",
+      "position": [
+        -5611.14,
+        3202.96
+      ],
+      "soffitNap": 5.92
+    },
+    "G0345.4de839d9a0da6444e0532e0310ac1554": {
+      "code": "KBR-5008",
+      "material": "concrete",
+      "position": [
+        -7057.74,
+        394.1
+      ],
+      "soffitNap": 6.68
+    },
+    "G0345.9ff538c20b48080fe0539c0310ac15a5": {
+      "code": "KBR-5303",
+      "material": "concrete",
+      "position": [
+        -5827.55,
+        3008.37
+      ],
+      "soffitNap": 6.33
+    },
+    "G0345.a4076d0baac4152ae0539c0310ac6993": {
+      "code": "KBR-5305",
+      "material": "concrete",
+      "position": [
+        -5984.51,
+        3184.81
+      ],
+      "soffitNap": 5.96
+    },
+    "G0345.a4076d0baadf152ae0539c0310ac6993": {
+      "code": "KBR-5304",
+      "material": "concrete",
+      "position": [
+        -5975.2,
+        3011.03
+      ],
+      "soffitNap": 5.95
+    },
+    "G0345.af5895b9b3f01a93e0539c0310ac1108": {
+      "code": "KBR-5302",
+      "material": "concrete",
+      "position": [
+        -6021.97,
+        2808.83
+      ],
+      "soffitNap": 5.93
+    },
+    "G0345.c108d618f77f5a14e0539c0310ac223f": {
+      "code": "KBR-5309",
+      "material": "concrete",
+      "position": [
+        -5832.16,
+        3181.72
+      ],
+      "soffitNap": 6.33
+    },
+    "G0345.c95b1762fcfd05e6e0539c0310ac7d2a": {
+      "code": "KBR-5311",
+      "material": "concrete",
+      "position": [
+        -5978.83,
+        3355.65
+      ],
+      "soffitNap": 5.78
+    },
+    "G0345.ceb2b652894e01efe0539c0310ac01d0": {
+      "code": "KBR-5314",
+      "material": "concrete",
+      "position": [
+        -6098.15,
+        2997.97
+      ],
+      "soffitNap": 5.9
+    },
+    "G0345.ceb2b652894f01efe0539c0310ac01d0": {
+      "code": "KBR-5313",
+      "material": "concrete",
+      "position": [
+        -6116.33,
+        3170.69
+      ],
+      "soffitNap": 5.88
+    },
+    "G0345.ceb2b652895101efe0539c0310ac01d0": {
+      "code": "KBR-5315",
+      "material": "metal",
+      "position": [
+        -6126.93,
+        3049.33
+      ],
+      "soffitNap": 5.94
+    },
+    "G0345.cf419d3b295a4685e0539c0310ace384": {
+      "code": "KBR-5310",
+      "material": "concrete",
+      "position": [
+        -5837.81,
+        3353.84
+      ],
+      "soffitNap": 6.33
+    },
+    "G0345.e22dd7e9ebf56998e0539c0310ac9dfd": {
+      "code": "KBR-5312",
+      "material": "concrete",
+      "position": [
+        -6135.38,
+        3343.85
+      ],
+      "soffitNap": 5.97
+    },
+    "G0345.ed74056dcb89142ae0539c0310ac6e25": {
+      "code": "KBR-5429",
+      "material": "concrete",
+      "position": [
+        -6204.65,
+        3355.54
+      ],
+      "soffitNap": 5.9
+    },
+    "G0345.ed74056dcb8b142ae0539c0310ac6e25": {
+      "code": "KBR-5428",
+      "material": "concrete",
+      "position": [
+        -6149.45,
+        3279.48
+      ],
+      "soffitNap": 5.78
+    },
+    "W0662.6dd037db76b74ad68977b1472a322635": {
+      "code": "KBR-2747",
+      "material": "concrete",
+      "position": [
+        -8403.92,
+        -5361.63
+      ],
+      "soffitNap": 7.01
+    }
+  }
+}

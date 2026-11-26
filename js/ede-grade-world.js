@@ -8,7 +8,7 @@ import { createEdePavingMaterial, createRoadSurfaceMaterial } from './tsl-materi
 
 const CELL = 160;
 
-export function buildEdeGradeWorld(scene) {
+export function buildEdeGradeWorld(scene, bridgeFootprints) {
   const group = new THREE.Group();
   group.name = 'EdeGradeWorld';
   scene.add(group);
@@ -64,7 +64,11 @@ export function buildEdeGradeWorld(scene) {
   function strip(section, material, offset, tint, exposed, paving, trackLayer) {
     const { a, b } = section;
     const points = [a.left, a.right, b.right, b.left].map(p => height(p, p.y + offset));
-    quad(material, points, tint, exposed, paving, trackLayer);
+    if (section.splitAcross) {
+      const centerA = height(a, a.y + offset), centerB = height(b, b.y + offset);
+      quad(material, [points[0], centerA, centerB, points[3]], tint, exposed, paving, trackLayer);
+      quad(material, [centerA, points[1], points[2], centerB], tint, exposed, paving, trackLayer);
+    } else quad(material, points, tint, exposed, paving, trackLayer);
   }
 
   function lineCollider(a, b, minY, maxY, halfWidth = 0.16) {
@@ -195,7 +199,7 @@ export function buildEdeGradeWorld(scene) {
       const motor = profile.modes.includes('motor'), cycling = profile.modes.includes('bike');
       const mat = motor ? road : cycling ? bike : foot;
       const tint = motor ? asphaltTint : cycling ? cycleTint : footTint;
-      const levelMaterial = site.kind === 'level' && osmRoadMaterial(profile);
+      const fittedMaterial = osmRoadMaterial(profile);
       for (const section of gradeSections(profile)) {
         const { a, b } = section;
         const midpoint = (a.distance + b.distance) / 2;
@@ -206,8 +210,8 @@ export function buildEdeGradeWorld(scene) {
           const ground = terrainHeightAt((a.x + b.x) / 2, (a.z + b.z) / 2);
           if (section.covered || (a.y + b.y) / 2 < ground - 0.6) gradeLayer = -1;
         }
-        const paving = levelMaterial
-          ? { material: levelMaterial, angle: Math.atan2(b.z - a.z, b.x - a.x) }
+        const paving = fittedMaterial
+          ? { material: fittedMaterial, angle: Math.atan2(b.z - a.z, b.x - a.x) }
           : gradeLayer && gradePavement(section, gradeLayer, motor ? 'motor' : cycling ? 'cycle' : 'foot');
         if (paving) {
           const asphalt = paving.material === 'asphalt';
@@ -221,8 +225,11 @@ export function buildEdeGradeWorld(scene) {
         }
         if (site.kind === 'level') connectEdges(section, bank, 0.055);
         if (site.kind !== 'bridge') continue;
-        if (Math.min(a.y - terrainHeightAt(a.x, a.z), b.y - terrainHeightAt(b.x, b.z)) < 0.75) continue;
         const onSpan = midpoint >= profile.span?.[0] && midpoint <= profile.span?.[1];
+        if (profile.replaceGround && !onSpan) connectEdges(section, bank, 0.055);
+        if (onSpan && !motor && bridgeFootprints && profile.wayIds?.some(id => bridgeFootprints.get(id)?.some(contains =>
+          contains((a.x + b.x) / 2, (a.z + b.z) / 2)))) continue;
+        if (Math.min(a.y - terrainHeightAt(a.x, a.z), b.y - terrainHeightAt(b.x, b.z)) < 0.75) continue;
         const fill = profile.fillApproaches && !onSpan;
         if (!fill) strip(section, bank, -0.61);
         if (!onSpan && !fill) continue;

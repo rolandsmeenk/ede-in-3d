@@ -80,7 +80,8 @@ test('a rail-only deck with sparse rail hits stays above its cut approaches', ()
     .replaceAll('export async function', 'async function') + '\nexport { makeDeckProfile };';
   const { makeDeckProfile } = loadModule(source, { filename, imports: {
     'three/webgpu': {}, 'three/tsl': {}, './tsl-materials.js': {}, './ede-geometry.js': {}, './terrain.js': { terrainHeightAt: () => 16.5 },
-    './ede-windmill.js': {}, './ede-mast-strokes.js': {},
+    './ede-windmill.js': {}, './ede-mast-strokes.js': {}, './ede-bridge.js': {},
+    './ede-geodata.js': {}, './ede-scene-coordinates.js': {},
   } });
   const feature = { axis: [0, 0, 80, 0] };
   const rail = (x, z, kind) => kind === 'rail-deck' && z === 0 && x >= 30 && x <= 40 ? 21.1 : undefined;
@@ -102,14 +103,16 @@ test('electricity masts keep near steel and share a single filtered distance bat
   const structures = asset.structures.filter(item => item.kind === 'pylon').slice(0, 2)
     .map(({ ids, tower }, index) => ({ kind: 'pylon', ids, tower: [index * 400, 0, ...tower.slice(2)], polygons: [] }));
   const platforms = asset.structures.filter(({ ids }) => ids.some(id => authoredPlatformIds.includes(id)));
-  const fetch = async () => ({ ok: true, json: async () => ({ version: 1, structures: [...structures, ...platforms], source: {} }) });
+  const fetch = async url => ({ ok: true, json: async () => url.pathname.endsWith('ede-bridge-materials.json')
+    ? { version: 1, decks: {} } : { version: 1, structures: [...structures, ...platforms], source: {} } });
   const strokes = loadModule(readFileSync(join(__dirname, '../js/ede-mast-strokes.js'), 'utf8'), { imports: {
     'three/webgpu': three, 'three/tsl': tsl, './tsl-materials.js': {},
   } });
   const { buildEdeBgtWorld } = loadModule(source, { filename, globals: { URL, fetch }, imports: {
     'three/webgpu': three, 'three/tsl': tsl, './tsl-materials.js': {},
     './ede-geometry.js': { edeBounds: () => ({}) }, './terrain.js': { terrainHeightAt: () => 0 },
-    './ede-windmill.js': {}, './ede-mast-strokes.js': strokes,
+    './ede-windmill.js': {}, './ede-mast-strokes.js': strokes, './ede-geodata.js': { EDE_DATA: { roads: [], railways: [] } },
+    './ede-bridge.js': await import('../js/ede-bridge.js'), './ede-scene-coordinates.js': {},
   } });
   const model = await buildEdeBgtWorld(new three.Scene());
   assert.equal(model.platforms.length, 0, 'the authored station platforms own their render geometry');

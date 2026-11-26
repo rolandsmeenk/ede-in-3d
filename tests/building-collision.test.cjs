@@ -138,7 +138,7 @@ test('road queries preserve the open area inside concave and courtyard bounds', 
     },
     './nyc-geodata.js': { GEO: {} }, './building-collision.js': { polygonBoxOverlaps },
     './road-access.js?v=20261122-startup': { VEHICLE_CLEARANCE: {} }, './ede-active-travel.js': {},
-    './ede-road-lanes.js': {}, './ede-motorway-lanes.js': {},
+    './ede-road-lanes.js': {}, './ede-motorway-lanes.js': {}, './ede-vehicle-mix.js': { CARGO_CLEARANCE: {} },
     './ede-turn-restrictions.js': { EDE_TURN_RESTRICTIONS: {} }
   } });
   for (const polygon of [concave, courtyard]) {

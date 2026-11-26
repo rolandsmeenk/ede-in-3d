@@ -86,7 +86,7 @@ export function emitSurface(polygon, positions, terrainHeightAt, lift = 0) {
   }
 }
 
-export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, mappedPavement, keepAttribute) {
+export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts) {
   const { getTerrain, getExpansionTerrain, getExpansionTerrainPatch, getTerrainPatch, terrainHeightAt } = terrain;
   const { gradeCuts, localGradeSurface, clipEdeGround } = grade;
   const field = getTerrain();
@@ -98,13 +98,14 @@ export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, m
   const candidate = wayId && localGradeSurface(wayId);
   let local;
   let cuts = [];
-  if (cutGrade || candidate || mappedPavement || outerField) {
+  if (cutGrade || candidate || mappedPavement || outerField || surfaceCuts) {
     geometry.computeBoundingBox();
     const { min, max } = geometry.boundingBox;
     const bounds = { minX: min.x, maxX: max.x, minZ: min.z, maxZ: max.z };
     if (outerField && bounds.minX >= field.minX && bounds.maxX <= field.maxX
         && bounds.minZ >= field.minZ && bounds.maxZ <= field.maxZ) outerField = null;
     if (cutGrade) cuts = gradeCuts(bounds, wayId);
+    if (surfaceCuts) cuts = cuts.concat(surfaceCuts(bounds));
     local = candidate || (mappedPavement && localGradeSurface(null, bounds));
     if (local && !overlaps(bounds, local)) local = null;
   }

@@ -24,9 +24,15 @@ test('the theatre, motorway and cycling patches stitch into the 12 m AHN grid', 
   mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
   const coarse = await loadTerrain();
   const { WVEDE_CIRCUIT } = await import('../js/ede-wvede-circuit-survey.js');
-  const [theatre, embankment, cyclingCircuit] = getTerrainPatches();
+  const [theatre, embankment, cyclingCircuit, lukkien, ...motorway] = getTerrainPatches();
   assert.equal(coarse.step, 12);
-  for (const [patch, step] of [[theatre, 3], [embankment, 3], [cyclingCircuit, 2]]) {
+  const patches = [[theatre, 3], [embankment, 3], [cyclingCircuit, 2], [lukkien, 3],
+    ...motorway.map(patch => [patch, 3])];
+  for (const [index, [patch, step]] of patches.entries()) {
+    for (const [other] of patches.slice(0, index)) {
+      assert.ok(patch.minX >= other.maxX || patch.maxX <= other.minX
+        || patch.minZ >= other.maxZ || patch.maxZ <= other.minZ);
+    }
     assert.equal(patch.step, step);
     for (let z = patch.minZ; z <= patch.maxZ; z += 1) {
       for (const x of [patch.minX, patch.maxX]) {
@@ -53,6 +59,31 @@ test('the theatre, motorway and cycling patches stitch into the 12 m AHN grid', 
     assert.ok(terrainHeightAt(x, z) - sampleTerrain(coarse, x, z) > 1);
   }
   assert.ok(terrainHeightAt(-1716, 3379) - terrainHeightAt(-1716, 3392) > 6);
+  // Half-metre AHN ground samples on the two A12 carriageways beside Lukkien.
+  const lukkienWorker = createTerrainSampler(captureTerrainContext([-3325, 2695, -3140, 2835]));
+  for (const [x, z, nap] of [[-3316.529, 2704.732, 8.509], [-3149.808, 2824.812, 8.838]]) {
+    assert.equal(getTerrainPatch(x, z), lukkien);
+    assert.ok(Math.abs(terrainHeightAt(x, z) + coarse.napOrigin - nap) < 0.03);
+    assert.ok(Math.abs(sampleTerrain(coarse, x, z) + coarse.napOrigin - nap) > 0.12);
+    assert.equal(lukkienWorker.terrainHeightAt(x, z), terrainHeightAt(x, z));
+  }
+  // Native AHN observations at exposed carriageway points, in metres NAP.
+  for (const [index, x, z, nap] of [
+    [0, -4147.731, 2317.387, 14.679],
+    [0, -4058.612, 2104.895, 10.986],
+    [1, -3848.242, 1361.91, 15.402],
+    [2, -285.263, 3667.598, 20.002],
+    [2, -125.081, 3691.769, 22.175],
+    [3, 1090.156, 3702.148, 28.966],
+    [3, 900.081, 3738.22, 26.154],
+  ]) {
+    assert.ok(motorway[index]);
+    assert.equal(getTerrainPatch(x, z), motorway[index]);
+    assert.ok(Math.abs(terrainHeightAt(x, z) + coarse.napOrigin - nap) < 0.065);
+    assert.ok(Math.abs(sampleTerrain(coarse, x, z) + coarse.napOrigin - nap) > 0.3);
+    const worker = createTerrainSampler(captureTerrainContext([x - 6, z - 6, x + 6, z + 6]));
+    assert.equal(worker.terrainHeightAt(x, z), terrainHeightAt(x, z));
+  }
 });
 
 test('draped faces keep their offset across terrain cells and both sides of the diagonal', async () => {
@@ -224,7 +255,7 @@ test('the Ginkelse Heide detail resolves both sand areas with continuous terrain
   const { tileGeometry } = loadModule(readFileSync(path.join(root, 'js/ede-terrain-tiles.js'), 'utf8'), {
     imports: {
       './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
-      './ede-landscape-jobs.js': {},
+      './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
       'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
       './tsl-materials.js': {}, './ede-playable-boundary.js': {}, './ede-coverage.js': {}, './terrain.js': terrain,
     },

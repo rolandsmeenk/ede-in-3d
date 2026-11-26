@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { createRoadPaintMaterial } from './tsl-materials.js';
-import { fittedLanePoint } from './ede-lane-geometry.js';
+import { fittedLanePoint, mappedRoadPath, mappedRoadPoint } from './ede-lane-geometry.js';
 
 // Road markings follow the lane layout and stop lines supplied by the road network.
 
@@ -104,39 +104,6 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
   return { strip3D, build };
 }
 
-// Traffic edges keep their archived station ranges. Use their mapped shape to place paint between the stop lines.
-function mappedPaintPath(edge) {
-  if (!edge.paintPath || edge.bridge || edge.underpass || edge.layer) return;
-  const source = edge.direction ? edge.paintPath.toReversed() : edge.paintPath;
-  const first = source[0], last = source.at(-1);
-  const length = Math.hypot(last.x - first.x, last.z - first.z);
-  if (!length || !source.some(({ x, z }) =>
-    Math.abs((x - first.x) * (last.z - first.z) - (z - first.z) * (last.x - first.x)) > length * 0.75)) return;
-  const points = [{ x: edge.x0, z: edge.z0 }, ...source.slice(1, -1),
-    { x: edge.x0 + edge.dx * edge.span, z: edge.z0 + edge.dz * edge.span }];
-  const sections = [];
-  let distance = 0;
-  for (const point of points) {
-    const previous = sections.at(-1);
-    if (previous) {
-      const span = Math.hypot(point.x - previous.x, point.z - previous.z);
-      if (span < 0.03) continue;
-      previous.nx = (previous.z - point.z) / span;
-      previous.nz = (point.x - previous.x) / span;
-      distance += span;
-    }
-    sections.push({ ...point, distance });
-  }
-  if (sections.length < 2) return;
-  const setback = (edge.sx - edge.x0) * edge.dx + (edge.sz - edge.z0) * edge.dz;
-  return sections.map((point, i) => {
-    const before = sections[Math.max(0, i - 1)], after = i + 1 === sections.length ? before : point;
-    const miter = Math.max(0.6, 1 + before.nx * after.nx + before.nz * after.nz);
-    return { x: point.x, z: point.z, station: point.distance / distance * edge.span - setback,
-      nx: (before.nx + after.nx) / miter, nz: (before.nz + after.nz) / miter };
-  });
-}
-
 function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { surveyed = [], preserveGBuffer, pavementAt } = {}) {
   const builder = sharedBuilder || createRoadPaintChunkBuilder('RoadMarkings', { heightAt, preserveGBuffer });
   const lines = [];
@@ -227,12 +194,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
     if (!rows) {
       const path = mappedRoads.get(e);
       if (!path) return straightAt(e, s, o);
-      const right = path.findIndex(point => point.station >= s);
-      const i = right < 0 ? path.length - 1 : Math.max(1, right);
-      const a = path[i - 1], b = path[i];
-      const t = (s - a.station) / (b.station - a.station);
-      return [a.x + (b.x - a.x) * t + (a.nx + (b.nx - a.nx) * t) * o,
-        a.z + (b.z - a.z) * t + (a.nz + (b.nz - a.nz) * t) * o];
+      return mappedRoadPoint(path, s, o);
     }
     let right = rows.findIndex(row => row.offset >= o);
     if (right < 0) right = rows.length;
@@ -314,7 +276,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
     }
     for (const edge of back ? [e, back] : [e]) {
       if (fittedRoads.has(edge)) continue;
-      const path = mappedPaintPath(edge);
+      const path = mappedRoadPath(edge);
       if (path) mappedRoads.set(edge, path);
     }
     const firstLine = lines.length;
