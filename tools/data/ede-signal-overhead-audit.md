@@ -10,6 +10,8 @@ At the hospital, an unfiltered 300 m query returned zero rows from 1GIS furnitur
 
 The lane fits at VRI 2 use the full same-level road surfaces and retain the narrower upstream sections. Northbound Dr. W. Dreeslaan goes from two lanes to five and reaches 15.3 m of modeled lane width at the stop line. The other three approaches reach 15.8 m, 16.2 m with the separate westbound bus lane, and 12.6 m. The rebuilt bus asset retains the same trips and matched stops.
 
+The stop bars at VRI 5 and seven further approaches use measurements from the linked 2025 and 2026 photos. The road graph and paint share those positions. The four VRI 25 approaches use separately traced lane dividers, including the Akulaan bus lane. VRI 4 uses the two Keesomstraat approaches. VRI 29 uses the west approach. The west Galvanistraat bar lies at an existing bend used by the bus graph, and the other VRI 29 approaches have upstream changes in lane count that need separate geometry. [Measured lane and bar coordinates](../../js/ede-surveyed-approaches.js)
+
 At Bennekomseweg / Enkalaan, VRI 65 has a visible cantilever and lacks a mapped local traffic control. Westbound Lorentzstraat has a surveyed arm whose footing conflicts with the rendered road strip. Several spans and heads remain in review where a tree, hard shadow, or older image obscures the current layout.
 
 | Site | Location | VRI | Evidence |

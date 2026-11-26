@@ -217,6 +217,31 @@ test('circulating lanes do not generate stop bars at roundabout entries', () => 
   assert.equal(strips.length, 1);
 });
 
+test('Dutch arrows have filled heads, mirrored turns and a shared shaft for combined directions', () => {
+  const fills = [], strips = [];
+  const builder = { fill: points => fills.push(points), strip3D: (...args) => strips.push(args), build: () => new Group() };
+  const lanes = [['left'], ['through'], ['through', 'right'], ['right']].map((turns, i) =>
+    ({ offset: (i - 1.5) * 3.2, width: 3.2, turns }));
+  const edge = {
+    from: { id: 0 }, to: { id: 1 }, sx: 0, sz: 0, x0: 0, z0: 0, dx: 1, dz: 0, rx: 0, rz: 1,
+    len: 30, span: 40, wayId: 'approach', lanes: lanes.map(l => l.offset), turnTagsAtEnd: true, stopBar: { x: 30, z: 0 },
+    laneDefinition: { lanes, centers: [], bikes: [], markings: true },
+  };
+  buildRoadPaint(new Scene(), { paintEdges: [edge] }, builder);
+  assert.equal(fills.length, lanes.length);
+  for (const shape of fills) {
+    assert.equal(Math.min(...shape.map(p => p[0])), 20);
+    assert.equal(Math.max(...shape.map(p => p[0])), 25);
+    assert.equal(shape.filter(p => p[0] === 20).length, 2);
+  }
+  assert.equal(strips.find(strip => strip[6] === 0.45)[0], 30);
+  assert.equal(strips.filter(strip => strip[0] === 20 && strip[3] === 30 && strip[9] === 1).length, 3);
+  for (let i = 0; i < fills[0].length; i++) {
+    assert.ok(Math.abs(fills[0][i][1] - lanes[0].offset + fills[3][i][1] - lanes[3].offset) < 1e-9);
+  }
+  assert.ok(fills[2].some(([x, z]) => x < 23 && z - lanes[2].offset > 1));
+});
+
 test('generated lane dividers follow an accepted curved lane band', async () => {
   const { bindEdeFittedLanes } = laneGeometry;
   const strips = [];

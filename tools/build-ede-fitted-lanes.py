@@ -573,7 +573,7 @@ def prepare(edge, pavement, markings, nwb, frame):
         'edge': edge, 'pavement': fit_pavement, 'lanes': lanes,
         'source': source, 'confidence': 'high' if markings_used and (not motorway or matches) else 'medium',
         'sourceIds': sorted(markings_used), 'nwb': sorted(matches), 'bgt': sorted(set(source_ids)),
-        'fade': [[False, False] for _ in lanes],
+        'fade': [[False, bool(edge.get('surveyedStop'))] for _ in lanes],
     }, None
 
 

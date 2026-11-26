@@ -92,7 +92,8 @@ export function tileGeometry(bytes, tile, legacy, field, side = SIDE) {
   return buildTerrainGeometry(bytes, tile, legacy, field, expansionSeamOffset, side);
 }
 
-export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts) {
+export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts,
+  { maxBytes = MAX_GEOMETRY_BYTES, maxActiveTiles = MAX_ACTIVE_TILES } = {}) {
   const data = getExpansionTerrain();
   if (!data) return null;
   const { manifest, field, directory, detail, overviewField, rootSamples } = data;
@@ -295,7 +296,7 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts)
       const pixels = node.error * focal / Math.max(1, Math.hypot(horizontal, vertical));
       const threshold = pixelBudget * (node.refining ? 0.9 : 1.1);
       node.refining = Boolean(node.children?.length && (horizontal < near || pixels > threshold));
-      if (node.refining && next.size < MAX_ACTIVE_TILES) {
+      if (node.refining && next.size < maxActiveTiles) {
         const children = node.children.map(id => nodes.get(id)).sort((a, b) => score(a) - score(b));
         for (const child of children) {
           child.used = stamp;
@@ -326,10 +327,10 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts)
       (node.mesh ?? node.overview).visible = true;
       shown.add(node);
     }
-    if (stats.residentBytes > MAX_GEOMETRY_BYTES) {
+    if (stats.residentBytes > maxBytes) {
       const oldest = [...resident].filter(node => !next.has(node) && node.used < stamp - 2).sort((a, b) => a.used - b.used);
       for (const node of oldest) {
-        if (stats.residentBytes <= MAX_GEOMETRY_BYTES) break;
+        if (stats.residentBytes <= maxBytes) break;
         group.remove(node.mesh);
         node.mesh.geometry.dispose();
         node.mesh = null;

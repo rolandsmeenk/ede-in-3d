@@ -66,6 +66,17 @@ export function fitEdeRoadsideSignalY(roadY, halfHeight, observedY) {
   return lowerEdge >= 2.20 && lowerEdge <= 2.40 ? observedY : roadY + 2.30 + halfHeight;
 }
 
+export function fitEdeOverheadSignalMount(point, mount, normal, heading, halfWidth, scale, beamRadius, truss, overlapsBeamHeight) {
+  const [x, z] = point, [mx, mz] = mount;
+  const fx = Math.sin(heading), fz = Math.cos(heading);
+  const facing = Math.sign(fx * normal[0] + fz * normal[1]) || 1;
+  const nx = normal[0] * facing, nz = normal[1] * facing;
+  const rear = 0.05 * scale * (fx * nx + fz * nz) + halfWidth * Math.abs(fz * nx - fx * nz);
+  const current = (x - mx) * nx + (z - mz) * nz;
+  const offset = overlapsBeamHeight ? Math.max(0, truss + beamRadius + rear + 0.04 - current) : 0;
+  return { position: [x + nx * offset, z + nz * offset], mount: [mx + nx * truss, mz + nz * truss] };
+}
+
 export async function loadEdeSignalHardware() {
   const response = await fetch(new URL('../assets/ede-signal-hardware.json?v=20261121-hospital-signals', import.meta.url));
   if (!response.ok) throw new Error(`Ede signal hardware returned HTTP ${response.status}`);

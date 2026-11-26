@@ -1,4 +1,4 @@
-import('./main.js?v=20261126-iphone-range')
+import('./main.js?v=20261126-live-signals-2')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

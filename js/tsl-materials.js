@@ -1800,7 +1800,9 @@ function createRoadPaintMaterial(preserveGBuffer = false) {
     });
     return w;
   })();
-  mat.opacityNode = dashes.mul(coverage).mul(smoothstep(0.1, 0.6, wear).mul(0.4).add(0.55)).mul(distFade);
+  // Filled arrow polygons have no sideways extrusion.
+  const paintCoverage = max(coverage, float(1.0).sub(step(0.0001, halfWidth)));
+  mat.opacityNode = dashes.mul(paintCoverage).mul(smoothstep(0.1, 0.6, wear).mul(0.4).add(0.55)).mul(distFade);
 
   // Skip the puddle field for dry paint and paint that's still drying after rain.
   const puddle = Fn(() => {

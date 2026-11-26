@@ -36,15 +36,25 @@ const EDE_AREAS=(EDE_DATA.meta.areas||[]).map(a=>({...a,polygons:(a.polygons||[]
 function districtAt() {
  return 'centrum';
 }
+const EMPTY_LIST = Object.freeze([]);
+const BLOCK_PROTO = {
+  get poly() { return toPts(this.ring); },
+  get holes() { return this.holeRings.length ? this.holeRings.map(toPts) : EMPTY_LIST; },
+};
 function makeBlock(b,id,park=0){
- const poly=toPts(b.ring),holes=(b.holes||[]).map(toPts);
+ const ring=b.ring,holeRings=b.holes?.length?b.holes:EMPTY_LIST;
  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity,a=0,cx=0,cz=0;
- for(let i=0,j=poly.length-1;i<poly.length;j=i++){
-  const p=poly[i],q=poly[j],c=q.x*p.z-p.x*q.z;
-  minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minZ=Math.min(minZ,p.z);maxZ=Math.max(maxZ,p.z);a+=c;cx+=(q.x+p.x)*c;cz+=(q.z+p.z)*c;
+ for(let i=0,j=ring.length-2;i<ring.length;j=i,i+=2){
+  const px=ring[i],pz=ring[i+1],qx=ring[j],qz=ring[j+1],c=qx*pz-px*qz;
+  if(px<minX)minX=px;if(px>maxX)maxX=px;if(pz<minZ)minZ=pz;if(pz>maxZ)maxZ=pz;a+=c;cx+=(qx+px)*c;cz+=(qz+pz)*c;
  }
  a*=.5;cx=a?cx/(6*a):(minX+maxX)/2;cz=a?cz/(6*a):(minZ+maxZ)/2;
- return {id,osmId:b.id,source:b,poly,holes,rects:[],frames:null,park,parkName:park?b.name:'',rect:false,area:Math.abs(a),minX,maxX,minZ,maxZ,cx,cz,median:false,district:districtAt(cx,cz)};
+ const block=Object.create(BLOCK_PROTO);
+ block.id=id;block.osmId=b.id;block.source=b;block.ring=ring;block.holeRings=holeRings;
+ block.rects=EMPTY_LIST;block.frames=null;block.park=park;block.parkName=park?b.name:'';
+ block.rect=false;block.area=Math.abs(a);block.minX=minX;block.maxX=maxX;block.minZ=minZ;block.maxZ=maxZ;
+ block.cx=cx;block.cz=cz;block.median=false;block.district=districtAt(cx,cz);
+ return block;
 }
 const BLOCKS=[...EDE_DATA.buildings.filter(b=>!b.part).map((b,i)=>makeBlock(b,i)),...EDE_DATA.parks.map((b,i)=>makeBlock(b,'park:'+i,1))];
 const LANDMARK_BLOCKS=new Set();
@@ -125,7 +135,7 @@ function roadCrossesWater(x, z, anyRoad = false) {
 // Spatial index of the blocks (64 m cells)
 const BLOCK_CELL = 64;
 const BLOCK_GRID = new Map();
-for (const b of [...BLOCKS, ...(EDE_DATA.squares || []).map((b) => ({ ...makeBlock(b, b.id), sidewalk: true }))]) {
+for (const b of [...BLOCKS, ...(EDE_DATA.squares || []).map((b) => Object.assign(makeBlock(b, b.id), { sidewalk: true }))]) {
   for (let ix = Math.floor(b.minX / BLOCK_CELL); ix <= Math.floor(b.maxX / BLOCK_CELL); ix++) {
     for (let iz = Math.floor(b.minZ / BLOCK_CELL); iz <= Math.floor(b.maxZ / BLOCK_CELL); iz++) {
       const k = ix * 100000 + iz;
@@ -136,6 +146,13 @@ for (const b of [...BLOCKS, ...(EDE_DATA.squares || []).map((b) => ({ ...makeBlo
 }
 function pointInPoly(poly, x, z) {
   let inside = false;
+  if (typeof poly[0] === 'number') {
+    for (let i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
+      const az = poly[i + 1], bz = poly[j + 1];
+      if ((az > z) !== (bz > z) && x < ((poly[j] - poly[i]) * (z - az)) / (bz - az) + poly[i]) inside = !inside;
+    }
+    return inside;
+  }
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const a = poly[i], b = poly[j];
     if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
@@ -147,7 +164,7 @@ function blockAt(x, z, includeSidewalk = true) {
   const list = BLOCK_GRID.get(Math.floor(x / BLOCK_CELL) * 100000 + Math.floor(z / BLOCK_CELL));
   for (const b of list || []) {
     if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
-    if ((b.rect || pointInPoly(b.poly, x, z)) && !b.holes.some(h=>pointInPoly(h,x,z))) return b;
+    if ((b.rect || pointInPoly(b.ring ?? b.poly, x, z)) && !(b.holeRings ?? b.holes).some(h => pointInPoly(h, x, z))) return b;
   }
   return includeSidewalk ? sidewalkAt(x,z) : null;
 }
@@ -186,8 +203,8 @@ function sidewalkAt(x, z) {
 
 
 
-// A 4 m fill serves most water queries. Boundary cells use the exact outline in a local index.
-const WATER_CELL = 4;
+// An 8 m fill serves most water queries. Boundary cells use the exact outline in a local index.
+const WATER_CELL = 8;
 const WATER_INDEX_CELL = 64;
 const waterCols = Math.ceil((maxX - minX) / WATER_CELL);
 const waterRows = Math.ceil((maxZ - minZ) / WATER_CELL);
@@ -200,7 +217,7 @@ function waterCellKey(column, row) {
 
 function registerWater(feature) {
   const block = makeBlock(feature, feature.id);
-  const rings = [block.poly, ...block.holes];
+  const rings = [block.ring, ...block.holeRings];
   const column0 = Math.floor(block.minX / WATER_INDEX_CELL), column1 = Math.floor(block.maxX / WATER_INDEX_CELL);
   const row0 = Math.floor(block.minZ / WATER_INDEX_CELL), row1 = Math.floor(block.maxZ / WATER_INDEX_CELL);
   for (let column = column0; column <= column1; column++) for (let row = row0; row <= row1; row++) {
@@ -210,13 +227,13 @@ function registerWater(feature) {
   }
 
   const crossings = new Map();
-  for (const ring of rings) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i], b = ring[j];
-    const low = Math.max(0, Math.ceil((Math.min(a.z, b.z) - minZ) / WATER_CELL - 0.5));
-    const high = Math.min(waterRows, Math.ceil((Math.max(a.z, b.z) - minZ) / WATER_CELL - 0.5));
+  for (const ring of rings) for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+    const ax = ring[i], az = ring[i + 1], bx = ring[j], bz = ring[j + 1];
+    const low = Math.max(0, Math.ceil((Math.min(az, bz) - minZ) / WATER_CELL - 0.5));
+    const high = Math.min(waterRows, Math.ceil((Math.max(az, bz) - minZ) / WATER_CELL - 0.5));
     for (let row = low; row < high; row++) {
       const z = minZ + (row + 0.5) * WATER_CELL;
-      const x = a.x + (z - a.z) * (b.x - a.x) / (b.z - a.z);
+      const x = ax + (z - az) * (bx - ax) / (bz - az);
       if (!crossings.has(row)) crossings.set(row, []);
       crossings.get(row).push(x);
     }
@@ -234,10 +251,11 @@ function registerWater(feature) {
   }
 
   const neighbors = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]];
-  for (const ring of rings) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i], b = ring[j], steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z)));
+  for (const ring of rings) for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+    const ax = ring[i], az = ring[i + 1], bx = ring[j], bz = ring[j + 1];
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 2));
     for (let k = 0; k <= steps; k++) {
-      const x = a.x + (b.x - a.x) * k / steps, z = a.z + (b.z - a.z) * k / steps;
+      const x = ax + (bx - ax) * k / steps, z = az + (bz - az) * k / steps;
       const col = Math.floor((x - minX) / WATER_CELL), row = Math.floor((z - minZ) / WATER_CELL);
       for (const [dx, dz] of neighbors) {
         const column = col + dx, r = row + dz;
@@ -252,7 +270,7 @@ for (const feature of EDE_DATA.water) registerWater(feature);
 function waterAtExact(x, z) {
   const cell = waterIndex.get(waterCellKey(Math.floor(x / WATER_INDEX_CELL), Math.floor(z / WATER_INDEX_CELL)));
   return cell?.some(w => x >= w.minX && x <= w.maxX && z >= w.minZ && z <= w.maxZ
-    && pointInPoly(w.poly, x, z) && !w.holes.some(hole => pointInPoly(hole, x, z))) ?? false;
+    && pointInPoly(w.ring, x, z) && !w.holeRings.some(hole => pointInPoly(hole, x, z))) ?? false;
 }
 
 function waterAt(x, z) {

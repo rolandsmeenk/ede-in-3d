@@ -120,8 +120,37 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const strip = (a, b, half, y, offset, wayId) => drapeEdeSurface(edeStrip(a, b, half, y, offset), true, wayId);
   const collections = new Map();
   const pavingMaterials = { asphalt: roadMat, mapped: mappedPavingMat, path: pavingMat, sidewalk: sidewalkMat, curb: curbMat };
-  const pavingTiles = createPavingTiles(scene, mergeCityBatches, compact ? 32 * 1024 ** 2 : undefined,
-    createPavingWorker(preparePavingTile), pavingMaterials);
+  function buildPavingJob(data, target) {
+    if (data.outer) {
+      addSurveyedPaving(data, target);
+      return;
+    }
+    const { pieces, rise, wayId, material, style, angle, segment } = data;
+    const geometries = pieces.map(piece => edePolygonGeometry(typeof piece[0] === 'number' ? edePoints(piece) : piece, [], rise));
+    const joined = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
+    if (geometries.length > 1) geometries.forEach(geometry => geometry.dispose());
+    const geometry = drapeEdeSurface(joined, true, wayId);
+    if (material === 'mapped') {
+      const position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
+      const styles = new Float32Array(position.count).fill(style);
+      const cs = Math.cos(angle), sn = Math.sin(angle);
+      for (let i = 0; i < position.count; i++) {
+        const x = position.getX(i), z = position.getZ(i);
+        uv.setXY(i, x * cs + z * sn, z * cs - x * sn);
+      }
+      geometry.setAttribute('pavingStyle', new THREE.BufferAttribute(styles, 1));
+      collect(geometry, mappedPavingMat, segment, undefined, target);
+    } else if (material === 'asphalt') {
+      collect(geometry, roadMat, segment, undefined, target);
+    } else if (material === 'sidewalk') {
+      collect(geometry, sidewalkMat, undefined, undefined, target);
+    } else {
+      setPavingStyle(geometry, style);
+      collect(geometry, pavingMat, segment, undefined, target);
+    }
+  }
+  const pavingTiles = createPavingTiles(scene, mergeCityBatches, compact ? 12 * 1024 ** 2 : undefined,
+    createPavingWorker(preparePavingTile), pavingMaterials, buildPavingJob);
 
   function preparePavingTile(tile) {
     const bounds = { minX: tile.minX - 0.01, minZ: tile.minZ - 0.01, maxX: tile.maxX + 0.01, maxZ: tile.maxZ + 0.01 };
@@ -299,7 +328,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       const top = curbGeometryFor(surface.id, index);
       const tactile = index === 0 ? curbTactileFor(surface.id) : undefined;
       const entry = { outer, holes, material, angle, motor, top, tactile };
-      if (EDE_DATA.meta.fullMunicipality || fringeSurfaces.has(surface)) {
+      if (compact || EDE_DATA.meta.fullMunicipality || fringeSurfaces.has(surface)) {
         const bounds = { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity };
         for (let i = 0; i < outer.length; i += 2) {
           bounds.minX = Math.min(bounds.minX, outer[i]);
@@ -307,7 +336,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
           bounds.minZ = Math.min(bounds.minZ, outer[i + 1]);
           bounds.maxZ = Math.max(bounds.maxZ, outer[i + 1]);
         }
-        pavingTiles.add(bounds, target => addSurveyedPaving(entry, target), {
+        pavingTiles.add(bounds, null, {
           ...entry, bounds, rise: 0.065, style: EDE_PAVING_STYLE[material],
           material: material === 'asphalt' ? 'asphalt' : 'mapped',
           layer: material === 'asphalt' && motor ? 0 : undefined,
@@ -386,7 +415,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     const surfaces = [carriageway
       ? addPavement(segment, 'road', width / 2)
       : addPavement(segment, 'path', Math.max(0.75, width / 2))];
-    if (carriageway && curbedKinds.has(road.kind)) {
+    if (!compact && carriageway && curbedKinds.has(road.kind)) {
       for (const side of [-1, 1]) surfaces.push(addPavement(segment, 'sidewalk', 1.4, side * (width / 2 + 1.4)));
     }
     for (const surface of surfaces) surface.order = order;
@@ -508,11 +537,19 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       };
       if (!material && kind === 'sidewalk') clippedSidewalkPieces += pieces.length;
       if (!material && kind === 'path') clippedPedestrianPieces += pieces.length;
-      if (EDE_DATA.meta.fullMunicipality) {
+      if (compact || EDE_DATA.meta.fullMunicipality) {
         const bounds = edeBounds(pieces.flat());
         const cycleway = s.road.kind === 'cycleway';
         const batch = material ? material === 'asphalt' ? 'asphalt' : 'mapped' : kind === 'road' ? 'asphalt' : kind;
-        pavingTiles.add(bounds, build, { bounds, pieces, rise: pavementHeight[kind], wayId: s.road.id,
+        const packedPieces = pieces.map(piece => {
+          const flat = new Float32Array(piece.length * 2);
+          for (let i = 0; i < piece.length; i++) {
+            flat[i * 2] = piece[i].x;
+            flat[i * 2 + 1] = piece[i].z;
+          }
+          return flat;
+        });
+        pavingTiles.add(bounds, null, { bounds, pieces: packedPieces, rise: pavementHeight[kind], wayId: s.road.id,
           material: batch, style: material ? EDE_PAVING_STYLE[material] : cycleway ? 0 : 2,
           angle: Math.atan2(s.uz, s.ux), segment: material || kind === 'road' || kind === 'path' && cycleway ? s : null });
       } else build(collections);
@@ -787,30 +824,36 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   function mergeCityBatches(source, destination) {
     for (const [material, geometries] of source) {
       let firstMesh;
-      for (const cell of edeGeometryGroups(geometries)) for (let i = 0; i < cell.length; i += 300) {
-        const sources = cell.slice(i, i + 300);
-        // Keep shared terrain and curb vertices when all inputs already have indices.
-        const chunk = sources.every(g => g.index) ? sources : sources.map(g => {
-          if (!g.index) return g;
-          const expanded = g.toNonIndexed(); g.dispose(); return expanded;
-        });
-        const merged = mergeGeometries(chunk, false);
-        chunk.forEach(g => g.dispose());
-        if (!merged) continue;
-        const mesh = new THREE.Mesh(merged, material);
-        mesh.receiveShadow = material !== waterMat; mesh.castShadow = material === curbMat;
-        if (terrain && material === terrainMat) mesh.name = 'Ede legacy terrain';
-        if (material === railMat) mesh.name = 'Ede rails';
-        if (material === ballastMat) mesh.name = 'Ede rail ballast';
-        if (material === waterMat) mesh.userData.keepInAerial = true;
-        if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
-        else firstMesh = mesh;
-        destination.add(mesh);
+      for (const cell of edeGeometryGroups(geometries)) {
+        const indexed = [], nonIndexed = [];
+        for (const g of cell) (g.index ? indexed : nonIndexed).push(g);
+        for (const groupList of [indexed, nonIndexed]) {
+          for (let i = 0; i < groupList.length; i += 300) {
+            const chunk = groupList.slice(i, i + 300);
+            const merged = mergeGeometries(chunk, false);
+            chunk.forEach(g => g.dispose());
+            if (!merged) continue;
+            const mesh = new THREE.Mesh(merged, material);
+            mesh.receiveShadow = material !== waterMat; mesh.castShadow = material === curbMat;
+            if (terrain && material === terrainMat) mesh.name = 'Ede legacy terrain';
+            if (material === railMat) mesh.name = 'Ede rails';
+            if (material === ballastMat) mesh.name = 'Ede rail ballast';
+            if (material === waterMat) mesh.userData.keepInAerial = true;
+            if (firstMesh) mesh.userData.sharesPipelineWith = firstMesh;
+            else firstMesh = mesh;
+            destination.add(mesh);
+          }
+        }
       }
     }
   }
   mergeCityBatches(collections, group);
   collections.clear();
+  woodland.length = 0;
+  treeCells.clear();
+  detailCells.clear();
+  streetSiteKeys.clear();
+  fringeSurfaces.clear();
 
   group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, railways: railWays, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, northernWoodlandTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
     mappedPavingCount, clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, flatPonds, junctionClippedCurbs: true, junctionClippedSidewalks: true };

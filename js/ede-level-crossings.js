@@ -91,7 +91,8 @@ export function createEdeLevelCrossings(scene, trainSystem) {
 
   for (const site of sites) {
     if (site.kind !== 'level' || !site.evidence?.public) continue;
-    const state = { id: site.id, phase: 'open', arm: 0, flash: -1, warningAt: null, releaseAt: -Infinity, equipment: [] };
+    const state = { id: site.id, phase: 'open', arm: 0, flash: -1, warningAt: null, releaseAt: -Infinity, equipment: [], x: 0, y: 0, z: 0 };
+    let sumX = 0, sumY = 0, sumZ = 0, sumCount = 0;
     const controls = Array.isArray(site.controls) ? site.controls : [site.controls];
     for (const control of controls) {
       if (!['AHOB', 'AHOB-MINI', 'AOB'].includes(control?.type)) continue;
@@ -105,6 +106,7 @@ export function createEdeLevelCrossings(scene, trainSystem) {
       for (const side of [-1, 1]) {
         const sx = x - side * dx * back, sz = z - side * dz * back;
         const y = roadWayIds.map(id => gradeWayAt(id, sx, sz, width / 2)).find(Boolean)?.y ?? terrainHeightAt(sx, sz);
+        sumX += sx; sumY += y; sumZ += sz; sumCount++;
         const approach = { state, x, z, dx, dz, width, back, y, heading, side, modes };
         approaches.push(approach);
         state.equipment.push(buildEquipment(approach, side, modes.has('motor')));
@@ -123,6 +125,11 @@ export function createEdeLevelCrossings(scene, trainSystem) {
         if (!byWay.has(id)) byWay.set(id, []);
         byWay.get(id).push(...approaches);
       }
+    }
+    if (sumCount > 0) {
+      state.x = sumX / sumCount;
+      state.y = sumY / sumCount + 2.0;
+      state.z = sumZ / sumCount;
     }
     crossings.push(state);
 

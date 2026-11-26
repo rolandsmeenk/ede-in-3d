@@ -3,9 +3,10 @@
 // usage: node tools/build-ede-shops.mjs [osm_ede.json]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { EDE_DATA } from '../js/ede-geodata.js';
+import { containsPlayablePoint } from '../js/ede-playable-boundary.js';
 import { projectLonLatInto } from '../js/ede-scene-coordinates.js';
 
-const { lonLatAffine: A, bounds: [minX, minZ, maxX, maxZ] } = EDE_DATA.meta;
+const { lonLatAffine: A } = EDE_DATA.meta;
 const input = process.argv[2] || new URL('./data/osm_ede.json', import.meta.url);
 const data = JSON.parse(readFileSync(input, 'utf8'));
 if (!Array.isArray(data.elements) || !data.elements.length || data.remark) throw new Error('Expected a complete Ede OpenStreetMap response');
@@ -30,7 +31,7 @@ for (const el of data.elements) {
   const { lon, lat } = shopLocation(el);
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
   const { x, z } = projectLonLatInto(A, lon, lat, {});
-  if (x < minX || x > maxX || z < minZ || z > maxZ) continue;
+  if (!containsPlayablePoint(x, z)) continue;
   const name = tags.name.trim();
   if (!name) continue;
   if (out.some((o) => o[0] === name && Math.hypot(o[1] - x, o[2] - z) < 4)) continue;

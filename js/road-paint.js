@@ -12,18 +12,47 @@ const PAINT_CELL_SIZE = 1200;
 const PAINT_CULL_DISTANCE = 1650;
 const PAINT_MAX_SEGMENT = 200;
 const WIDEN_SPHERE_PAD = 16; // createRoadPaintMaterial widens thin distant strips up to 16x in screen space
+const ARROW_SHAFT = 0.08;
+
+// RAW figure 32.1.1. Longitudinal and lateral coordinates for the five-metre urban markings.
+const STRAIGHT_ARROW = [[3.65, ARROW_SHAFT], [3.65, 0.55], [5, 0]];
+const TURN_ARROW = [[3.15, ARROW_SHAFT], [3.48, 0.58], [2.65, 0.58], [3.85, 1.05],
+  [5, 0.58], [4.24, 0.58], [3.75, -ARROW_SHAFT]];
+const COMBINED_BRANCH = [[0.8, ARROW_SHAFT], [1.14, 0.58], [0.4, 0.58], [1.65, 1.05],
+  [2.9, 0.58], [2.02, 0.58], [1.75, ARROW_SHAFT]];
+
+function arrowOutline(turns) {
+  const bend = side => turns.find(turn => turn.endsWith(side));
+  const left = bend('left'), right = bend('right');
+  const ahead = turns.includes('through');
+  const branch = (points, turn, side) => points.map(([s, o]) =>
+    [s, side * (Math.abs(o) <= ARROW_SHAFT || turn === 'left' || turn === 'right' ? o : o * 0.7)]);
+  const tail = side => [0, side * ARROW_SHAFT];
+  if (!ahead && !!left !== !!right) {
+    const side = right ? 1 : -1;
+    return [tail(side), ...branch(TURN_ARROW, right ?? left, side), tail(-side)];
+  }
+  if (!ahead && !left && !right) return [];
+  const side = (turn, sign) => [tail(sign),
+    ...(turn ? branch(ahead ? COMBINED_BRANCH : TURN_ARROW.slice(0, -1), turn, sign) : []),
+    ...(ahead ? STRAIGHT_ARROW.slice(0, -1).map(([s, o]) => [s, o * sign]) : [[3.75, sign * ARROW_SHAFT]])];
+  return [...side(right, 1), ...(ahead ? [STRAIGHT_ARROW.at(-1)] : []), ...side(left, -1).reverse()];
+}
 
 // Spatial chunk builder shared by Manhattan street markings and perimeter highway markings (js/city-grid.js), so
 // off-screen and distant (> 1.65 km) road paint is culled instead of transforming all 12.5 km of vertices every frame.
 function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDistance = PAINT_CULL_DISTANCE, heightAt, preserveGBuffer } = {}) {
   const cells = new Map();
 
-  function pushQuad(ax, ay, az, bx, by, bz, sx, sz, col, period, duty, u0, u1, edge) {
-    const mx = (ax + bx) * 0.5;
-    const mz = (az + bz) * 0.5;
-    const key = (Math.floor(mx / cellSize) << 16) ^ (Math.floor(mz / cellSize) & 0xffff);
+  function cellAt(x, z) {
+    const key = (Math.floor(x / cellSize) << 16) ^ (Math.floor(z / cellSize) & 0xffff);
     let cell = cells.get(key);
     if (!cell) cells.set(key, (cell = { position: [], side: [], paint: [], colors: [], index: [] }));
+    return cell;
+  }
+
+  function pushQuad(ax, ay, az, bx, by, bz, sx, sz, col, period, duty, u0, u1, edge) {
+    const cell = cellAt((ax + bx) * 0.5, (az + bz) * 0.5);
     const i = cell.position.length / 3;
     for (const [x, y, z, s, u] of [[ax, ay, az, -1, u0], [ax, ay, az, 1, u0], [bx, by, bz, 1, u1], [bx, by, bz, -1, u1]]) {
       const edgeX = x + sx * s, edgeZ = z + sz * s;
@@ -33,6 +62,19 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
       cell.colors.push(col.r, col.g, col.b);
     }
     cell.index.push(i, i + 1, i + 2, i, i + 2, i + 3);
+  }
+
+  function fill(points, y, col, edge) {
+    const triangles = THREE.ShapeUtils.triangulateShape(points.map(([x, z]) => new THREE.Vector2(x, -z)), []);
+    const cell = cellAt(...points[0]);
+    const offset = cell.position.length / 3;
+    for (const [x, z] of points) {
+      cell.position.push(x, y + (heightAt?.(x, z, edge) ?? 0), z);
+      cell.side.push(0, 0);
+      cell.paint.push(0, 1, 1, 0);
+      cell.colors.push(col.r, col.g, col.b);
+    }
+    for (const [a, b, c] of triangles) cell.index.push(offset + a, offset + b, offset + c);
   }
 
   function strip3D(ax, ay, az, bx, by, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1, edge) {
@@ -101,7 +143,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
     return group;
   }
 
-  return { strip3D, build };
+  return { strip3D, fill, build };
 }
 
 function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { surveyed = [], preserveGBuffer, pavementAt } = {}) {
@@ -212,35 +254,39 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
     const extra = (o - p.offset) * p.widthRatio * (rows[right === 0 ? 0 : right - 1].edge === e ? 1 : -1);
     return [p.x - p.dz * extra, p.z + p.dx * extra];
   }
-  const along = (e, o, w, col, period = 1, duty = 1) => {
+  const along = (e, o, w, col, period = 1, duty = 1, solidEnd = false) => {
     const start = (e.sx - e.x0) * e.dx + (e.sz - e.z0) * e.dz;
     const fast = e.laneDefinition?.fast;
     const startAt = fast || e.from.shape ? -start : 0.9;
-    const endAt = fast || e.to.shape ? e.span - start : e.len - 0.9;
+    const endAt = fast || e.to.shape ? e.span - start : e.len - (solidEnd ? 10 : 0.9);
+    if (solidEnd) {
+      const bar = e.stopBar?.ends;
+      let end = at(e, e.len, o);
+      if (bar) {
+        const t = 0.5 + o / e.laneDefinition.width;
+        end = [bar[0][0] + t * (bar[1][0] - bar[0][0]), bar[0][1] + t * (bar[1][1] - bar[0][1])];
+      }
+      strip(...at(e, Math.max(startAt, endAt), o), ...end, w, col, 1, 1, 0, 1, e);
+    }
     if (endAt - startAt < 0.1) return;
     const ends = [at(e, startAt, o), at(e, endAt, o)];
-    lines.push({ e, o, w, col, period, duty, ends, startAt, endAt, joins: [] });
+    lines.push({ e, o, w, col, period, duty, ends, startAt, endAt, solidEnd, joins: [] });
   };
   const across = (e, s, o0, o1, w, col, period, duty) => strip(...at(e, s, o0), ...at(e, s, o1), w, col, period, duty, 0, 1, e);
   function turnArrows(e) {
     if (!e.turnTagsAtEnd || e.to.shape || e.len < 9) return;
+    const scale = e.laneDefinition.fast ? 1.5 : 1;
+    const first = Math.max(0.9, e.len - 10 * scale);
     for (const lane of e.laneDefinition.lanes) {
-      const turns = lane.turns?.filter(turn => turn !== 'reverse');
-      if (!turns?.length) continue;
-      const s = e.len - 6;
-      const o = lane.offset;
-      const draw = (a, b, c, d) => strip(...at(e, s + a, o + b), ...at(e, s + c, o + d), 0.135, WHITE, 1, 1, 0, 1, e);
-      draw(-1.2, 0, 0, 0);
-      for (const turn of turns) {
-        const side = turn.endsWith('right') ? 1 : turn.endsWith('left') ? -1 : 0;
-        const forward = side && !turn.includes('_') ? 0.55 : 1.2;
-        const across = side * Math.min(0.65, lane.width * 0.3);
-        const length = Math.hypot(forward, across);
-        const tipX = forward / length, tipZ = across / length;
-        draw(0, 0, forward, across);
-        for (const wing of [-0.22, 0.22]) {
-          draw(forward, across, forward - tipX * 0.4 - tipZ * wing, across - tipZ * 0.4 + tipX * wing);
-        }
+      if (!lane.turns) continue;
+      const outline = arrowOutline(lane.turns);
+      if (!outline.length) continue;
+      const acrossScale = Math.min(1, lane.width * 0.4);
+      for (let row = 0; row < (e.stopBar ? 3 : 1); row++) {
+        const s = first - row * 25;
+        if (s < 0.9) break;
+        builder.fill(outline.map(([forward, across]) => at(e, s + forward * scale, lane.offset + across * acrossScale)),
+          HEIGHT, WHITE, e);
       }
     }
   }
@@ -295,11 +341,11 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
     for (let k = 0; k + 1 < lanes.length && (!definition || definition.markings || back?.laneDefinition?.markings); k++) {
       const p = lanes[k];
       const q = lanes[k + 1];
-      const mid = (p.o + q.o) / 2;
+      const mid = definition ? (p.o + p.width / 2 + q.o - q.width / 2) / 2 : (p.o + q.o) / 2;
       if (definition) {
         const busBoundary = !!p.busOnly !== !!q.busOnly;
         along(e, mid, definition.fast ? 0.16 : 0.12, WHITE,
-          busBoundary ? 1 : definition.fast ? 12 : 8, busBoundary ? 1 : 0.25);
+          busBoundary ? 1 : definition.fast ? 12 : 8, busBoundary ? 1 : 0.25, !!e.stopBar && !busBoundary);
         continue;
       }
       if (q.o - p.o > 4.5 && (p.dir === q.dir || !clearCentre(e, mid))) continue;
@@ -346,10 +392,14 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
     // street merely bends: a shape node of the centreline streets)
     for (const f of back ? [e, back] : [e]) {
       if (f.to.shape || f.roundabout || definition?.fast || f.boundary || f.underpass || f.busOnly) continue;
+      if (f.stopBar?.ends) {
+        strip(...f.stopBar.ends[0], ...f.stopBar.ends[1], 0.45, WHITE, 1, 1, 0, 1, f);
+        continue;
+      }
       const physical = f.laneDefinition?.lanes;
       const left = physical ? physical[0].offset - physical[0].width / 2 : back ? Math.max(0, f.lanes[0] - 1.8) : -f.half;
       const right = physical ? physical.at(-1).offset + physical.at(-1).width / 2 : f.half;
-      if (right - left > 0.2) across(f, f.len - 0.35, left + 0.1, right - 0.1, 0.45, WHITE);
+      if (right - left > 0.2) across(f, f.len - (f.stopBar ? 0 : 0.35), left + 0.1, right - 0.1, 0.45, WHITE);
     }
 
     for (const [end, node] of [[0, e.from], [1, e.to]]) {
@@ -403,7 +453,11 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
   for (const line of lines) {
     // An unmatched marking keeps its original gap instead of extending towards a curb at a sharp bend.
     for (const end of [0, 1]) {
-      if (!line.joins[end] && !line.e.laneDefinition?.fast) line.ends[end] = at(line.e, end ? line.e.len - 0.9 : 0.9, line.o);
+      if (!line.joins[end] && !line.e.laneDefinition?.fast) {
+        const endAt = line.solidEnd ? line.endAt : line.e.len - 0.9;
+        const station = end ? endAt : 0.9;
+        line.ends[end] = at(line.e, station, line.o);
+      }
     }
     line.len = Math.hypot(line.ends[1][0] - line.ends[0][0], line.ends[1][1] - line.ends[0][1]);
   }
@@ -427,7 +481,7 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
       if (fittedRoads.has(line.e) || mapped) {
         const { e, o, startAt, endAt } = line;
         const fitStart = e.laneDefinition?.fast || e.from.shape ? startAt : 0.9;
-        const fitEnd = e.laneDefinition?.fast || e.to.shape ? endAt : e.len - 0.9;
+        const fitEnd = endAt;
         const pieces = Math.max(1, Math.ceil((fitEnd - fitStart) / 4));
         const stops = mapped
           ? [...mapped.map(point => point.station).filter(s => s > fitStart && s < fitEnd), fitEnd]

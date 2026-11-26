@@ -16,6 +16,7 @@ import { CARGO_CLEARANCE, cargoRoadAllowed } from './ede-vehicle-mix.js';
 import { resolveEdeRoadLanes, permittedTurn, shareTurn } from './ede-road-lanes.js';
 import { motorwayLanesAt } from './ede-motorway-lanes.js';
 import { EDE_TURN_RESTRICTIONS } from './ede-turn-restrictions.js';
+import { EDE_SURVEYED_APPROACHES } from './ede-surveyed-approaches.js';
 
 // Drivable road graph derived from the ground layout that city-grid.js actually builds: avenue corridors
 // between the raised curbs, cross-street gaps between curb rows, lanes that keep clear of medians, plazas
@@ -60,7 +61,6 @@ const HOSPITAL_APPROACHES = {
   w1055535552: { axis: 'x', sign: 1, bands: [[null, 2, 7.0, 0.2], [-1743, 3, 9.5, 1.0],
     [-1720, 4, 12.6, 1.8]], stop: [-1669.1, 2476.0] },
 };
-
 function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade, signs) {
   // 1. Spatial hash of ground footprints: curbs bound the roads, everything else also blocks pedestrians
   const hash = new Map();
@@ -506,6 +506,9 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
       const B = junction(find(l.b));
       if (A === B) continue;
       const hospital = HOSPITAL_APPROACHES[l.road?.id];
+      const roadShape = l.road?.pts;
+      const atWayEnd = (point, i) => roadShape && Math.hypot(point.x - roadShape[i], point.z - roadShape[i + 1]) < 0.2;
+      const survey = atWayEnd(l.pts.at(-1), roadShape?.length - 2) && EDE_SURVEYED_APPROACHES[l.road?.id];
       if (hospital) {
         const cuts = hospital.bands.slice(1).map(([position]) => position);
         const points = l.pts;
@@ -541,8 +544,6 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
       }
       stations.push(B);
       stationIndices.push(pts.length - 1);
-      const roadShape = l.road?.pts;
-      const atWayEnd = (point, i) => roadShape && Math.hypot(point.x - roadShape[i], point.z - roadShape[i + 1]) < 0.2;
       const heading = (a, b) => {
         const dx = l.pts[b].x - l.pts[a].x, dz = l.pts[b].z - l.pts[a].z;
         const distance = Math.hypot(dx, dz);
@@ -591,6 +592,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
         if (laneRoad?.id === 'w6954705' && from.z < -68.8) {
           laneRoad = { ...laneRoad, bgtWidth: 6.6, laneTags: { ...laneRoad.laneTags, lanes: '2' } };
         }
+        // The southbound exit carries two lanes into the Galvanistraat approach.
+        if (laneRoad?.id === 'w768088866') {
+          laneRoad = { ...laneRoad, laneTags: { ...laneRoad.laneTags, lanes: '2' } };
+        }
         let hospitalBand;
         if (hospital) {
           const mid = (from[hospital.axis] + to[hospital.axis]) / 2;
@@ -601,21 +606,37 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
           laneRoad = { ...laneRoad, bgtWidth: width, laneModes: full ? laneRoad.laneModes : undefined,
             laneTags: { ...laneTags, lanes: String(count) } };
         }
+        const turnTagsAtEnd = [end === pts.length - 1 && atWayEnd(l.pts.at(-1), roadShape?.length - 2),
+          start === 0 && atWayEnd(l.pts[0], 0)];
+        const alignment = turnTagsAtEnd[0] && survey?.bar;
+        if (alignment) {
+          const [[lx, lz], [rx, rz]] = [alignment[0], alignment.at(-1)];
+          const { turns } = survey;
+          laneRoad = { ...laneRoad, bgtWidth: Math.hypot(rx - lx, rz - lz),
+            laneTags: { ...laneRoad.laneTags, lanes: String(turns.split('|').length), lane_markings: 'yes', 'turn:lanes': turns } };
+        }
         const definitions = laneRoad && resolveEdeRoadLanes(laneRoad, l.modes,
           [0, 1].map(direction => motorwayLanesAt(laneRoad, direction, from, to)));
         if (hospitalBand) {
           const bandCenter = hospitalBand[3];
           definitions[0].lanes.forEach((lane, i) => { lane.offset = Array.isArray(bandCenter) ? bandCenter[i] : lane.offset + bandCenter; });
         }
+        if (alignment?.length > 2) {
+          const [[lx, lz], [rx, rz]] = [alignment[0], alignment.at(-1)];
+          const width = definitions[0].width;
+          const offsets = alignment.map(([x, z]) => ((x - lx) * (rx - lx) + (z - lz) * (rz - lz)) / width - width / 2);
+          definitions[0].lanes.forEach((lane, i) => {
+            lane.offset = (offsets[i] + offsets[i + 1]) / 2;
+            lane.width = offsets[i + 1] - offsets[i];
+          });
+        }
         const lanes = definitions ? {
           half: definitions[0].width / 2,
           axis: definitions[0].width >= 14.5 || definitions[0].totalCount >= 3 || MAJOR.test(l.name) ? 'ave' : 'st',
           fwd: definitions[0].lanes.map(lane => lane.offset), back: definitions[1].lanes.map(lane => lane.offset)
         } : original;
-        const turnTagsAtEnd = [end === pts.length - 1 && atWayEnd(l.pts.at(-1), roadShape?.length - 2),
-          start === 0 && atWayEnd(l.pts[0], 0)];
         const a = l.pts[start], b = l.pts[end];
-        runs.push({ ...l, ...lanes, definitions, turnTagsAtEnd, from, to, original, source, keepShape: l.keepShape || !!source,
+        runs.push({ ...l, ...lanes, definitions, turnTagsAtEnd, alignment, from, to, original, source, keepShape: l.keepShape || !!source,
           osmStart: start === 0 ? l.osmStart : undefined, osmEnd: end === pts.length - 1 ? l.osmEnd : undefined,
           sourceCenter: { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 },
           paintPath: end - start > 1 ? l.pts.slice(start, end + 1) : undefined,
@@ -679,13 +700,33 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
   };
   function addEdgeGeneral(from, to, lanes, run, direction) {
     const { axis, half, divided, keepShape, road, boundary } = run;
-    const span = Math.hypot(to.x - from.x, to.z - from.z);
-    if (span < (keepShape ? 2 : 8)) return;
-    const dx = (to.x - from.x) / span, dz = (to.z - from.z) / span;
-    // At collapsed junctions the node identifies the connection. Keep the lanes on the mapped approach.
+    const alignment = !direction && run.alignment;
+    let span = Math.hypot(to.x - from.x, to.z - from.z);
+    let dx = (to.x - from.x) / span, dz = (to.z - from.z) / span;
     const sourceCenter = run.definitions && run.sourceCenter;
-    const shift = sourceCenter ? (sourceCenter.z - (from.z + to.z) / 2) * dx - (sourceCenter.x - (from.x + to.x) / 2) * dz : 0;
-    const x0 = from.x - dz * shift, z0 = from.z + dx * shift;
+    const shift = sourceCenter ?
+      (sourceCenter.z - (from.z + to.z) / 2) * dx - (sourceCenter.x - (from.x + to.x) / 2) * dz : 0;
+    let x0 = from.x - dz * shift, z0 = from.z + dx * shift, stopBar;
+    if (alignment) {
+      const [[lx, lz], [rx, rz]] = [alignment[0], alignment.at(-1)];
+      const width = Math.hypot(rx - lx, rz - lz);
+      const x = (lx + rx) / 2, z = (lz + rz) / 2;
+      const distance = Math.hypot(x - x0, z - z0);
+      if (distance > 52) {
+        // Match the surveyed stop without rotating a long approach off its upstream road.
+        dx = (x - x0) / distance;
+        dz = (z - z0) / distance;
+      } else {
+        dx = (rz - lz) / width;
+        dz = (lx - rx) / width;
+        const side = (z - from.z) * dx - (x - from.x) * dz;
+        x0 = from.x - dz * side;
+        z0 = from.z + dx * side;
+      }
+      span = (to.x - from.x) * dx + (to.z - from.z) * dz;
+      stopBar = { x, z, ends: [[lx, lz], [rx, rz]] };
+    }
+    if (span < (keepShape ? 2 : 8)) return;
     const modes = run.modes[direction] & MOTOR;
     const laneDefinition = run.definitions?.[direction];
     const tagged = laneDefinition?.lanes.map(lane => lane.permissions) ?? road?.laneModes?.[direction];
@@ -705,7 +746,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
     }
     edges.push({ from, to, axis, x0, z0, dx, dz, rx: -dz, rz: dx, span, half, lanes: open, moves: [],
       general: true, cand: lanes, divided: !!divided, busOnly: modes === BUS, modes,
-      ...sourceRoad, paintPath: run.paintPath,
+      ...sourceRoad, stopBar, paintPath: run.paintPath,
       ...(tagged ? { laneModes: usable.map(i => tagged[i]) } : {}),
       ...(laneDefinition ? { laneDefinition, driveLanes: usable.map(i => laneDefinition.lanes[i]), direction,
         graphRank: (direction ? run.original.back : run.original.fwd).length * 10 + run.original.half / 100,
@@ -978,6 +1019,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
     };
     let b0 = back(e.from, e.outArm);
     let b1 = back(e.to, e.inArm);
+    if (e.stopBar) b1 = e.span - ((e.stopBar.x - e.x0) * e.dx + (e.stopBar.z - e.z0) * e.dz);
     if (e.turnTagsAtEnd && HOSPITAL_APPROACHES[e.wayId]) {
       const [x, z] = HOSPITAL_APPROACHES[e.wayId].stop;
       b1 = Math.max(b1, (e.to.x - x) * e.dx + (e.to.z - z) * e.dz);
@@ -1016,10 +1058,10 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
   const gradeWays = grade ? new Set(grade.sites.flatMap(site => site.profiles.flatMap(profile => profile.wayIds || []))) : null;
   const paintEdges = edges.filter(e => e.laneDefinition ? !e.underpass || gradeWays?.has(e.wayId) : !e.busOnly && !e.underpass && !e.boundary)
     .map(({ from, to, axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes, wayId, layer,
-      bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd,
+      bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd, stopBar,
       sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan, paintPath }) => ({
     from: paintNodes.get(from), to: paintNodes.get(to), axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes,
-    wayId, layer, bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd,
+    wayId, layer, bridge, underpass, boundary, laneDefinition, direction, busOnly, turnTagsAtEnd, stopBar,
     roundabout: PRESERVED_ROUNDABOUTS.has(wayId),
     sourceRoadKey, sourceRoadStart, sourceRoadEnd, sourceRoadSpan, paintPath
   }));
@@ -1135,6 +1177,11 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
         for (let i = 0; i < n; i++) if (e.turnTagsAtEnd && e.driveLanes[i].turns && i !== preferred) link(e, m, i, destination + i - preferred);
       }
       else {
+        if (e.wayId === 'w768088866' && f.wayId === 'w6954991' && e.lanes.length === 2 && f.lanes.length === 3) {
+          // Carry both exit lanes into the usable lanes of the downstream Galvanistraat approach.
+          for (let i = 0; i < e.lanes.length; i++) link(e, m, i, i + 1);
+          continue;
+        }
         let best = 0;
         let bestScore = -Infinity;
         for (let k = 1 - n; k < f.lanes.length; k++) {
@@ -1142,6 +1189,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
           let score = 0;
           for (let i = 0; i < n; i++) {
             const j = Math.max(0, Math.min(f.lanes.length - 1, i + k));
+            if (e.stopBar && !turnAllowed(e, m, i, j)) continue;
             used.add(j);
             score -= Math.abs(lateral(f, j) - lateral(e, i));
           }

@@ -50,7 +50,8 @@ export function canopyGeometry(buffer, cell) {
   });
 }
 
-export function createForestCanopy(scene, source, seasonal) {
+export function createForestCanopy(scene, source, seasonal,
+  { residentLimit = RESIDENT_LIMIT, farLimit = FAR_LIMIT } = {}) {
   if (!source?.length) return null;
   const group = new THREE.Group();
   group.name = 'EdeForestCanopies';
@@ -230,7 +231,7 @@ export function createForestCanopy(scene, source, seasonal) {
     const next = new Set();
     for (const root of roots) {
       const d = distance(root);
-      if (d > FAR_LIMIT || (d > 650 && !inView(root))) continue;
+      if (d > farLimit || (d > 650 && !inView(root))) continue;
       root.used = tick;
       const children = root.childTiles;
       const distanceToCrowns = Math.hypot(d, Math.max(0, y - (root.maxY ?? 110)));
@@ -276,10 +277,10 @@ export function createForestCanopy(scene, source, seasonal) {
       visible.add(cell);
       active[cell.step].set(key(cell.bounds[0], cell.bounds[1], cell.step), cell);
     }
-    if (resident.size > RESIDENT_LIMIT) {
+    if (resident.size > residentLimit) {
       const stale = [...resident].filter(cell => cell.used !== tick).sort((a, b) => a.used - b.used);
       for (const cell of stale) {
-        if (resident.size <= RESIDENT_LIMIT) break;
+        if (resident.size <= residentLimit) break;
         group.remove(cell.mesh);
         cell.mesh.geometry.dispose();
         cell.mesh = cell.mask = cell.outlines = null;

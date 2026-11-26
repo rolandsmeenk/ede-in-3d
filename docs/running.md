@@ -35,7 +35,7 @@ The game can stay on GitHub Pages while the feed server runs separately over HTT
 
 The camera draws up to 2.6 km at street level and gradually extends its range to 13 km by 320 m above local terrain. Fast on iPhone and iPad draws up to 1.5 km at street level and extends to 5 km by the same altitude. Terrain and scenery use coarser geometry as their projected detail gets smaller, with a larger pixel error budget in flight.
 
-Fast keeps bloom and dynamic shadows on desktop. On iPhone and iPad, both presets use WebGL 2. Fast on those devices lowers the internal resolution, uses sparser woodland and fallback buildings, and turns off screen-space reflections, bloom, and dynamic shadows. It keeps the town and corridor paving surveys, uses road centerlines for the remaining streets, and uses a 32 MiB paving cache budget. Standard loads the additional regional paving, curbs, and detailed roadside assets.
+Fast keeps bloom and dynamic shadows on desktop. On iPhone and iPad, both presets use WebGL 2. Fast on those devices lowers the internal resolution, scopes the map to the Ede town extent on the 12 m AHN grid, uses sparser woodland and fallback buildings, and turns off screen-space reflections, bloom, and dynamic shadows. It keeps the town paving survey with a 12 MiB paving cache budget. Standard loads the full municipality, outer terrain tiles, additional regional paving, curbs, and detailed roadside assets.
 
 Append `?debug=1` and choose **Debug → Traffic lanes** to see the motor traffic graph near the camera. `?laneDebug=on` opens the game with the overlay enabled. Arrows show the travel direction, thin lines show junction connections, cyan marks fitted paths, amber marks fallback paths, and purple marks paths used only by scheduled buses.
 

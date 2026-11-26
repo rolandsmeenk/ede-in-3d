@@ -1176,15 +1176,43 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     return mesh;
   }
 
-  const instanced = meshes.map((m, index) => {
-    const mesh = batchMesh(m.type, m.name, m.capacity, m.type.lod === 2 ? farMaterial : material);
-    mesh.userData.treeBatchIndex = index;
-    mesh.castShadow = true;
+  const instanced = new Array(meshes.length);
+  const activeMeshes = [];
+  counts.length = meshes.length;
+  counts.fill(0);
+
+  function ensureMesh(mi) {
+    let mesh = instanced[mi];
+    if (mesh) return mesh;
+    const m = meshes[mi];
+    const adaptive = mode !== 'legacy';
+    const far = m.type.lod === 2;
+    const mat = far ? (adaptive ? adaptiveFarMaterial : farMaterial) : (adaptive ? adaptiveMaterial : material);
+    mesh = batchMesh(m.type, m.name, m.capacity, mat);
+    if (adaptive) {
+      mesh.geometry.setAttribute('aTreeFade', new THREE.InstancedBufferAttribute(new Float32Array(m.capacity), 1));
+    }
+    const reference = m.type.meshes[0];
+    if (reference) {
+      if (reference.instanceMatrix.isStorageInstancedBufferAttribute) {
+        mesh.instanceMatrix = new THREE.StorageInstancedBufferAttribute(mesh.instanceMatrix.array, 16);
+      }
+      mesh.userData.sharesPipelineWith = reference.userData.sharesPipelineWith ?? reference;
+    }
+    mesh.userData.treeBatchIndex = mi;
+    mesh.castShadow = !adaptive || (m.cell.shadows && (m.cell.shadowLevel < 2 || m.type.lod < 2));
+    mesh.matrixAutoUpdate = mesh.matrixWorldAutoUpdate = false;
     m.cell.group.add(mesh);
     m.type.meshes.push(mesh);
-    counts.push(0);
+    instanced[mi] = mesh;
+    activeMeshes.push(mesh);
     return mesh;
-  });
+  }
+
+  // Create one representative mesh per tree type for shader warmup, pipeline sharing and WebGPU storage setup.
+  for (let mi = 0; mi < meshes.length; mi++) {
+    if (meshes[mi].type.meshes.length === 0) ensureMesh(mi);
+  }
 
   // Pool identical far crowns in 800 m blocks to keep their silhouettes stable and limit draw calls.
   const pooledBatches = [], dirtyFarBatches = new Set();
@@ -1236,7 +1264,10 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     for (const batch of cell.farBatches) {
       if (dirtyFarBatches.has(batch)) continue;
       if (batch.mesh) batch.mesh.visible = false;
-      for (const mi of batch.sources) instanced[mi].visible = instanced[mi].count > 0;
+      for (const mi of batch.sources) {
+        const mesh = instanced[mi];
+        if (mesh) mesh.visible = mesh.count > 0;
+      }
       dirtyFarBatches.add(batch);
     }
   }
@@ -1266,7 +1297,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       const { type } = batch;
       const sources = batch.sources.filter(mi => {
         const cell = meshes[mi].cell, source = instanced[mi];
-        return cell.group.visible && cell.fadeUntil === 0 && source.count > 0 && !source.castShadow;
+        return cell.group.visible && cell.fadeUntil === 0 && source && source.count > 0 && !source.castShadow;
       });
       if (sources.length < 2) {
         dirtyFarBatches.delete(batch);
@@ -1302,7 +1333,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
   }
 
   function writeTree(i, level, fade, adaptive) {
-    const mi = meshOf[i * 3 + level], mesh = instanced[mi], type = meshes[mi].type;
+    const mi = meshOf[i * 3 + level], mesh = ensureMesh(mi), type = meshes[mi].type;
     const count = counts[mi]++;
     const dst = mesh.instanceMatrix.array, srcOff = i * 16, dstOff = count * 16;
     for (let j = 0; j < 16; j++) dst[dstOff + j] = mats[srcOff + j];
@@ -1344,6 +1375,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       const beforeBytes = stats.frameUploadBytes;
       for (const mi of indices) {
         const mesh = instanced[mi], n = counts[mi];
+        if (!mesh) continue;
         mesh.count = n;
         mesh.visible = n > 0;
         if (!n) continue;
@@ -1657,6 +1689,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
         cell.shadowBatches = 0;
         for (const mi of cell.meshIndices) {
           const mesh = instanced[mi];
+          if (!mesh) continue;
           mesh.castShadow = shadows && (level < 2 || meshes[mi].type.lod < 2);
           if (mesh.castShadow && mesh.count > 0) cell.shadowBatches++;
         }
@@ -1731,6 +1764,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       adaptiveMaterial = createTreeMaterial(atlas.texture, { seasons: season, fadeClock });
       adaptiveFarMaterial = createTreeMaterial(atlas.texture, { seasons: season, fadeClock, filtered: true });
       for (const mesh of instanced) {
+        if (!mesh) continue;
         mesh.geometry.setAttribute('aTreeFade', new THREE.InstancedBufferAttribute(new Float32Array(mesh.instanceMatrix.count), 1));
       }
       initFarBatches();
@@ -1755,6 +1789,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
         cell.shadows = false;
         for (const mi of cell.meshIndices) {
           const mesh = instanced[mi];
+          if (!mesh) continue;
           const far = meshes[mi].type.lod === 2;
           mesh.material = far ? (adaptive ? adaptiveFarMaterial : farMaterial) : (adaptive ? adaptiveMaterial : material);
           mesh.castShadow = !adaptive;
@@ -1837,7 +1872,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     const cell = cells.get((cellX + 32768) * 65536 + (cellZ + 32768));
     return mode !== 'legacy' && cell && !cell.hasCoverage;
   }
-  return { group, material, atlas, update, setQuality, prepareWarmup, coveragePending, meshes: instanced, stats, sites: plantedSites };
+  return { group, material, atlas, update, setQuality, prepareWarmup, coveragePending, meshes: activeMeshes, stats, sites: plantedSites };
 }
 
 export { createTreeField, createLeafAtlas, buildTreeGeometries, SPECIES as TREE_SPECIES };

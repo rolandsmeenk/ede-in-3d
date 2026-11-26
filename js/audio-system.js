@@ -3,6 +3,7 @@ import { createEventResources, playEvent, createWindVoice } from './audio-events
 import { CityAudioSources } from './audio-sources.js?v=20261122-p2000';
 import { CityAcoustics } from './audio-acoustics.js';
 import { terrainHeightAt } from './terrain.js';
+import { EDE_SHEEPFOLDS, createBellScheduler, sampleHeathAt } from './ede-soundscape.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (param, value, now, time = 0.035, immediate = false) => {
@@ -80,6 +81,11 @@ class CityAudioSystem {
   constructor(simulation, { onStateChange = () => {} } = {}) {
     this.sources = new CityAudioSources(simulation);
     this.acoustics = new CityAcoustics(simulation.controllerManager);
+    this.heath = simulation.heath || null;
+    this.bellScheduler = createBellScheduler();
+    this.nextBird = 0;
+    this.nextSheep = 0;
+    this.natureSequence = 0;
     this.onStateChange = onStateChange;
     this.context = null;
     this.ready = false;
@@ -206,6 +212,9 @@ class CityAudioSystem {
     this.collisionPairs = new WeakMap();
     this.haveListener = false;
     this.accumulator = 0;
+    this.bellScheduler.reset();
+    this.nextBird = 0;
+    this.nextSheep = 0;
     if (this.master) {
       this.master.gain.cancelScheduledValues(this.context.currentTime);
       this.master.gain.setValueAtTime(0, this.context.currentTime);
@@ -259,8 +268,9 @@ class CityAudioSystem {
       if (!slot) {
         // Retiring voices count against the budget, so rapid source changes cannot temporarily double the graph.
         if (pool.size >= limit) continue;
+        const refDist = siren ? 9 : source.kind === 'helicopter' ? 12 : source.kind === 'train' ? 10 : source.kind === 'turbine' ? 16 : 4;
         const emitter = new SpatialEmitter(this.context, this.mix, this.reflections, this.acoustics,
-          siren ? 9 : source.kind === 'helicopter' ? 12 : 4, siren ? 0.9 : 0, siren);
+          refDist, siren ? 0.9 : 0, siren);
         slot = { emitter, voice: createMotorVoice(this.context, this.resources, siren ? 'siren' : source.kind, emitter.input),
           distance: 0, x: source.x, y: source.y, z: source.z, fresh: true };
         pool.set(source.id, slot);
@@ -304,10 +314,15 @@ class CityAudioSystem {
     const now = this.context.currentTime;
     const crash = kind === 'crash';
     const severity = clamp(options.severity ?? options.intensity ?? 1, 0, 1);
-    const ref = crash ? 4 + severity * 8 : kind === 'horn' ? 8 : kind === 'bell' ? 3 : kind === 'talk' ? 2 : 1.8;
-    const range = crash ? 50 + severity * 110 : kind === 'horn' ? 140 : kind === 'bell' ? 60 : kind === 'talk' ? 30 : kind === 'footstep' ? 22 : 35;
+    const ref = options.ref ?? (crash ? 4 + severity * 8 : kind === 'horn' ? 8 : kind === 'bell' ? 3
+      : kind === 'talk' ? 2 : kind === 'crossingBell' ? 7 : kind === 'churchBell' || kind === 'carillon' ? 24
+      : kind === 'bird' ? 6 : kind === 'sheep' ? 7 : 1.8);
+    const range = options.range ?? (crash ? 50 + severity * 110 : kind === 'horn' ? 140 : kind === 'bell' ? 60
+      : kind === 'talk' ? 30 : kind === 'footstep' ? 22 : kind === 'crossingBell' ? 160
+      : kind === 'churchBell' || kind === 'carillon' ? 650 : kind === 'bird' ? 75 : kind === 'sheep' ? 135 : 35);
     if (Math.hypot(source.x - this.listener.x, source.y - this.listener.y, source.z - this.listener.z) > range) return false;
-    if (crash || options.priority) {
+    const priorityEvent = crash || options.priority || kind === 'churchBell' || kind === 'carillon' || kind === 'crossingBell';
+    if (priorityEvent) {
       // Impacts are immediate, between the 10 Hz ambience updates. Reclaim finished events first, then let
       // a strong impact displace a quieter crash or background event without increasing the voice budget.
       for (let i = this.events.length - 1; i >= 0; i--) {
@@ -337,7 +352,8 @@ class CityAudioSystem {
       ref, kind === 'talk' ? 1.5 : 0, kind === 'horn');
     // Do not fade away the first few milliseconds of a crash: its spatial gain and filtering are ready at onset.
     emitter.update(source, this.listener, now, range, true, crash);
-    const voice = playEvent(this.context, this.resources, kind, emitter.input, { seed: source.seed, ...options });
+    const when = options.delay ? Math.max(now, options.when ?? now) + options.delay : options.when;
+    const voice = playEvent(this.context, this.resources, kind, emitter.input, { seed: source.seed, ...options, ...(when !== undefined ? { when } : null) });
     this.events.push({ kind, voice, emitter, id: source.id, range, severity, position: { ...source }, follow: kind === 'talk' || kind === 'horn' || kind === 'bell' });
     return true;
   }
@@ -394,7 +410,7 @@ class CityAudioSystem {
     if (this.emit('horn', { id: entity, ...entity.position, heading: entity.heading, seed: 4 }, { intensity: 0.7 })) this.lastHorn = now;
   }
 
-  update(dt, elapsed, camera, night = false) {
+  update(dt, elapsed, camera, night = false, environment = null) {
     if (!this.ready || !this.enabled || this.context?.state !== 'running' || document.hidden) return;
     this.accumulator += dt;
     if (this.accumulator < 0.1) return;
@@ -425,7 +441,7 @@ class CityAudioSystem {
     smooth(this.reflections.gain, 0.02 + enclosure * 0.22, now, 0.4);
     smooth(this.reflectionFilter.frequency, 2400 + enclosure * 3400, now, 0.4);
     smooth(this.master.gain, 0.65, now, 0.12);
-    const sources = this.sources.collect(this.listener, elapsed);
+    const sources = this.sources.collect(this.listener, elapsed, environment);
     for (let i = this.events.length - 1; i >= 0; i--) {
       const event = this.events[i];
       if (now >= event.voice.endTime) {
@@ -492,8 +508,58 @@ class CityAudioSystem {
         state.signal = when + (source.walk ? 0.5 : 1);
       }
     }
+    for (const source of sources.crossings) {
+      const state = this.state(source, now);
+      if (state.crossingBell === undefined || now > state.crossingBell + 1.5) state.crossingBell = now;
+      if (now + 0.12 >= state.crossingBell) {
+        const when = Math.max(now, state.crossingBell);
+        this.emit('crossingBell', source, { intensity: 0.72, when });
+        state.crossingBell = when + 0.48;
+      }
+    }
+    const chimes = this.bellScheduler.poll(Date.now() / 1000, this.listener, terrainHeightAt);
+    for (const chime of chimes) {
+      this.emit(chime.kind, chime.source, { ...chime.options, range: chime.range, ref: chime.ref });
+    }
+    const altitude = Math.max(0, position.y - terrainHeightAt(position.x, position.z));
+    if (!night && altitude < 65 && enclosure < 0.35 && sources.traffic < 0.25 && now >= this.nextBird) {
+      const heathness = sampleHeathAt(this.heath, position.x, position.z);
+      if (heathness > 0.25 || (enclosure < 0.12 && sources.traffic < 0.08)) {
+        const seq = ++this.natureSequence;
+        const hash = Math.sin(seq * 91.3 + position.x * 0.03) * 43758.5453;
+        const r1 = hash - Math.floor(hash);
+        const r2 = (Math.sin(seq * 47.7 + position.z * 0.05) * 0.5 + 0.5);
+        const angle = r1 * Math.PI * 2;
+        const dist = 14 + r2 * 18;
+        const bx = position.x + Math.cos(angle) * dist;
+        const bz = position.z + Math.sin(angle) * dist;
+        const by = terrainHeightAt(bx, bz) + (heathness > 0.25 ? 7 : 9);
+        const variant = heathness > 0.25 ? (r1 < 0.7 ? 0 : 1) : (r1 < 0.65 ? 1 : 2);
+        this.emit('bird', { id: this.heath || position, x: bx, y: by, z: bz, seed: seq },
+          { variant, intensity: heathness > 0.25 ? 0.65 : 0.52 });
+        this.nextBird = now + 5.0 + r2 * 8.0;
+      } else {
+        this.nextBird = now + 2.5;
+      }
+    }
+    if (!night && altitude < 55 && now >= this.nextSheep) {
+      let heard = false;
+      for (const fold of EDE_SHEEPFOLDS) {
+        const dx = fold.x - position.x, dz = fold.z - position.z;
+        if (dx * dx + dz * dz > fold.range * fold.range) continue;
+        const seq = ++this.natureSequence;
+        const angle = (Math.sin(seq * 63.1) * 0.5 + 0.5) * Math.PI * 2;
+        const sx = fold.x + Math.cos(angle) * 8;
+        const sz = fold.z + Math.sin(angle) * 8;
+        this.emit('sheep', { id: fold, x: sx, y: terrainHeightAt(sx, sz) + 0.9, z: sz, seed: seq }, { intensity: 0.58 });
+        this.nextSheep = now + 7.5 + (Math.sin(seq * 29.3) * 0.5 + 0.5) * 10.5;
+        heard = true;
+        break;
+      }
+      if (!heard) this.nextSheep = now + 2.5;
+    }
     for (const source of sources.motors) {
-      if (source.player || source.kind === 'helicopter' || source.kind === 'cyclist') continue;
+      if (source.player || source.kind === 'helicopter' || source.kind === 'cyclist' || source.kind === 'train' || source.kind === 'turbine') continue;
       const state = this.state(source, now);
       state.stopped = source.blocked ? state.stopped + dt : 0;
       if (state.stopped > 4 && now > state.horn && now - this.lastHorn > 3) {

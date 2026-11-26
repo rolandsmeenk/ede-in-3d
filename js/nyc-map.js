@@ -340,7 +340,7 @@ function overviewLandCover(layers) {
     const water = new TiledLayer(1500);
     for (const block of BLOCKS) {
       if (block.park > 0.6 && block.area >= 1200) {
-        parks.ring(overviewRing(block.poly), (block.holes || []).map(overviewRing));
+        parks.ring(overviewRing(block.ring ?? block.poly), (block.holeRings ?? block.holes ?? []).map(overviewRing));
       }
     }
     for (const feature of GEO.centralPark?.water || []) {
@@ -411,7 +411,7 @@ function mapLayers() {
   L.parkBlocks = new TiledLayer();
   for (const b of BLOCKS) {
     if (HIDDEN_BUILDING_IDS.has(b.osmId) || HIDDEN_BUILDING_IDS.has(b.source?.osmId)) continue;
-    (b.park > 0.6 && !b.median ? L.parkBlocks : L.blocks).polygon(b.poly, b.holes || []);
+    (b.park > 0.6 && !b.median ? L.parkBlocks : L.blocks).polygon(b.ring ?? b.poly, b.holeRings ?? b.holes ?? []);
   }
 
   // Central Park: meadows, water bodies, the drives and the sunken transverse roads

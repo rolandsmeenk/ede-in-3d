@@ -25,6 +25,12 @@ test('shipped lane paths and junction connectors bind to the unchanged street an
   assert.ok(bound.connectors > 0);
   assert.equal(bound.rejectedEdges + bound.rejectedConnectors, 0);
   assert.equal(prepareEdeBusPaths(schedule, network.edges, network.alternateBusMove).size, count);
+  for (const edge of network.edges.filter(e => e.stopBar)) {
+    for (const [lane, offset] of edge.lanes.entries()) {
+      const { x, z } = fittedLanePoint(edge, lane, edge.len, {});
+      assert.ok(Math.hypot(x - edge.stopBar.x - edge.rx * offset, z - edge.stopBar.z - edge.rz * offset) < 0.01, edge.wayId);
+    }
+  }
   const edge = network.edges.find(e => e.wayId === 'w1156964960');
   const lane = 2;
   assert.ok(edge.fittedLanes[lane]);

@@ -31,6 +31,7 @@ const records = edges.filter(edge => laneFitting ? edge.wayId : streetFeatures ?
       offsetWidths: edge.driveLanes?.map(lane => lane.width), laneModes: edge.laneModes,
       openLanes: edge.driveLanes?.map(lane => edge.laneDefinition.lanes.indexOf(lane)),
       direction: edge.direction, span: edge.span, boundary: edge.boundary, busOnly: edge.busOnly,
+      surveyedStop: !!edge.stopBar,
       mappedPath: edge.roadName === 'Apeldoornseweg' ? mappedRoadPath(edge) : undefined,
       shape: [!!edge.from.shape, !!edge.to.shape], id: edge.id })
   };

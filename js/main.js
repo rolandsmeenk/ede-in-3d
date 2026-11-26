@@ -10,11 +10,13 @@ import { createEdeMurals } from './ede-murals.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildExteriorBagColliders, createExteriorBagStream, loadExteriorBagFootprints } from './ede-bag-exterior.js';
-import { buildStreetDetails } from './street-details.js?v=20261126-night-lights';
-import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-hospital-signals';
+import { buildStreetDetails } from './street-details.js?v=20261126-keesom-junction';
+import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261126-keesom-junction';
+import { createLiveSignalController, loadEdeLiveSignals, watchLiveSignals } from './live-signal-feed.js';
+import { buildLiveSignalSystem } from './live-signal-builders.js';
 import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261126-winter-traffic';
 import { loadEdeParking } from './ede-parking.js';
-import { buildRoadPaint } from './road-paint.js?v=20261126-coverage-aa';
+import { buildRoadPaint } from './road-paint.js?v=20261126-keesom-junction';
 import { overlapsEdeTravelPavement } from './ede-geometry.js';
 import { ThirdPersonControllerManager } from './controllers.js?v=20261122-municipal-coverage';
 import { EDE_BIKE_STYLES } from './ede-bikes.js';
@@ -141,7 +143,9 @@ export async function initApp() {
   renderer.setPixelRatio(graphics.scale);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = graphics.shadows;
-  renderer.lighting = new ClusteredLighting(256, 32, 28, 48);
+  renderer.lighting = compactGraphics
+    ? new ClusteredLighting(128, 64, 16, 32)
+    : new ClusteredLighting(256, 32, 28, 48);
   container.appendChild(renderer.domElement);
 
   // Start-up phase timings (logged once as "[init] ...") to keep load-time regressions traceable
@@ -174,28 +178,46 @@ export async function initApp() {
 
   await showLoadingStage('Loading Ede’s map and timetables…');
   const useUtilityDetails = enabled('detail') && enabled('utilityDetail');
-  const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult, woodlandResult] = await Promise.allSettled([
-    loadTerrain({ expanded: query.get('terrainTiles') !== 'off' }), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
-    loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces({
-      north: !compactGraphics && EDE_DATA.meta.north, fringe: !compactGraphics && Boolean(EDE_DATA.meta.travelBounds),
-    }), loadEdeTrainTimetable(), loadEdeParking(),
-    enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail', !compactGraphics), bgtStage, municipal: enabled('municipalDetail'),
-      motorway: enabled('motorwayDetail'), parcels: enabled('parcelDetail'), utilities: useUtilityDetails,
-      directional: enabled('motorwayDetail') && enabled('nbdSigns'), fringe: Boolean(EDE_DATA.meta.travelBounds) }) : null,
-    enabled('laneFits') ? loadEdeFittedLanes() : null,
-    enabled('sports') ? loadEdeSports() : null,
-    loadEdeCorridorFallbacks(),
-    enabled('forestCanopy') ? loadForestCanopy() : null,
-    useUtilityDetails ? import('./ede-utility-landmarks.js') : null,
-    loadEdeSignalHardware(),
-    enabled('detail') && enabled('waterWorks') ? loadEdeWaterWorks() : null,
-    loadExteriorBagFootprints(),
-    enabled('roadFurniture', !compactGraphics) ? loadEdeRoadFurniture() : null,
-    loadEdePondLevels(),
-    enabled('curbs', !compactGraphics) ? loadEdeCurbs() : null,
-    loadEdeWoodland(),
-  ]);
+  const loadAssets = async () => {
+    const first = () => Promise.allSettled([
+      loadTerrain({ expanded: !compactGraphics && query.get('terrainTiles') !== 'off', compact: compactGraphics }),
+      loadAerialColors({ compact: compactGraphics }),
+      loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
+      loadEdePostedSpeeds(), loadEdeMotorwayLanes(), loadEdeTrainTimetable(),
+    ]);
+    const second = () => Promise.allSettled([
+      loadEdeStreetFeatures(),
+      loadEdeRoadSurfaces({
+        north: !compactGraphics && EDE_DATA.meta.north, fringe: !compactGraphics && Boolean(EDE_DATA.meta.travelBounds),
+      }),
+      loadEdeParking(),
+      enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail', !compactGraphics), bgtStage, municipal: enabled('municipalDetail'),
+        motorway: enabled('motorwayDetail'), parcels: enabled('parcelDetail'), utilities: useUtilityDetails,
+        directional: enabled('motorwayDetail') && enabled('nbdSigns'), fringe: Boolean(EDE_DATA.meta.travelBounds) }) : null,
+      enabled('laneFits') ? loadEdeFittedLanes() : null,
+      enabled('sports') ? loadEdeSports() : null,
+      loadEdeCorridorFallbacks(),
+      enabled('forestCanopy', !compactGraphics) ? loadForestCanopy() : null,
+      useUtilityDetails ? import('./ede-utility-landmarks.js') : null,
+      loadEdeSignalHardware(),
+      loadEdeLiveSignals(),
+      enabled('detail') && enabled('waterWorks') ? loadEdeWaterWorks() : null,
+      compactGraphics ? null : loadExteriorBagFootprints(),
+      enabled('roadFurniture', !compactGraphics) ? loadEdeRoadFurniture() : null,
+      loadEdePondLevels(),
+      enabled('curbs', !compactGraphics) ? loadEdeCurbs() : null,
+      compactGraphics ? null : loadEdeWoodland(),
+    ]);
+    if (compactGraphics) {
+      const a = await first();
+      const b = await second();
+      return [...a, ...b];
+    }
+    const [a, b] = await Promise.all([first(), second()]);
+    return [...a, ...b];
+  };
+  let [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, motorwayResult, trainResult,
+    featureResult, roadSurfaceResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, liveSignalsResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult, woodlandResult] = await loadAssets();
   if (curbResult.status === 'rejected') console.warn('[curbs] using original pavement:', curbResult.reason);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
@@ -241,13 +263,14 @@ export async function initApp() {
   markInit('sports fields');
   await loadExpansionGroundColors();
   const heath = treeSeasonsEnabled ? createEdeHeathCover(EDE_DATA.parks, EDE_DATA.meta.bounds, detailData?.landCover) : null;
-  const exteriorBag = createExteriorBagStream(scene);
+  const exteriorBag = compactGraphics ? null : createExteriorBagStream(scene);
   const forest = getExpansionTerrain() && forestCanopyResult.value;
   if (pondLevelsResult.status === 'rejected') console.warn('[water] using terrain-draped ponds:', pondLevelsResult.reason);
   const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity,
     replacedPitches, forest?.cells, EDE_DATA.meta.north ? forest?.northernTreeSamples : undefined,
     heath, pondLevelsResult.value, { compact: compactGraphics, woodlandComposition: woodlandResult.value });
-  const terrainTiles = createTerrainTiles(scene, heath, detailData?.fringeLandCover, cityGrid.shorelineCuts);
+  const terrainTiles = createTerrainTiles(scene, heath, detailData?.fringeLandCover, cityGrid.shorelineCuts,
+    compactGraphics ? { maxBytes: 12 * 1024 * 1024, maxActiveTiles: 48 } : undefined);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
   let bgtWorld;
@@ -346,8 +369,8 @@ export async function initApp() {
   }
   await showLoadingStage('Generating building facades...');
   if (corridorFacadesResult.status === 'rejected') console.warn('[facades] using basic corridor fallback walls:', corridorFacadesResult.reason);
-  const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag, aerialLod: Boolean(terrainTiles),
-    corridorFacades: corridorFacadesResult.value, replacementOsmIds: replacements?.osm });
+  const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag, aerialLod: !compactGraphics && Boolean(terrainTiles),
+    compact: compactGraphics, corridorFacades: corridorFacadesResult.value, replacementOsmIds: replacements?.osm });
   const murals = createEdeMurals(scene, { enabled: enabled('murals'), isFallbackVisible: cityBlocks.isFallbackVisible });
   if (streamBag) bagBuildings = createBagBuildingStream(scene, { fallback: cityBlocks, replacementBagIds: replacements?.bag });
   markInit('blocks');
@@ -365,7 +388,8 @@ export async function initApp() {
     ...busStops.covers, ...(importedDetail?.weatherCovers ?? [])];
   setEdeStructureRoofs(weatherCovers);
   setSnowShelters(weatherCovers);
-  const forestCanopy = terrainTiles && createForestCanopy(scene, forest?.cells, treeSeasonsEnabled);
+  const forestCanopy = terrainTiles && createForestCanopy(scene, forest?.cells, treeSeasonsEnabled,
+    compactGraphics ? { residentLimit: 24, farLimit: 3000 } : undefined);
   if (forestCanopy) forestCanopy.group.visible = graphics.vegetation;
   if (signalHardwareResult.status === 'rejected') console.warn('[signals] using generated roadside placements:', signalHardwareResult.reason);
   const streetDetails = buildStreetDetails(scene, allColliders, mappedLamps, importedDetail?.gantryLampMounts,
@@ -395,15 +419,41 @@ export async function initApp() {
     ...query, mode:query.mode===FOOT?'foot':query.mode===BICYCLE?'bike':'motor'
   }));
   if (laneFitResult.status === 'rejected') console.warn('Ede fitted lanes could not load:', laneFitResult.reason);
+  const liveSignalController = liveSignalsResult.status === 'fulfilled'
+    ? createLiveSignalController(liveSignalsResult.value)
+    : null;
+  if (liveSignalsResult.status === 'rejected') console.warn('[live signals] static signal asset unavailable:', liveSignalsResult.reason);
+  const liveSignalVisuals = liveSignalController
+    ? buildLiveSignalSystem(scene, liveSignalController, {
+      gantries: importedDetail?.gantries,
+      groundAt: (x, z, wayId) => (wayId && gradeWayAt(wayId, x, z, 2.5)?.y) ?? terrainHeightAt(x, z),
+      includeVriHardware: false,
+    })
+    : null;
+  if (liveSignalController) {
+    watchLiveSignals(liveSignalController, { endpoint: query.get('signalsApi') });
+    const msiTest = query.get('msiTest') ?? query.get('msitest');
+    if (msiTest) {
+      const count = liveSignalController.setTestMsiPattern(msiTest);
+      liveSignalVisuals?.syncBuffersInPlace();
+      console.info(`[live signals] msiTest="${msiTest}" applied to ${count} matrix heads`);
+    }
+    window.setMsiLegend = (mode = 'demo', laneIndex = null) => {
+      const count = liveSignalController.setTestMsiPattern(mode, laneIndex);
+      liveSignalVisuals?.syncBuffersInPlace();
+      console.info(`[live signals] setMsiLegend("${mode}") applied to ${count} matrix heads`);
+      return count;
+    };
+  }
   const trafficSystem = createTrafficSystem(scene, cityGrid.sidewalks, [
     ...cityGrid.footprints,
     ...streetDetails.footprints,
-    ...allColliders.filter((c) => !c.obb && !c.kind && (c.minY ?? 0) < 3.5),
-    ...allColliders.filter(c => c.obb && !c.kind && (c.minY ?? 0) < 2).map(c => ({ ...c, pedestrianOnly: true }))
+    ...allColliders.filter((c) => !c.obb && !c.compactBuilding && !c.kind && (c.minY ?? 0) < 3.5),
+    ...allColliders.filter(c => (c.obb || c.compactBuilding) && !c.kind && (c.minY ?? 0) < 2).map(c => ({ ...c, pedestrianOnly: true }))
   ], streetDetails.signalIntersections, busSchedule, roadTraffic,
     parkingResult.status==='fulfilled' ? parkingResult.value : undefined,
     {enabled:trafficPilot,streetFeatures,railStop,profile:profiling,laneFits:laneFitResult.value,
-      bikeParking: enabled('bikeParking') && detailData?.features, bikeRackGround});
+      bikeParking: enabled('bikeParking') && detailData?.features, bikeRackGround, liveSignals: liveSignalController});
   if (parkingResult.status==='rejected') console.warn('[parking] inventory unavailable:', parkingResult.reason);
   watchEdeTraffic(roadTraffic, query.get('trafficApi') || container.dataset.trafficEndpoint);
   markInit('traffic');
@@ -416,7 +466,8 @@ export async function initApp() {
   await showLoadingStage('Adding road markings...');
   if (streetFeatures) {
     try {
-      const signs = streetFeatures.signs.filter(sign => !furnitureReplacements.ndw.has(sign.id));
+      const replacedMsiSigns = new Set(liveSignalsResult.value?.replacedSignIds ?? []);
+      const signs = streetFeatures.signs.filter(sign => !furnitureReplacements.ndw.has(sign.id) && !replacedMsiSigns.has(sign.id));
       await buildEdeStreetFeaturesWorld(scene, { ...streetFeatures, signs }, roadSurfaceResult.value?.surfaces, importedDetail?.gantries,
         [...streetDetails.signSupports, ...(importedDetail?.signSupports ?? [])]);
     } catch (error) {
@@ -437,6 +488,10 @@ export async function initApp() {
       return grade ? grade.y + 0.055 : terrainHeightAt(x, z) + (edge?.type === 'marking' ? 0.09 : 0.065);
     }, { surveyed: detailData?.markings, preserveGBuffer: graphics.ssr, pavementAt: overlapsEdeTravelPavement });
   markInit('roadPaint');
+  terrainResult = aerialResult = treeResult = lampResult = busResult = gradeResult = speedResult = motorwayResult =
+    trainResult = featureResult = roadSurfaceResult = parkingResult = detailResult = laneFitResult = sportsResult =
+    corridorFacadesResult = forestCanopyResult = historicUtilitiesResult = signalHardwareResult = waterWorksResult =
+    exteriorFootprintsResult = roadFurnitureResult = pondLevelsResult = curbResult = woodlandResult = null;
 
   // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Helicopter) & Multi-Camera System
   await showLoadingStage('Preparing player, vehicles and controls...');
@@ -472,7 +527,10 @@ export async function initApp() {
   const cameraSystem = new CameraSystem(renderer.domElement, controllerManager);
   const touchControls = new TouchControls(controllerManager);
   const soundButton = document.getElementById('btn-sound');
-  const audioSystem = new CityAudioSystem({ controllerManager, trafficSystem, highwayTraffic, streetDetails }, {
+  const audioSystem = new CityAudioSystem({
+    controllerManager, trafficSystem, highwayTraffic, streetDetails,
+    trainSystem, levelCrossings, heath, turbines: bgtWorld?.turbines
+  }, {
     onStateChange: updateSoundButton
   });
   function updateSoundButton() {
@@ -490,7 +548,7 @@ export async function initApp() {
     savePlayerState();
     if (!event.persisted) {
       bagBuildings?.userData.dispose?.();
-      exteriorBag.dispose();
+      exteriorBag?.dispose();
       parcelTiles?.dispose();
       audioSystem.dispose();
     }
@@ -637,8 +695,11 @@ export async function initApp() {
     }
   });
   const teleportButtons = document.querySelectorAll('[data-teleport]');
-  const lunterenButton = document.getElementById('tp-lunteren-centrum');
-  if (lunterenButton) lunterenButton.hidden = !TELEPORT_LOCATIONS['lunteren-centrum'];
+  for (const btn of teleportButtons) {
+    if (btn.hidden || !TELEPORT_LOCATIONS[btn.getAttribute('data-teleport')]) {
+      btn.hidden = !TELEPORT_LOCATIONS[btn.getAttribute('data-teleport')];
+    }
+  }
   const hudToggleBtn = document.getElementById('btn-toggle-hud');
   const modeSwitch = document.getElementById('mode-switch');
   touchControls.onAvailabilityChange = () => placeModeIndicator();
@@ -1306,6 +1367,11 @@ export async function initApp() {
       trainSystem?.update(dt,cameraSystem.currentPos,railTime);
       levelCrossings?.update(dt,railTime);
       streetDetails.signalClock.value = trafficClock;
+      liveSignalVisuals?.update(dt, trafficClock, Date.now(), {
+        sunElevationY: lightingSystem.sky.sunPosition.value.y,
+        nightFactor: lightingSystem.uNightFactor.value,
+        trafficDemand: roadTraffic.profile,
+      });
       profiler?.stage('Rail and signals');
       trafficSystem.update(dt, trafficClock, cameraSystem.currentPos, controllerManager.getActiveEntity(),
         controllerManager.activeMode, cameraSystem.camera, liveWeather.trafficCondition);
@@ -1315,7 +1381,7 @@ export async function initApp() {
     profiler?.stage('Ambient highways');
     if (warmedUp) {
       bagBuildings?.userData.update?.(camera, renderView.detailScale);
-      exteriorBag.update(cameraSystem.camera);
+      exteriorBag?.update(cameraSystem.camera);
       murals.update(cameraSystem.camera.position, now);
       landmarks.update(cameraSystem.camera.position);
     }
@@ -1360,7 +1426,10 @@ export async function initApp() {
       municipalStatus.textContent = outside ? 'You are outside Gemeente Ede, in the 500 metre travel area.' : 'You are back inside Gemeente Ede.';
     }
     mapSystem.update();
-    audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
+    audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight', {
+      windSpeed: windReading?.windSpeed,
+      turbineWindSpeed: liveWeather.turbineWind?.windSpeed
+    });
     profiler?.stage('Map and audio');
     if (warmedUp || !warmWholeScene) {
       expansionCulling?.update(camera, renderView);
@@ -1504,7 +1573,7 @@ export async function initApp() {
     },
     terrainTiles: terrainTiles?.stats,
     pavingTiles: cityGrid.pavingTiles.stats,
-    exteriorBag: exteriorBag.stats,
+    exteriorBag: exteriorBag?.stats,
     expansionCulling: expansionCulling?.stats,
     roadFurniture: roadFurniture?.stats,
     forestCanopy: forestCanopy?.stats,

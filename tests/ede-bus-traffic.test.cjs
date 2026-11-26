@@ -83,7 +83,7 @@ test('all Ede bus sections retain connected legal lanes after lane counts change
   }
   const approach = edges.find(edge => edge.wayId === 'w1156964960');
   assert.equal(approach.laneDefinition, paintEdges.find(edge => edge.wayId === approach.wayId).laneDefinition);
-  assert.equal(approach.laneDefinition.width, 9.8);
+  assert.ok(Math.abs(approach.laneDefinition.width - 13.01) < 0.02);
   assert.deepEqual(approach.ambientLanes, [0, 1, 2]);
   assert.equal(approach.laneModes[3], BUS);
   assert.deepEqual(approach.moves.find(move => move.to.wayId === 'w620928502').out.slice(0, 3), [0, 1, -1]);

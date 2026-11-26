@@ -26,7 +26,7 @@ import { edeRoadSegments, nearestEdeRoad, overlapsEdeTravelPavement } from './ed
 import { gradeWayAt, nearbyRailHeightAt } from './ede-grade.js';
 import { isEdeTrafficPavement } from './ede-road-surfaces.js';
 import { terrainHeightAt } from './terrain.js';
-import { fitEdeRoadsideSignalY, fitEdeSignalPole, fitEdeSignalSpan } from './ede-signal-hardware.js?v=20261121-hospital-signals';
+import { fitEdeOverheadSignalMount, fitEdeRoadsideSignalY, fitEdeSignalPole, fitEdeSignalSpan } from './ede-signal-hardware.js?v=20261126-keesom-junction';
 import { createEdeSignalHeadGeometries, createEdeArrowLenses, createEdeAuxiliarySignalHousing, EDE_SIGNAL_BACKPLATES } from './ede-signal-models.js?v=20261121-signal-optics';
 import { selectStreetNameSigns, selectStreetNamePoles, addStreetNameSignBoards } from './ede-street-name-signs.js';
 
@@ -643,6 +643,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     const pavementLift = 0.065;
     edeHead.housing.computeBoundingBox();
     const slimHalf = -edeHead.housing.boundingBox.min.y;
+    const slimHalfWidth = edeHead.housing.boundingBox.max.x;
     const plateHalf = EDE_SIGNAL_BACKPLATES[200].height / 2;
     const roadsideHeight = (road, x, z, backplate, observedY) => {
       const along = THREE.MathUtils.clamp((x - road.a.x) * road.ux + (z - road.a.z) * road.uz, 0, road.len);
@@ -722,13 +723,21 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
         let hy = head.y ?? roadY + head.height;
         const scale = hy - roadY >= 5.81 ? 1.5 : 1;
         const backplate = head.backplate !== false;
-        const halfHeight = backplate ? EDE_SIGNAL_BACKPLATES[scale === 1.5 ? 300 : 200].height / 2 : slimHalf * scale;
+        const plate = EDE_SIGNAL_BACKPLATES[scale === 1.5 ? 300 : 200];
+        const halfHeight = backplate ? plate.height / 2 : slimHalf * scale;
         const minimumY = roadY + pavementLift + 5 + halfHeight;
         if (support.headAlignment === 'beamCenter') hy = beamY;
         if (minimumY - hy > 0.55 || Math.hypot(hx - mount[0], hz - mount[1]) > 1.7) continue;
         hy = Math.max(hy, minimumY);
         if (Math.abs(beamY - hy) > 1.8) continue;
-        survey.push({ head, hy, support, points, existing, mount, beamY, scale, headRoad, backplate });
+        const truss = existing?.halfDepth ?? 0;
+        const beamRadius = truss ? 0.085 : existing ? 0.18 : 0.125;
+        const overlapsBeamHeight = hy + halfHeight > beamY - beamRadius &&
+          hy - halfHeight < beamY + Math.sqrt(3) * truss + beamRadius;
+        const halfWidth = Math.max(backplate ? plate.width / 2 : slimHalfWidth * scale, head.greenArrow ? 0.51 * scale : 0);
+        const bracket = fitEdeOverheadSignalMount(head.point, mount, [dz / length, -dx / length],
+          head.heading, halfWidth, scale, beamRadius, truss, overlapsBeamHeight);
+        survey.push({ head, hy, support, points, existing, ...bracket, beamY, scale, headRoad, backplate });
       }
       if (survey.length) surveyedKeys.add(key);
       sites.push({ road, nx, nz, side, x, z, key, survey });
@@ -760,12 +769,16 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
               }
             }
           }
-          // Keep the head at the surveyed offset from the support and bridge the gap with a hanger.
+          // The hanger and fastening sit behind the signal housing.
+          const fx = Math.sin(head.heading), fz = Math.cos(head.heading);
+          const rear = [hx - fx * 0.12 * scale, hz - fz * 0.12 * scale];
+          const fixing = [hx - fx * 0.04 * scale, hz - fz * 0.04 * scale];
           const top = Math.max(hy, beamY);
           const bottom = Math.min(hy, beamY);
           const gap = top - bottom;
-          if (gap > 0.06) setMatrix(signalSupportMatrices, hx, (top + bottom) / 2, hz, 0.073, gap + 0.08, 0.073);
-          beam([hx, hz], mount, beamY, 0.073, 0.073);
+          if (gap > 0.06) setMatrix(signalSupportMatrices, rear[0], (top + bottom) / 2, rear[1], 0.073, gap + 0.08, 0.073);
+          beam(rear, fixing, hy, 0.073, 0.073);
+          beam(rear, mount, beamY, 0.073, 0.073);
         } else {
           const [px, pz] = pole;
           const poleKey = `${head.level}/${px}/${pz}`;

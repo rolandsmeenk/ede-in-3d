@@ -16,7 +16,10 @@ from urllib.parse import urlsplit
 from xml.etree.ElementTree import ParseError
 
 sys.dont_write_bytecode = True
-from ede_ndw import CLOSURES, CONFIG, MEASUREMENTS, TEMPORARY_SPEEDS, fetch_xml, read_observations, read_restrictions, read_sites
+from ede_ndw import (
+    CLOSURES, CONFIG, DRIP_MSI, MEASUREMENTS, TEMPORARY_SPEEDS,
+    fetch_xml, read_msi_signs, read_observations, read_restrictions, read_sites,
+)
 from ede_live_parking import parking_readers, parking_snapshot
 from ede_live_trains import TrainUpdates, ns_position_snapshots, train_snapshot
 from ede_p2000 import read_p2000, recent_p2000
@@ -78,6 +81,7 @@ class LiveFeeds:
         self.refresh('observations', 60, observations)
         self.refresh('closures', 60, lambda: fetch_xml(CLOSURES, lambda stream: read_restrictions(stream, graph, now_ms(), True)))
         self.refresh('speedLimits', 60, lambda: fetch_xml(TEMPORARY_SPEEDS, lambda stream: read_restrictions(stream, graph, now_ms(), False)))
+        self.refresh('msi', 60, lambda: fetch_xml(DRIP_MSI, lambda stream: read_msi_signs(stream, now_ms())))
 
     def refresh(self, key, seconds, read):
         def run():
@@ -118,6 +122,16 @@ class LiveFeeds:
             snapshot['emergency'] = [alert for alert in feeds['emergency'] if recent_p2000(alert['publishedAt'], now)]
         return snapshot
 
+    def signals_snapshot(self):
+        now = now_ms()
+        feeds = self.data.copy()
+        return {
+            'version': 1,
+            'timestamp': now,
+            'msi': [item for item in feeds.get('msi', ()) if item['expiresAt'] > now],
+            'vri': [item for item in feeds.get('vri', ()) if item['expiresAt'] > now],
+        }
+
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, feeds, weather, cors_origin=None, **kwargs):
@@ -128,11 +142,11 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         path = urlsplit(self.path).path
-        if path == '/api/ede-traffic' and self.cors_origin:
+        if path in ('/api/ede-traffic', '/api/ede-signals') and self.cors_origin:
             self.send_header('Vary', 'Origin')
             if self.headers.get('Origin') == self.cors_origin:
                 self.send_header('Access-Control-Allow-Origin', self.cors_origin)
-        if path not in ('/api/ede-traffic', '/api/ede-trains', '/api/ede-parking', '/api/ede-weather'):
+        if path not in ('/api/ede-traffic', '/api/ede-signals', '/api/ede-trains', '/api/ede-parking', '/api/ede-weather'):
             self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
@@ -141,6 +155,8 @@ class Handler(SimpleHTTPRequestHandler):
         status = 200
         if path == '/api/ede-traffic':
             payload = json.dumps(self.feeds.snapshot(), allow_nan=False, separators=(',', ':')).encode()
+        elif path == '/api/ede-signals':
+            payload = json.dumps(self.feeds.signals_snapshot(), allow_nan=False, separators=(',', ':')).encode()
         elif path == '/api/ede-trains':
             payload = json.dumps(self.feeds.trains_snapshot(), allow_nan=False, separators=(',', ':')).encode()
         elif path == '/api/ede-parking':

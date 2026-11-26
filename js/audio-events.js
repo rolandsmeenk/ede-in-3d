@@ -299,6 +299,100 @@ function signal(ctx, walk) {
   }, 0.45);
 }
 
+// ProRail AHOB metallic crossing bell: crisp hammer impact + bright inharmonic ring.
+function crossingBell(ctx) {
+  const random = randomSource(173);
+  const base = 1175;
+  const partials = [[1, 1.0, 6.2], [2.71, 0.48, 9.5], [5.18, 0.22, 16], [7.85, 0.09, 24]];
+  return makeBuffer(ctx, 0.44, (t) => {
+    const strike = Math.exp(-t * 320) * (random() * 2 - 1) * 0.28;
+    let tone = 0;
+    for (const [ratio, amp, decay] of partials) {
+      tone += Math.sin(TAU * base * ratio * t) * amp * Math.exp(-t * decay);
+    }
+    return (tone * (1 - Math.exp(-t * 2200)) + strike) * 0.65;
+  }, 0.68);
+}
+
+// Dutch Hemony-style bronze bell using the classic minor-third partial series (hum, prime, tierce, quint, nominal).
+function bronzeBell(ctx, fundamental, duration, seed) {
+  const random = randomSource(seed);
+  const partials = [
+    [0.5, 0.55, 0.55], [1.0, 1.0, 0.95], [1.1892, 0.62, 1.25],
+    [1.4983, 0.34, 1.75], [2.0, 0.72, 2.2], [2.5198, 0.24, 3.3], [3.0, 0.15, 4.4]
+  ];
+  return makeBuffer(ctx, duration, (t) => {
+    const clapper = Math.exp(-t * 140) * (random() * 2 - 1) * 0.22;
+    const attack = 1 - Math.exp(-t * 900);
+    let tone = 0;
+    for (const [ratio, amp, decay] of partials) {
+      const shimmer = 1 + 0.04 * Math.sin(TAU * (1.8 + ratio * 0.7) * t);
+      tone += Math.sin(TAU * fundamental * ratio * t) * amp * shimmer * Math.exp(-t * decay);
+    }
+    return tone * attack + clapper;
+  }, 0.72);
+}
+
+// Veluwe daytime bird calls: (0) heathland skylark trill, (1) forest two-tone songbird, (2) distant woodpecker tap.
+function birdCall(ctx, variant) {
+  const random = randomSource(701 + variant * 37);
+  if (variant === 0) {
+    return makeBuffer(ctx, 0.72, (t) => {
+      const note = Math.floor(t / 0.12);
+      const local = t - note * 0.12;
+      if (local > 0.095) return 0;
+      const freqs = [3300, 3950, 3550, 4200, 3700, 3400];
+      const base = freqs[note % freqs.length];
+      const sweep = base + 420 * Math.sin(TAU * 22 * local) - 180 * (local / 0.095);
+      const env = Math.sin(Math.PI * local / 0.095);
+      return (Math.sin(TAU * sweep * local) + 0.18 * Math.sin(TAU * sweep * 2 * local)) * env;
+    }, 0.42);
+  }
+  if (variant === 1) {
+    return makeBuffer(ctx, 0.64, (t) => {
+      const pair = t % 0.32;
+      const freq = pair < 0.13 ? 4100 - pair * 2800 : pair < 0.26 ? 3050 + (pair - 0.13) * 1400 : 0;
+      if (!freq) return 0;
+      const local = pair < 0.13 ? pair : pair - 0.13;
+      const env = Math.sin(Math.PI * local / 0.13);
+      return Math.sin(TAU * freq * local) * env;
+    }, 0.42);
+  }
+  return makeBuffer(ctx, 0.48, (t) => {
+    const spacing = 0.055;
+    const hit = Math.floor(t / spacing);
+    if (hit >= 7) return 0;
+    const local = t - hit * spacing;
+    const env = (1 - Math.exp(-local * 2600)) * Math.exp(-local * 140);
+    const wood = Math.sin(TAU * 920 * local) * 0.7 + Math.sin(TAU * 1580 * local) * 0.35 + (random() * 2 - 1) * 0.25;
+    return wood * env * (1 - hit * 0.07);
+  }, 0.48);
+}
+
+// Gentle nasal sheep bleat for the Edese Schaapskudden at Ginkelse Heide and De Kreel.
+function sheepBleat(ctx, pitch, seed) {
+  const random = randomSource(seed);
+  const duration = 0.78 + random() * 0.28;
+  const f1 = 680, f2 = 1650;
+  const r1 = Math.exp(-Math.PI * 110 / ctx.sampleRate);
+  const r2 = Math.exp(-Math.PI * 180 / ctx.sampleRate);
+  const a1 = 2 * r1 * Math.cos(TAU * f1 / ctx.sampleRate), b1 = r1 * r1;
+  const a2 = 2 * r2 * Math.cos(TAU * f2 / ctx.sampleRate), b2 = r2 * r2;
+  let y1a = 0, y2a = 0, y1b = 0, y2b = 0, phase = 0;
+  return makeBuffer(ctx, duration, (t) => {
+    const vibrato = 1 + 0.045 * Math.sin(TAU * 15.5 * t);
+    const contour = 1.04 - 0.12 * (t / duration);
+    phase = (phase + pitch * contour * vibrato / ctx.sampleRate) % 1;
+    const glottal = (phase < 0.4 ? Math.sin(Math.PI * phase / 0.4) : -0.15) + (random() * 2 - 1) * 0.04;
+    const out1 = glottal + a1 * y1a - b1 * y2a;
+    y2a = y1a; y1a = out1;
+    const out2 = glottal + a2 * y1b - b2 * y2b;
+    y2b = y1b; y1b = out2;
+    const env = smoothstep(t / 0.07) * smoothstep((duration - t) / 0.14) * (0.82 + 0.18 * Math.sin(TAU * 14 * t));
+    return (out1 * 0.65 + out2 * 0.35) * env;
+  }, 0.46);
+}
+
 export function createEventResources(ctx, resources) {
   const speakers = [
     { pitch: 99, formants: 0.88, breath: 0.06 }, { pitch: 119, formants: 0.94, breath: 0.10 },
@@ -318,7 +412,12 @@ export function createEventResources(ctx, resources) {
     },
     gusts: gustBuffer(ctx),
     signalTick: signal(ctx, false),
-    signalWalk: signal(ctx, true)
+    signalWalk: signal(ctx, true),
+    crossingBell: crossingBell(ctx),
+    churchBell: bronzeBell(ctx, 220, 2.8, 811),
+    carillonBell: bronzeBell(ctx, 523.25, 1.55, 823),
+    birds: [0, 1, 2].map((i) => birdCall(ctx, i)),
+    sheep: [175, 205].map((pitch, i) => sheepBleat(ctx, pitch, 911 + i))
   };
 }
 
@@ -326,7 +425,10 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
   const random = randomSource(options.seed);
   const start = Math.max(ctx.currentTime, finite(options.when, ctx.currentTime));
   const intensity = clamp(finite(options.intensity, 1));
-  const levels = { footstep: 0.22, talk: 0.065, horn: 0.23, bell: 0.2, signal: 0.13, crash: 0.35 };
+  const levels = {
+    footstep: 0.22, talk: 0.065, horn: 0.23, bell: 0.2, signal: 0.13, crash: 0.35,
+    crossingBell: 0.22, churchBell: 0.32, carillon: 0.22, bird: 0.10, sheep: 0.13
+  };
   if (!Object.hasOwn(levels, kind) || intensity === 0) return { endTime: start, dispose() {} };
   const gain = ctx.createGain();
   gain.gain.value = intensity * levels[kind];
@@ -409,6 +511,30 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
     if (severity > 0.6) {
       play(resources.crashes.debris[variant], start + 0.012, rate, (severity - 0.6) / 0.4 * 0.24);
     }
+  } else if (kind === 'crossingBell') {
+    play(resources.crossingBell, start, 0.98 + random() * 0.04);
+  } else if (kind === 'churchBell') {
+    const pitch = finite(options.pitch, 1);
+    const strikes = Math.max(1, Math.min(12, Math.round(finite(options.strikes, 1))));
+    const spacing = finite(options.spacing, 1.65);
+    for (let i = 0; i < strikes; i++) {
+      play(resources.churchBell, start + i * spacing, pitch * (0.996 + random() * 0.008), i === 0 ? 1 : 0.92);
+    }
+  } else if (kind === 'carillon') {
+    const notes = Array.isArray(options.notes) && options.notes.length
+      ? options.notes : [{ semitone: 0, offset: 0, gain: 1 }];
+    for (const note of notes) {
+      const rate = Math.pow(2, finite(note.semitone, 0) / 12);
+      play(resources.carillonBell, start + Math.max(0, finite(note.offset, 0)), rate, clamp(finite(note.gain, 1), 0.1, 1));
+    }
+  } else if (kind === 'bird') {
+    const variant = Number.isInteger(options.variant)
+      ? Math.abs(options.variant) % resources.birds.length
+      : Math.floor(random() * resources.birds.length);
+    play(resources.birds[variant], start, 0.93 + random() * 0.14);
+  } else if (kind === 'sheep') {
+    const variant = Math.floor(random() * resources.sheep.length);
+    play(resources.sheep[variant], start, 0.92 + random() * 0.16);
   } else {
     play(options.walk ? resources.signalWalk : resources.signalTick, start);
   }

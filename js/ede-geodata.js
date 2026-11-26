@@ -15,6 +15,9 @@ const completionUrl = new URL('../assets/ede-complete-v1.json.gz', import.meta.u
 const mapLayers = ['buildings', 'roads', 'railways', 'water', 'parks', 'squares', 'trees', 'signals'];
 const mapGraphs = ['roadGraph', 'activeGraph'];
 export let EDE_AERIAL_INPUTS;
+export function clearAerialInputs() {
+  EDE_AERIAL_INPUTS = null;
+}
 
 export async function readMapAsset(url, optional = false) {
   let bytes;
@@ -204,35 +207,19 @@ function applyMunicipalCoverage(data, patch) {
 }
 
 async function loadMap() {
-  const [data, shoreline, years, corridors, windowUses, north, municipality, completion] = await Promise.all([
-    readMapAsset(mapUrl),
-    readMapAsset(shorelineUrl, true).catch(error => {
-      console.warn('[Ede shorelines] using OSM geometry:', error);
-      return null;
-    }),
-    readMapAsset(yearsUrl, true).catch(error => {
-      console.warn('[Ede BAG years] using the default façade palette:', error);
-      return null;
-    }),
-    readMapAsset(corridorsUrl, true).catch(error => {
-      console.warn('[Ede corridors] using the city extent:', error);
-      return null;
-    }),
-    readMapAsset(windowUsesUrl, true).catch(error => {
-      console.warn('[Ede building uses] using OSM tags:', error);
-      return null;
-    }),
-    readMapAsset(northUrl, true).catch(error => {
-      console.warn('[Ede north] using the existing extent:', error);
-      return null;
-    }),
-    readMapAsset(municipalityUrl, true),
-    readMapAsset(completionUrl, true),
-  ]);
+  const appleMobile = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  const compactMap = appleMobile && new URLSearchParams(globalThis.location?.search ?? '').get('quality') !== 'standard';
+  // Load and apply map patches sequentially so peak decompression/parse memory stays bounded on mobile.
+  const data = await readMapAsset(mapUrl);
   if (data?.meta?.city !== 'Ede' || !Array.isArray(data.roads) ||
       !Array.isArray(data.buildings) || !data.roadGraph || !data.activeGraph) {
     throw new Error('Invalid Ede map asset');
   }
+  const shoreline = await readMapAsset(shorelineUrl, true).catch(error => {
+    console.warn('[Ede shorelines] using OSM geometry:', error);
+    return null;
+  });
   if (shoreline) {
     try {
       applyShorelines(data, shoreline);
@@ -244,6 +231,10 @@ async function loadMap() {
   data.water = data.water.filter(({ id, ring }) => id !== 'water171'
     || ring[0] < -3500 || ring[0] > -3410 || ring[1] < 740 || ring[1] > 836);
   data.meta.counts.water = data.water.length;
+  const years = await readMapAsset(yearsUrl, true).catch(error => {
+    console.warn('[Ede BAG years] using the default façade palette:', error);
+    return null;
+  });
   if (years) applyBuildingYears(data.buildings, years);
   // The RGB palette is keyed to the original OSM IDs and original segment counts.
   EDE_AERIAL_INPUTS = { buildings: data.buildings, roads: data.roads };
@@ -252,18 +243,36 @@ async function loadMap() {
     if (building) Object.assign(building, { ring, holes });
   }
   for (const road of data.roads) Object.assign(road, EDE_ROAD_TAGS[road.id]);
-  if (corridors) applyCorridors(data, corridors);
-  if (north?.north === true && corridors) {
-    try {
-      applyCorridors(data, north);
-    } catch (error) {
+  if (!compactMap) {
+    const corridors = await readMapAsset(corridorsUrl, true).catch(error => {
+      console.warn('[Ede corridors] using the city extent:', error);
+      return null;
+    });
+    if (corridors) applyCorridors(data, corridors);
+    const north = corridors ? await readMapAsset(northUrl, true).catch(error => {
       console.warn('[Ede north] using the existing extent:', error);
+      return null;
+    }) : null;
+    if (north?.north === true) {
+      try {
+        applyCorridors(data, north);
+      } catch (error) {
+        console.warn('[Ede north] using the existing extent:', error);
+      }
+    }
+    const completion = await readMapAsset(completionUrl, true);
+    if (completion) {
+      applyCompletion(data, completion);
+      applyMunicipalCoverage(data, completion.municipality);
+    } else if (data.meta.north) {
+      const municipality = await readMapAsset(municipalityUrl, true);
+      if (municipality) applyMunicipalCoverage(data, municipality);
     }
   }
-  if (completion) {
-    applyCompletion(data, completion);
-    applyMunicipalCoverage(data, completion.municipality);
-  } else if (municipality && data.meta.north) applyMunicipalCoverage(data, municipality);
+  const windowUses = await readMapAsset(windowUsesUrl, true).catch(error => {
+    console.warn('[Ede building uses] using OSM tags:', error);
+    return null;
+  });
   if (windowUses?.version === 1) {
     const uses = new Map();
     for (const use of ['unlit', 'home', 'office', 'shop', 'mixed']) {

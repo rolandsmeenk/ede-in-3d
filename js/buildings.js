@@ -326,7 +326,7 @@ function addAerialBuildingTiles(group, batches, linkFallback) {
 }
 
 // `bag`: 3D BAG meshes already supply the facades and roofs, so only colliders and street-level details are built here.
-function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacades, replacementOsmIds, aerialLod = false } = {}) {
+function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacades, replacementOsmIds, aerialLod = false, compact = false } = {}) {
   const group = new THREE.Group();
   group.name = EDE_DATA ? 'EdeCityBlocks' : 'ManhattanCityBlocks';
   const colliders = [];
@@ -2086,6 +2086,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
     const signedArea = pts => pts.reduce((sum, a, i) => {
       const b = pts[(i + 1) % pts.length]; return sum + a.x * b.z - b.x * a.z;
     }, 0) / 2;
+    const EMPTY = Object.freeze([]);
     let built = 0;
     for (const source of EDE_DATA.buildings || []) {
       if (LANDMARK_SOURCE_EXCLUSIONS.has(source.id) || LANDMARK_SOURCE_EXCLUSIONS.has(source.osmId) ||
@@ -2146,8 +2147,8 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
       const facadeLayout = shed ? EDE_FACADE_STYLES.shed.layout : neighbourhood.layout;
       const corridorWalls = corridorFacades?.[source.id];
       const detail = { id: source.id, name: source.name, cx, cz, ...bounds, district: districtAt(cx, cz), maxH: height,
-        cornices: [], waterTowers: [], hvacUnits: [], fireEscapes: [], awnings: [], scaffoldSheds: [], yards: [],
-        footprints: [{ x0: bounds.minX, x1: bounds.maxX, z0: bounds.minZ, z1: bounds.maxZ, h: height, tone, pts: poly, holes }],
+        cornices: EMPTY, waterTowers: EMPTY, hvacUnits: EMPTY, fireEscapes: EMPTY, awnings: EMPTY, scaffoldSheds: EMPTY, yards: EMPTY,
+        footprints: [{ x0: bounds.minX, x1: bounds.maxX, z0: bounds.minZ, z1: bounds.maxZ, h: height, tone, pts: source.ring, holes: source.holes?.length ? source.holes : EMPTY }],
         sourceHeight: source.h, sourceHeightKind: source.heightSource };
       const ownerKey = `${Math.floor(cx / EDE_RENDER_CELL)}/${Math.floor(cz / EDE_RENDER_CELL)}`;
       let tile = edeBuildingTiles.get(ownerKey);
@@ -2167,6 +2168,8 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
         aerialBuilding = aerialBuildings.get(tile);
       }
       const aerialStart = aerialBuilding?.indices.length;
+      let hasPassageCut = false;
+      let minWallBottom = ground + base;
       for (const [ringIndex, ring] of [poly, ...holes].entries()) {
         const direction = Math.sign(signedArea(ring)) || 1;
         for (let i = 0; i < ring.length; i++) {
@@ -2205,7 +2208,9 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
             renderFace = WALL_KINDS.rear;
           }
           const wallTop = ground + eave;
+          if (wallBottom < minWallBottom) minWallBottom = wallBottom;
           const openings = buildingPassageOpenings(a, b);
+          if (openings.length) hasPassageCut = true;
           const splits = [...new Set([0, 1, ...openings.flatMap(({ from, to }) => [from, to])])].sort((a, b) => a - b);
           const solid = base < 1 ? solidWallSpans(a.x, a.z, b.x, b.z, 1.4 / length) : [];
           const cs = Math.cos(ry), sn = Math.sin(ry), hz = thickness / 2;
@@ -2246,17 +2251,24 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
                   else indices.push(start, start + 2, start + 1, start, start + 3, start + 2);
                 }
               }
-              for (const [t0, t1] of cuts.length ? [[from, to]] : solid) {
-                const lo = Math.max(t0, from), hi = Math.min(t1, to), hx = (hi - lo) * length / 2;
-                if (hx < 0.1) continue;
-                const cx = a.x + dx * (lo + hi) / 2, cz = a.z + dz * (lo + hi) / 2;
-                const ex = Math.abs(cs) * hx + Math.abs(sn) * hz, ez = Math.abs(sn) * hx + Math.abs(cs) * hz;
-                colliders.push({ minX: cx - ex, maxX: cx + ex, minZ: cz - ez, maxZ: cz + ez, minY: bottom, maxY: top,
-                  kind: cuts.length && bottom > wallBottom ? 'passage-lintel' : undefined, obb: { cx, cz, hx, hz, cs, sn } });
+              if (!compact || cuts.length) {
+                for (const [t0, t1] of cuts.length ? [[from, to]] : solid) {
+                  const lo = Math.max(t0, from), hi = Math.min(t1, to), hx = (hi - lo) * length / 2;
+                  if (hx < 0.1) continue;
+                  const cx = a.x + dx * (lo + hi) / 2, cz = a.z + dz * (lo + hi) / 2;
+                  const ex = Math.abs(cs) * hx + Math.abs(sn) * hz, ez = Math.abs(sn) * hx + Math.abs(cs) * hz;
+                  colliders.push({ minX: cx - ex, maxX: cx + ex, minZ: cz - ez, maxZ: cz + ez, minY: bottom, maxY: top,
+                    kind: cuts.length && bottom > wallBottom ? 'passage-lintel' : undefined, obb: { cx, cz, hx, hz, cs, sn } });
+                }
               }
             }
           }
         }
+      }
+      if (compact && !hasPassageCut && base < 1) {
+        const flatRoof = Boolean(renderExterior && !pitched && !shed);
+        colliders.push({ ...bounds, minY: minWallBottom, maxY: ground + (flatRoof ? eave + 0.035 : height),
+          polygon: { outer: poly, holes }, flatRoof, compactBuilding: true });
       }
       let roof = renderExterior ? edePolygonGeometry(poly, holes, ground + eave + 0.035) : null;
       if (pitched && renderExterior) {
@@ -2279,7 +2291,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
         roof.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); roof.computeVertexNormals();
       }
       if (roof) {
-        if (!pitched && !shed) {
+        if (!pitched && !shed && !(compact && !hasPassageCut && base < 1)) {
           const top = ground + eave + 0.035;
           colliders.push({ ...bounds, minY: top - 0.04, maxY: top, polygon: { outer: poly, holes }, flatRoof: true,
             isRoofVisible: replacements ? () => !replacements.get(source.id)?.tiles : undefined });
@@ -2308,11 +2320,14 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
         aerialBuilding.sources.push({ id: source.id, start: aerialStart, end: aerialBuilding.indices.length });
       }
       if (!bag && !shed && !pitched && !holes.length && !source.part && height > 12 && rand() < 0.34) {
-        detail.hvacUnits.push({ x: cx, z: cz, y: ground + height, w: 2.2, h: 0.85, d: 3.0, ry: 0 });
+        detail.hvacUnits = [{ x: cx, z: cz, y: ground + height, w: 2.2, h: 0.85, d: 3.0, ry: 0 }];
       }
       quadtree.insert(detail); allBlocks.push(detail); built++;
     }
-    if (aerialBuildings) addAerialBuildingTiles(group, aerialBuildings, linkFallback);
+    if (aerialBuildings) {
+      addAerialBuildingTiles(group, aerialBuildings, linkFallback);
+      aerialBuildings.clear();
+    }
     let firstMesh;
     for (const cell of edeSpatialGroups(roofs, roof => roof.userData.buildingTile)) for (let i = 0; i < cell.length; i += 250) {
       const sources = cell.slice(i, i + 250);
@@ -2348,6 +2363,8 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
       else firstMesh = mesh;
       pieces.forEach(g => g.dispose());
     }
+    roofs.length = 0;
+    edeBuildingTiles.clear();
     group.userData = { city: 'Ede', buildings: built, originalFacadeShaders: true, originalDetailStreaming: true };
   }
   for (const b of EDE_DATA ? [] : BLOCKS) {
@@ -2512,6 +2529,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
       else firstMesh = inst;
       group.add(inst);
     }
+    items.length = 0;
   });
 
   // Billboards: one merged mesh per poster theme
@@ -2580,11 +2598,11 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
   // ============================================================================
   // D. QUADTREE-STREAMED HIGH-DETAIL ARCHITECTURAL POOLS (LOD0 around player)
   // ============================================================================
-  const MAX_CORNICES = 7000;
-  const MAX_WATER_TOWERS = 1400;
+  const MAX_CORNICES = EDE_DATA ? 1 : 7000;
+  const MAX_WATER_TOWERS = EDE_DATA ? 1 : 1400;
   const MAX_HVAC = 1600;
-  const MAX_AWNINGS = 1800;
-  const MAX_SHEDS = 300;
+  const MAX_AWNINGS = EDE_DATA ? 1 : 1800;
+  const MAX_SHEDS = EDE_DATA ? 1 : 300;
 
   // 1. Projecting horizontal stone cornices & parapet ledges
   const corniceMat = new THREE.MeshStandardNodeMaterial({ color: 0xc8bca6, roughness: 0.78, metalness: 0.08 });
@@ -2948,6 +2966,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
 
   if (EDE_DATA) {
     const shopSigns = createShopSigns(EDE_DATA.buildings || [], bag ? undefined : buildingGrounds);
+    buildingGrounds.clear();
     if (shopSigns) group.add(shopSigns);
   }
 

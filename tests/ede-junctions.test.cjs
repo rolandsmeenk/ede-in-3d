@@ -57,6 +57,58 @@ test('Stadspoort bans the mapped turn and restrictions survive on roundabout lan
   }
 });
 
+test('Keesomstraat stop bars span the marked lanes and leave all four approaches routable', async () => {
+  const { buildRoadNetwork } = await import('../js/road-network.js');
+  const network = buildRoadNetwork([], [], [], asset('grade'));
+  const hardware = asset('signal-hardware');
+  for (const [wayId, count, width, x, z] of [
+    ['w768088867', 3, 10.41, -1702.315, 1867.855],
+    ['w768088868', 4, 12.26, -1684.03, 1916.61],
+    ['w545908675', 2, 6.18, -1716.33, 1896.93],
+    ['w545908677', 2, 6.04, -1665.745, 1886.27],
+  ]) {
+    const edge = network.edges.find(e => e.wayId === wayId && e.stopBar);
+    const paint = network.paintEdges.find(e => e.wayId === wayId && e.stopBar);
+    assert.ok(edge?.to.signal && paint, wayId);
+    assert.equal(edge.lanes.length, count, wayId);
+    assert.equal(edge.ambientLanes.length, count, wayId);
+    assert.equal(edge.ambientMoves.length, 3, wayId);
+    assert.ok(Math.abs(edge.laneDefinition.width - width) < 0.02, wayId);
+    for (const e of [edge, paint]) {
+      assert.ok(Math.hypot(e.sx + e.dx * e.len - x, e.sz + e.dz * e.len - z) < 0.01, wayId);
+    }
+    for (const head of hardware.heads.filter(h => h.wayId === wayId && h.mount === 'overhead')) {
+      assert.ok((head.point[0] - x) * edge.dx + (head.point[1] - z) * edge.dz > 9, head.source);
+    }
+  }
+});
+
+test('reviewed junctions use the observed stop bars and lane layouts', async () => {
+  const { buildRoadNetwork } = await import('../js/road-network.js');
+  const { EDE_SURVEYED_APPROACHES } = await import('../js/ede-surveyed-approaches.js');
+  const { setEdeMotorwayLanes } = await import('../js/ede-motorway-lanes.js');
+  setEdeMotorwayLanes(asset('motorway-lanes'));
+  const network = buildRoadNetwork([], [], [], asset('grade'));
+  const hardware = asset('signal-hardware');
+  for (const [wayId, { bar, turns }] of Object.entries(EDE_SURVEYED_APPROACHES)) {
+    const approach = network.edges.find(e => e.wayId === wayId && e.stopBar);
+    const paint = network.paintEdges.find(e => e.wayId === wayId && e.stopBar);
+    assert.ok(approach?.to.signal && paint, wayId);
+    assert.deepEqual(approach.laneDefinition.lanes.map(lane => lane.turns?.join(';') ?? 'none'), turns.split('|'), wayId);
+    const left = bar[0], right = bar.at(-1);
+    const x = (left[0] + right[0]) / 2, z = (left[1] + right[1]) / 2;
+    assert.deepEqual(paint.stopBar.ends, [left, right], wayId);
+    for (const e of [approach, paint]) {
+      assert.ok(Math.hypot(e.sx + e.dx * e.len - x, e.sz + e.dz * e.len - z) < 0.01, wayId);
+    }
+    const heads = hardware.heads.filter(head => head.wayId === wayId && head.mount === 'overhead' &&
+      Math.hypot(head.point[0] - x, head.point[1] - z) < 40);
+    for (const head of heads) {
+      assert.ok((head.point[0] - x) * approach.dx + (head.point[1] - z) * approach.dz > 3, head.source);
+    }
+  }
+});
+
 test('the station and Stadspoort active corridors connect at portals and keep overlapping levels separate', async () => {
   const { EDE_DATA } = await import('../js/ede-geodata.js');
   const { buildEdeActiveTravel } = await import('../js/ede-active-travel.js');

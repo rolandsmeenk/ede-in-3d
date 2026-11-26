@@ -220,6 +220,36 @@ function policeHornBuffer(context) {
   return normalizeLoop(buffer, 0.56);
 }
 
+function trainHumBuffer(context) {
+  // Seamless electric EMU traction & bogie hum (50 Hz mains/traction fundamental + warm harmonics).
+  const rate = context.sampleRate;
+  const count = Math.round(rate * 1.0);
+  const buffer = context.createBuffer(1, count, rate);
+  const samples = buffer.getChannelData(0);
+  const harmonics = [[50, 0.45], [100, 0.65], [150, 0.32], [200, 0.24], [300, 0.16], [450, 0.08]];
+  for (let i = 0; i < count; i++) {
+    const t = i / rate;
+    let value = 0;
+    for (const [freq, amp] of harmonics) value += Math.sin(2 * Math.PI * freq * t) * amp;
+    samples[i] = value;
+  }
+  return normalizeLoop(buffer, 0.36, 0.85);
+}
+
+function bladeSwishBuffer(context) {
+  // Single blade-pass amplitude envelope (0..1) looped at blade-pass frequency for wind turbines and mills.
+  const rate = 8000;
+  const count = rate;
+  const buffer = context.createBuffer(1, count, rate);
+  const samples = buffer.getChannelData(0);
+  for (let i = 0; i < count; i++) {
+    const phase = i / count;
+    const pulse = Math.pow(0.5 - 0.5 * Math.cos(2 * Math.PI * phase), 2.2);
+    samples[i] = 0.24 + 0.76 * pulse;
+  }
+  return buffer;
+}
+
 export function createSynthResources(context) {
   const sampleRate = context.sampleRate;
   const noise = context.createBuffer(1, Math.round(sampleRate * 2), sampleRate);
@@ -278,6 +308,8 @@ export function createSynthResources(context) {
     ratchet: ratchetBuffer(context),
     chain: chainBuffer(context),
     policeHorn: policeHornBuffer(context),
+    trainHum: trainHumBuffer(context),
+    bladeSwish: bladeSwishBuffer(context),
     voiceSerial: 0
   };
 }
@@ -298,7 +330,7 @@ function smoothParameter(parameter, timeConstant = 0.07, epsilon = 0.0001, snapI
 }
 
 export function createMotorVoice(context, resources, kind, output) {
-  if (!['sedan', 'suv', 'bus', 'helicopter', 'cyclist', 'siren'].includes(kind)) {
+  if (!['sedan', 'suv', 'bus', 'helicopter', 'cyclist', 'siren', 'train', 'turbine'].includes(kind)) {
     throw new RangeError(`Unknown motor voice: ${kind}`);
   }
   const nodes = [];
@@ -520,6 +552,62 @@ export function createMotorVoice(context, resources, kind, output) {
       chainRate(Math.max(0.01, speed / (2 * Math.PI * 0.35 * 3.2)) * doppler, now);
       chainFrequency((2500 + load * 600) * doppler, now);
       noiseRate((0.9 + Math.min(1, movement) * 0.2) * doppler, now);
+    };
+  } else if (kind === 'train') {
+    const rail = loop();
+    const railHigh = filter('highpass', 55, 0.6);
+    const railLow = filter('lowpass', 950, 0.7);
+    const railGain = gain();
+    rail.connect(railHigh).connect(railLow).connect(railGain).connect(mix);
+
+    const hiss = loop();
+    const hissBand = filter('bandpass', 1800, 1.1);
+    const hissGain = gain();
+    hiss.connect(hissBand).connect(hissGain).connect(mix);
+
+    const hum = loop(resources.trainHum);
+    const humLow = filter('lowpass', 620, 0.7);
+    const humGain = gain();
+    hum.connect(humLow).connect(humGain).connect(mix);
+
+    const railLevel = smoothParameter(railGain.gain, 0.12);
+    const railCutoff = smoothParameter(railLow.frequency, 0.14, 2);
+    const railRate = smoothParameter(rail.playbackRate, 0.1, 0.001);
+    const hissLevel = smoothParameter(hissGain.gain, 0.12);
+    const hissFreq = smoothParameter(hissBand.frequency, 0.14, 2);
+    const humLevel = smoothParameter(humGain.gain, 0.14);
+    const humRate = smoothParameter(hum.playbackRate, 0.12, 0.001, true);
+    render = (speed, load, doppler, now) => {
+      const motion = clamp(speed / 38, 0, 1.25);
+      const rolling = clamp(speed / 4, 0, 1);
+      railLevel(rolling * (0.045 + motion * 0.19), now);
+      railCutoff((260 + motion * 1250) * doppler, now);
+      railRate((0.75 + motion * 0.45) * doppler, now);
+      hissLevel(rolling * motion * 0.055, now);
+      hissFreq((1300 + motion * 1100) * doppler, now);
+      // Electric trains retain a quiet converter/HVAC hum even while berthed at a platform.
+      humLevel(0.026 + rolling * 0.042 + load * 0.025, now);
+      humRate((0.92 + motion * 0.65 + (variation - 0.5) * 0.06) * doppler, now);
+    };
+  } else if (kind === 'turbine') {
+    const air = loop();
+    const high = filter('highpass', 70, 0.6);
+    const low = filter('lowpass', 420, 0.65);
+    const mod = gain(0);
+    const swish = loop(resources.bladeSwish);
+    const level = gain();
+    air.connect(high).connect(low).connect(mod).connect(level).connect(mix);
+    swish.connect(mod.gain);
+
+    const outLevel = smoothParameter(level.gain, 0.25);
+    const lowFreq = smoothParameter(low.frequency, 0.25, 2);
+    const swishRate = smoothParameter(swish.playbackRate, 0.25, 0.002, true);
+    render = (speed, load, doppler, now) => {
+      const strength = clamp(load, 0, 1);
+      const bladeHz = clamp(speed, 0.15, 2.2);
+      outLevel(strength * 0.13, now);
+      lowFreq((220 + strength * 360) * doppler, now);
+      swishRate(bladeHz * doppler, now);
     };
   } else {
     const horn = loop(resources.policeHorn);

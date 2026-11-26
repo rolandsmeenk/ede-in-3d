@@ -5,7 +5,7 @@ const BUILD_MS = 3;
 const UPLOAD_BYTES = 4 * 1024 * 1024;
 const RESIDENT_BYTES = 128 * 1024 * 1024;
 
-export function createPavingTiles(scene, mergeBatches, byteLimit = RESIDENT_BYTES, request = null, materials = {}) {
+export function createPavingTiles(scene, mergeBatches, byteLimit = RESIDENT_BYTES, request = null, materials = {}, fallbackBuild = null) {
   const group = new THREE.Group();
   group.name = 'Ede paving tiles';
   scene.add(group);
@@ -136,7 +136,9 @@ export function createPavingTiles(scene, mergeBatches, byteLimit = RESIDENT_BYTE
       stats.workerTiles++;
     } else {
       do {
-        tile.jobs[pending.next++].build(batches);
+        const entry = tile.jobs[pending.next++];
+        if (entry.build) entry.build(batches);
+        else fallbackBuild(entry.data, batches);
       } while (pending.next < tile.jobs.length && performance.now() < deadline);
       if (pending.next < tile.jobs.length) return true;
       meshes = new THREE.Group();

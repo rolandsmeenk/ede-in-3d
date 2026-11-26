@@ -650,7 +650,14 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   let stPhase = 'red';
   let aveWalk = true;
   let stWalk = false;
-  const phaseOf = (e) => (e.axisIndex === 0 ? avePhase : stPhase);
+  const liveSignals = pilot.liveSignals ?? null;
+  const phaseOf = (e) => {
+    if (liveSignals && e?.to?.signal) {
+      const live = liveSignals.queryIntersectionPhase(e.to.x, e.to.z, e.axisIndex);
+      if (live) return live === 'flashing-amber' || live === 'dark' ? 'green' : live;
+    }
+    return e.axisIndex === 0 ? avePhase : stPhase;
+  };
   let focusX = 0;
   let focusZ = 140;
 
@@ -987,7 +994,16 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   // Intelligent Driver Model: acceleration on a free road, and the braking term for an obstacle `gap` metres
   // (bumper to bumper) ahead moving at `speed`
   function roadSpeed(v) {
-    return Math.min(roadTraffic.limit(v.edge), v.conn ? roadTraffic.limit(v.move.to) : Infinity, v.maxSpeed ?? Infinity);
+    let limit = Math.min(roadTraffic.limit(v.edge), v.conn ? roadTraffic.limit(v.move.to) : Infinity, v.maxSpeed ?? Infinity);
+    if (liveSignals && v.edge?.motorway) {
+      const msi = liveSignals.queryMotorwaySignal(v.edge.wayId, v.x, v.z, (v.lane ?? 0) + 1);
+      if (msi) {
+        if (msi.speedLimitMs < limit) limit = msi.speedLimitMs;
+        if (msi.laneClosed) limit = Math.min(limit, 8.33); // Slow to ~30 km/h under red cross (F01) while vacating lane.
+        else if (msi.mergeDirection) limit = Math.min(limit, 19.44); // Merge advisory (F02) <= 70 km/h.
+      }
+    }
+    return limit;
   }
 
   function vehicleCruise(v, edge) {

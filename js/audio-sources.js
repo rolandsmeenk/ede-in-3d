@@ -1,10 +1,14 @@
 import { signalPhase, walkSignal } from './city-config.js';
 import { terrainHeightAt } from './terrain.js';
+import { EDE_WINDMILLS, rotorAudioParams } from './ede-soundscape.js';
 
 const MOTOR_RANGE = 180;
 const SIREN_RANGE = 220;
 const PEOPLE_RANGE = 45;
 const SIGNAL_RANGE = 35;
+const TRAIN_RANGE = 340;
+const CROSSING_RANGE = 160;
+const TURBINE_RANGE = 260;
 const unit = (value) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 const seedAt = (index) => ((Math.imul(index + 1, 2654435761) >>> 0) / 4294967296);
 
@@ -83,7 +87,7 @@ class NearestSources {
 // Read at audio's control rate (10 Hz), after simulation updates. Snapshots remain valid until the next collect().
 // IDs are the simulation objects, independent of pooled record order, so voices survive ranking changes/recycling.
 class CityAudioSources {
-  constructor({ controllerManager, trafficSystem, highwayTraffic, streetDetails }) {
+  constructor({ controllerManager, trafficSystem, highwayTraffic, streetDetails, trainSystem = null, levelCrossings = null, turbines = null, windmills = EDE_WINDMILLS }) {
     this.controllers = controllerManager;
     this.players = Object.values(controllerManager.entities);
     this.cars = trafficSystem.cars;
@@ -97,13 +101,19 @@ class CityAudioSources {
     this.peds = trafficSystem.peds;
     this.highwayCars = highwayTraffic.cars;
     this.signalSites = streetDetails.audioSignals;
+    this.trainSystem = trainSystem;
+    this.levelCrossings = levelCrossings;
+    this.turbines = Array.isArray(turbines) ? turbines : [];
+    this.windmills = Array.isArray(windmills) ? windmills : [];
     this.motors = new NearestSources(10);
     this.sirens = new NearestSources(2);
     this.people = new NearestSources(6);
     this.signals = new NearestSources(2);
+    this.crossings = new NearestSources(2);
     this.snapshot = {
       motors: this.motors.items, sirens: this.sirens.items,
-      people: this.people.items, signals: this.signals.items, traffic: 0, motion: 0
+      people: this.people.items, signals: this.signals.items,
+      crossings: this.crossings.items, traffic: 0, motion: 0
     };
   }
 
@@ -121,7 +131,7 @@ class CityAudioSources {
       const siren = this.sirens.take(d2);
       if (siren) writeMotor(siren, id, 'siren', x, y, z, speed, load, heading, player, seed, blocked, 1, 200);
     }
-    const reach = kind === 'helicopter' ? range : MOTOR_RANGE;
+    const reach = (kind === 'helicopter' || kind === 'train' || kind === 'turbine') ? range : MOTOR_RANGE;
     if (d2 > reach * reach) return;
     const item = this.motors.take(player ? -1 : d2);
     if (!item) return;
@@ -167,9 +177,9 @@ class CityAudioSources {
     }
   }
 
-  collect(listenerPosition, elapsed) {
+  collect(listenerPosition, elapsed, environment = null) {
     this.listener = listenerPosition;
-    this.motors.items.length = this.sirens.items.length = this.people.items.length = this.signals.items.length = 0;
+    this.motors.items.length = this.sirens.items.length = this.people.items.length = this.signals.items.length = this.crossings.items.length = 0;
     this.snapshot.traffic = 0;
     const active = this.controllers.getActiveEntity();
     const activeHelicopterHeight = active.type === 'helicopter'
@@ -242,6 +252,73 @@ class CityAudioSources {
       item.walk = walkSignal(elapsed, site.isAvenue);
       item.seed = seedAt(10000 + i);
     }
+
+    if (this.trainSystem?.pool) {
+      const pool = this.trainSystem.pool;
+      for (let i = 0; i < pool.length; i++) {
+        const actor = pool[i];
+        if (!actor.train || !actor.root?.visible) continue;
+        let bestCar = null, bestD2 = Infinity;
+        for (let c = 0; c < actor.cars.length; c++) {
+          const car = actor.cars[c];
+          if (!car.visible) continue;
+          const p = car.position;
+          const d2 = this.distanceSq(p.x, p.y + 1.8, p.z);
+          if (d2 < bestD2) { bestD2 = d2; bestCar = car; }
+        }
+        if (!bestCar || bestD2 > TRAIN_RANGE * TRAIN_RANGE) continue;
+        const speed = Math.abs(actor.train.speed || 0);
+        const load = unit(speed / 35);
+        this.motor(actor.train, 'train', bestCar.position.x, bestCar.position.y + 1.8, bestCar.position.z,
+          speed, load, bestCar.rotation.y, false, false, seedAt(3000 + i), false, 1, TRAIN_RANGE);
+      }
+    }
+
+    if (this.levelCrossings?.crossings) {
+      const list = this.levelCrossings.crossings;
+      for (let i = 0; i < list.length; i++) {
+        const crossing = list[i];
+        if (crossing.phase !== 'warning' && crossing.phase !== 'closing' && crossing.phase !== 'closed') continue;
+        const d2 = this.distanceSq(crossing.x, crossing.y, crossing.z);
+        if (!Number.isFinite(d2) || d2 > CROSSING_RANGE * CROSSING_RANGE) continue;
+        const item = this.crossings.take(d2);
+        if (!item) continue;
+        item.id = crossing;
+        item.x = crossing.x;
+        item.y = crossing.y;
+        item.z = crossing.z;
+        item.phase = crossing.phase;
+        item.seed = seedAt(12000 + i);
+      }
+    }
+
+    const townWind = environment?.windSpeed ?? 18;
+    const hubWind = environment?.turbineWindSpeed ?? townWind;
+    if (this.turbines.length) {
+      const { bladeHz, load } = rotorAudioParams(hubWind, true);
+      if (load > 0) {
+        for (let i = 0; i < this.turbines.length; i++) {
+          const t = this.turbines[i];
+          const d2 = this.distanceSq(t.x, t.y, t.z);
+          if (!Number.isFinite(d2) || d2 > TURBINE_RANGE * TURBINE_RANGE) continue;
+          this.motor(t, 'turbine', t.x, t.y, t.z, bladeHz, load, 0, false, false, seedAt(14000 + i), false, 0.9, TURBINE_RANGE);
+        }
+      }
+    }
+    if (this.windmills.length) {
+      const { bladeHz, load } = rotorAudioParams(townWind, false);
+      if (load > 0) {
+        for (let i = 0; i < this.windmills.length; i++) {
+          const m = this.windmills[i];
+          const range = m.range ?? 95;
+          const dx = m.x - this.listener.x, dz = m.z - this.listener.z;
+          if (dx * dx + dz * dz > range * range) continue;
+          const y = terrainHeightAt(m.x, m.z) + m.hubHeight;
+          this.motor(m, 'turbine', m.x, y, m.z, bladeHz, load, 0, false, false, seedAt(15000 + i), false, 0.72, range);
+        }
+      }
+    }
+
     return this.snapshot;
   }
 }

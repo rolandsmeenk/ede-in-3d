@@ -1,6 +1,6 @@
 import { aerialLinear, samplePavingGround } from './ede-aerial-sampling.js';
 import { getExpansionTerrain } from './terrain.js';
-import { EDE_AERIAL_INPUTS } from './ede-geodata.js';
+import { clearAerialInputs, EDE_AERIAL_INPUTS } from './ede-geodata.js';
 
 let aerial = null;
 
@@ -27,22 +27,26 @@ async function requestAsset(name) {
   return response;
 }
 
-async function decodeGround({ width, height, minX, minZ, step }, blob) {
+async function decodeGround({ width, height, minX, minZ, step }, blob, downsample = 1) {
   if (![width, height].every((size) => Number.isInteger(size) && size >= 2)
       || ![minX, minZ, step].every(Number.isFinite) || step <= 0) {
     throw new Error('Invalid Ede aerial ground grid');
   }
   const image = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
   try {
     if (image.width !== width || image.height !== height) throw new Error('Ede aerial image dimensions differ from grid');
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    const outW = downsample > 1 ? Math.max(2, Math.round(width / downsample)) : width;
+    const outH = downsample > 1 ? Math.max(2, Math.round(height / downsample)) : height;
+    canvas.width = outW;
+    canvas.height = outH;
     const context = canvas.getContext('2d');
-    context.drawImage(image, 0, 0);
-    const { data } = context.getImageData(0, 0, width, height);
-    return { width, height, minX, minZ, step, data };
+    context.drawImage(image, 0, 0, outW, outH);
+    const { data } = context.getImageData(0, 0, outW, outH);
+    return { width: outW, height: outH, minX, minZ, step: step * (width / outW), data };
   } finally {
+    canvas.width = 0;
+    canvas.height = 0;
     image.close();
   }
 }
@@ -59,15 +63,16 @@ export async function loadExpansionGroundColors() {
   }
 }
 
-export async function loadAerialColors() {
+export async function loadAerialColors({ compact = false } = {}) {
   const [metadata, photo, palette] = await Promise.all([
     requestAsset('ede-aerial.json').then((response) => response.json()),
     requestAsset('ede-aerial-ground.jpg').then((response) => response.blob()),
     requestAsset('ede-aerial-colors.bin').then((response) => response.arrayBuffer()),
   ]);
-  const ground = await decodeGround(metadata, photo);
+  const ground = await decodeGround(metadata, photo, compact ? 2 : 1);
   const { buildings, roads } = EDE_AERIAL_INPUTS;
   aerial = { ground, ...decodeAerialPalette(palette, buildings, roads) };
+  clearAerialInputs();
   return aerial;
 }
 

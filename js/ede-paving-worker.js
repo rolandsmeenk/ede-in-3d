@@ -14,7 +14,7 @@ function pavingGeometry(job, terrain, roads, ground) {
   const { rise, material, style, angle, layer, segment, cuts, local, roadColor, groundColor } = job;
   const surfaces = job.top ? [] : job.outer
     ? [polygonGeometry(THREE, edePoints(job.outer), job.holes.map(edePoints), rise)]
-    : job.pieces.map(points => polygonGeometry(THREE, points, [], rise));
+    : job.pieces.map(points => polygonGeometry(THREE, typeof points[0] === 'number' ? edePoints(points) : points, [], rise));
   const joined = job.top ? curbTopGeometry(THREE, job.top) : surfaces.length === 1 ? surfaces[0] : mergeGeometries(surfaces);
   const grade = {
     gradeCuts: () => cuts,

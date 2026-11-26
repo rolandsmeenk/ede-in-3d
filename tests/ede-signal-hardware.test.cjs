@@ -71,6 +71,32 @@ test('signal feet stay on the approach side, and a reused cantilever can reverse
   assert.equal(fitEdeSignalSpan(span, true, () => false), null);
 });
 
+test('Keesomstraat backplates clear the beam on the side facing approaching drivers', async () => {
+  const { fitEdeOverheadSignalMount } = await import('../js/ede-signal-hardware.js');
+  const { createEdeSignalHeadGeometries } = await loadSignalModels();
+  const { backplate } = createEdeSignalHeadGeometries();
+  const vertices = backplate.getAttribute('position');
+  const spans = asset.supports.filter(s => s.source.startsWith('pdok:aerial:ede-junction-36:'));
+  assert.equal(spans.length, 2);
+  for (const support of spans) {
+    const heads = asset.heads.filter(h => asset.supports[h.support] === support);
+    assert.ok(heads.length >= 3);
+    const [[ax, az], [bx, bz]] = support.points;
+    const length = Math.hypot(bx - ax, bz - az);
+    const normal = [(bz - az) / length, (ax - bx) / length];
+    for (const { point, heading } of heads) {
+      const fx = Math.sin(heading), fz = Math.cos(heading);
+      const [nx, nz] = normal.map(n => n * Math.sign(fx * normal[0] + fz * normal[1]));
+      const { position } = fitEdeOverheadSignalMount(point, [ax, az], normal, heading, 0.3, 1, 0.125, 0, true);
+      for (let i = 0; i < vertices.count; i++) {
+        const x = position[0] + vertices.getX(i) * fz + vertices.getZ(i) * fx;
+        const z = position[1] - vertices.getX(i) * fx + vertices.getZ(i) * fz;
+        assert.ok((x - ax) * nx + (z - az) * nz >= 0.16, support.source);
+      }
+    }
+  }
+});
+
 test('signal clearance uses the mapped carriageway holes and each level independently', async () => {
   const { loadModule } = require('./helpers/module.cjs');
   const roadSource = readFileSync(join(__dirname, '../js/ede-road-surfaces.js'), 'utf8')

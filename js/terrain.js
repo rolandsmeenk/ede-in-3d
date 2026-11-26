@@ -50,7 +50,7 @@ async function loadGinkelDetail(load, tiles) {
   }
 }
 
-async function loadExpansion(load) {
+async function loadExpansion(load, compact = false) {
   const response = await fetch(new URL('manifest.json?v=20261123-municipal', expansionDirectory));
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Terrain manifest HTTP ${response.status}`);
@@ -83,16 +83,18 @@ async function loadExpansion(load) {
   if (!bounds(collisionBounds) || buffered && manifest.collisionFile !== 'collision.bin.gz') {
     throw new Error('Invalid terrain collision bounds');
   }
-  const [field, detail, overviewField, rootSamples] = await Promise.all([
-    load(new URL(buffered ? manifest.collisionFile : 'collision.bin', expansionDirectory), buffered),
-    loadGinkelDetail(load, manifest.tiles),
+  const useOverviewCollision = buffered && compact;
+  const [collisionField, detail, overviewField, rootSamples] = await Promise.all([
+    useOverviewCollision ? null : load(new URL(buffered ? manifest.collisionFile : 'collision.bin', expansionDirectory), buffered),
+    compact ? null : loadGinkelDetail(load, manifest.tiles),
     buffered && load(new URL('overview.bin?v=20261123-municipal', expansionDirectory), true),
     buffered && fetch(new URL('roots.bin?v=20261123-municipal', expansionDirectory)).then(response => {
       if (!response.ok) throw new Error(`Terrain root overview HTTP ${response.status}`);
       return response.arrayBuffer();
     }),
   ]);
-  if (field.step !== 5 || Math.abs(field.napOrigin - manifest.napOrigin) > 0.001
+  const field = useOverviewCollision ? overviewField : collisionField;
+  if ((!useOverviewCollision && field.step !== 5) || Math.abs(field.napOrigin - manifest.napOrigin) > 0.001
       || !coversBounds(field, collisionBounds)) throw new Error('Invalid terrain collision field');
   if (buffered && (!coversBounds(overviewField, manifest.bounds)
       || Math.abs(overviewField.napOrigin - field.napOrigin) > 0.001
@@ -112,8 +114,8 @@ async function loadExpansion(load) {
   return { manifest, field, directory: expansionDirectory, detail, overviewField, rootSamples };
 }
 
-export async function loadTerrain({ expanded = false } = {}) {
-  const load = async (url, compact = false) => {
+export async function loadTerrain({ expanded = false, compact = false } = {}) {
+  const load = async (url, compactField = false) => {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`AHN terrain request failed: ${response.status}`);
     let buffer = await response.arrayBuffer();
@@ -121,7 +123,7 @@ export async function loadTerrain({ expanded = false } = {}) {
       const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));
       buffer = await new Response(stream).arrayBuffer();
     }
-    return decodeTerrain(buffer, compact);
+    return decodeTerrain(buffer, compactField);
   };
   const optionalPatch = (file, label) => load(new URL(file, import.meta.url)).catch(error => {
     console.warn(`Using the town terrain grid for ${label}:`, error);
@@ -129,7 +131,7 @@ export async function loadTerrain({ expanded = false } = {}) {
   });
   const [town, edition, ...localPatches] = await Promise.all([
     load(new URL('../assets/ede-ahn.bin', import.meta.url)),
-    expanded ? loadExpansion(load).catch(error => {
+    expanded ? loadExpansion(load, compact).catch(error => {
       console.warn('[AHN terrain tiles] using the Ede town grid:', error);
       return null;
     }) : null,

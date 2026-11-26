@@ -110,7 +110,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   const group = new THREE.Group();
   group.name = 'Ede BGT structures';
   const colliders = [], platforms = [], weatherCovers = [], batches = new Map(), materials = new Map();
-  const turbineUpdates = [], turbineBeacons = [];
+  const turbineUpdates = [], turbineBeacons = [], turbines = [];
   const bridgeStrokes = new Map();
   const mastDetails = [], mastCutoff = uniform(150), mastNight = uniform(0);
   const mastStrokes = { start: [], end: [], centre: [], bounds: new THREE.Box3() };
@@ -322,6 +322,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     cap.name = 'Wind turbine nacelle';
     sails.name = 'Wind turbine blades';
     turbineUpdates.push(cap.userData.updateWind);
+    turbines.push({ x, y: hubY, z, hubHeight });
     if (scale === 1) {
       const beacon = new THREE.Sprite(beaconMaterial);
       beacon.name = 'Turbine obstruction beacon';
@@ -492,7 +493,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   group.userData = { counts, smallBridges: smallBridges.size, source: source.url, date: source.date };
   scene.add(group);
   return {
-    group, colliders, counts, platforms, weatherCovers, deckProfiles, bridgeFootprints,
+    group, colliders, counts, platforms, weatherCovers, deckProfiles, bridgeFootprints, turbines,
     updateMastLod(camera, pixelHeight) {
       // Switch when the 16 cm cross-braces project to about one pixel.
       const focal = camera.projectionMatrix.elements[5] * pixelHeight * 0.5;

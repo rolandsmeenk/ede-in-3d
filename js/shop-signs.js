@@ -5,8 +5,9 @@ import { EDE_SHOPS } from './ede-shops.js';
 import { waterAt } from './city-config.js';
 import { terrainHeightAt } from './terrain.js';
 
-const CELL_W = 256, CELL_H = 40, COLS = 8, MAX_NAMES = 800;
+const CELL_W = 256, CELL_H = 40, COLS = 16, MAX_NAMES = 1400;
 const MAX_WALL_DISTANCE = 25, MIN_WALL_LENGTH = 3, SIGN_Y = 3.4, MIN_SPACING = 2.5;
+const GRID_CELL = 100;
 
 // These landmark models supply their own shopfronts.
 const CUSTOM_STOREFRONTS = new Set([
@@ -24,7 +25,14 @@ const BRANDS = {
   'Starbucks': ['#00704a', '#ffffff'], "McDonald's": ['#da291c', '#ffc72c'], 'KFC': ['#e4002b', '#ffffff'],
   "Domino's": ['#006491', '#ffffff'], 'Gall & Gall': ['#7a1f2b', '#ffffff'], 'Foot Locker': ['#111111', '#ffffff'],
   'Søstrene Grene': ['#ffffff', '#1b1b1b'], 'Holland & Barrett': ['#006a4e', '#ffffff'], 'SPAR city': ['#007a3d', '#ffffff'],
-  'Bever': ['#e2001a', '#ffffff'], 'Snipes': ['#111111', '#ffe600'], 'Manfield': ['#111111', '#ffffff']
+  'Bever': ['#e2001a', '#ffffff'], 'Snipes': ['#111111', '#ffe600'], 'Manfield': ['#111111', '#ffffff'],
+  'Lidl': ['#0050aa', '#fff000'], 'ALDI': ['#00205b', '#ffffff'], 'PLUS': ['#008c45', '#ffffff'],
+  'SPAR': ['#007a3d', '#ffffff'], 'DA': ['#1a1a1a', '#ffffff'], 'Primera': ['#0072bc', '#ffffff'],
+  'Action': ['#003399', '#ffffff'], 'Trekpleister': ['#e3001b', '#ffffff'], 'Zeeman': ['#ffcf00', '#008acb'],
+  'Wibra': ['#003893', '#ffed00'], 'Welkoop': ['#006837', '#ffffff'], 'Praxis': ['#ffd100', '#111111'],
+  'Gamma': ['#003d7c', '#ffffff'], 'Karwei': ['#111111', '#ffffff'], 'Ekoplaza': ['#2e6b34', '#ffffff'],
+  'Kwalitaria': ['#1a1a1a', '#f39200'], 'New York Pizza': ['#006a38', '#ffffff'], 'Subway': ['#008c15', '#ffc600'],
+  'C&A': ['#003087', '#ffffff'], 'Albert Heijn XL': ['#00a0e2', '#ffffff']
 };
 // Branch coordinates keep a photographed palette local even when a chain has several signs.
 const LOCAL_SIGN_COLORS = {
@@ -38,9 +46,30 @@ const MUTED = [['#1c2b3a', '#f2e8cf'], ['#2d3a2e', '#f4f1de'], ['#3b2a2a', '#f6e
   ['#4a3b2a', '#fff3d6'], ['#222222', '#e8e8e8'], ['#33262e', '#ffe9ef'], ['#1f3d3d', '#e5fffa']];
 const hashName = (s) => { let h = 7; for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; return Math.abs(h); };
 
-function nearestWall(rings, x, z) {
-  let best = null;
+function buildRingGrid(rings) {
+  const grid = new Map();
   for (const r of rings) {
+    const gx0 = Math.floor((r.minX - MAX_WALL_DISTANCE) / GRID_CELL);
+    const gx1 = Math.floor((r.maxX + MAX_WALL_DISTANCE) / GRID_CELL);
+    const gz0 = Math.floor((r.minZ - MAX_WALL_DISTANCE) / GRID_CELL);
+    const gz1 = Math.floor((r.maxZ + MAX_WALL_DISTANCE) / GRID_CELL);
+    for (let gx = gx0; gx <= gx1; gx++) {
+      for (let gz = gz0; gz <= gz1; gz++) {
+        const key = `${gx},${gz}`;
+        let list = grid.get(key);
+        if (!list) grid.set(key, list = []);
+        list.push(r);
+      }
+    }
+  }
+  return grid;
+}
+
+function nearestWall(grid, x, z) {
+  const candidates = grid.get(`${Math.floor(x / GRID_CELL)},${Math.floor(z / GRID_CELL)}`);
+  if (!candidates) return null;
+  let best = null;
+  for (const r of candidates) {
     if (x < r.minX - MAX_WALL_DISTANCE || x > r.maxX + MAX_WALL_DISTANCE || z < r.minZ - MAX_WALL_DISTANCE || z > r.maxZ + MAX_WALL_DISTANCE) continue;
     const p = r.pts;
     for (let i = 0; i < p.length; i += 2) {
@@ -115,11 +144,12 @@ export function createShopSigns(buildings, buildingGrounds) {
   const cellOf = new Map(keys.map((key, i) => [key, i]));
   const { tex, rows } = drawAtlas(keys.map(key => labels.get(key)));
 
+  const ringGrid = buildRingGrid(rings);
   const positions = [], uvs = [], indices = [], placed = [];
   for (const { name, x: sx, z: sz, key } of sites) {
     const cell = cellOf.get(key);
     if (cell === undefined) continue;
-    const wall = nearestWall(rings, sx, sz);
+    const wall = nearestWall(ringGrid, sx, sz);
     if (!wall || wall.custom) continue;
     // Outward wall normal, same convention as the building walls in buildings.js.
     const nx = wall.dz / wall.len * wall.dir, nz = -wall.dx / wall.len * wall.dir;

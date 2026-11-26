@@ -11,10 +11,39 @@ CONFIG = 'snelheden_en_intensiteiten_configuratie_meetlocaties.xml.gz'
 MEASUREMENTS = 'snelheden_en_intensiteiten_meetgegevens.xml.gz'
 CLOSURES = 'tijdelijke_verkeersmaatregelen_afsluitingen.xml.gz'
 TEMPORARY_SPEEDS = 'tijdelijke_verkeersmaatregelen_maximum_snelheden.xml.gz'
+DRIP_MSI = 'dynamische_route_informatie_panelen.xml.gz'
 XSI_TYPE = '{http://www.w3.org/2001/XMLSchema-instance}type'
 # NDW supplies the start of the measured minute, which arrives several minutes later.
 OBSERVATION_AGE_MS = 360_000
 RESTRICTION_AGE_MS = 300_000
+MSI_AGE_MS = 180_000
+SPAT_AGE_MS = 30_000
+
+MSI_VALID_LEGENDS = frozenset({
+    'A01-50', 'A01-70', 'A01-80', 'A01-90', 'A01-100',
+    'F01', 'F02-L', 'F02-R', 'F08', 'J33', 'BLANK',
+})
+
+SPAT_STATE_MAP = {
+    'dark': 'DARK',
+    'stop-And-Remain': 'STOP_AND_REMAIN',
+    'STOP_AND_REMAIN': 'STOP_AND_REMAIN',
+    'red': 'STOP_AND_REMAIN',
+    'permissive-Movement-Allowed': 'PERMISSIVE_MOVEMENT_ALLOWED',
+    'PERMISSIVE_MOVEMENT_ALLOWED': 'PERMISSIVE_MOVEMENT_ALLOWED',
+    'protected-Movement-Allowed': 'PROTECTED_MOVEMENT_ALLOWED',
+    'PROTECTED_MOVEMENT_ALLOWED': 'PROTECTED_MOVEMENT_ALLOWED',
+    'green': 'PROTECTED_MOVEMENT_ALLOWED',
+    'pre-Movement': 'PRE_MOVEMENT',
+    'PRE_MOVEMENT': 'PRE_MOVEMENT',
+    'stop-Then-Proceed': 'STOP_THEN_PROCEED',
+    'STOP_THEN_PROCEED': 'STOP_THEN_PROCEED',
+    'amber': 'STOP_THEN_PROCEED',
+    'yellow': 'STOP_THEN_PROCEED',
+    'caution-Conflicting-Traffic': 'FLASHING_AMBER',
+    'FLASHING_AMBER': 'FLASHING_AMBER',
+    'flashing-amber': 'FLASHING_AMBER',
+}
 
 
 class LimitedReader:
@@ -256,3 +285,95 @@ def read_restrictions(stream, graph, now, closure):
             record_key = key, start, expires, tuple(effect.items())
             result[record_key] = dict(key=key, startsAt=start, expiresAt=expires, **effect)
     return [result[key] for key in sorted(result)]
+
+
+def normalize_msi_legend(code, direction=None):
+    """Normalize raw NDW / RVV matrix sign codes to canonical legend identifiers."""
+    if not code:
+        return 'BLANK'
+    raw = str(code).strip().upper().replace('_', '-').replace(' ', '-')
+    if raw in ('BLANK', 'OFF', 'NONE', 'CLEAR', '0'):
+        return 'BLANK'
+    if raw in MSI_VALID_LEGENDS:
+        return raw
+    if raw in ('50', '70', '80', '90', '100'):
+        return f'A01-{raw}'
+    if raw.startswith('A1-'):
+        candidate = 'A01-' + raw[3:]
+        if candidate in MSI_VALID_LEGENDS:
+            return candidate
+    if raw in ('X', 'CROSS', 'LANE-CLOSED', 'RED-CROSS', 'F1'):
+        return 'F01'
+    if raw in ('F02', 'F2', 'MERGE', 'ARROW-LEFT', 'ARROW-RIGHT'):
+        hint = str(direction or raw).upper()
+        return 'F02-L' if 'LEFT' in hint or hint.endswith('-L') else 'F02-R'
+    if raw in ('F8', 'END-RESTRICTIONS', 'ALL-CLEAR'):
+        return 'F08'
+    if raw in ('QUEUE', 'CONGESTION', 'FILE', 'TRAFFIC-JAM'):
+        return 'J33'
+    return 'BLANK'
+
+
+def read_msi_signs(stream, now):
+    """Parse DATEX II VmsPublication matrix sign legends with optional flashers."""
+    published = None
+    items = []
+    for tag, element in records(stream, 'vmsUnit', 'VmsPublication'):
+        if tag == 'publicationTime':
+            published = timestamp(element.text)
+            continue
+        if published is None or published > now + 30_000 or published + MSI_AGE_MS <= now:
+            continue
+        unit_id = element.get('id') or value(first(element, 'vmsUnitReference'), 'id')
+        if not unit_id:
+            continue
+        for vms in element.findall('.//{*}vms'):
+            lane = number(value(vms, 'laneNumber'))
+            pictogram = value(vms, 'pictogramDescription') or value(vms, 'vmsLegendCode') or value(vms, 'legendCode')
+            direction = value(vms, 'pictogramDirection') or value(vms, 'direction')
+            legend = normalize_msi_legend(pictogram, direction)
+            flashing = value(vms, 'flashingBeacon') in ('true', '1') or legend in ('J33', 'F01', 'F02-L', 'F02-R')
+            items.append({
+                'gantryId': unit_id,
+                'laneIndex': int(lane) if lane is not None and lane >= 1 else 1,
+                'legend': legend,
+                'flashers': bool(flashing),
+                'observedAt': published,
+                'expiresAt': published + MSI_AGE_MS,
+            })
+    return items
+
+
+def read_spat_json(payload, now):
+    """Parse NDW / Talking Traffic SPaT JSON into normalized VRI signal group states."""
+    if not isinstance(payload, dict):
+        return []
+    intersections = payload.get('intersections') or payload.get('kruispunten') or []
+    results = []
+    for item in intersections:
+        if not isinstance(item, dict):
+            continue
+        intersection_id = item.get('id') or item.get('kruispunt_id') or item.get('intersectionId')
+        if not intersection_id:
+            continue
+        groups = []
+        for sg in item.get('states') or item.get('signalGroups') or []:
+            if not isinstance(sg, dict):
+                continue
+            sg_id = sg.get('signalGroupId') or sg.get('signalGroup') or sg.get('id')
+            raw_state = sg.get('state') or sg.get('eventState')
+            state = SPAT_STATE_MAP.get(str(raw_state), 'DARK')
+            likely = number(sg.get('likelyTime') or sg.get('minEndTime'))
+            groups.append({
+                'signalGroupId': str(sg_id),
+                'state': state,
+                'likelyTime': likely,
+            })
+        if groups:
+            results.append({
+                'intersectionId': str(intersection_id),
+                'observedAt': now,
+                'expiresAt': now + SPAT_AGE_MS,
+                'signalGroups': groups,
+            })
+    return results
