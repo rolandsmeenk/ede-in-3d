@@ -636,10 +636,11 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
           fwd: definitions[0].lanes.map(lane => lane.offset), back: definitions[1].lanes.map(lane => lane.offset)
         } : original;
         const a = l.pts[start], b = l.pts[end];
+        const shiftedEnd = Math.hypot(a.x - from.x, a.z - from.z) > 1.5 || Math.hypot(b.x - to.x, b.z - to.z) > 1.5;
         runs.push({ ...l, ...lanes, definitions, turnTagsAtEnd, alignment, from, to, original, source, keepShape: l.keepShape || !!source,
           osmStart: start === 0 ? l.osmStart : undefined, osmEnd: end === pts.length - 1 ? l.osmEnd : undefined,
           sourceCenter: { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 },
-          paintPath: end - start > 1 ? l.pts.slice(start, end + 1) : undefined,
+          paintPath: end - start > 1 || shiftedEnd ? l.pts.slice(start, end + 1) : undefined,
           headings: [[heading(start, start + 1), heading(end - 1, end)], [heading(end, end - 1), heading(start + 1, start)]] });
       }
       for (let k = 0; k + 1 < stations.length; k++) addRun(stationIndices[k], stationIndices[k + 1], stations[k], stations[k + 1]);
@@ -1054,7 +1055,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
 
   // Paint describes the physical streets, including dead ends and roads AI traffic cannot circulate through.
   // Snapshot their geometry before routing moves stop lines, drops edges and renumbers the surviving junctions.
-  const paintNodes = new Map(nodes.map((n, id) => [n, { id, x: n.x, z: n.z, shape: n.shape }]));
+  const paintNodes = new Map(nodes.map((n, id) => [n, { id, x: n.x, z: n.z, shape: n.shape, signal: false }]));
   const gradeWays = grade ? new Set(grade.sites.flatMap(site => site.profiles.flatMap(profile => profile.wayIds || []))) : null;
   const paintEdges = edges.filter(e => e.laneDefinition ? !e.underpass || gradeWays?.has(e.wayId) : !e.busOnly && !e.underpass && !e.boundary)
     .map(({ from, to, axis, x0, z0, sx, sz, dx, dz, rx, rz, span, len, half, lanes, wayId, layer,
@@ -1438,7 +1439,11 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
   // 8. Signalized intersections are exactly the ones with signal heads (street-details.js)
   for (const s of signalIntersections) {
     const n = nodes.find((m) => Math.abs(m.x - s.x) < 6 && Math.abs(m.z - s.z) < 6); // same tolerance as nodeAt
-    if (n) n.signal = true;
+    if (n) {
+      n.signal = true;
+      const pn = paintNodes.get(n);
+      if (pn) pn.signal = true;
+    }
   }
   // The same signal/right-of-way system uses the mapped Ede signal locations.
   if (GEO.city === 'Ede') for (const p of GEO.ede.signals || []) {
@@ -1448,7 +1453,11 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
       const d = Math.hypot(n.x-p.x,n.z-p.z);
       if (d < distance) { best=n; distance=d; }
     }
-    if (best) best.signal=true;
+    if (best) {
+      best.signal = true;
+      const pn = paintNodes.get(best);
+      if (pn) pn.signal = true;
+    }
   }
 
   // 9. Sides & right of way at each node, for traffic.js. Its arms are its sides (one crosswalk and approach each): a

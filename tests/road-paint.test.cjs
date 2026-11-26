@@ -280,6 +280,28 @@ test('generated paint traverses the mapped bend in either direction without movi
   }
 });
 
+test('generated paint follows uncollapsed road endpoints when a junction collapse shifts a node sideways', () => {
+  const laneDefinition = {
+    lanes: [{ offset: -1.8, width: 3.6 }, { offset: 1.8, width: 3.6 }],
+    centers: [], markings: true, bikes: []
+  };
+  // Traffic edge rotated toward a collapsed node 5.5m sideways, while true road runs along z = 0
+  const span = Math.hypot(40, 5.5);
+  const edge = {
+    from: { id: 0, shape: true }, to: { id: 1, shape: true },
+    x0: 0, z0: 0, sx: 0, sz: 0, dx: 40 / span, dz: 5.5 / span, rx: -5.5 / span, rz: 40 / span,
+    len: span, span, half: 4, laneDefinition, wayId: 'shifted', direction: 0,
+    paintPath: [{ x: 0, z: 0 }, { x: 40, z: 0 }]
+  };
+  const strips = [];
+  buildRoadPaint(new Scene(), { paintEdges: [edge] }, {
+    strip3D: (...args) => strips.push(args),
+    build: () => new Group()
+  });
+  assert.equal(strips.length, 1);
+  assert.ok(Math.abs(strips[0][2]) < 1e-6 && Math.abs(strips[0][5]) < 1e-6, 'centerline stays on true z = 0 axis');
+});
+
 test('off-pavement intervals are clipped without restarting their dash pattern', () => {
   const laneDefinition = {
     lanes: [{ offset: -1.8, width: 3.6 }, { offset: 1.8, width: 3.6 }],
@@ -314,6 +336,35 @@ test('surveyed motorway paint replaces only the overlapping divider on its own w
   assert.deepEqual(strips.filter(s => s[12] === edge && s[2] === 0).map(s => [s[0], s[3]]), [[0, 4], [10, 20]]);
   assert.deepEqual(strips.filter(s => s[12] === lower && s[2] === 0).map(s => [s[0], s[3]]), [[0, 20]]);
   assert.equal(strips.filter(s => s[12] === mark)[0][8], 8);
+});
+
+test('surveyed motorway paint suppresses offset procedural stripes, junction shoot-through, and way-split stubs', () => {
+  const strips = [];
+  const builder = { strip3D: (...args) => strips.push(args), build: () => new Group() };
+  const laneDefinition = {
+    lanes: [{ offset: -3.6, width: 3.6 }, { offset: 0, width: 3.6 }, { offset: 3.6, width: 3.6 }],
+    centers: [], markings: true, fast: true, width: 14, bikes: []
+  };
+  // Main surveyed ramp ending at a non-shape cross-street junction (setback 10m at end)
+  const ramp = {
+    from: { id: 10, shape: true }, to: { id: 11, shape: false },
+    x0: 0, z0: 0, sx: 0, sz: 0, dx: 1, dz: 0, rx: 0, rz: 1,
+    len: 30, span: 40, half: 7, laneDefinition, wayId: 'ramp',
+    stopBar: { ends: [[30, -7], [30, 7]] }
+  };
+  // Short connector at node 10 with no markings on its own wayId, inheriting coverage from ramp
+  const seam = {
+    from: { id: 9, shape: true }, to: { id: 10, shape: true },
+    x0: -2, z0: 0, sx: -2, sz: 0, dx: 1, dz: 0, rx: 0, rz: 1,
+    len: 2, span: 2, half: 7, laneDefinition, wayId: 'seam'
+  };
+  // Single surveyed shoulder marking laterally offset > 1.25m from procedural dividers, covering x in [-2, 30]
+  // Also tests split-wayId (~2) normalization matching the base wayId.
+  const mark = { wayId: 'ramp~2', points: [[-2, 5.5], [30, 5.5]], width: 0.2 };
+  buildRoadPaint(new Scene(), { paintEdges: [seam, ramp] }, builder, undefined, { surveyed: [mark] });
+  assert.equal(strips.filter(s => s[12] === ramp).length, 0, 'no procedural stripes leak onto surveyed ramp or into junction');
+  assert.equal(strips.filter(s => s[12] === seam).length, 0, 'short connector inherits adjacent surveyed coverage');
+  assert.equal(strips.filter(s => s[12] === mark).length, 1, 'surveyed marking itself is still emitted');
 });
 
 test('buildRoadPaint chunks markings into compact spatial cells with shared pipeline and padded bounds', () => {
@@ -415,6 +466,37 @@ test('an ordinary junction keeps its stop bar and has no zebra with no crossing 
   assert.deepEqual(painted.map(p => p.period), [1]);
   assert.equal(painted[0].width, 0.45);
   assert.equal(painted[0].x, edge.len - 0.35);
+});
+
+test('unsignalized Ede intersections omit synthetic stop bars while signalized ones keep them', () => {
+  const makeEdge = (signal) => ({
+    from: { id: 1, signal: false }, to: { id: 2, signal },
+    x0: 0, z0: 0, sx: 0, sz: 0, dx: 1, dz: 0, rx: 0, rz: 1,
+    len: 20, span: 20, half: 3, lanes: [0], wayId: 'w144959104',
+    laneDefinition: { lanes: [{ offset: 0, width: 3.0 }], centers: [], bikes: [], markings: true }
+  });
+  const run = (edge) => {
+    const painted = [];
+    buildRoadPaint(new Scene(), { paintEdges: [edge] }, {
+      strip3D(x, ay, z, bx, by, bz, width) { painted.push(width); },
+      build: () => new Group()
+    });
+    return painted.filter(w => w === 0.45).length;
+  };
+  assert.equal(run(makeEdge(false)), 0, 'unsignalized Ede node has no synthetic stop bar');
+  assert.equal(run(makeEdge(true)), 1, 'signalized Ede node keeps its stop bar');
+  // Fork node tagged as signalized without a crossing arm gets no mid-road stop bar
+  const forkIn = makeEdge(true);
+  const forkOut = { ...makeEdge(false), from: forkIn.to, to: { id: 3, signal: false }, dx: 0.99, dz: 0.14, rx: -0.14, rz: 0.99, wayId: 'w2' };
+  const forkStrips = [];
+  buildRoadPaint(new Scene(), { paintEdges: [forkIn, forkOut] }, {
+    strip3D(x, ay, z, bx, by, bz, width) { forkStrips.push(width); },
+    build: () => new Group()
+  });
+  assert.equal(forkStrips.filter(w => w === 0.45).length, 0, 'fork/merge node without a crossing arm gets no stop bar');
+  // Short internal connector between two signalized nodes gets no stop bar
+  const median = { ...makeEdge(true), from: { id: 1, signal: true }, len: 6, span: 10 };
+  assert.equal(run(median), 0, 'short internal median connector between signalized nodes gets no stop bar');
 });
 
 test('createRoadPaintMaterial caches one material, gates dry/distant noise, and fades smoothly before cull distance', () => {

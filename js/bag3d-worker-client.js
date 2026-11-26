@@ -26,7 +26,7 @@ export function createBagWorker() {
     if (unavailable || pending) return;
     try {
       if (!worker) {
-        worker = new Worker(new URL('./bag3d-worker.js?v=20261124-coverage', import.meta.url), { type: 'module' });
+        worker = new Worker(new URL('./bag3d-worker.js?v=20261127-holes-fix', import.meta.url), { type: 'module' });
         const instance = worker;
         worker.onerror = worker.onmessageerror = () => {
           if (worker === instance) fail();

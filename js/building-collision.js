@@ -1,10 +1,18 @@
 function polygonContains(polygon, x, z) {
   let inside = false;
-  for (let r = -1; r < polygon.holes.length; r++) {
+  for (let r = -1; r < (polygon.holes?.length ?? 0); r++) {
     const ring = r < 0 ? polygon.outer : polygon.holes[r];
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const a = ring[i], b = ring[j];
-      if ((a.z > z) !== (b.z > z) && x < a.x + (b.x - a.x) * (z - a.z) / (b.z - a.z)) inside = !inside;
+    if (!ring?.length) continue;
+    if (typeof ring[0] === 'number') {
+      for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+        const ax = ring[i], az = ring[i + 1], bx = ring[j], bz = ring[j + 1];
+        if ((az > z) !== (bz > z) && x < ax + (bx - ax) * (z - az) / (bz - az)) inside = !inside;
+      }
+    } else {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i], b = ring[j];
+        if ((a.z > z) !== (b.z > z) && x < a.x + (b.x - a.x) * (z - a.z) / (b.z - a.z)) inside = !inside;
+      }
     }
   }
   return inside;
@@ -13,7 +21,7 @@ function polygonContains(polygon, x, z) {
 // Test the actual outline, including courtyards, after the caller's cheap bounds check.
 function polygonBoxOverlaps(polygon, x, z, hx, hz, cs = 1, sn = 0) {
   if (polygonContains(polygon, x, z)) return true;
-  for (let r = -1; r < polygon.holes.length; r++) {
+  for (let r = -1; r < (polygon.holes?.length ?? 0); r++) {
     const ring = r < 0 ? polygon.outer : polygon.holes[r];
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
       const a = ring[j], b = ring[i];
@@ -60,7 +68,7 @@ function polygonContact(polygon, x, z, body, contact) {
       if (length > 0) tryDir(dx / length, dz / length, length);
     };
     // Whole-outline escape candidates avoid the internal seams of triangulated colliders.
-    for (let r = -1; r < polygon.holes.length; r++) {
+    for (let r = -1; r < (polygon.holes?.length ?? 0); r++) {
       const ring = r < 0 ? polygon.outer : polygon.holes[r];
       const n = ring.length;
       if (n === 0) continue;
@@ -162,7 +170,7 @@ function polygonContact(polygon, x, z, body, contact) {
 function circleContact(polygon, x, z, radius, contact) {
   const inside = polygonContains(polygon, x, z);
   let distance = Infinity, nx = 0, nz = 0, edgeX = 0, edgeZ = 0;
-  for (let r = -1; r < polygon.holes.length; r++) {
+  for (let r = -1; r < (polygon.holes?.length ?? 0); r++) {
     const ring = r < 0 ? polygon.outer : polygon.holes[r];
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
       const a = ring[j], b = ring[i], dx = b.x - a.x, dz = b.z - a.z;
@@ -191,7 +199,7 @@ function circleContact(polygon, x, z, radius, contact) {
 function polygonSegmentFraction(polygon, ax, az, dx, dz, enter, exit) {
   if (exit <= enter) return 0;
   const cuts = [enter, exit];
-  for (let r = -1; r < polygon.holes.length; r++) {
+  for (let r = -1; r < (polygon.holes?.length ?? 0); r++) {
     const ring = r < 0 ? polygon.outer : polygon.holes[r];
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
       const a = ring[j], b = ring[i], ex = b.x - a.x, ez = b.z - a.z;

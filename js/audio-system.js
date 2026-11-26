@@ -1,9 +1,9 @@
 import { createSynthResources, createMotorVoice, setControlRate } from './audio-synthesis.js';
 import { createEventResources, playEvent, createWindVoice } from './audio-events.js';
-import { CityAudioSources } from './audio-sources.js?v=20261122-p2000';
+import { CityAudioSources } from './audio-sources.js?v=20261126-soundscape';
 import { CityAcoustics } from './audio-acoustics.js';
 import { terrainHeightAt } from './terrain.js';
-import { EDE_SHEEPFOLDS, createBellScheduler, sampleHeathAt } from './ede-soundscape.js';
+import { EDE_BELL_TOWERS, EDE_SHEEPFOLDS, CARILLON_MOTIFS, createBellScheduler, sampleHeathAt } from './ede-soundscape.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const smooth = (param, value, now, time = 0.035, immediate = false) => {
@@ -47,7 +47,7 @@ class SpatialEmitter {
     this.panner.connect(reflections);
   }
 
-  update(source, listener, now, range = 160, snap = false, immediate = false) {
+  update(source, listener, now, range = 160, snap = false, immediate = false, noObstruction = false) {
     const y = source.y + this.height;
     const distance = Math.hypot(source.x - listener.x, y - listener.y, source.z - listener.z);
     smooth(this.panner.positionX, source.x, now, 0.035, snap);
@@ -57,7 +57,9 @@ class SpatialEmitter {
       smooth(this.panner.orientationX, Math.sin(source.heading), now);
       smooth(this.panner.orientationZ, Math.cos(source.heading), now);
     }
-    if (snap || now >= this.nextObstruction) {
+    if (noObstruction) {
+      this.obstruction = 0;
+    } else if (snap || now >= this.nextObstruction) {
       this.obstruction = this.acoustics.obstruction(source, listener, this.height);
       this.nextObstruction = now + 0.28 + (Math.abs(source.seed || 0) % 1) * 0.12;
     }
@@ -350,11 +352,12 @@ class CityAudioSystem {
     if (this.events.length >= this.limits.events) return false;
     const emitter = new SpatialEmitter(this.context, this.mix, this.reflections, this.acoustics,
       ref, kind === 'talk' ? 1.5 : 0, kind === 'horn');
-    // Do not fade away the first few milliseconds of a crash: its spatial gain and filtering are ready at onset.
-    emitter.update(source, this.listener, now, range, true, crash);
+    const towerBell = kind === 'carillon' || kind === 'churchBell';
+    // Do not fade away the first few milliseconds of a crash or bell strike, and do not let a tower's own collider muffle its belfry.
+    emitter.update(source, this.listener, now, range, true, crash || towerBell, towerBell);
     const when = options.delay ? Math.max(now, options.when ?? now) + options.delay : options.when;
     const voice = playEvent(this.context, this.resources, kind, emitter.input, { seed: source.seed, ...options, ...(when !== undefined ? { when } : null) });
-    this.events.push({ kind, voice, emitter, id: source.id, range, severity, position: { ...source }, follow: kind === 'talk' || kind === 'horn' || kind === 'bell' });
+    this.events.push({ kind, voice, emitter, id: source.id, range, severity, position: { ...source }, noObstruction: towerBell, follow: kind === 'talk' || kind === 'horn' || kind === 'bell' });
     return true;
   }
 
@@ -410,6 +413,38 @@ class CityAudioSystem {
     if (this.emit('horn', { id: entity, ...entity.position, heading: entity.heading, seed: 4 }, { intensity: 0.7 })) this.lastHorn = now;
   }
 
+  chimeCarillon(motif = 'hour') {
+    if (!this.ready || !this.enabled || !this.supported || this.disposed) return false;
+    if (!this.context) this.initialize();
+    if (this.context.state !== 'running') {
+      this.context.resume().then(() => {
+        if (!this.enabled || document.hidden || this.disposed) return this.suspend();
+        this.onStateChange();
+        this.chimeCarillon(motif);
+      }).catch(() => {});
+      return true;
+    }
+    const now = this.context.currentTime;
+    if (this.master && this.master.gain.value < 0.5) smooth(this.master.gain, 0.65, now, 0.04);
+    const tower = EDE_BELL_TOWERS[0];
+    const notes = CARILLON_MOTIFS[motif] ?? CARILLON_MOTIFS.hour;
+    const tx = tower.x, tz = tower.z;
+    const dx = tx - this.listener.x, dz = tz - this.listener.z;
+    const inRange = dx * dx + dz * dz <= tower.range * tower.range;
+    const source = inRange
+      ? { id: tower, x: tx, y: terrainHeightAt(tx, tz) + tower.belfryHeight, z: tz, seed: ++this.natureSequence }
+      : { id: tower, x: this.listener.x, y: this.listener.y + 32, z: this.listener.z, seed: ++this.natureSequence };
+    const played = this.emit('carillon', source, { notes, intensity: 0.95, range: tower.range, ref: 36, priority: true });
+    if (played && motif !== 'quarter') {
+      const last = notes[notes.length - 1];
+      this.emit('churchBell', source, {
+        pitch: motif === 'half' ? tower.pitch * 1.1892 : tower.pitch,
+        strikes: 1, delay: (last?.offset ?? 0) + 1.1, intensity: 0.95, range: tower.range, ref: 38, priority: true
+      });
+    }
+    return played;
+  }
+
   update(dt, elapsed, camera, night = false, environment = null) {
     if (!this.ready || !this.enabled || this.context?.state !== 'running' || document.hidden) return;
     this.accumulator += dt;
@@ -461,7 +496,7 @@ class CityAudioSystem {
           event.position.z = event.id.z;
           event.position.heading = event.id.yaw + event.id.yawOffset;
         }
-        event.emitter.update(event.position, this.listener, now, event.range);
+        event.emitter.update(event.position, this.listener, now, event.range, false, false, event.noObstruction);
       }
     }
     this.updatePool(this.motors, sources.motors, this.limits.motors, now, dt);

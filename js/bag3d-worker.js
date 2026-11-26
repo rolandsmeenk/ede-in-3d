@@ -4,7 +4,7 @@ import {
 } from '../vendor/three/build/three.core.js';
 import { projectBagMesh, projectEcefToScene } from './bag3d-projection.js';
 import { bakeFacadeMaskAtlas } from './ede-facade-atlas.js';
-import { matchBagCoverage } from './bag3d-coverage.js';
+import { matchBagCoverage } from './bag3d-coverage.js?v=20261127-holes-fix';
 
 function attribute(data) {
   if (!data) return;

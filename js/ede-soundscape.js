@@ -5,7 +5,7 @@ export const EDE_BELL_TOWERS = Object.freeze([
   { id: 'oude-kerk', name: 'Oude Kerk', x: 0, z: 0, belfryHeight: 32, pitch: 0.90, carillon: true, range: 650 },
   { id: 'oude-kerk-lunteren', name: 'Oude Kerk Lunteren', x: -3410.36, z: -4206.54, belfryHeight: 24, pitch: 1.00, carillon: false, range: 520 },
   { id: 'oude-kerk-otterlo', name: 'Oude Kerk Otterlo', x: 6977.6, z: -6100.6, belfryHeight: 19, pitch: 1.08, carillon: false, range: 480 },
-  { id: 'alexanderkerk-bennekom', name: 'Oude of Sint-Alexanderkerk', x: 365, z: 5425, belfryHeight: 19, pitch: 0.96, carillon: false, range: 500 },
+  { id: 'alexanderkerk-bennekom', name: 'Oude of Sint-Alexanderkerk', x: 333.31, z: 5339.9, belfryHeight: 19, pitch: 0.96, carillon: false, range: 500 },
 ]);
 
 export const EDE_SHEEPFOLDS = Object.freeze([

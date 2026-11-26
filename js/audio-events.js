@@ -427,7 +427,7 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
   const intensity = clamp(finite(options.intensity, 1));
   const levels = {
     footstep: 0.22, talk: 0.065, horn: 0.23, bell: 0.2, signal: 0.13, crash: 0.35,
-    crossingBell: 0.22, churchBell: 0.32, carillon: 0.22, bird: 0.10, sheep: 0.13
+    crossingBell: 0.28, churchBell: 0.68, carillon: 0.62, bird: 0.14, sheep: 0.16
   };
   if (!Object.hasOwn(levels, kind) || intensity === 0) return { endTime: start, dispose() {} };
   const gain = ctx.createGain();

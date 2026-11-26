@@ -151,8 +151,11 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
   const lines = [];
   const bends = new Map();
   const surveyByWay = new Map();
+  const surveyedFastAtNode = new Map();
+  const edgesAtNode = new Map();
   const fittedRoads = new Map();
   const mappedRoads = new Map();
+  const baseWayId = id => (typeof id === 'string' ? id.split('~')[0] : id);
 
   // Flat strip w wide from a to b, with a dash pattern (period, duty cycle) running along it
   function strip(ax, az, bx, bz, w, col, period = 1, duty = 1, phase = 0, flow = 1, edge) {
@@ -161,8 +164,9 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
 
   for (const mark of surveyed) {
     if (!mark.wayId || mark.points?.length < 2 || !mark.points?.every(p => p.length === 2 && p.every(Number.isFinite))) continue;
-    if (!surveyByWay.has(mark.wayId)) surveyByWay.set(mark.wayId, []);
-    const way = surveyByWay.get(mark.wayId);
+    const wayId = baseWayId(mark.wayId);
+    if (!surveyByWay.has(wayId)) surveyByWay.set(wayId, []);
+    const way = surveyByWay.get(wayId);
     let phase = mark.phase ?? 0;
     for (let i = 1; i < mark.points.length; i++) {
       const a = mark.points[i - 1], b = mark.points[i];
@@ -172,6 +176,37 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
       phase += length;
       way.push([a, b, length]);
     }
+  }
+
+  for (const e of network.paintEdges || network.edges) {
+    for (const [node, dir] of [[e.from, 1], [e.to, -1]]) {
+      if (!edgesAtNode.has(node.id)) edgesAtNode.set(node.id, []);
+      edgesAtNode.get(node.id).push([e.dx * dir, e.dz * dir]);
+    }
+    const wayId = baseWayId(e.wayId);
+    if (!e.laneDefinition?.fast || !surveyByWay.has(wayId)) continue;
+    for (const node of [e.from, e.to]) {
+      if (!surveyedFastAtNode.has(node.id)) surveyedFastAtNode.set(node.id, new Set());
+      surveyedFastAtNode.get(node.id).add(wayId);
+    }
+  }
+
+  function surveyFor(e) {
+    if (!e.laneDefinition?.fast) return null;
+    const wayId = baseWayId(e.wayId);
+    const own = surveyByWay.get(wayId);
+    const ways = new Set(own ? [wayId] : []);
+    for (const node of [e.from, e.to]) {
+      for (const wid of surveyedFastAtNode.get(node.id) ?? []) ways.add(wid);
+    }
+    if (!ways.size) return null;
+    if (ways.size === 1 && own) return own.map(seg => [seg, true]);
+    const combined = [];
+    for (const wid of ways) {
+      const isOwn = wid === wayId;
+      for (const seg of surveyByWay.get(wid)) combined.push([seg, isOwn]);
+    }
+    return combined;
   }
 
   function drawUnsurveyed(line) {
@@ -207,26 +242,29 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
       }
       if (inside) paint(start, b);
     };
-    const survey = e.laneDefinition?.fast && surveyByWay.get(e.wayId);
+    const survey = surveyFor(e);
     if (!survey?.length) {
       draw(0, len);
       return;
     }
     const project = ([px, pz]) => (px - x) * dx + (pz - z) * dz;
     const offset = ([px, pz]) => (px - x) * dz - (pz - z) * dx;
+    const maxAdjacentOffset = Math.max(e.laneDefinition.width ?? e.half * 2 ?? 14, 14);
     const covered = [];
-    for (const [a, b, length] of survey) {
+    for (const [[a, b], isOwn] of survey) {
       const from = project(a), to = project(b);
-      if (Math.abs(to - from) < length * 0.8 || Math.max(Math.abs(offset(a)), Math.abs(offset(b))) > 1.25) continue;
+      if (Math.abs(to - from) < 0.05) continue;
+      if (!isOwn && Math.min(Math.abs(offset(a)), Math.abs(offset(b))) > maxAdjacentOffset) continue;
       const lo = Math.max(0, Math.min(from, to)), hi = Math.min(len, Math.max(from, to));
       if (hi - lo > 0.05) covered.push([lo, hi]);
     }
     let cursor = 0;
+    const minGap = 2.0;
     for (const [lo, hi] of covered.sort((a, b) => a[0] - b[0])) {
-      if (lo > cursor) draw(cursor, lo);
+      if (lo - cursor > minGap) draw(cursor, lo);
       cursor = Math.max(cursor, hi);
     }
-    if (cursor < len) draw(cursor, len);
+    if (len - cursor > minGap) draw(cursor, len);
   }
 
   // Translate original paint offsets through the fitted lane band, including its opposite direction.
@@ -257,9 +295,10 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
   const along = (e, o, w, col, period = 1, duty = 1, solidEnd = false) => {
     const start = (e.sx - e.x0) * e.dx + (e.sz - e.z0) * e.dz;
     const fast = e.laneDefinition?.fast;
-    const startAt = fast || e.from.shape ? -start : 0.9;
-    const endAt = fast || e.to.shape ? e.span - start : e.len - (solidEnd ? 10 : 0.9);
-    if (solidEnd) {
+    const surveyedFast = fast && surveyByWay.has(baseWayId(e.wayId));
+    const startAt = (fast && !surveyedFast) || e.from.shape ? -start : 0.9;
+    const endAt = (fast && !surveyedFast) || e.to.shape ? e.span - start : e.len - (solidEnd ? 10 : 0.9);
+    if (solidEnd && !surveyedFast) {
       const bar = e.stopBar?.ends;
       let end = at(e, e.len, o);
       if (bar) {
@@ -395,6 +434,12 @@ function buildRoadPaint(scene, network, sharedBuilder = null, heightAt, { survey
       if (f.stopBar?.ends) {
         strip(...f.stopBar.ends[0], ...f.stopBar.ends[1], 0.45, WHITE, 1, 1, 0, 1, f);
         continue;
+      }
+      if (f.wayId && !f.stopBar) {
+        if (f.to.signal === false) continue;
+        if (f.to.signal && f.from.signal && f.len < 10) continue;
+        const arms = edgesAtNode.get(f.to.id);
+        if (f.to.signal && arms?.length > 1 && !arms.some(([ux, uz]) => Math.abs(ux * f.dz - uz * f.dx) > 0.45)) continue;
       }
       const physical = f.laneDefinition?.lanes;
       const left = physical ? physical[0].offset - physical[0].width / 2 : back ? Math.max(0, f.lanes[0] - 1.8) : -f.half;

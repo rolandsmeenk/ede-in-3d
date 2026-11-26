@@ -110,10 +110,15 @@ export function mappedRoadPath(edge) {
   const source = edge.direction ? edge.paintPath.toReversed() : edge.paintPath;
   const first = source[0], last = source.at(-1);
   const length = Math.hypot(last.x - first.x, last.z - first.z);
-  if (!length || !source.some(({ x, z }) =>
-    Math.abs((x - first.x) * (last.z - first.z) - (z - first.z) * (last.x - first.x)) > length * 0.75)) return;
-  const points = [{ x: edge.x0, z: edge.z0 }, ...source.slice(1, -1),
-    { x: edge.x0 + edge.dx * edge.span, z: edge.z0 + edge.dz * edge.span }];
+  if (!length) return;
+  const x1 = edge.x0 + edge.dx * edge.span, z1 = edge.z0 + edge.dz * edge.span;
+  const endShift = Math.max(Math.hypot(first.x - edge.x0, first.z - edge.z0), Math.hypot(last.x - x1, last.z - z1));
+  const curved = source.some(({ x, z }) =>
+    Math.abs((x - first.x) * (last.z - first.z) - (z - first.z) * (last.x - first.x)) > length * 0.75);
+  if (!curved && (endShift <= 1.5 || edge.stopBar)) return;
+  const points = endShift > 1.5 && !edge.stopBar
+    ? source
+    : [{ x: edge.x0, z: edge.z0 }, ...source.slice(1, -1), { x: x1, z: z1 }];
   const sections = [];
   let distance = 0;
   for (const point of points) {

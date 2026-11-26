@@ -160,3 +160,14 @@ test('listeners in a courtyard hear nearby voices but remain sheltered by its wa
   assert.equal(acoustics.obstruction({ x: 8, y: 1.7, z: 6 }, listener), 0);
   assert.ok(acoustics.obstruction({ x: 15, y: 1.7, z: 6 }, listener) > 0.7);
 });
+
+test('polygonContains supports flat coordinate rings used by compact building footprints', () => {
+  const flatCourtyard = {
+    outer: [0, 0, 12, 0, 12, 12, 0, 12],
+    holes: [[3, 3, 9, 3, 9, 9, 3, 9]],
+  };
+  assert.equal(polygonContains(flatCourtyard, 1, 6), true);
+  assert.equal(polygonContains(flatCourtyard, 6, 6), false);
+  assert.equal(polygonContains(flatCourtyard, -1, 6), false);
+  assert.equal(polygonContains({ outer: [0, 0, 10, 0, 10, 10, 0, 10] }, 5, 5), true);
+});

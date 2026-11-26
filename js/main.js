@@ -34,7 +34,7 @@ import { createKiteFlyers } from './ede-kites.js';
 import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js?v=20261122-municipal-coverage';
 import { createExpansionCulling, setupSceneCulling, updateSceneCulling, updateViewRange } from './scene-culling.js?v=20261126-iphone-range';
-import { CityAudioSystem } from './audio-system.js?v=20261122-p2000';
+import { CityAudioSystem } from './audio-system.js?v=20261126-soundscape';
 import { getExpansionTerrain, loadTerrain, terrainHeightAt } from './terrain.js';
 import { createTerrainTiles } from './ede-terrain-tiles.js';
 import { createEdeHeathCover } from './ede-heath.js';
@@ -1064,7 +1064,11 @@ export async function initApp() {
     const fly = loc.focus && controllerManager.activeMode === 'helicopter';
     const x = fly ? loc.x - Math.sin(loc.heading) * 52 : loc.x;
     const z = fly ? loc.z - Math.cos(loc.heading) * 52 : loc.z;
-    return teleportTo(x, z, loc.heading, fly ? terrainHeightAt(x, z) + 65 : null, loc.focus);
+    const destination = teleportTo(x, z, loc.heading, fly ? terrainHeightAt(x, z) + 65 : null, loc.focus);
+    if (key === 'oudekerk' && lightingSystem.activePresetId !== 'midnight') {
+      setTimeout(() => audioSystem.chimeCarillon('quarter'), 450);
+    }
+    return destination;
   }
 
   const mapSystem = new NYCMapSystem({
