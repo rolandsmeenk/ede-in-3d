@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { buildRoadNetwork, isMotorwayContinuation, roadEdgeKey } from './road-network.js?v=20261122-startup';
-import { ACV_TRUCK, buildAcvTruck } from './ede-refuse-truck.js';
+import { ACV_TRUCK, buildAcvTruck, SALT_SPREADER, buildSaltSpreader } from './ede-refuse-truck.js?v=20261126-winter-traffic';
 import { CARGO_TRUCK_SPECS, buildCargoTruckGeometry, createCargoTruckMaterial } from './ede-cargo-truck.js';
 import { dutchVehicleKind, cargoShare } from './ede-vehicle-mix.js';
 import { TRACTOR, TRACTOR_PALETTES, buildEdeTractor } from './ede-tractor.js';
@@ -57,6 +57,13 @@ const CARGO_CAPACITY = { rigid: 5, semi: 8 };
 const NUM_BUSES = 24;
 const NUM_BIKES = 96;
 const MAX_MOUNTAIN_BIKES = 5;
+const TRAFFIC_WEATHER = {
+  dry: { speed: 1, headway: 1, cornering: 1, passing: 0.6, spreaders: 0 },
+  rain: { speed: 0.88, headway: 1.3, cornering: 0.83, passing: 1.0, spreaders: 0 },
+  fog: { speed: 0.76, headway: 1.5, cornering: 1, passing: 1.4, spreaders: 0 },
+  frost: { speed: 0.77, headway: 1.55, cornering: 0.67, passing: 1.4, spreaders: 1 },
+  snow: { speed: 0.65, headway: 1.8, cornering: 0.53, passing: 1.8, spreaders: 2 }
+};
 
 // Intelligent Driver Model: max acceleration, comfortable braking, time headway, standstill gap; the sideways
 // acceleration drivers accept in bends, which sets how fast they take each turn or lane shift; and how hard they brake
@@ -120,6 +127,7 @@ const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, busSchedule, roadTraffic, parkingData, pilot = {}) {
   const group = new THREE.Group();
   group.name = 'ManhattanTrafficAndPedestrians';
+  let trafficWeather = TRAFFIC_WEATHER.dry;
   let collisionListener = null;
   const collisionEvent = { a: null, b: null, kind: 'vehicle', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, speed: 0 };
 
@@ -539,8 +547,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const tractors = [modeledVehicle(buildEdeTractor(), TRACTOR, 'tractor', BUS_DRIVER, 'bus')];
   const ambulances = [modeledVehicle(buildEdeAmbulance(), AMBULANCE, 'ambulance', CAR_DRIVER, 'suv')];
   const fireEngines = [modeledVehicle(buildEdeFireEngine(), FIRE_ENGINE, 'fire', BUS_DRIVER, 'bus')];
+  const saltSpreaders = Array.from({ length: TRAFFIC_WEATHER.snow.spreaders }, () =>
+    modeledVehicle(buildSaltSpreader(), SALT_SPREADER, 'spreader', BUS_DRIVER, 'bus'));
   const responseFleet = { police: cars.filter(v => v.isPolice), ambulance: ambulances, fire: fireEngines };
-  const modeledVehicles = [...refuseTrucks, ...tractors, ...ambulances, ...fireEngines];
+  const modeledVehicles = [...refuseTrucks, ...tractors, ...ambulances, ...fireEngines, ...saltSpreaders];
   const cargoMaterial = createCargoTruckMaterial();
   const cargoFleets = Object.entries(CARGO_CAPACITY).map(([roadProfile, capacity]) => {
     const spec = CARGO_TRUCK_SPECS[roadProfile];
@@ -570,7 +580,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   const nearFoot = activeTravel ? [] : null;
   const nearBikes = [], nearMountainBikes = [];
   const queryLocal = indexLocalRoads(edges.filter(e => !e.busExclusive), nodes.filter(n => n.signal));
-  const vehicleSpawns = { ambient: [], van: [], refuse: [], tractor: [], ambulance: [], fire: [], rigid: [], semi: [] };
+  const vehicleSpawns = { ambient: [], van: [], refuse: [], tractor: [], ambulance: [], fire: [], rigid: [], semi: [], spreader: [] };
   const vehicleSpawnPools = Object.entries(vehicleSpawns);
   const bikeSpawns = [], mountainBikeSpawns = [], footSpawns = [];
   let carTarget = 0, bikeTarget = 0, mountainBikeTarget = 0, pedTarget = 0;
@@ -987,11 +997,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   }
   function freeAcc(v) {
     const cruise = v.liveCruise ?? vehicleCruise(v, v.edge);
-    return v.driver.a * (1 - (v.speed / Math.max(0.5, Math.min(roadSpeed(v), cruise))) ** 4);
+    const target = Math.min(roadSpeed(v), cruise) * trafficWeather.speed;
+    return v.driver.a * (1 - (v.speed / Math.max(0.5, target)) ** 4);
   }
   function brake(v, gap, speed, s0 = v.driver.s0, T = v.driver.T) {
     const { a, b } = v.driver;
-    const desired = s0 + Math.max(0, v.speed * T + (v.speed * (v.speed - speed)) / (2 * Math.sqrt(a * b)));
+    const desired = s0 + Math.max(0, v.speed * T * trafficWeather.headway +
+      (v.speed * (v.speed - speed)) / (2 * Math.sqrt(a * b)));
     return -a * (desired / Math.max(gap, 0.1)) ** 2;
   }
   // ...and for a line d metres ahead to stop s0 short of: no time gap to keep to a line
@@ -1330,9 +1342,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     if (v.move.out[v.lane] < 0) {
       const t = v.lane + Math.sign(nearestLane(v.move, v.lane) - v.lane);
       if ((!allowed || allowed.includes(t)) && laneSafe(v, t, -4)) target = t;
-    } else if (v.bike || v.speed > 2) {
+    } else if (v.roadProfile !== 'spreader' && (v.bike || v.speed > 2)) {
       // bikes never sit in a queue: they take any adjacent lane with room that lets them keep going
-      let best = laneAcc(v, v.lane) + (v.bike ? 0.05 : 0.6);
+      let best = laneAcc(v, v.lane) + (v.bike ? 0.05 : trafficWeather.passing);
       for (let t = v.lane - 1; t <= v.lane + 1; t += 2) {
         if (t < 0 || t >= e.lanes.length || v.move.out[t] < 0 || !laneSafe(v, t, v.bike ? -6 : -3)) continue;
         const acc = laneAcc(v, t);
@@ -1385,7 +1397,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   }
 
   // Fastest v can take curve c at without exceeding the sideways acceleration its driver accepts
-  const bendSpeed = (v, c) => Math.sqrt(v.driver.aLat / Math.max(c.curv, 1e-3));
+  const bendSpeed = (v, c) => Math.sqrt(v.driver.aLat * trafficWeather.cornering / Math.max(c.curv, 1e-3));
   function lineClearance(v) {
     if (!v.busRun) return v.half;
     const limit = Math.min(v.half, v.edge.len * 0.45);
@@ -2268,7 +2280,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     v.yielding = false;
     v.wait = 0;
     const approachSpeed = e.motorway ? 0.9 : 0.5;
-    v.speed = Math.min(roadSpeed(v), vehicleCruise(v, e) * approachSpeed);
+    v.speed = Math.min(roadSpeed(v), vehicleCruise(v, e) * approachSpeed) * trafficWeather.speed;
     v.acc = 0;
     if (v.refuseTruck) {
       v.collectionAt = null;
@@ -2450,7 +2462,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       if (!e || roadTraffic.isClosed(e) || e.len < 2 * v.half + 10) continue;
       const allowed = ambientLanes(v, e);
       if (allowed && !allowed.length) continue;
-      const lane = allowed ? allowed[Math.floor(Math.random() * allowed.length)] : Math.floor(Math.random() * e.lanes.length);
+      const lane = v.roadProfile === 'spreader' ? allowed.at(-1)
+        : allowed ? allowed[Math.floor(Math.random() * allowed.length)] : Math.floor(Math.random() * e.lanes.length);
       const along = (focusX - e.sx) * e.dx + (focusZ - e.sz) * e.dz;
       const minS = Math.max(v.half + 5, along - rMax);
       const maxS = Math.min(e.len - v.half - 5, along + rMax);
@@ -2574,7 +2587,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       }
     }
     b.impactTime = Math.max(0, b.impactTime - dt);
-    if (!b.impactTime) b.speed = Math.min(b.cruise, b.speed + dt);
+    if (!b.impactTime) b.speed = Math.min(b.cruise * trafficWeather.speed, b.speed + dt);
     if (remaining > .7 && trip?.hub.bikeParking) b.speed = Math.min(b.speed, Math.sqrt(3 * remaining));
     let gap = b.dir > 0 ? b.edge.len - b.s : b.s;
     if (gap < 12) {
@@ -2920,6 +2933,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     for (const { pivot, front } of wheels) if (front) pivot.rotation.y = v.steer;
     if (brake) brake.emissiveIntensity = v.acc < -0.8 || v.speed < 0.3 ? 1.3 : 0.19;
     if (v.refuseTruck) beacon.emissiveIntensity = clock < v.collectionUntil && (clock * 2.2) % 1 < 0.48 ? 2.5 : 0.23;
+    else if (v.roadProfile === 'spreader') beacon.emissiveIntensity = (clock * 2.2) % 1 < 0.48 ? 3.4 : 0.23;
     else if (beacon) beacon.emissiveIntensity = v.liveResponse && (clock * 3.1) % 1 < 0.38 ? 3.4 : 0.20;
   }
 
@@ -3106,6 +3120,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
   let lastFocusZ = Infinity;
   const carPopulation={cursor:0}, bikePopulation={cursor:0}, mountainBikePopulation={cursor:0}, refusePopulation={cursor:0};
   const tractorPopulation = { cursor: 0 }, ambulancePopulation = { cursor: 0 };
+  const spreaderPopulation = { cursor: 0 };
   let nextTractorPalette = 0, nextTractorSpawn = 0;
   function spawnTractor(v, min, max, protect) {
     if (clock < nextTractorSpawn) return false;
@@ -3239,8 +3254,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     }
   }
 
-  function update(dt, elapsed, focusPos = null, playerEntity = null, activeMode = 'car', camera = null) {
+  function update(dt, elapsed, focusPos = null, playerEntity = null, activeMode = 'car', camera = null, weather = 'dry') {
     clock = elapsed;
+    trafficWeather = TRAFFIC_WEATHER[weather];
     trips?.updateClock(elapsed);
     avePhase = signalPhase(elapsed, true);
     stPhase = signalPhase(elapsed, false);
@@ -3281,6 +3297,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       mesh.count = 0;
     }
     populate(refuseTrucks, refusePopulation, 1, spawnVehicle, 85, jump);
+    populate(saltSpreaders, spreaderPopulation, trafficWeather.spreaders, spawnVehicle, 85, jump);
     if (tractors[0].edge) nextTractorSpawn = clock + 45;
     populate(tractors, tractorPopulation, tractors.length, spawnTractor, 100, jump);
     populate(ambulances, ambulancePopulation, ambulances.length, spawnAmbulance, 100, jump);
@@ -3436,6 +3453,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     roadTraffic,
     bikes,
     refuseTrucks,
+    saltSpreaders,
     cargoTrucks,
     tractors,
     ambulances,

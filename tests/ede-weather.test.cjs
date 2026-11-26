@@ -196,6 +196,7 @@ test('visible refresh retains stale weather through an outage and expires it at 
   assert.equal(weather.activeReading, weather.state.current);
   assert.equal(weather.windReading, weather.state.current);
   assert.equal(calls, 1);
+  assert.equal(weather.trafficCondition, 'fog');
   assert.ok(weather.update(10).fog > .99);
 
   fail = true;
@@ -220,6 +221,7 @@ test('visible refresh retains stale weather through an outage and expires it at 
   assert.equal(weather.state.status, 'expired');
   assert.equal(weather.activeReading, null);
   assert.equal(weather.windReading, preset);
+  assert.equal(weather.trafficCondition, 'dry');
   assert.equal(weather.state.current.observedAt, observedAt);
   weather.update(15);
   assert.equal(weather.update(.01).blend, 0);
@@ -242,6 +244,30 @@ test('turning Live Weather off cancels an in-flight read and a late response can
   assert.deepEqual(weather.state, { enabled: false, status: 'off', current: null });
   assert.equal(weather.activeReading, null);
   assert.equal(weather.update(10).blend, 0);
+});
+
+test('traffic reacts to preset frost and to fresh snowfall or freezing rain in Live', async t => {
+  const { createLiveWeather } = await import('../js/ede-weather.js');
+  let sample = { weather_code: 66, temperature_2m: 1 };
+  const weather = createLiveWeather({
+    now: () => observedAt, page: { hidden: false, addEventListener() {} },
+    request: async () => reading(sample)
+  });
+  t.after(() => weather.setEnabled(false));
+  weather.setPreset('rain', 'autumn');
+  assert.equal(weather.trafficCondition, 'rain');
+  weather.setPreset('default', 'winter');
+  assert.equal(weather.trafficCondition, 'frost');
+  weather.setEnabled(true);
+  await setImmediate();
+  assert.equal(weather.trafficCondition, 'frost');
+  weather.setEnabled(false);
+  sample = { weather_code: 85, temperature_2m: 2 };
+  weather.setEnabled(true);
+  await setImmediate();
+  assert.equal(weather.trafficCondition, 'snow');
+  weather.setEnabled(false);
+  assert.equal(weather.trafficCondition, 'frost');
 });
 
 test('preset wind, rain and snow drive the scene offline and return after Live is turned off', async t => {

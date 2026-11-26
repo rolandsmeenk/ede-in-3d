@@ -55,6 +55,16 @@ export function weatherCondition(code) {
   return 'Cloud conditions';
 }
 
+function trafficCondition(reading, temperature) {
+  const condition = reading && weatherCondition(reading.code);
+  if (condition === 'Snow' || reading?.snowfall > 0) return 'snow';
+  if (temperature <= 0 || [56, 57, 66, 67].includes(reading?.code)) return 'frost';
+  if (condition === 'Fog') return 'fog';
+  if (reading?.rain > 0 || reading?.showers > 0 ||
+      ['Rain', 'Showers', 'Thunderstorms', 'Drizzle'].includes(condition)) return 'rain';
+  return 'dry';
+}
+
 function parseTurbineWind(park, time) {
   if (park?.time !== time || !PARK_FIELDS.every(key => Number.isFinite(park[key]))) return;
   const { wind_speed_80m: low, wind_speed_120m: high, wind_direction_80m: from, wind_direction_120m: to } = park;
@@ -301,6 +311,7 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
   let active = null;
   let preset = null;
   let sceneReading = null, sceneTemperature, presetTemperature, presetIce = 0;
+  let roadConditions = 'dry';
   let failed = false;
   let nextFetch = 0;
   let pending;
@@ -319,6 +330,7 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
     if (nextReading !== sceneReading || temperature !== sceneTemperature) {
       sceneReading = nextReading;
       sceneTemperature = temperature;
+      roadConditions = trafficCondition(sceneReading, sceneTemperature);
       transition.setReading(sceneReading, sceneTemperature, enabled ? active?.rinkIce ?? 0 : presetIce);
     }
     const displayed = enabled ? current : null;
@@ -381,6 +393,7 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
     },
     get state() { return state; },
     get activeReading() { return active; },
+    get trafficCondition() { return roadConditions; },
     get windReading() { return sceneReading ?? PRESET_WIND; },
     get turbineWind() { return sceneReading?.turbineWind ?? sceneReading ?? PRESET_WIND; }
   };

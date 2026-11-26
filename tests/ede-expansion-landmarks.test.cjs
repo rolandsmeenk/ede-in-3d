@@ -40,11 +40,14 @@ test('Expansion landmarks build finite meshes in the surveyed frame', async () =
   });
   const sheepFleeceInfluences = [0];
   const { EXPANSION_LANDMARK_FACTORIES } = load('ede-expansion-landmarks.js', {
-    'three/webgpu': three, './ede-civic-landmarks.js': civic, './terrain.js': terrain,
+    'three/webgpu': three, 'three/tsl': tsl, './ede-civic-landmarks.js': civic, './terrain.js': terrain,
     './ede-grade.js': { nearbyRailHeightAt: () => undefined, RAIL_TOP: 0.13 },
     './ede-expansion-landmark-surveys.js': surveys, './ede-survey-landmark.js': surveyBuilder,
     './tree-seasons.js': { sheepFleeceInfluences },
-    './ede-windmill.js': load('ede-windmill.js', { 'three/webgpu': three }),
+    './ede-windmill.js': load('ede-windmill.js', {
+      'three/webgpu': three, 'three/tsl': tsl,
+      './tsl-materials.js': { cityUniforms: { uInteriorGlow: tsl.uniform(0.48) } },
+    }),
   });
   const amadeus = load('ede-amadeus-survey.js');
   const { EDE_AMADEUS_LANDMARK_FACTORIES } = load('ede-amadeus-landmark.js', {

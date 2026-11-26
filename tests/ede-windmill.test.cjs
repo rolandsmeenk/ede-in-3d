@@ -9,14 +9,16 @@ const dt = 1 / 60;
 
 async function windmill(heading = 0, options) {
   const three = await import('../vendor/three/build/three.webgpu.js');
-  const { addWindmillSailcloth, createWindmillRig } = loadModule(source, { imports: { 'three/webgpu': three } });
+  const { addWindmillSailcloth, createWindmillRig, windmillLightingFor } = loadModule(source, {
+    imports: { 'three/webgpu': three, 'three/tsl': {}, './tsl-materials.js': {} },
+  });
   const tower = new three.Group();
   tower.rotation.y = heading;
   const hubHeight = options?.turbine ? 99.5 : 24.65;
   const { cap, sails } = createWindmillRig(tower, hubHeight, 4.90, 0.22, options);
   tower.updateMatrixWorld(true);
   return {
-    tower, cap, sails,
+    tower, cap, sails, windmillLightingFor,
     addCloth() {
       return addWindmillSailcloth(sails, { angle: 0.34, radii: [11.775, 11.85], root: 1.65, innerWidth: 0.92, outerWidth: 1.55 });
     },
@@ -119,4 +121,39 @@ test('the four cloth panels move with the wooden sails, reef in stronger wind an
   assert.equal(cloth.visible, true);
   mill.tick({ windDirection: 180, windSpeed: 0 }, 1200);
   assert.equal(cloth.visible, false);
+});
+
+
+test('the Keetmolen Christmas star and Doesburgermolen event use local dates and preview seasons', async () => {
+  const { windmillLightingFor } = await windmill();
+  for (const date of ['2026-12-12', '2027-01-09']) assert.equal(windmillLightingFor(date).keetStar, true);
+  for (const date of ['2026-12-11', '2027-01-10']) assert.equal(windmillLightingFor(date).keetStar, false);
+  assert.equal(windmillLightingFor(null, 0, 'winter').keetStar, true);
+  assert.equal(windmillLightingFor(null, 0, 'autumn').keetStar, false);
+
+  const event = (date, minutes) => windmillLightingFor(date, minutes).doesburgerFloodlights;
+  assert.equal(event('2026-11-06', 959), false);
+  assert.equal(event('2026-11-06', 960), true);
+  assert.equal(event('2026-11-07', 959), true);
+  assert.equal(event('2026-11-07', 960), false);
+  assert.equal(event('2027-11-06', 960), false);
+  assert.equal(windmillLightingFor(null, 0, 'autumn').doesburgerFloodlights, true);
+  assert.equal(windmillLightingFor(null, 0, 'winter').doesburgerFloodlights, false);
+});
+
+test('the Christmas star parks the sails and furls their cloth until it is removed', async () => {
+  const mill = await windmill();
+  const cloth = mill.addCloth();
+  const wind = { windDirection: 180, windSpeed: 18 };
+  mill.tick(wind, 90);
+  assert.equal(cloth.visible, true);
+  const parked = -0.08;
+  mill.sails.userData.parkAngle = parked;
+  mill.tick(wind, 90);
+  assert.equal(mill.sails.rotation.z, parked);
+  assert.equal(cloth.visible, false);
+  delete mill.sails.userData.parkAngle;
+  mill.tick(wind, 90);
+  assert.notEqual(mill.sails.rotation.z, parked);
+  assert.equal(cloth.visible, true);
 });

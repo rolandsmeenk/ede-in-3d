@@ -1,4 +1,4 @@
-import('./main.js?v=20261126-pine-density')
+import('./main.js?v=20261126-winter-traffic')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

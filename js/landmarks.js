@@ -5,6 +5,7 @@ import { createChicaSculpture, createChicoSculpture, createShermanMonument } fro
 import { terrainHeightAt } from './terrain.js';
 import { EDE_MODELED_LANDMARKS, modeledLandmarkFootprints } from './ede-landmark-sites.js';
 import { createConcordiaComplex } from './ede-concordia-buildings.js';
+import { windmillLightingFor } from './ede-windmill.js';
 import { createStingerbol } from './ede-stingerbol.js';
 import { createEnkaChimney } from './ede-enka-chimneys.js';
 import { createAstrant, createPegasusFlat } from './ede-mural-landmarks.js';
@@ -122,7 +123,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
   const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [], forecourtLights = [];
-  const landmarkLods = [], treeClearance = [], masts = [], clockUpdates = [];
+  const landmarkLods = [], treeClearance = [], masts = [], clockUpdates = [], millLightUpdates = [];
   const replacements = { bag: new Set(), osm: new Set(), parcelSources: new Set() };
   scene.add(group);
 
@@ -259,6 +260,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   };
   function registerDetail(detail) {
     if (detail.userData.setClockMinutes) clockUpdates.push(detail.userData.setClockMinutes);
+    if (detail.userData.setMillLighting) millLightUpdates.push(detail.userData.setMillLighting);
     const range = detail.userData.nearDetail;
     if (range) {
       detail.updateWorldMatrix(true, false);
@@ -353,6 +355,10 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   function setClockMinutes(minutes) {
     for (const update of clockUpdates) update(minutes);
   }
+  function setMillLighting(date, minutes, season) {
+    const state = windmillLightingFor(date, minutes, season);
+    for (const update of millLightUpdates) update(state);
+  }
   return { group, colliders, platforms, helipads, weatherCovers, forecourtLights, treeClearance, replacements,
-    exclusions: LANDMARK_EXCLUSIONS, update, updateWind, setClockMinutes, updateMastLod: mastLod.update };
+    exclusions: LANDMARK_EXCLUSIONS, update, updateWind, setClockMinutes, setMillLighting, updateMastLod: mastLod.update };
 }

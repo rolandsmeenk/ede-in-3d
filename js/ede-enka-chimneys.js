@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { texture, uv, vertexColor, mix, step } from 'three/tsl';
+import { color, positionLocal, smoothstep, texture, uv, vertexColor, mix, step } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
+import { cityUniforms } from './tsl-materials.js';
 
 const profiles = {
   grote: {
@@ -44,7 +45,13 @@ function masonry() {
   const local = uv();
   const courses = texture(bricks, local).r.mul(0.55).add(0.51);
   material = new THREE.MeshStandardNodeMaterial({ roughness: 0.91 });
-  material.colorNode = vertexColor().mul(mix(1, courses, step(0, local.y)));
+  const brick = step(0, local.y);
+  material.colorNode = vertexColor().mul(mix(1, courses, brick));
+  // Approximate warm uplighting on the brickwork, falling off up the shaft.
+  const height = positionLocal.y;
+  const wash = smoothstep(0, 7, height).mul(mix(0.44, 0.10, smoothstep(9, 80, height)));
+  const night = smoothstep(0.72, 1.45, cityUniforms.uInteriorGlow);
+  material.emissiveNode = vertexColor().mul(color(0xffd3a4)).mul(courses).mul(brick).mul(wash).mul(night);
   return material;
 }
 

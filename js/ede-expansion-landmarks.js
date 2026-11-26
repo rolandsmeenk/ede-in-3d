@@ -1,9 +1,10 @@
 import * as THREE from 'three/webgpu';
+import { uniform } from 'three/tsl';
 import { CivicBatch, civicSigns, makeGroup, polygonNormal, wallColliders } from './ede-civic-landmarks.js';
 import { nearbyRailHeightAt, RAIL_TOP } from './ede-grade.js';
 import { DE_KLOMP_PLATFORMS, EXPANSION_LANDMARK_SURVEYS, GINKEL_SHEEPFOLD_FENCES } from './ede-expansion-landmark-surveys.js';
 import { createSurveyLandmark, surveyLabel, surveyPanel, surveyWindow } from './ede-survey-landmark.js';
-import { addWindmillSailcloth, createWindmillRig } from './ede-windmill.js';
+import { addWindmillSailcloth, createWindmillRig, windmillUplight } from './ede-windmill.js';
 import { terrainHeightAt } from './terrain.js';
 import { sheepFleeceInfluences } from './tree-seasons.js';
 
@@ -363,7 +364,10 @@ function createDoesburgermolen(footprints, site) {
   // The buck and its access steps turn on the post above the fixed thatched base.
   const skirt = new THREE.CylinderGeometry(1.9, 3.15, 3.9, 12).translate(0, 1.95, 0);
   base.solid(skirt, 0x65533a);
-  group.add(base.mesh());
+  const lit = uniform(0);
+  const footing = base.mesh();
+  footing.material.emissiveNode = windmillUplight(0.4, lit);
+  group.add(footing);
   box(mill, 0, 7.05, 0.15, 4.55, 6.7, 5.65, 0x352c24);
   const roof = new THREE.CylinderGeometry(0, 1, 1.6, 4)
     .rotateY(Math.PI / 4).scale(3.65, 1, 4.45).translate(0, 11.20, 0.1);
@@ -376,7 +380,9 @@ function createDoesburgermolen(footprints, site) {
   for (let i = 0; i < 13; i++) {
     box(mill, 0, 0.22 + i * 0.27, -7.2 + i * 0.33, 1.15, 0.13, 0.30, 0x564739);
   }
-  cap.add(mill.mesh());
+  const body = mill.mesh();
+  body.material.emissiveNode = windmillUplight(0.62, lit);
+  cap.add(body);
 
   // The Nederlandse Molendatabase records a 22.7 m sail span (mill 00856).
   const radius = 11.35;
@@ -391,8 +397,13 @@ function createDoesburgermolen(footprints, site) {
     strut(1.13, 6.55, 0.07, 9.6, 0.08, 0x574333);
     for (let i = 0; i < 19; i++) strut(0.56, 1.9 + i * 0.51, 1.15, 0.045, 0.06, 0x655441);
   }
-  sails.add(lattices.mesh());
-  addWindmillSailcloth(sails, { angle: Math.PI / 2, radii: [radius], root: 1.9, innerWidth: 1.18, outerWidth: 1.18 });
+  const sailLattices = lattices.mesh();
+  sailLattices.material.emissiveNode = windmillUplight(0.85, lit);
+  sails.add(sailLattices);
+  const cloth = addWindmillSailcloth(sails, { angle: Math.PI / 2, radii: [radius], root: 1.9, innerWidth: 1.18, outerWidth: 1.18 });
+  cloth.material = cloth.material.clone();
+  cloth.material.emissiveNode = windmillUplight(0.32, lit, cloth.material.color);
+  group.userData.setMillLighting = ({ doesburgerFloodlights }) => { lit.value = Number(doesburgerFloodlights); };
   const { outer, holes } = footprints[0];
   group.userData.colliders = [{
     minX: Math.min(...outer.map(p => p.x)), maxX: Math.max(...outer.map(p => p.x)),

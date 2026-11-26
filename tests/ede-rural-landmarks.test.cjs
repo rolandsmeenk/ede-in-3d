@@ -31,7 +31,9 @@ test('rural landmarks use mapped footprints, reachable arrivals and finite model
   const { RURAL_LANDMARK_FACTORIES } = load('ede-rural-landmarks.js', {
     ...engine, './ede-civic-landmarks.js': civic, './ede-rural-landmark-survey.js': survey,
     './ede-survey-landmark.js': load('ede-survey-landmark.js', { ...engine, './ede-civic-landmarks.js': civic }),
-    './ede-windmill.js': load('ede-windmill.js', engine),
+    './ede-windmill.js': load('ede-windmill.js', {
+      ...engine, './tsl-materials.js': { cityUniforms: { uInteriorGlow: tsl.uniform(0.48) } },
+    }),
   });
   const osmIds = new Set(mapping.EDE_DATA.buildings.map(({ id }) => id));
   for (const site of survey.EDE_RURAL_LANDMARKS) {

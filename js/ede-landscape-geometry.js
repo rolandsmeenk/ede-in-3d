@@ -94,6 +94,17 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
     ],
   }));
 
+  function fragmentBounds(points) {
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (const [x, , z] of points) {
+      minX = Math.min(minX, x);
+      minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x);
+      maxZ = Math.max(maxZ, z);
+    }
+    return [minX, minZ, maxX, maxZ];
+  }
+
   function emitTriangle(a, b, c) {
     if (!cuts?.length) {
       indices.push(a, b, c);
@@ -111,26 +122,52 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
 
     const corners = [a, b, c];
     const points = corners.map(pointAt);
-    let fragments = [points];
-    for (const { distances } of relevant) {
-      const kept = [];
-      for (const fragment of fragments) {
+    // Coarse terrain triangles can span thousands of cuts. Keep their order, but skip
+    // blocks of cuts that are clear of a surviving fragment.
+    const blockSize = 16;
+    const blocks = [];
+    for (let first = 0; first < relevant.length; first += blockSize) {
+      const end = Math.min(first + blockSize, relevant.length);
+      const bounds = [...relevant[first].bounds];
+      for (let i = first + 1; i < end; i++) {
+        const [west, north, east, south] = relevant[i].bounds;
+        bounds[0] = Math.min(bounds[0], west);
+        bounds[1] = Math.min(bounds[1], north);
+        bounds[2] = Math.max(bounds[2], east);
+        bounds[3] = Math.max(bounds[3], south);
+      }
+      blocks.push({ bounds, end });
+    }
+
+    const pending = [{ points, bounds, start: 0 }];
+    fragments: while (pending.length) {
+      const { points: fragment, bounds, start } = pending.pop();
+      let i = start;
+      while (i < relevant.length) {
+        const block = blocks[Math.floor(i / blockSize)];
+        if (!overlap(bounds, block.bounds)) {
+          i = block.end;
+          continue;
+        }
+        const cut = relevant[i++];
+        if (!overlap(bounds, cut.bounds)) continue;
+
         // Subtract a convex prism. The optional height plane keeps an ecoduct's upper terrain.
         let inside = fragment;
         const outside = [];
-        for (const distance of distances) {
+        for (const distance of cut.distances) {
           const [inner, outer] = splitPolygon(inside, distance);
           inside = inner;
           if (inside.length < 3) break;
           if (outer.length >= 3) outside.push(outer);
         }
-        if (inside.length < 3) kept.push(fragment);
-        else kept.push(...outside);
+        if (inside.length < 3) continue;
+        for (let j = outside.length - 1; j >= 0; j--) {
+          const points = outside[j];
+          pending.push({ points, bounds: fragmentBounds(points), start: i });
+        }
+        continue fragments;
       }
-      fragments = kept;
-      if (!fragments.length) return;
-    }
-    for (const fragment of fragments) {
       const clipped = fragment.map(point => {
         const original = points.indexOf(point);
         if (original >= 0) return corners[original];

@@ -40,7 +40,10 @@ test('Lunteren models are grounded, batched, and replace only the surveyed footp
     './ede-survey-landmark.js': load('ede-survey-landmark.js', {
       './ede-civic-landmarks.js': civic, './terrain.js': terrain,
     }),
-    './ede-windmill.js': load('ede-windmill.js', { 'three/webgpu': three }),
+    './ede-windmill.js': load('ede-windmill.js', {
+      'three/webgpu': three, 'three/tsl': tsl,
+      './tsl-materials.js': { cityUniforms: { uInteriorGlow: tsl.uniform(0.48) } },
+    }),
   });
   assert.equal(survey.EDE_LUNTEREN_LANDMARKS.length, 11);
   for (const site of survey.EDE_LUNTEREN_LANDMARKS) {

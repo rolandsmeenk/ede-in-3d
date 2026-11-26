@@ -17,6 +17,7 @@ import {
 } from './city-config.js';
 import { cityUniforms, createTreeGrateMaterial, createGodRayMaterial } from './tsl-materials.js';
 import { createTreeField } from './trees.js';
+import { createEdeLampHalos } from './ede-lamp-halos.js';
 import { applySnowMaterial } from './ede-snow.js';
 import { createMemberStrokes, addMemberStroke, memberStrokeMaterial, memberStrokeMesh } from './ede-mast-strokes.js';
 import { pavedPlazaRects, centralParkClearings, parkTreeSites, sidewalkBlocks, parkLampSites, edeStreetSites } from './city-grid.js';
@@ -1275,6 +1276,8 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
   }
   const cobraCells = indexLights(cobraLampSites);
   const pointCells = indexLights(streetPointSites);
+  const lampHalos = EDE_DATA && createEdeLampHalos(cobraCells, LIGHT_CELL, cobraLampSites.length);
+  if (lampHalos) group.add(lampHalos.mesh);
 
   function nearbyLights(cells, camera, range, active) {
     const { x: cx, y: cy, z: cz } = camera.position;
@@ -1310,6 +1313,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
 
   function update(camera) {
     if (!camera) return;
+    lampHalos?.update(camera.position);
     const glow = cityUniforms.uInteriorGlow.value;
     // Increase streetlight intensity toward dusk.
     const lampScale = Math.min(1.25, Math.max(0.0, (glow - 0.36) * 1.15));

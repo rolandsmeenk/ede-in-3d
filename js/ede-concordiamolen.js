@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { addWindmillSailcloth, createWindmillRig } from './ede-windmill.js';
+import { addWindmillSailcloth, createWindmillRig, windmillUplight } from './ede-windmill.js';
 
 const OCTAGON = Math.PI / 4;
 const GALLERY_HEIGHT = 12.8;
@@ -43,6 +43,7 @@ export function createConcordiamolen() {
   group.name = 'Concordiamolen';
   const { cap, sails } = createWindmillRig(group, SAIL_HUB, HUB_OFFSET, SHAFT_SLOPE);
   const material = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.89 });
+  material.emissiveNode = windmillUplight(0.48);
   const parts = [];
 
   function finish(parent) {

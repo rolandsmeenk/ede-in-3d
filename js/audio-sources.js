@@ -89,6 +89,7 @@ class CityAudioSources {
     this.cars = trafficSystem.cars;
     this.buses = trafficSystem.buses;
     this.refuseTrucks = trafficSystem.refuseTrucks;
+    this.saltSpreaders = trafficSystem.saltSpreaders;
     this.cargoTrucks = trafficSystem.cargoTrucks;
     this.tractors = trafficSystem.tractors;
     this.ambulances = trafficSystem.ambulances;
@@ -207,6 +208,7 @@ class CityAudioSources {
     this.streetVehicles(this.buses, elapsed, 1000);
     if (this.refuseTrucks) this.streetVehicles(this.refuseTrucks, elapsed, 1100);
     if (this.cargoTrucks) this.streetVehicles(this.cargoTrucks, elapsed, 1500);
+    if (this.saltSpreaders) this.streetVehicles(this.saltSpreaders, elapsed, 1600);
     if (this.tractors) this.streetVehicles(this.tractors, elapsed, 1200);
     if (this.ambulances) this.streetVehicles(this.ambulances, elapsed, 1300);
     if (this.fireEngines) this.streetVehicles(this.fireEngines, elapsed, 1400);

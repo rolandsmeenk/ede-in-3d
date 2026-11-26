@@ -220,7 +220,7 @@ function populationContext() {
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
     nearEdges: [], nearSignals: [], fittedA: {}, activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
-    vehicleSpawns: { ambient: [], van: [], refuse: [], tractor: [], ambulance: [], rigid: [], semi: [] },
+    vehicleSpawns: { ambient: [], van: [], refuse: [], tractor: [], ambulance: [], rigid: [], semi: [], spreader: [] },
     cargoFleets: [],
     bikeSpawns: [], mountainBikeSpawns: [], footSpawns: [],
     nearMountainBikes: [], roadTraffic: { isClosed: () => false, demand: () => 1, profile: 1 },
@@ -320,7 +320,8 @@ test('local freight displaces light traffic only on eligible routes', async () =
   const { indexLocalRoads, localSegmentLength } = await import('../js/traffic-area.js');
   const provincial = Object.assign(straightEdge(15, 320), { roadRef: 'N304', roadKind: 'primary', rigidLanes: [0] });
   const motorway = Object.assign(straightEdge(-350, 350), {
-    roadKind: 'motorway', motorway: true, lanes: [0, 3, 6], ambientLanes: [0, 1, 2], rigidLanes: [0, 1, 2], semiLanes: [0, 1, 2]
+    roadKind: 'motorway', motorway: true, lanes: [0, 3, 6], ambientLanes: [0, 1, 2], rigidLanes: [0, 1, 2],
+    semiLanes: [0, 1, 2], spreaderLanes: [0, 1, 2]
   });
   assert.equal(cargoRoadAllowed({ roadKind: 'residential' }, 'rigid'), false);
   assert.equal(cargoRoadAllowed({ ...provincial, underpass: true }, 'rigid'), false);
@@ -337,6 +338,11 @@ test('local freight displaces light traffic only on eligible routes', async () =
   assert.equal(context.vehicleSpawns.rigid.length, 2);
   assert.equal(context.vehicleSpawns.semi.length, 1);
   assert.equal(context.vehicleSpawns.semi[0].segment, motorway);
+  assert.equal(context.vehicleSpawns.spreader.length, 1);
+  const spreader = { roadProfile: 'spreader', half: 4.275 };
+  assert.ok(trafficFunction('spawnVehicle', context)(spreader, 0, 350, false));
+  assert.equal(spreader.edge, motorway);
+  assert.equal(spreader.lane, 2);
   assert.deepEqual(context.cargoFleets.map(fleet => fleet.target), [1, 1]);
   assert.equal(context.carTarget, 18);
   context.roadTraffic.demand = () => 1;
@@ -346,6 +352,23 @@ test('local freight displaces light traffic only on eligible routes', async () =
   context.clock = 24;
   trafficFunction('refreshNear', context)();
   assert.equal(context.cargoFleets[0].target, 0, 'the fractional truck takes turns with light traffic');
+});
+
+test('adverse weather lowers target speed and increases braking for a nearby leader', () => {
+  const profiles = vm.runInNewContext(`(${source.match(/const TRAFFIC_WEATHER = (\{[\s\S]*?\n\});/)[1]})`);
+  const context = { trafficWeather: profiles.dry, roadSpeed: () => 25, vehicleCruise: () => 25 };
+  const freeAcc = trafficFunction('freeAcc', context);
+  const brake = trafficFunction('brake', context);
+  const car = { speed: 20, driver: { a: 2, b: 3, T: 1.2, s0: 2 } };
+  const dry = { acceleration: freeAcc(car), braking: brake(car, 40, 20) };
+  for (const profile of [profiles.rain, profiles.fog, profiles.frost, profiles.snow]) {
+    context.trafficWeather = profile;
+    assert.ok(freeAcc(car) < dry.acceleration);
+    assert.ok(brake(car, 40, 20) < dry.braking);
+  }
+  assert.equal(profiles.dry.spreaders + profiles.rain.spreaders + profiles.fog.spreaders, 0);
+  assert.equal(profiles.frost.spreaders, 1);
+  assert.equal(profiles.snow.spreaders, 2);
 });
 
 test('a scheduled collection stop leaves room at intersections and mapped crossings', () => {

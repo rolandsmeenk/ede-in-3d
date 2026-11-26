@@ -4,6 +4,7 @@ import { createConcordiamolen, addConcordiaTowerSilhouette } from './ede-concord
 import { addLandmarkLod, CivicBatch } from './ede-civic-landmarks.js';
 import { buildVenue } from './ede-venue-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
+import { windmillUplight } from './ede-windmill.js';
 
 const CREAM = 0xd4c7aa;
 const GREEN = 0x273e39;
@@ -183,7 +184,8 @@ export function createConcordiaComplex([towerFootprint], site) {
   tower.rotation.y = site.heading;
   tower.updateMatrix();
   const silhouette = new CivicBatch();
-  addConcordiaTowerSilhouette(silhouette, tower.matrix);
+  const towerSilhouette = new CivicBatch();
+  addConcordiaTowerSilhouette(towerSilhouette, tower.matrix);
   // The wind-driven cap and sails stay on their own hierarchy at both distances.
   group.add(tower);
   shaft.position.copy(tower.position);
@@ -222,5 +224,11 @@ export function createConcordiaComplex([towerFootprint], site) {
     colliders.push(...model.userData.colliders);
   }
   group.userData.colliders = colliders;
-  return addLandmarkLod(group, silhouette, 175, staticParts);
+  addLandmarkLod(group, silhouette, 175, staticParts);
+  const farTower = towerSilhouette.mesh();
+  farTower.name = 'Concordiamolen distant tower';
+  farTower.material.emissiveNode = windmillUplight(0.48);
+  farTower.userData.shadowStandIn = true;
+  group.userData.landmarkLod.silhouette.add(farTower);
+  return group;
 }

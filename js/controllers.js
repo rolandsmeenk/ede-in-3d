@@ -1645,23 +1645,28 @@ class ThirdPersonControllerManager {
     tailRotorPivot.add(tailRotorMesh, tailRotorDisc.mesh);
     tiltPivot.add(tailRotorPivot);
 
-    // 4. Port and starboard navigation lights and tail beacon
-    const navRed = new THREE.Mesh(
-      new THREE.SphereGeometry(0.036, 8, 8),
-      new THREE.MeshBasicNodeMaterial({ color: 0xff2b2b })
-    );
-    navRed.position.set(-1.09, 1.54, -4.35);
-    const navGreen = new THREE.Mesh(
-      new THREE.SphereGeometry(0.036, 8, 8),
-      new THREE.MeshBasicNodeMaterial({ color: 0x22ff66 })
-    );
-    navGreen.position.set(1.09, 1.54, -4.35);
-    const navTail = new THREE.Mesh(
-      new THREE.SphereGeometry(0.042, 8, 8),
-      new THREE.MeshBasicNodeMaterial({ color: 0xff3b2b })
-    );
-    navTail.position.set(0, 2.84, -6.04);
-    tiltPivot.add(navRed, navGreen, navTail);
+    function lightLens(name, hex, radius, x, y, z) {
+      const material = new THREE.MeshBasicNodeMaterial({
+        color: new THREE.Color(hex).multiplyScalar(2.4)
+      });
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(radius, 10, 8), material);
+      lens.name = name;
+      lens.position.set(x, y, z);
+      tiltPivot.add(lens);
+      return lens;
+    }
+
+    // Local +Z is forward, so +X is the pilot's left.
+    lightLens('Helicopter port navigation light', 0xff2222, 0.046, 1.12, 1.54, -4.35);
+    lightLens('Helicopter starboard navigation light', 0x22ff66, 0.046, -1.12, 1.54, -4.35);
+    lightLens('Helicopter aft navigation light', 0xffffff, 0.045, 0, 2.55, -6.16);
+    const beacon = lightLens('Helicopter anti-collision beacon', 0xff3020, 0.075, 0, 2.84, -6.04);
+    const landingLens = lightLens('Helicopter landing light lens', 0xfff4df, 0.075, 0, 0.73, 2.55);
+    const landingLight = new THREE.SpotLight(0xfff4df, 0, 95, 0.34, 0.6);
+    landingLight.name = 'Helicopter landing light';
+    landingLight.position.copy(landingLens.position);
+    landingLight.target.position.set(0, -14, 26);
+    tiltPivot.add(landingLight, landingLight.target);
 
     this.scene.add(root);
 
@@ -1674,6 +1679,7 @@ class ThirdPersonControllerManager {
       tailRotorPivot,
       mainRotorDisc,
       tailRotorDisc,
+      beacon, landingLens, landingLight,
       position: spawnPosition(-60, -80, 96),
       heading: SPAWN_HEADING,
       speed: 0,
@@ -1971,6 +1977,7 @@ class ThirdPersonControllerManager {
     // The blades sweep through half a frame of exposure, equivalent to a 180° shutter.
     heli.mainRotorDisc.sweep.value = dt * 0.5 * MAIN_ROTOR.rate;
     heli.tailRotorDisc.sweep.value = dt * 0.5 * TAIL_ROTOR.rate;
+    heli.beacon.visible = elapsed % 1 < 0.15;
 
     if (this.activeMode === 'person') {
       this.updatePerson(dt, elapsed);
@@ -2005,6 +2012,15 @@ class ThirdPersonControllerManager {
     // Modulate clustered vehicle & bike lights by time of day (off during Midday & Golden Hour; fade in at Dusk & Night)
     const glow = cityUniforms && cityUniforms.uInteriorGlow ? cityUniforms.uInteriorGlow.value : 0.48;
     const beamScale = Math.min(1.28, Math.max(0.0, (glow - 0.60) * 1.45));
+    const approach = beamScale > 0 && this.activeMode === 'helicopter';
+    let landingPower = 0;
+    if (approach) {
+      const { x, y, z } = heli.position;
+      const height = y - helicopterAltitude(x, z, -Infinity);
+      landingPower = 5400 * beamScale * (1 - THREE.MathUtils.smoothstep(height, 30, 48));
+    }
+    heli.landingLight.intensity = landingPower;
+    heli.landingLens.visible = landingPower > 0;
     const car = this.entities.car;
     if (car.headLights) {
       for (const spot of car.headLights) {

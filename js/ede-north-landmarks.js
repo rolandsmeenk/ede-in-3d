@@ -1,4 +1,6 @@
 import * as THREE from 'three/webgpu';
+import { color, mix, smoothstep } from 'three/tsl';
+import { cityUniforms } from './tsl-materials.js';
 import { terrainHeightAt } from './terrain.js';
 import { addWindmillSailcloth, createWindmillRig } from './ede-windmill.js';
 import {
@@ -149,6 +151,27 @@ export function createKeetmolen() {
   rotatingCap.add(capBatch.mesh());
   sails.add(sailBatch.mesh());
   addWindmillSailcloth(sails, { angle: sailAngle, radii: [span], root: 2.10, innerWidth: 0.92, outerWidth: 1.25 });
+  // The annual Christmas star hangs from the upper sail while the rotor is parked.
+  const points = Array.from({ length: 10 }, (_, i) => {
+    const angle = Math.PI / 2 + i * Math.PI / 5;
+    const radius = i % 2 ? 0.60 : 1.34;
+    return new THREE.Vector2(radius * Math.cos(angle), radius * Math.sin(angle));
+  });
+  const shape = new THREE.Shape(points);
+  shape.holes.push(new THREE.Path(points.map(point => point.clone().multiplyScalar(0.76)).reverse()));
+  const starMaterial = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
+  starMaterial.colorNode = mix(color(0x635b48), color(0xffdc93).mul(3.4),
+    smoothstep(0.8, 1.36, cityUniforms.uInteriorGlow));
+  const star = new THREE.Mesh(new THREE.ShapeGeometry(shape), starMaterial);
+  star.name = 'Keetmolen Christmas star';
+  star.position.set(-Math.sin(sailAngle) * (span - 0.82), Math.cos(sailAngle) * (span - 0.82), 0.27);
+  star.rotation.z = sailAngle;
+  star.visible = false;
+  sails.add(star);
+  group.userData.setMillLighting = ({ keetStar }) => {
+    star.visible = keetStar;
+    sails.userData.parkAngle = keetStar ? -sailAngle : undefined;
+  };
   group.add(tower);
   group.userData.platforms = [mound];
   return group;

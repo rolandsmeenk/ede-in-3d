@@ -1339,6 +1339,7 @@ function buildRoadNetwork(sidewalks, obstacles, signalIntersections = [], grade,
     [VAN, VEHICLE_CLEARANCE.tractor, 'tractorLanes', 'tractorMoves', e => tractorRoadAllowed(e, closedToTractors)],
     [VAN, VEHICLE_CLEARANCE.ambulance, 'ambulanceLanes', 'ambulanceMoves', e => e.roadKind !== 'motorway' && !e.motorwayLink],
     [VAN, fireClearance, 'fireLanes', 'fireMoves', e => e.roadKind !== 'motorway' && !e.motorwayLink],
+    [VAN, CARGO_CLEARANCE.rigid, 'spreaderLanes', 'spreaderMoves', e => cargoAccess(e, 'rigid') && (e.motorway || e.motorwayLink)],
     [VAN, CARGO_CLEARANCE.rigid, 'rigidLanes', 'rigidMoves', e => cargoAccess(e, 'rigid')],
     [VAN, CARGO_CLEARANCE.semi, 'semiLanes', 'semiMoves', e => cargoAccess(e, 'semi')]
   ]) {

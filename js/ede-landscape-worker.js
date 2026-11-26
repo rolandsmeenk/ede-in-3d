@@ -1,5 +1,5 @@
 import { createCoverageIndex } from './ede-boundary-index.js';
-import { buildCanopyGeometry, buildTerrainGeometry, packLandscapeGeometry } from './ede-landscape-geometry.js?v=20261126-motorway-grades';
+import { buildCanopyGeometry, buildTerrainGeometry, packLandscapeGeometry } from './ede-landscape-geometry.js?v=20261126-terrain-clipping';
 import { createTerrainSampler } from './terrain.js';
 
 let canopyBoundary;

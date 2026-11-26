@@ -79,3 +79,38 @@ test('an explicit lamp cutoff chunks and culls even a small glowing lens batch',
   updateSceneCulling({ x: 1200, y: 0, z: 0 });
   assert.deepEqual(group.children.map(mesh => mesh.visible), [false, true]);
 });
+
+test('lamp halos are hidden by day and refresh their nearby fixtures after a camera jump', async () => {
+  const THREE = await import('../vendor/three/build/three.webgpu.js');
+  const tsl = await import('../vendor/three/build/three.tsl.js');
+  const cityUniforms = { uInteriorGlow: tsl.uniform(0.24) };
+  const { createEdeLampHalos } = loadModule(
+    readFileSync(join(__dirname, '../js/ede-lamp-halos.js'), 'utf8'),
+    { imports: { 'three/webgpu': THREE, 'three/tsl': tsl, './tsl-materials.js': { cityUniforms } } },
+  );
+  const cells = new Map([
+    ['-6,0', [{ x: -700, y: 7, z: 0 }]],
+    ['-13,0', [{ x: -1600, y: 8, z: 0 }]],
+    ['20,0', [{ x: 2600, y: 9, z: 0 }]],
+  ]);
+  const { mesh, update } = createEdeLampHalos(cells, 128, 3);
+  const positions = mesh.geometry.getAttribute('haloPosition');
+
+  update({ x: 0, z: 0 });
+  assert.equal(mesh.visible, false);
+  cityUniforms.uInteriorGlow.value = 1.55;
+  update({ x: 0, z: 0 });
+  assert.equal(mesh.visible, true);
+  assert.equal(mesh.geometry.instanceCount, 2);
+  assert.deepEqual([positions.getX(0), positions.getX(1)].sort((a, b) => a - b), [-1600, -700],
+    'retain the margin before a nearby camera move');
+  const version = positions.version;
+
+  update({ x: -115, z: 0 });
+  assert.equal(positions.version, version, 'a short move reuses the uploaded instances');
+  update({ x: 2500, z: 0 });
+  assert.equal(mesh.geometry.instanceCount, 1);
+  assert.deepEqual(Array.from(positions.array.slice(0, 3)), [2600, 9, 0]);
+  update({ x: 6500, z: 0 });
+  assert.equal(mesh.visible, false);
+});

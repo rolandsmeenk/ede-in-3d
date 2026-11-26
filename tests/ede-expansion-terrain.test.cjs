@@ -206,6 +206,26 @@ test('expanded terrain cuts remove lower ground and retain terrain above a cover
   assert.ok(colors.includes(100) && colors.includes(160), 'new edge vertices keep interpolated aerial colors');
 });
 
+test('coarse terrain retains land between many small cuts in one triangle', async () => {
+  const { three, tileGeometry } = await terrainRenderer();
+  const gradeCuts = [];
+  for (let x = 3; x < 27; x += 4) for (let z = 3; z < 27; z += 4) {
+    gradeCuts.push({ minX: x, minZ: z, maxX: x + 1, maxZ: z + 1,
+      planes: [[1, 0, x], [-1, 0, -x - 1], [0, 1, z], [0, -1, -z - 1]] });
+  }
+  const tile = { bounds: [0, 0, 64, 64], skirts: [3, 3, 3, 3], gradeCuts };
+  const legacy = { minX: -100, minZ: -100, maxX: -50, maxZ: -50 };
+  const geometry = tileGeometry(new ArrayBuffer(4 * 5), tile, legacy, { napOrigin: 0 }, 2);
+  const mesh = new three.Mesh(geometry, new three.MeshBasicMaterial());
+  const ray = new three.Raycaster(new three.Vector3(0, 5, 0), new three.Vector3(0, -1, 0));
+  for (const { minX, minZ } of gradeCuts) {
+    ray.ray.origin.set(minX + 0.3, 5, minZ + 0.7);
+    assert.equal(ray.intersectObject(mesh).length, 0);
+    ray.ray.origin.x = minX + 1.6;
+    assert.equal(ray.intersectObject(mesh).length, 1);
+  }
+});
+
 test('buffered roots draw immediately after camera jumps while detail fetches wait', async ({ mock }) => {
   const [three, tsl, terrain, coverage] = await Promise.all([
     import('../vendor/three/build/three.webgpu.js'), import('../vendor/three/build/three.tsl.js'),

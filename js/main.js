@@ -10,9 +10,9 @@ import { createEdeMurals } from './ede-murals.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildExteriorBagColliders, createExteriorBagStream, loadExteriorBagFootprints } from './ede-bag-exterior.js';
-import { buildStreetDetails } from './street-details.js?v=20261126-lamp-snow';
+import { buildStreetDetails } from './street-details.js?v=20261126-night-lights';
 import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-hospital-signals';
-import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261126-apeldoornseweg';
+import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261126-winter-traffic';
 import { loadEdeParking } from './ede-parking.js';
 import { buildRoadPaint } from './road-paint.js?v=20261126-coverage-aa';
 import { overlapsEdeTravelPavement } from './ede-geometry.js';
@@ -22,7 +22,7 @@ import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
 import { LightingSystem } from './lighting.js?v=20261126-snow-ice';
-import { createLiveWeather, formatWeatherTime, photogenicWeather, weatherCondition } from './ede-weather.js?v=20261126-rink-ice';
+import { createLiveWeather, formatWeatherTime, photogenicWeather, weatherCondition } from './ede-weather.js?v=20261126-winter-traffic';
 import { loadEdePondLevels, resolveFrankenengLevels, watchFrankenengLevels } from './ede-water-levels.js';
 import { loadEdeWaterWorks, buildEdeWaterWorks } from './ede-water-works-world.js';
 import { createWeatherPrecipitation } from './weather-precipitation.js?v=20261126-wind';
@@ -748,7 +748,9 @@ export async function initApp() {
     const { from, to, weight } = lightingSystem.applyLive(now);
     colorGrade.applyBlend(from, to, weight);
     if (treeSeasonsEnabled) setTreeSeason('today', now);
-    decorations.update(localClock(now.getTime() / 1000).date);
+    const clock = localClock(now.getTime() / 1000);
+    decorations.update(clock.date);
+    landmarks.setMillLighting(clock.date, Math.floor(clock.seconds / 60));
     const time = formatEdeTime(now);
     const [hour, minute] = time.split(':').map(Number);
     landmarks.setClockMinutes(hour * 60 + minute);
@@ -771,6 +773,7 @@ export async function initApp() {
   function applyPresetSeason() {
     if (treeSeasonsEnabled) setTreeSeason(presetSeason.value);
     decorations.update(undefined, presetSeason.value);
+    landmarks.setMillLighting(undefined, undefined, presetSeason.value);
     snowOption.disabled = snowOption.hidden = presetSeason.value !== 'winter';
     if (snowOption.disabled && presetWeather.value === 'snow') presetWeather.value = 'default';
     liveWeather.setPreset(presetWeather.value, presetSeason.value);
@@ -1301,7 +1304,8 @@ export async function initApp() {
       levelCrossings?.update(dt,railTime);
       streetDetails.signalClock.value = trafficClock;
       profiler?.stage('Rail and signals');
-      trafficSystem.update(dt, trafficClock, cameraSystem.currentPos, controllerManager.getActiveEntity(), controllerManager.activeMode, cameraSystem.camera);
+      trafficSystem.update(dt, trafficClock, cameraSystem.currentPos, controllerManager.getActiveEntity(),
+        controllerManager.activeMode, cameraSystem.camera, liveWeather.trafficCondition);
       profiler?.stage('Traffic simulation');
       highwayTraffic.update(dt, cameraSystem.camera, controllerManager.getActiveEntity(), controllerManager.activeMode);
     }
@@ -1446,6 +1450,28 @@ export async function initApp() {
     if (renderer.backend.gl?.isContextLost()) throw new Error('WebGL context lost during startup');
     const device = renderer.backend.device;
     if (device) {
+      // A saved helicopter can see a new set of terrain and shaders as soon as it turns.
+      if (canPrecompile && terrainTiles && controllerManager.activeMode === 'helicopter' && initialView.altitude > 40) {
+        await showLoadingStage('Preparing the aerial view...');
+        const rotation = camera.quaternion.clone();
+        const up = new THREE.Vector3(0, 1, 0);
+        const yaw = new THREE.Quaternion();
+        try {
+          for (let i = 1; i < 6; i++) {
+            camera.quaternion.copy(rotation).premultiply(yaw.setFromAxisAngle(up, i * Math.PI / 3));
+            camera.updateMatrixWorld();
+            terrainTiles.update(camera, initialView);
+            renderPipeline.render();
+            await nextTask();
+          }
+        } finally {
+          camera.quaternion.copy(rotation);
+          camera.updateMatrixWorld();
+        }
+        terrainTiles.update(camera, initialView);
+        renderPipeline.render();
+        markInit('aerial warmup');
+      }
       if (loadingStatus) loadingStatus.textContent = 'Finishing the first frame...';
       await Promise.race([
         device.queue.onSubmittedWorkDone(),

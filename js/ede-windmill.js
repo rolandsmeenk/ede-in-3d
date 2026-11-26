@@ -1,4 +1,6 @@
 import * as THREE from 'three/webgpu';
+import { color, smoothstep, vertexColor } from 'three/tsl';
+import { cityUniforms } from './tsl-materials.js';
 
 const TURN_RATE = 0.45;
 const MILL_MAX_RPM = 16;
@@ -7,6 +9,22 @@ const RPM_TO_RADIANS = TAU / 60;
 const CLOTH_MATERIAL = new THREE.MeshStandardNodeMaterial({
   color: 0xd5c5a7, roughness: 0.95, side: THREE.DoubleSide,
 });
+
+export function windmillLightingFor(date, minutes, season) {
+  if (!date) return { keetStar: season === 'winter', doesburgerFloodlights: season === 'autumn' };
+  const monthDay = date.slice(5);
+  return {
+    // The mill documents an annual star. Use the observed 2025–26 display window.
+    keetStar: monthDay >= '12-12' || monthDay <= '01-09',
+    doesburgerFloodlights: (date === '2026-11-06' && minutes >= 16 * 60) ||
+      (date === '2026-11-07' && minutes < 16 * 60),
+  };
+}
+
+export function windmillUplight(strength, active = 1, tint) {
+  const dusk = smoothstep(0.8, 1.36, cityUniforms.uInteriorGlow);
+  return (tint ? color(tint) : vertexColor()).mul(color(0xffd5a0)).mul(strength).mul(active).mul(dusk);
+}
 
 export function addWindmillSailcloth(sails, { angle, radii, root, innerWidth, outerWidth }) {
   const positions = [];
@@ -90,9 +108,17 @@ export function createWindmillRig(tower, hubHeight, hubOffset, shaftSlope, { tur
         speed = Math.min(MILL_MAX_RPM * RPM_TO_RADIANS, Math.max(0, headwind - 1.4) * 0.21);
       }
     }
-    angularSpeed += (speed - angularSpeed) * -Math.expm1(-dt / 2.2);
-    if (speed === 0 && angularSpeed < 0.001) angularSpeed = 0;
-    if (angularSpeed) sails.rotation.z = (sails.rotation.z + rotationSign * angularSpeed * dt) % TAU;
+    const parkAngle = sails.userData.parkAngle;
+    const parked = parkAngle !== undefined;
+    const needsParking = parked && sails.rotation.z !== parkAngle;
+    if (parked) {
+      angularSpeed = 0;
+      sails.rotation.z = parkAngle;
+    } else {
+      angularSpeed += (speed - angularSpeed) * -Math.expm1(-dt / 2.2);
+      if (speed === 0 && angularSpeed < 0.001) angularSpeed = 0;
+      if (angularSpeed) sails.rotation.z = (sails.rotation.z + rotationSign * angularSpeed * dt) % TAU;
+    }
 
     const cloth = sails.userData.sailcloth;
     if (cloth) {
@@ -103,7 +129,7 @@ export function createWindmillRig(tower, hubHeight, hubOffset, shaftSlope, { tur
       cloth.visible = angularSpeed > 0 && cloth.geometry.drawRange.count > 0;
     }
     // The static world disables automatic matrix updates, including for the shadow passes.
-    if (turn || angularSpeed) cap.updateMatrixWorld(true);
+    if (turn || angularSpeed || needsParking) cap.updateMatrixWorld(true);
   };
   return { cap, sails };
 }
