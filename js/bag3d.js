@@ -759,10 +759,6 @@ const STREAM_RESIDENT = 18;
 const STREAM_FETCHES = 2;
 const STREAM_BYTES = 48 * 1024 * 1024;
 const STREAM_MASK_BYTES = 8 * 1024 * 1024;
-const tileDistance = ({ min, max }, { x, z }) => Math.hypot(
-  Math.max(min.x - x, 0, x - max.x), Math.max(min.z - z, 0, z - max.z)
-);
-
 let meshoptWorkerEnabled = false;
 function enableMeshoptWorker() {
   if (meshoptWorkerEnabled || !MeshoptDecoder.supported || typeof Worker !== 'function') return;
@@ -793,6 +789,7 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
   const frustum = new THREE.Frustum(), view = new THREE.Matrix4();
   const current = new THREE.Vector3(), lastPosition = new THREE.Vector3(Infinity, Infinity, Infinity);
   const direction = new THREE.Vector3(), lastDirection = new THREE.Vector3();
+  let lastDetailScale = 0;
   const material = createBagFacadeMaterial();
   const resident = new Map(), fetching = new Map(), buffered = new Map();
   let tiles, facades, surface, desired = new Map(), enabled = true, disposed = false, building = false;
@@ -834,22 +831,24 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     });
   }
 
-  function nextView(camera) {
-    if (lastPosition.distanceToSquared(current) < 24 ** 2 && lastDirection.dot(direction) > 0.978) return;
+  function nextView(camera, detailScale) {
+    if (Math.abs(detailScale - lastDetailScale) < 0.04 &&
+        lastPosition.distanceToSquared(current) < 24 ** 2 && lastDirection.dot(direction) > 0.978) return;
+    lastDetailScale = detailScale;
     lastPosition.copy(current);
     lastDirection.copy(direction);
     view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(view, camera.coordinateSystem, camera.reversedDepth);
     const ordered = [];
     for (const tile of tiles) {
-      const distance = tileDistance(tile.bounds, current);
-      if (distance <= STREAM_ENTER && (distance <= 175 || frustum.intersectsBox(tile.bounds))) ordered.push([tile, distance]);
+      const distance = tile.bounds.distanceToPoint(current);
+      if (distance <= STREAM_ENTER * detailScale && (distance <= 175 || frustum.intersectsBox(tile.bounds))) ordered.push([tile, distance]);
     }
     desired = new Map(ordered.sort((a, b) => a[1] - b[1] || a[0].url.localeCompare(b[0].url)).slice(0, STREAM_ACTIVE));
     if (buildingTile && !desired.has(buildingTile)) worker.cancel();
     for (const [tile, request] of fetching) if (!desired.has(tile)) request.abort();
     for (const tile of buffered.keys()) if (!desired.has(tile)) buffered.delete(tile);
-    for (const tile of resident.keys()) if (tileDistance(tile.bounds, current) > STREAM_LEAVE) removeTile(tile);
+    for (const tile of resident.keys()) if (tile.bounds.distanceToPoint(current) > STREAM_LEAVE * detailScale) removeTile(tile);
   }
 
   function failure(tile, error) {
@@ -882,7 +881,7 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     while (resident.size >= STREAM_RESIDENT || stats.geometryBytes + bytes > STREAM_BYTES
            || stats.maskTextureBytes + maskBytes > STREAM_MASK_BYTES) {
       const candidates = [...resident.keys()].filter(other => !desired.has(other) || desired.get(other) > desired.get(tile));
-      candidates.sort((a, b) => tileDistance(b.bounds, current) - tileDistance(a.bounds, current));
+      candidates.sort((a, b) => b.bounds.distanceToPoint(current) - a.bounds.distanceToPoint(current));
       if (!candidates.length) return false;
       removeTile(candidates[0]);
     }
@@ -958,13 +957,13 @@ export function createBagBuildingStream(scene, { fallback, fetchJson, loadBuffer
     }
   }
 
-  function update(camera) {
+  function update(camera, detailScale = 1) {
     if (!enabled || document.hidden) return;
     requestCatalogue();
     if (!tiles) return;
     camera.getWorldPosition(current);
     camera.getWorldDirection(direction);
-    nextView(camera);
+    nextView(camera, detailScale);
     fetchNearby();
     if (!building && buffered.size) void buildNearest();
   }

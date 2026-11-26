@@ -79,7 +79,7 @@ test('a rail-only deck with sparse rail hits stays above its cut approaches', ()
     .replaceAll('import.meta.url', JSON.stringify(pathToFileURL(filename).href))
     .replaceAll('export async function', 'async function') + '\nexport { makeDeckProfile };';
   const { makeDeckProfile } = loadModule(source, { filename, imports: {
-    'three/webgpu': {}, 'three/tsl': {}, './tsl-materials.js': {}, './ede-geometry.js': {}, './terrain.js': { terrainHeightAt: () => 16.5 },
+    'three/webgpu': {}, 'three/tsl': {}, './tsl-materials.js': {}, './ede-snow.js': {}, './ede-geometry.js': {}, './terrain.js': { terrainHeightAt: () => 16.5 },
     './ede-windmill.js': {}, './ede-mast-strokes.js': {}, './ede-bridge.js': {},
     './ede-geodata.js': {}, './ede-scene-coordinates.js': {},
   } });
@@ -106,10 +106,11 @@ test('electricity masts keep near steel and share a single filtered distance bat
   const fetch = async url => ({ ok: true, json: async () => url.pathname.endsWith('ede-bridge-materials.json')
     ? { version: 1, decks: {} } : { version: 1, structures: [...structures, ...platforms], source: {} } });
   const strokes = loadModule(readFileSync(join(__dirname, '../js/ede-mast-strokes.js'), 'utf8'), { imports: {
-    'three/webgpu': three, 'three/tsl': tsl, './tsl-materials.js': {},
+    'three/webgpu': three, 'three/tsl': tsl, './tsl-materials.js': {}, './ede-snow.js': {},
   } });
   const { buildEdeBgtWorld } = loadModule(source, { filename, globals: { URL, fetch }, imports: {
     'three/webgpu': three, 'three/tsl': tsl, './tsl-materials.js': {},
+    './ede-snow.js': { applySnowMaterial: material => material },
     './ede-geometry.js': { edeBounds: () => ({}) }, './terrain.js': { terrainHeightAt: () => 0 },
     './ede-windmill.js': {}, './ede-mast-strokes.js': strokes, './ede-geodata.js': { EDE_DATA: { roads: [], railways: [] } },
     './ede-bridge.js': await import('../js/ede-bridge.js'), './ede-scene-coordinates.js': {},
@@ -149,7 +150,7 @@ test('zendmasten keep their detailed models and share a filtered, tapered distan
     './bag3d.js': {}, './ede-grade.js': {}, './ede-geodata.js': {}, './terrain.js': terrain,
     './ede-wind-props.js': {}, './aerial-colors.js': {}, './ede-facades.js': {}, './ede-facade-material.js': {},
   } });
-  const strokes = loadModule(source('ede-mast-strokes'), { imports: { ...core, './tsl-materials.js': {} } });
+  const strokes = loadModule(source('ede-mast-strokes'), { imports: { ...core, './tsl-materials.js': {}, './ede-snow.js': {} } });
   const { EDE_MAST_FACTORIES, createZendmastLod } = loadModule(source('ede-mast-models'), { imports: {
     ...core, './ede-civic-landmarks.js': civic, './ede-mast-sites.js': sites,
     './ede-mast-strokes.js': strokes, './terrain.js': terrain,

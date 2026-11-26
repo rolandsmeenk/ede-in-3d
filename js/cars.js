@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { cityUniforms } from './tsl-materials.js';
+import { applySnowMaterial } from './ede-snow.js';
 import {
   Fn,
   If,
@@ -2002,6 +2003,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
 
   // ---- Emissive (evaluated only on front/rear lamp zones, taxi sign, or braking rear window) -----------------------
   const brake = max(0, state.x);
+  const lampsOn = step(0, state.x);
   const blink = max(state.y.mul(step(0.0, p.x)), state.z.mul(step(p.x, 0.0)));
   const nightHeadlamp = smoothstep(0.60, 1.15, cityUniforms.uInteriorGlow);
 
@@ -2038,7 +2040,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
       });
       emit.assign(color(0xff0c16).mul(chmsl.mul(2.3)));
     });
-    return emit.mul(step(0, state.x));
+    return emit.mul(lampsOn);
   });
 
   const mat = new THREE.MeshStandardNodeMaterial();
@@ -2048,6 +2050,7 @@ function createLoftedCarMaterial(spec, fixedColorHex = null) {
   mat.roughnessNode = roughFn();
   mat.metalnessNode = metalFn();
   mat.emissiveNode = emissiveFn();
+  applySnowMaterial(mat, { shelter: true, exposure: one.sub(lampsOn).mul(max(isBody, isWindow)) });
 
   _carMaterialCache.set(cacheKey, mat);
   return mat;

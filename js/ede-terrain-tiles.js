@@ -4,6 +4,7 @@ import { sampleGroundColor } from './aerial-colors.js';
 import { createCoverageIndex, edeCoverage } from './ede-coverage.js';
 import { playableBoundary, playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
 import { cityUniforms, heathBloomColor, sampleEdeLandCover } from './tsl-materials.js';
+import { applySnowMaterial } from './ede-snow.js';
 import { expansionSeamOffset, getExpansionTerrain, getTerrain, sampleTerrain } from './terrain.js';
 import { buildTerrainGeometry, restoreLandscapeGeometry, SIDE } from './ede-landscape-geometry.js';
 import { runLandscapeJob } from './ede-landscape-jobs.js';
@@ -136,6 +137,7 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts)
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.93 });
   material.colorNode = heathBloomColor(attribute('color', 'vec4').rgb, heath).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
   material.name = 'PDOK terrain tiles';
+  applySnowMaterial(material, { shelter: true });
   const official = fringeLandCover && edeCoverage && createCoverageIndex(edeCoverage.playableBoundary);
   const fringe = official && createCoverageIndex(edeCoverage.buildingBoundary);
   const fringeMaterial = fringe && new THREE.MeshStandardNodeMaterial({ roughness: 0.93 });
@@ -144,6 +146,7 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts)
     const color = attribute('color', 'vec4').rgb.mul(mapped.a.mul(0.4).oneMinus()).add(mapped.rgb.mul(0.4));
     fringeMaterial.colorNode = heathBloomColor(color, heath).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
     fringeMaterial.name = 'PDOK terrain with BGT fringe land cover';
+    applySnowMaterial(fringeMaterial, { shelter: true });
   }
   const tileMaterial = node => fringeMaterial && fringe.overlapsBounds(...node.bounds)
     && !official.coversBounds(...node.bounds) ? fringeMaterial : material;
@@ -246,7 +249,7 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts)
 
   const distanceTo = (bounds, x, z) => Math.hypot(Math.max(bounds[0] - x, 0, x - bounds[2]),
     Math.max(bounds[1] - z, 0, z - bounds[3]));
-  function update(camera, viewportHeight) {
+  function update(camera, { focal, aerialDetail }) {
     stats.drawCalls = stats.triangles = 0;
     stamp++;
     camera.updateMatrixWorld();
@@ -257,8 +260,8 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts)
     const advanceX = THREE.MathUtils.clamp((x - lastCamera.x) * 14, -150, 150);
     const advanceZ = THREE.MathUtils.clamp((z - lastCamera.z) * 14, -150, 150);
     lastCamera.copy(camera.position);
-    const near = Math.abs(y - sampleTerrain(overviewField ?? field, x, z)) < 120 ? 300 : 180;
-    const focal = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+    const near = 300 * (1 - aerialDetail);
+    const pixelBudget = THREE.MathUtils.lerp(5, 9, aerialDetail);
     const now = performance.now();
     const next = new Set(), wanted = new Map();
     const score = node => distanceTo(node.bounds, x + advanceX, z + advanceZ);
@@ -274,7 +277,7 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts)
       box.min.set(west, localMin - Math.max(...node.skirts) - 1, north);
       box.max.set(east, localMax + 1, south);
       const visible = frustum.intersectsBox(box);
-      if (!visible && score(node) > near) return;
+      if (!visible && (near === 0 || score(node) > near)) return;
       node.used = stamp;
       if (!node.mesh) {
         desire(node, horizontal);
@@ -289,8 +292,10 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts)
         return;
       }
       const vertical = Math.max(localMin - y, 0, y - localMax);
-      const pixels = node.error * focal / Math.max(20, Math.hypot(horizontal, vertical));
-      if (node.children?.length && (horizontal < near || pixels > 5) && next.size < MAX_ACTIVE_TILES) {
+      const pixels = node.error * focal / Math.max(1, Math.hypot(horizontal, vertical));
+      const threshold = pixelBudget * (node.refining ? 0.9 : 1.1);
+      node.refining = Boolean(node.children?.length && (horizontal < near || pixels > threshold));
+      if (node.refining && next.size < MAX_ACTIVE_TILES) {
         const children = node.children.map(id => nodes.get(id)).sort((a, b) => score(a) - score(b));
         for (const child of children) {
           child.used = stamp;

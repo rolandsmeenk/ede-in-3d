@@ -81,6 +81,18 @@ Four courts count toward both football and basketball. [Bundled sports inventory
 
 Open **Environment** and choose **Live** to follow Ede’s local clock, seasons, weather and Frankeneng water levels. In **Preset**, set the time of day, season and weather yourself. Try a windy autumn rain, a snowy winter night or summer on the purple heath. [Environment and data sources](docs/simulation.md#environment)
 
+### Four seasons at Kasteel Hoekelum
+
+All four views use the same camera position and midday lighting. The winter view shows settled snow and a frozen moat.
+
+| Spring | Summer |
+| --- | --- |
+| ![Fresh spring foliage around Kasteel Hoekelum and its moat](assets/screenshots/hoekelum-spring.webp) | ![Full green summer canopies around Kasteel Hoekelum and its moat](assets/screenshots/hoekelum-summer.webp) |
+
+| Autumn | Winter |
+| --- | --- |
+| ![Golden autumn trees along the moat at Kasteel Hoekelum](assets/screenshots/hoekelum-autumn.webp) | ![Snow on the roofs and bridge at Kasteel Hoekelum above the frozen moat](assets/screenshots/hoekelum-winter.webp) |
+
 ## Documentation
 
 - [Run locally or host the game](docs/running.md) including what works live on GitHub Pages, feed-server requirements, and profiling.

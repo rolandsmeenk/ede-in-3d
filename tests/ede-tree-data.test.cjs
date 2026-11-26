@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const test = require('node:test');
+const { gunzipSync } = require('node:zlib');
 
 test('the combined tree asset retains the mapped extent, multiple type groups and measured sizes', async () => {
   const { decodeEdeTrees, edeTreeSite } = await import('../js/ede-tree-data.js');
@@ -81,4 +82,29 @@ test('the expanded inventory preserves existing trunks, including one surveyed s
   assert.equal(atSchool[0].sources & 24, 24);
   assert.equal(atSchool[0].crownWidth, 12.5);
   assert.equal(atSchool[0].height, 15.2);
+});
+
+test('mapped forest composition places evergreen Scots pine in the surveyed Roekel interior', async () => {
+  const { decodeEdeWoodland, edeTreeSite, woodlandTreeSpecies } = await import('../js/ede-tree-data.js');
+  const buffer = Uint8Array.from(gunzipSync(readFileSync(join(__dirname, '../assets/ede-woodland.bin.gz')))).buffer;
+  const { coverAt, pineCells, step } = decodeEdeWoodland(buffer);
+  assert.equal(step, 8);
+  assert.ok(pineCells.length > 4000);
+  for (const [x, z] of pineCells) assert.equal(coverAt(x, z), 4);
+  const points = [];
+  for (let x = 4900; x < 6000; x += 16) for (let z = -4900; z < -4200; z += 16) {
+    if (coverAt(x, z) === 4) points.push({ x, z });
+  }
+  assert.ok(points.length > 100);
+  const { x, z } = points[0];
+  const species = woodlandTreeSpecies(coverAt(x, z), x, z);
+  assert.equal(species, 4);
+  assert.equal(edeTreeSite({ x, z, height: 18, species }, 0).seasonGroup, 1);
+  assert.equal(coverAt(100000, 100000), 0);
+  assert.equal(woodlandTreeSpecies(0, x, z, 2), 2);
+  assert.equal(woodlandTreeSpecies(1, x, z, 0), 0);
+  assert.equal(woodlandTreeSpecies(2, x, z), 3);
+  const mixedSpecies = new Set(Array.from({ length: 50 }, (_, i) => woodlandTreeSpecies(3, x + i, z, 0)));
+  assert.deepEqual(mixedSpecies, new Set([0, 3]));
+  assert.throws(() => decodeEdeWoodland(buffer.slice(0, -1)), /Invalid Ede woodland extent/);
 });

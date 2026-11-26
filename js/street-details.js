@@ -17,6 +17,8 @@ import {
 } from './city-config.js';
 import { cityUniforms, createTreeGrateMaterial, createGodRayMaterial } from './tsl-materials.js';
 import { createTreeField } from './trees.js';
+import { applySnowMaterial } from './ede-snow.js';
+import { createMemberStrokes, addMemberStroke, memberStrokeMaterial, memberStrokeMesh } from './ede-mast-strokes.js';
 import { pavedPlazaRects, centralParkClearings, parkTreeSites, sidewalkBlocks, parkLampSites, edeStreetSites } from './city-grid.js';
 import { bryantParkLawn } from './landmarks.js';
 import { edeRoadSegments, nearestEdeRoad, overlapsEdeTravelPavement } from './ede-geometry.js';
@@ -156,6 +158,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     roughness: 0.45,
     metalness: EDE_DATA ? 0.52 : 0.78
   });
+  if (EDE_DATA) applySnowMaterial(poleMetalMat, { shelter: true });
   const signalHousingMat = new THREE.MeshStandardNodeMaterial({
     color: EDE_DATA ? 0x222627 : 0xe6a817,
     roughness: 0.38,
@@ -835,10 +838,39 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
   const poles = addMatrixArrayInstanced(unitCyl, poleMetalMat, poleMatrices);
   const arms = addMatrixArrayInstanced(unitBox, poleMetalMat, armMatrices);
   if (EDE_DATA) {
-    if (poles) poles.name = 'EdeLampPoles';
-    if (arms) arms.name = 'EdeLampArmsAndSignBrackets';
-  }
-  if (EDE_DATA) {
+    const lampCells = new Map();
+    const paint = poleMetalMat.color.getHex();
+    function addLampMembers(matrices, shaft) {
+      for (const { elements: e } of matrices) {
+        const [x, y, z] = e.slice(12, 15);
+        const axis = shaft ? 4 : 0;
+        const [dx, dy, dz] = e.slice(axis, axis + 3).map(value => value / 2);
+        const radius = shaft ? Math.hypot(e[0], e[1], e[2]) : Math.hypot(e[4], e[5], e[6]) / 2;
+        const key = `${Math.floor(x / 300)},${Math.floor(z / 300)}`;
+        if (!lampCells.has(key)) lampCells.set(key, createMemberStrokes());
+        addMemberStroke(lampCells.get(key), [x - dx, y - dy, z - dz], [x + dx, y + dy, z + dz], radius, paint);
+      }
+    }
+    addLampMembers(poleMatrices, true);
+    addLampMembers(armMatrices, false);
+    const lampMaterial = memberStrokeMaterial(undefined, { snow: true });
+    lampMaterial.roughness = poleMetalMat.roughness;
+    lampMaterial.metalness = poleMetalMat.metalness;
+    let firstLampMesh;
+    for (const strokes of lampCells.values()) {
+      const mesh = memberStrokeMesh(strokes, lampMaterial);
+      mesh.name = 'EdeLampMembers';
+      mesh.userData.cullDistance = 740;
+      if (firstLampMesh) mesh.userData.sharesPipelineWith = firstLampMesh;
+      else firstLampMesh = mesh;
+      group.add(mesh);
+    }
+    for (const mesh of [poles, arms]) {
+      if (!mesh) continue;
+      mesh.layers.disable(0);
+      mesh.userData.shadowStandIn = true;
+    }
+
     const headMaterial = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.12 });
     const backed = addMatrixArrayInstanced(signalHousingGeo, headMaterial, signalHousingMatrices);
     if (backed) backed.name = 'EdeMotorSignals';
@@ -884,7 +916,7 @@ function buildStreetDetails(scene, colliders = [], mappedLamps = null, gantryLam
     if (housings) housings.name = 'EdeLampHousings';
     if (lampLenses) lampLenses.name = 'EdeLampLenses';
     // Half the nominal cull distance of a typical 8.2 m mast, shared by all fixture parts.
-    for (const mesh of [poles, arms, housings, lampLenses]) {
+    for (const mesh of [housings, lampLenses]) {
       if (mesh) mesh.userData.cullDistance = 740;
     }
   }

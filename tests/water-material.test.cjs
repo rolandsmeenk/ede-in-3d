@@ -163,7 +163,8 @@ const sandbox = {
   cityUniforms: {
     uInteriorGlow: new TNode(() => [env.interiorGlow]),
     uWind: new TNode(() => env.wind),
-    uWaterTravel: new TNode(() => env.waterTravel)
+    uWaterTravel: new TNode(() => env.waterTravel),
+    uWaterIce: new TNode(() => [env.waterIce ?? 0])
   },
   positionWorld: new TNode(() => { env.nonUniformRead = true; return env.posWorld; }),
   cameraPosition: new TNode(() => env.camPos),
@@ -308,4 +309,24 @@ test('water emissiveNode evaluates skyline reflections at twilight/midnight in u
   const midnight = waterMat.emissiveNode.eval();
   assert.equal(env.fwidthInsideBranch, 0);
   assert.ok(midnight[0] > twilight[0], 'midnight reflection is brighter than twilight');
+});
+
+test('frozen water loses its wave tilt and takes on a blue ice tint', () => {
+  env.posWorld = [20, -2.2, 10];
+  env.camPos = [80, 14, 90];
+  env.wind = [1, 0, 1];
+  env.waterIce = 0;
+  assert.notEqual(waterMat.normalNode.eval()[0], 0);
+  const liquid = waterMat.colorNode.eval();
+  env.waterIce = 1;
+  try {
+    const [x, y, z] = waterMat.normalNode.eval();
+    assert.ok(Math.abs(x) < 1e-8 && y === 1 && Math.abs(z) < 1e-8);
+    assert.equal(waterMat.roughnessNode.eval()[0], 0.32);
+    assert.equal(waterMat.metalnessNode.eval()[0], 0);
+    const frozen = waterMat.colorNode.eval();
+    assert.ok(frozen[2] > frozen[0] && frozen[2] > liquid[2]);
+  } finally {
+    env.waterIce = 0;
+  }
 });

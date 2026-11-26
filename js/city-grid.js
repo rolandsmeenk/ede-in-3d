@@ -18,7 +18,7 @@ import { captureTerrainContext, getExpansionTerrain, getTerrain, terrainHeightAt
 import { FRANKENENG_GAUGES, resolveFrankenengLevels } from './ede-water-levels.js';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
 import { getRailCorridors, gradeCuts, gradeWayAt, localGradeSurface, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
-import { edeTreeSite } from './ede-tree-data.js?v=20261122-safari-cache';
+import { edeTreeSite, woodlandTreeSpecies } from './ede-tree-data.js?v=20261122-safari-cache';
 import { REEMST_TREES } from './ede-reemst-landmark-survey.js';
 import { LUNTEREN_STRUCTURES } from './ede-lunteren-survey.js';
 import { getAerialColors, sampleGroundColor, sampleRoadColor } from './aerial-colors.js';
@@ -69,7 +69,7 @@ function setAerialSurfaceColors(geometry, segment, asphalt, sampleGround = true)
 }
 
 function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches, forestCells, northernTreeSamples = [], heath, pondLevels = new Map(),
-  { woodlandSpacing: spacing = 14 } = {}) {
+  { woodlandSpacing: spacing = 12, woodlandComposition } = {}) {
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
@@ -685,8 +685,9 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     .map(({ bounds }) => detailKey(Math.floor(bounds[0] / 500), Math.floor(bounds[1] / 500))));
   const outsideTown = (x, z) => baseBounds &&
     (x < baseBounds[0] || x > baseBounds[2] || z < baseBounds[1] || z > baseBounds[3]);
-  const plantWoodlandTree = (x, z, gx, gz, extra) => {
-    if (inMiddelpunt(x, z) || nearbyTree(x, z) || waterAt(x, z) || !containsPlayablePoint(x, z)) return;
+  const woodlandCover = woodlandComposition?.coverAt;
+  const plantWoodlandTree = (x, z, gx, gz, extra, clearance = 7) => {
+    if (inMiddelpunt(x, z) || nearbyTree(x, z, clearance) || waterAt(x, z) || !containsPlayablePoint(x, z)) return;
     const fill = canopyDensity?.get(`${Math.floor(x / 200)}/${Math.floor(z / 200)}`);
     if (fill !== undefined && hash(gx, gz, extra ? 8 : 4) > fill) return;
     if (LANDMARK_EXCLUSIONS.some(b => x > b.minX - 4 && x < b.maxX + 4 && z > b.minZ - 4 && z < b.maxZ + 4)) return;
@@ -695,8 +696,9 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     const block = blockAt(x, z);
     if (block && !block.park && !block.sidewalk) return;
     const h = hash(gx, gz, extra ? 7 : 3);
+    const species = woodlandTreeSpecies(woodlandCover?.(x, z), x, z, h < 0.5 ? 0 : h < 0.8 ? 1 : 2);
     const tree = { x, z, y: terrainHeightAt(x, z) + 0.09, scale: 0.7 + h * 0.5,
-      species: h < 0.5 ? 0 : h < 0.8 ? 1 : 2, yaw: h * Math.PI * 2 };
+      species, yaw: h * Math.PI * 2 };
     parkTreeSites.push(tree);
     indexTree(tree);
   };
@@ -709,7 +711,8 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     if (nearestRoads(x, z, 20).some(q => q.dist < q.road.w / 2 + 3)) continue;
     const block = blockAt(x, z);
     if (block && !block.park && !block.sidewalk) continue;
-    const tree = edeTreeSite({ x, z, height, species: 255 }, terrainHeightAt(x, z));
+    const species = woodlandTreeSpecies(woodlandCover?.(x, z), x, z);
+    const tree = edeTreeSite({ x, z, height, species }, terrainHeightAt(x, z));
     parkTreeSites.push(tree);
     indexTree(tree);
   }
@@ -764,6 +767,17 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
         if (x < ISLAND_BOUNDS.minX || x > ISLAND_BOUNDS.maxX || z < ISLAND_BOUNDS.minZ || z > ISLAND_BOUNDS.maxZ) continue;
         plantWoodlandTree(x, z, gx, gz, true);
       }
+    }
+  }
+  // Infill mapped Scots pine stands after the other placement passes have claimed their sites.
+  if (woodlandComposition) {
+    const { pineCells, step } = woodlandComposition;
+    for (const [cx, cz] of pineCells) {
+      const gx = cx / step, gz = cz / step;
+      const x = cx + (hash(gx, gz, 21) - 0.5) * step * 0.5;
+      const z = cz + (hash(gx, gz, 22) - 0.5) * step * 0.5;
+      if (coverAt(x, z) > 1) continue;
+      plantWoodlandTree(x, z, gx, gz, true, 5);
     }
   }
   // Merge in spatially modest batches, retaining the original TSL node materials

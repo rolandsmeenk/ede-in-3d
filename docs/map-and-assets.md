@@ -615,6 +615,15 @@ uv run --with pyproj==3.8.0 python -B tools/build-ede-trees.py /tmp/ede-tree-sou
 
 The builder uses the pinned RD conversion for point matching and the De Vuurvogel entrance placement. Pass `--audit` to retain source ID associations and input hashes. The optional OpenStreetMap snapshot is produced by the map refresh command. The browser loads the expanded inventory by default. Use `?perf=1&treeInventory=baseline` for comparisons. The browser samples AHN at each planted location and renders shared geometry in 200 m × 200 m instanced tiles. The **Season** menu selects a foliage date independently of the sky and weather. **Graphics → Tree quality** controls the terrain-relative canopy detail and distant shadow budget. [Expanded inventory bake and sources](../tools/data/ede-tree-inventory.md) · [Season, flight and profiler verification](../tools/data/ede-tree-update.md)
 
+`tools/build-ede-woodland.py` bakes an 8 m forest composition grid from PDOK BGT. Procedural trees use conifers in mapped conifer woodland and an estimated equal mix in mixed stands. The interior of De Roekel identified by the field survey uses a Scots pine model with a high crown. [PDOK BGT vegetation, CC0](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections/begroeidterreindeel) · [Sovon Roekel field survey, Figure 2 and section 2.2](https://pub.sovon.nl/static/publicaties/2022_03_Broedvogels_van_Roekel_en_De_Zanding_in_2021-WEB.pdf#page=9)
+
+The 26 November 2026 build uses the GML-light `begroeidterreindeel` extract for RD bounds E165900–193700 and N444700–462800. With `ogr2ogr` on your path, rebuild from the saved ZIP. [PDOK Download API](https://api.pdok.nl/kadaster/bgt/download/v1_0/ui/)
+
+```sh
+uv run --python 3.12 --with pyproj==3.8.0 --with shapely==2.1.2 --with numpy \
+  python -B tools/build-ede-woodland.py /tmp/ede-bgt-vegetation-municipality-20261126.zip
+```
+
 ## Refresh the lamp-post inventory
 
 ```sh

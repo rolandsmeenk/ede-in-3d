@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { addMemberStroke, createMemberStrokes, memberStrokeMaterial, memberStrokeMesh } from './ede-mast-strokes.js';
 import { transparentEffectMRT } from './tsl-materials.js';
+import { applySnowMaterial } from './ede-snow.js';
 import { drapeEdeSurface, edeBounds, edePolygonGeometry, overlapsEdeTravelPavement } from './ede-geometry.js';
 import { playgroundEquipment } from './ede-playground-equipment.js';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
@@ -248,8 +249,10 @@ function buildMarkerAtlas(labels) {
 }
 
 function detailResources() {
-  const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.83 });
-  const surface = new THREE.MeshStandardNodeMaterial({ roughness: 0.88, vertexColors: true, side: THREE.DoubleSide });
+  const material = applySnowMaterial(new THREE.MeshStandardNodeMaterial({ roughness: 0.83 }), { shelter: true });
+  const surface = applySnowMaterial(new THREE.MeshStandardNodeMaterial({
+    roughness: 0.88, vertexColors: true, side: THREE.DoubleSide,
+  }), { shelter: true });
   const glass = new THREE.MeshStandardNodeMaterial({ color: 0x78a9a2, roughness: 0.32, transparent: true, opacity: 0.42, depthWrite: false });
   const box = new THREE.BoxGeometry(1, 1, 1);
   const leaf = new THREE.IcosahedronGeometry(0.5, 1);
@@ -268,7 +271,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   const group = new THREE.Group();
   group.name = 'EdeImportedDetail';
   const batches = new Map(), stopIds = new Set(), gantryLampMounts = new Map(), colliders = [];
-  const gantries = [], signSupports = [], portalPanels = new Map(), directionalPanels = [];
+  const gantries = [], signSupports = [], weatherCovers = [], portalPanels = new Map(), directionalPanels = [];
   const stats = { bgt: 0, '1gis': 0, nbd: 0, municipal: 0, parcel: 0, utility: 0, osm: 0, counts: {}, unresolved: [], instances: 0, chunks: 0, triangles: 0, colliders: 0, sharedLampSupports: 0 };
   const replacements = { bag: new Set(), osm: new Set() };
   group.userData.stats = stats;
@@ -276,7 +279,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   group.userData.stopIds = [];
   if (!features.length) {
     scene.add(group);
-    return { group, colliders, stopIds, gantryLampMounts, gantries, signSupports, stats, resources };
+    return { group, colliders, stopIds, gantryLampMounts, gantries, signSupports, stats, resources, weatherCovers };
   }
   resources ??= detailResources();
   const { material, surface, glass, shapes } = resources;
@@ -624,6 +627,9 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       Number.isFinite(support.baseY) && feature.topY - support.baseY > 2.4);
     if (!supports.length || !extrudeFootprint({ ...feature, collidable: false }, 0, 0x889294,
       { fixedY, baseHeight: -slab })) return false;
+    const [outer, ...holes] = [feature.polygon, ...(Array.isArray(feature.holes) ? feature.holes : [])]
+      .map(ring => ring.map(([x, z]) => ({ x, z })));
+    weatherCovers.push({ ...edeBounds(outer), outer, holes, height: () => fixedY - slab });
     for (const { position: [x, z], baseY, width, depth, angle } of supports) {
       const ground = baseY - nap, height = fixedY - slab - ground;
       instance(feature.source, 'pole', x, ground + height / 2, z, dimension(width, 0.38), height,
@@ -833,6 +839,11 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
           part(0.085, roof, 0.085, width * 0.44, roof / 2, length * end, STEEL);
         }
         part(width, 0.16, length, 0, roof - 0.02, 0, 0x457075);
+        const outer = [[-width / 2, -length / 2], [width / 2, -length / 2],
+          [width / 2, length / 2], [-width / 2, length / 2]].map(([dx, dz]) => ({
+          x: x + cos * dx + sin * dz, z: z - sin * dx + cos * dz,
+        }));
+        weatherCovers.push({ ...edeBounds(outer), outer, holes: [], height: () => y + roof - 0.10 });
         part(0.03, roof * 0.72, length * 0.90, -width * 0.44, roof * 0.50, 0, 0x78a9a2, 'glass');
         part(0.32, 0.08, length * 0.63, -width * 0.30, 0.48, 0, WOOD);
         if (feature.stopId) stopIds.add(feature.stopId);
@@ -1008,7 +1019,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   group.userData.stopIds = [...stopIds];
   for (const gantry of gantries) gantry.panels = portalPanels.get(gantry.id) ?? [];
   scene.add(group);
-  return { group, colliders, stopIds, gantryLampMounts, gantries, signSupports, stats, resources };
+  return { group, colliders, stopIds, gantryLampMounts, gantries, signSupports, stats, resources, weatherCovers };
 }
 
 export function streamParcelTiles(scene, tiles, resources, webgpu) {

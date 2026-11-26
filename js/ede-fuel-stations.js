@@ -353,6 +353,7 @@ function drawStation(site, style, shopStyle, atlas, priceDisplay) {
     mesh.material.emissiveNode = mix(color(0xfff4df).mul(2.1), shopWindow, attribute('civicGloss', 'float'))
       .mul(smoothstep(0.42, 1.1, cityUniforms.uInteriorGlow));
     mesh.name = 'Canopy lamps and lit shop windows';
+    mesh.userData.snow = false;
     mesh.castShadow = false;
     group.add(mesh);
   }

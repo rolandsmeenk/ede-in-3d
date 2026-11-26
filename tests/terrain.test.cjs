@@ -257,6 +257,7 @@ test('the Ginkelse Heide detail resolves both sand areas with continuous terrain
       './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
       './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
       'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
+      './ede-snow.js': { applySnowMaterial: material => material },
       './tsl-materials.js': {}, './ede-playable-boundary.js': {}, './ede-coverage.js': {}, './terrain.js': terrain,
     },
   });

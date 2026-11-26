@@ -1,4 +1,7 @@
 import * as THREE from 'three/webgpu';
+import { mix } from 'three/tsl';
+import { applySnowMaterial } from './ede-snow.js';
+import { edeBounds } from './ede-geometry.js';
 import { getEdeGrade, gradeDeckAt, gradeSections, nearbyRailHeightAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
 import { createMemorialPlaque } from './ede-memorial-plaque.js';
@@ -32,7 +35,7 @@ export function createEdeStationLandmark() {
   group.name = 'Station Ede-Wageningen';
   const solid = [], colors = [], skylights = [];
   const tint = new THREE.Color();
-  const colliders = [];
+  const colliders = [], weatherCovers = [];
   const up = new THREE.Vector3(0, 1, 0);
 
   function triangle(a, b, c, color) {
@@ -88,6 +91,8 @@ export function createEdeStationLandmark() {
 
   function lattice(points, height, seed, green = false) {
     const [a, b, c] = points.map(p => point(p, height));
+    const outer = points.map(([x, z]) => ({ x, z }));
+    weatherCovers.push({ ...edeBounds(outer), outer, holes: [], height: () => height - 0.26 });
     for (const [p, q] of [[a, b], [b, c], [c, a]]) {
       fascia(p, q, 0.62, ZINC);
       beam(p.clone().addScaledVector(up, -0.88), q.clone().addScaledVector(up, -0.88), 0.28, 1.42, TIMBER);
@@ -257,13 +262,16 @@ export function createEdeStationLandmark() {
   const roofGlass = new THREE.BufferGeometry();
   roofGlass.setAttribute('position', new THREE.Float32BufferAttribute(skylights, 3));
   roofGlass.computeVertexNormals();
-  group.add(new THREE.Mesh(roofGlass, new THREE.MeshStandardNodeMaterial({
+  const glazing = applySnowMaterial(new THREE.MeshStandardNodeMaterial({
     color: 0x6d8b99, roughness: 0.43, side: THREE.DoubleSide, transparent: true, opacity: 0.62, depthWrite: false,
-  })));
+  }), { shelter: true });
+  glazing.opacityNode = mix(0.62, 1, glazing.snowCoverageNode);
+  group.add(new THREE.Mesh(roofGlass, glazing));
   if (typeof document !== 'undefined') group.add(stationSign());
   const memorial = stationMemorial();
   if (memorial) group.add(memorial);
   group.userData.colliders = colliders;
+  group.userData.weatherCovers = weatherCovers;
   return group;
 }
 

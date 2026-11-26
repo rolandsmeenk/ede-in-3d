@@ -56,6 +56,7 @@ import { LANDMARK_EXCLUSIONS, LANDMARK_SOURCE_EXCLUSIONS } from './landmarks.js'
 import { EDE_BUILDING_BASES } from './ede-building-bases.js';
 import { edeFacadeAt, EDE_FACADE_STYLES, isEdeShed, EDE_SHED_HEIGHT } from './ede-neighbourhood-facades.js';
 import { createEdeFacadeBoxMaterial } from './ede-facade-material.js';
+import { applySnowMaterial } from './ede-snow.js';
 import { windowLightKey } from './ede-window-lights.js';
 
 // Match the exposed end walls while their streamed BAG tile is unavailable.
@@ -281,7 +282,9 @@ function colorEdeRoof(roof, id, fallback, aerial, tiles) {
 }
 
 function addAerialBuildingTiles(group, batches, linkFallback) {
-  const material = new THREE.MeshLambertNodeMaterial({ vertexColors: true, flatShading: true });
+  const material = new THREE.MeshLambertNodeMaterial({ flatShading: true });
+  material.colorNode = vertexColor();
+  applySnowMaterial(material);
   let firstMesh;
   for (const [tile, { positions, colors, indices, sources }] of batches) {
     if (!indices.length) continue;
@@ -2079,6 +2082,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
     const aerial = [0, 0, 0];
     const roofMaterial = new THREE.MeshStandardNodeMaterial({ roughness: 0.9 });
     roofMaterial.colorNode = vertexColor().mul(mx_noise_float(positionWorld.xz.mul(0.9)).mul(0.12).add(0.94));
+    applySnowMaterial(roofMaterial);
     const signedArea = pts => pts.reduce((sum, a, i) => {
       const b = pts[(i + 1) % pts.length]; return sum + a.x * b.z - b.x * a.z;
     }, 0) / 2;

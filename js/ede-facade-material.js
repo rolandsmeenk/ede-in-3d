@@ -4,6 +4,7 @@ import { attribute, cameraPosition, color, float, floor, Fn, fract, fwidth, If, 
   vec2, vec3, vec4, vertexColor } from 'three/tsl';
 import { bumpNormal, cityUniforms, filteredPulse, WALL_KINDS } from './tsl-materials.js';
 import { isCorridorFacade } from './ede-facades.js';
+import { applySnowMaterial } from './ede-snow.js';
 import { bakeFacadeMaskAtlas, mipBytes } from './ede-facade-atlas.js';
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -202,7 +203,7 @@ export function createBagFacadeMaterial(atlas = null, surfaceTexture = null, use
   }
   material.colorNode = procedural;
   material.emissiveNode = proceduralGlow ?? null;
-  if (!atlas) return material;
+  if (!atlas) return applySnowMaterial(material);
 
   const atlasUv = attribute('facadeUv', 'vec3');
   const style = attribute('facadeStyle', 'vec3');
@@ -253,5 +254,5 @@ export function createBagFacadeMaterial(atlas = null, surfaceTexture = null, use
   const close = float(1).sub(smoothstep(8, 35, viewDistance));
   material.normalNode = bumpNormal(frame.mul(0.003).add(sill.mul(0.007))
     .add(textureGrain.sub(0.9).mul(materialRange).mul(bare).mul(0.003)).mul(close));
-  return material;
+  return applySnowMaterial(material);
 }

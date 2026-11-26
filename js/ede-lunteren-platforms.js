@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { CivicBatch, polygonNormal } from './ede-civic-landmarks.js';
+import { applySnowMaterial } from './ede-snow.js';
 import { EDE_DATA } from './ede-geodata.js';
 import { EDE_NORTH_RAIL, hasNorthRail } from './ede-north-rail-data.js';
 
@@ -62,6 +63,7 @@ export function buildEdeLunterenPlatforms(scene) {
     }
   }
   const mesh = batch.mesh();
+  applySnowMaterial(mesh.material, { shelter: true });
   mesh.castShadow = false;
   group.add(mesh);
   return surfaces;

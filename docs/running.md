@@ -31,7 +31,9 @@ The game can stay on GitHub Pages while the feed server runs separately over HTT
 
 ## Graphics and profiling
 
-**Graphics quality** in the **Menu** offers **Fast** and **Standard**. Fast is the default and keeps color grading. Standard enables screen-space reflections and multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
+**Graphics quality** in the **Menu** offers **Fast** and **Standard**. Both presets use screen-space reflections and color grading. Fast is the default and renders reflections at a lower resolution with shorter rays. Standard adds multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
+
+The camera draws up to 2.6 km at street level and gradually extends its range to 13 km by 320 m above local terrain. Terrain and scenery use coarser geometry as their projected detail gets smaller, with a larger pixel error budget in flight.
 
 Fast keeps bloom and dynamic shadows on desktop. On iPhone and iPad, both presets use WebGL 2 for startup reliability. Fast on those devices uses a lower internal resolution, sparser woodland, and fallback buildings in town, with bloom and dynamic shadows disabled.
 

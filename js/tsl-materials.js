@@ -67,6 +67,7 @@ import {
   waterAt
 } from './city-config.js';
 import { heatherBloom, treeSeasonNodes } from './tree-seasons.js';
+import { applySnowMaterial, snowBuildup, snowCover } from './ede-snow.js';
 
 // Procedural city materials: facades and interiors, vegetation, roads, water and lighting effects.
 
@@ -129,7 +130,7 @@ function createEdeGroundMaterial(aerial, landCover, heath) {
     const variation = noise2D(positionWorld.xz.mul(0.7)).mul(0.14).add(0.93);
     return heathBloomColor(ground, heath).mul(variation).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
   })();
-  return mat;
+  return applySnowMaterial(mat, { shelter: true });
 }
 
 // Shared live uniforms controlled by lighting / time-of-day presets
@@ -144,6 +145,7 @@ const cityUniforms = {
   uRoadPuddles: uniform(0),
   uWind: uniform(new THREE.Vector3()),
   uWaterTravel: uniform(new THREE.Vector2()),
+  uWaterIce: uniform(0),
   uCanyonBounce: uniform(0.52)
 };
 
@@ -1357,10 +1359,12 @@ class TreeNodeMaterial extends THREE.MeshStandardNodeMaterial {
  * pass (alpha-tested in the shadow maps: dappled shadows). Wind: gusts rolling across the city sway the crowns
  * (shadows follow), branches bob and leaves flutter.
  */
-function createTreeMaterial(leafAtlas, { seasons = false, fadeClock } = {}) {
+function createTreeMaterial(leafAtlas, { seasons = false, fadeClock, filtered = false } = {}) {
   const mat = new TreeNodeMaterial({
     side: THREE.DoubleSide,
-    alphaToCoverage: true,
+    alphaToCoverage: !filtered,
+    // Keep the nearest cards in front while sampling the partial coverage at distant leaf edges.
+    alphaHash: filtered,
     metalness: 0.0,
     roughness: 0.8
   });
@@ -1397,25 +1401,30 @@ function createTreeMaterial(leafAtlas, { seasons = false, fadeClock } = {}) {
     return p.add(sway.add(vec3(0.0, bob, 0.0)).add(normalLocal.mul(flutter)).mul(cityUniforms.uWind.z));
   })();
 
-  // Texture hue gives each leaf a stable threshold. Keep woody twigs and the geometry underneath.
-  let coverage = leaf.a;
-  if (season) {
+  // Nearby leaves drop individually. Distant leaf coverage fades with their average retention.
+  let retention = float(1);
+  if (season && filtered) {
+    retention = mix(season.a, 1, leaf.b);
+  } else if (season) {
     const threshold = fract(leaf.g.add(aTree.w.mul(0.37)).add(rnd.mul(0.29))).mul(0.99998).add(0.00001);
     const wood = step(0.73, leaf.b);
-    coverage = coverage.mul(max(wood, step(threshold, season.a)));
+    retention = max(wood, step(threshold, season.a));
   }
-  // WebGPU shadow rendering uses the same colour alpha and alpha test as the scene material.
-  let alpha = mix(float(frontFacing), coverage, isLeaf);
+  let visibility = float(1);
   if (fadeClock) {
     const signedStart = attribute('aTreeFade', 'float');
     const progress = clamp(fadeClock.sub(abs(signedStart)).div(0.22), 0, 1);
-    const pattern = interleavedGradientNoise(screenCoordinate.xy);
-    const arrived = float(pattern.lessThan(progress));
+    const arrived = float(interleavedGradientNoise(screenCoordinate.xy).lessThan(progress));
     const active = step(0.000001, abs(signedStart));
     const transition = mix(arrived.oneMinus(), arrived, step(0, signedStart));
-    alpha = alpha.mul(mix(1, transition, active));
+    visibility = mix(1, transition, active);
   }
-  mat.alphaTest = 0.5;
+  // Keep leaf interiors as dense as the cutout mipmaps with a smooth ramp below their 0.5 cutoff.
+  const coverage = filtered ? leaf.a.mul(2).min(1) : leaf.a;
+  const barkAlpha = float(frontFacing);
+  const alpha = mix(barkAlpha, coverage.mul(retention), isLeaf).mul(visibility);
+  mat.alphaTest = filtered ? 0 : 0.5;
+  if (filtered) mat.maskShadowNode = mix(barkAlpha, leaf.a.mul(retention), isLeaf).mul(visibility).greaterThanEqual(0.5);
 
   mat.colorNode = Fn(() => {
     // Leaves: per-tree tint x atlas brightness, a share of sun-yellowed and of cooler leaves, brown twigs & stalks,
@@ -1435,7 +1444,16 @@ function createTreeMaterial(leafAtlas, { seasons = false, fadeClock } = {}) {
     const planeBark = mix(mix(color(0x645e4b), color(0x948c73), smoothstep(0.56, 0.66, n2)), color(0x4a3f31), smoothstep(0.3, 0.22, n2));
     const bark = mix(furrowed, planeBark, step(species, 0.5)).mul(crownAO.mul(0.4).add(0.6));
 
-    return vec4(mix(bark, foliage, isLeaf), alpha);
+    const surface = mix(bark, foliage, isLeaf).toVar();
+    If(snowCover.greaterThan(0), () => {
+      // Reuse bark and atlas shading so thickness variation moves with the branches.
+      const up = normalWorldGeometry.y;
+      const branch = smoothstep(0.25, 0.72, up).mul(crownAO.mul(0.4).add(0.6));
+      const crown = smoothstep(0.42, 0.90, up).mul(smoothstep(0.45, 0.93, crownAO)).mul(mix(0.43, 0.78, leaf.b));
+      const thicknessShade = mix(0.975, 1.025, mix(n2, leaf.g, isLeaf));
+      surface.assign(mix(surface, color(0xe6edf2).mul(thicknessShade), snowBuildup().mul(mix(branch, crown, isLeaf))));
+    });
+    return vec4(surface, alpha);
   })();
 
   mat.roughnessNode = mix(float(0.93), float(0.72).sub(leaf.r.mul(0.1)), isLeaf);
@@ -1592,7 +1610,7 @@ function createEdePavingMaterial(aerial = false, grade = false) {
   mat.metalnessNode = puddle.mul(0.12);
   mat.normalNode = bumpNormal(grit.sub(0.5).mul(mix(0.002, 0.009, gravel)).mul(fine)
     .sub(joint.mul(0.004)).mul(puddle.oneMinus()));
-  return mat;
+  return applySnowMaterial(mat, { shelter: true, exposure: grade ? attribute('pavingExposure', 'float') : 1, retention: 0.91 });
 }
 
 /**
@@ -1713,14 +1731,15 @@ function createRoadSurfaceMaterial(aerial = false, grade = false, wheelTracks = 
   mat.normalNode = bumpNormal(grain.sub(0.5).mul(0.0016).mul(float(1).sub(max(puddle, film.mul(0.65)))));
   mat.emissiveNode = mix(cityUniforms.uSkyHorizonColor, cityUniforms.uSkyTopColor, 0.4)
     .mul(max(puddle, film.mul(0.35))).mul(pow(grazing, 2.3)).mul(cityUniforms.uInteriorGlow).mul(0.007);
-  return mat;
+  return EDE_DATA ? applySnowMaterial(mat, { shelter: true,
+    exposure: grade ? attribute('pavingExposure', 'float') : 1, retention: 0.82 }) : mat;
 }
 
 /**
  * Road markings built from the road network (js/road-paint.js): vertex-coloured strips whose `paint` attribute
- * holds (metres along the strip, pattern period, duty cycle) and `side` the offset from the strip's centre line.
- * Strips thinner than ~1.5 px are widened on screen and faded to match (phone-wire AA) and dashes are box-filtered,
- * so distant markings fade out smoothly instead of breaking up and flickering. Worn, and dark & glossy in puddles.
+ * holds (metres along the strip, pattern period, duty cycle, signed side) and `side` the offset from its centre.
+ * The mesh covers the pixels touched by the paint. The shader filters across the stripe and along the dash pattern.
+ * Worn, and dark & glossy in puddles.
  */
 let _roadPaintMaterial = null;
 let _roadPaintMrtMaterial = null;
@@ -1736,20 +1755,32 @@ function createRoadPaintMaterial(preserveGBuffer = false) {
   });
   if (preserveGBuffer) mat.mrtNode = _transparentEffectMRT;
 
-  const paint = attribute('paint', 'vec3');
+  const paint = attribute('paint', 'vec4');
   const side = attribute('side', 'vec2');
   const sideOffset = vec3(side.x, 0.0, side.y);
 
-  // How much to widen the strip so it is at least 1.5 px wide on screen (1 when it already is)
+  // Keep a pixel of padding on each side for the coverage filter.
   const widen = Fn(() => {
     const toClip = (p) => cameraProjectionMatrix.mul(cameraViewMatrix.mul(vec4(p, 1.0)));
-    const edge = toClip(positionGeometry).toVar();
+    const toPixel = (p) => p.xy.div(max(p.w, 0.05)).mul(screenSize).mul(0.5);
     const centre = toClip(positionGeometry.sub(sideOffset)).toVar();
-    const halfWidthPx = length(edge.xy.div(edge.w).sub(centre.xy.div(centre.w)).mul(screenSize).mul(0.5));
-    const inFront = step(0.05, min(edge.w, centre.w));
-    return clamp(float(0.75).div(max(halfWidthPx, 0.001)), 1.0, 16.0).mul(inFront).max(1.0);
+    const edge = toClip(positionGeometry).toVar();
+    const along = toClip(positionGeometry.sub(sideOffset).add(vec3(side.y, 0.0, side.x.negate()))).toVar();
+    const centrePx = toPixel(centre).toVar();
+    const tangent = toPixel(along).sub(centrePx);
+    const lateral = toPixel(edge).sub(centrePx);
+    const halfWidthPx = abs(tangent.x.mul(lateral.y).sub(tangent.y.mul(lateral.x))).div(max(length(tangent), 0.001));
+    const inFront = step(0.05, min(min(edge.w, centre.w), along.w));
+    return float(1.0).add(min(float(1.0).div(max(halfWidthPx, 0.001)), 15.0).mul(inFront));
   })();
-  if (!EDE_DATA) mat.positionNode = positionGeometry.add(sideOffset.mul(widen.sub(1.0)));
+  mat.positionNode = positionGeometry.add(sideOffset.mul(widen.sub(1.0)));
+
+  const halfWidth = varying(length(side));
+  const across = varying(paint.w.mul(length(side)).mul(widen));
+  const acrossFootprint = max(fwidth(across), 0.0001);
+  const left = acrossFootprint.mul(0.5).sub(across);
+  const coverage = clamp(left.add(halfWidth).div(acrossFootprint), 0, 1)
+    .sub(clamp(left.sub(halfWidth).div(acrossFootprint), 0, 1));
 
   // Exact box filter of the dashes (on for `duty` of each period) over the pixel footprint
   const t = paint.x.div(paint.y);
@@ -1769,7 +1800,7 @@ function createRoadPaintMaterial(preserveGBuffer = false) {
     });
     return w;
   })();
-  mat.opacityNode = dashes.mul(varying(float(1.0).div(EDE_DATA ? 1.0 : widen))).mul(smoothstep(0.1, 0.6, wear).mul(0.4).add(0.55)).mul(distFade);
+  mat.opacityNode = dashes.mul(coverage).mul(smoothstep(0.1, 0.6, wear).mul(0.4).add(0.55)).mul(distFade);
 
   // Skip the puddle field for dry paint and paint that's still drying after rain.
   const puddle = Fn(() => {
@@ -1922,7 +1953,7 @@ function createSidewalkMaterial(aerialMix = 0) {
     return bumpNormal(height);
   })();
 
-  return mat;
+  return EDE_DATA ? applySnowMaterial(mat, { shelter: true, retention: 0.91 }) : mat;
 }
 
 /**
@@ -2605,19 +2636,30 @@ function createWaterMaterial() {
     return vec4(slope, variance, crest.mul(4.0));
   })();
 
-  const slope = waves.xy;
-  const variance = waves.z;
-  // Fountain rims & other non-horizontal faces keep their own normal
+  // Fountain rims & other non-horizontal faces keep their own normal.
   const flatTop = smoothstep(0.5, 0.9, normalWorldGeometry.y);
+  const ice = Fn(() => {
+    const cover = float(0).toVar();
+    If(cityUniforms.uWaterIce.greaterThan(0), () => {
+      const field = noise2D(positionWorld.xz.mul(0.22));
+      const threshold = mix(0.08, 0.92, field);
+      cover.assign(smoothstep(-0.07, 0.07, cityUniforms.uWaterIce.sub(threshold)));
+    });
+    return cover.mul(flatTop);
+  })();
+  mat.iceCoverageNode = ice;
+  const liquid = float(1).sub(ice);
+  const slope = waves.xy.mul(liquid);
+  const variance = waves.z;
   const waterNormal = normalize(mix(normalWorldGeometry, vec3(slope.x.negate(), 1.0, slope.y.negate()), flatTop));
   mat.normalNode = cameraViewMatrix.transformDirection(waterNormal);
 
   // GGX alpha ≈ RMS slope of the unresolved waves (Beckmann m), roughness = sqrt(alpha); murkier ponds a touch duller
-  mat.roughnessNode = clamp(pow(variance, 0.25).add(pond.mul(0.05)), 0.08, 0.65);
+  mat.roughnessNode = mix(clamp(pow(variance, 0.25).add(pond.mul(0.05)), 0.08, 0.65), 0.32, ice);
 
   const viewDir = normalize(cameraPosition.sub(positionWorld));
   const fresnel = pow(float(1.0).sub(clamp(dot(waterNormal, viewDir), 0.0, 1.0)), 5.0).mul(0.98).add(0.02);
-  mat.metalnessNode = clamp(fresnel.mul(1.6), 0.0, 0.9);
+  mat.metalnessNode = clamp(fresnel.mul(1.6), 0.0, 0.9).mul(liquid);
 
   // Sediment-laden estuary: deep blue-green grey ↔ silty olive grey; thin sunlit crests transmit a greener tint
   mat.colorNode = Fn(() => {
@@ -2625,7 +2667,8 @@ function createWaterMaterial() {
     const body = mix(color(0x162d2c), color(0x2e3f36), smoothstep(0.25, 0.85, silt));
     const lake = mix(color(0x24321f), color(0x33402a), silt);
     const crestTint = smoothstep(0.6, 2.4, waves.w).mul(0.35).add(1.0);
-    return mix(body, lake, pond).mul(crestTint);
+    const frost = mix(color(0x719cae), color(0xb8d3df), silt);
+    return mix(mix(body, lake, pond).mul(crestTint), frost, ice);
   })();
 
   // Night: nearby Ede facades and quay lamps, reflected along the same wave
@@ -2720,10 +2763,10 @@ function createWaterMaterial() {
         emit.assign(city.mul(brightness).mul(treeline).mul(fresnel).mul(weight));
       });
     });
-    return emit;
+    return emit.mul(liquid);
   })();
 
-  return mat;
+  return EDE_DATA ? applySnowMaterial(mat, { shelter: true, exposure: ice }) : mat;
 }
 
 /**
@@ -2774,7 +2817,7 @@ function createParkLawnMaterial(isMeadow = false, aerial = false, landCover = nu
     specularF90.assign(0.3);
   };
 
-  return mat;
+  return EDE_DATA ? applySnowMaterial(mat, { shelter: true }) : mat;
 }
 
 // Transparent decal/effect planes & sprites preserve the underlying road/scene G-buffer in MRT (zero RGB & zero alpha on normal & metalRough)

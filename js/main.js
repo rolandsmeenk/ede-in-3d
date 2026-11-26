@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2, vec3, smoothstep } from 'three/tsl';
+import { pass, mrt, output, normalView, positionView, metalness, roughness, float, Fn, vec2, vec3, smoothstep } from 'three/tsl';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { createPostProcessing } from './post-processing.js?v=20261119-perf';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
@@ -10,34 +10,35 @@ import { createEdeMurals } from './ede-murals.js';
 import { buildCityBlocks } from './buildings.js';
 import { createBagBuildingStream, loadBagBuildings } from './bag3d.js';
 import { buildExteriorBagColliders, createExteriorBagStream, loadExteriorBagFootprints } from './ede-bag-exterior.js';
-import { buildStreetDetails } from './street-details.js?v=20261122-forecourt-lights';
+import { buildStreetDetails } from './street-details.js?v=20261126-lamp-snow';
 import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261121-hospital-signals';
 import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261126-apeldoornseweg';
 import { loadEdeParking } from './ede-parking.js';
-import { buildRoadPaint } from './road-paint.js?v=20261126-apeldoornseweg';
+import { buildRoadPaint } from './road-paint.js?v=20261126-coverage-aa';
 import { overlapsEdeTravelPavement } from './ede-geometry.js';
 import { ThirdPersonControllerManager } from './controllers.js?v=20261122-municipal-coverage';
 import { EDE_BIKE_STYLES } from './ede-bikes.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
-import { LightingSystem } from './lighting.js?v=20261126-moon';
-import { createLiveWeather, formatWeatherTime, photogenicWeather, presetRinkIce, weatherCondition } from './ede-weather.js?v=20261126-photo-weather';
+import { LightingSystem } from './lighting.js?v=20261126-snow-ice';
+import { createLiveWeather, formatWeatherTime, photogenicWeather, weatherCondition } from './ede-weather.js?v=20261126-rink-ice';
 import { loadEdePondLevels, resolveFrankenengLevels, watchFrankenengLevels } from './ede-water-levels.js';
 import { loadEdeWaterWorks, buildEdeWaterWorks } from './ede-water-works-world.js';
 import { createWeatherPrecipitation } from './weather-precipitation.js?v=20261126-wind';
 import { updateSceneWind } from './tsl-materials.js';
+import { applySnowToModel, setSnowShelters } from './ede-snow.js';
 import { createKiteFlyers } from './ede-kites.js';
 import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js?v=20261122-municipal-coverage';
-import { createExpansionCulling, setupSceneCulling, updateSceneCulling } from './scene-culling.js?v=20261123-startup-memory';
+import { createExpansionCulling, setupSceneCulling, updateSceneCulling, updateViewRange } from './scene-culling.js?v=20261126-view-lod';
 import { CityAudioSystem } from './audio-system.js?v=20261122-p2000';
 import { getExpansionTerrain, loadTerrain, terrainHeightAt } from './terrain.js';
 import { createTerrainTiles } from './ede-terrain-tiles.js';
 import { createEdeHeathCover } from './ede-heath.js';
 import { createForestCanopy, loadForestCanopy } from './ede-forest-canopy.js';
 import { loadAerialColors, loadExpansionGroundColors } from './aerial-colors.js';
-import { loadEdeTrees } from './ede-tree-data.js?v=20261122-safari-cache';
+import { loadEdeTrees, loadEdeWoodland } from './ede-tree-data.js?v=20261122-safari-cache';
 import { TREE_SEASONS, setTreeSeason, getTreeSeason, seasonPresetFor } from './tree-seasons.js';
 import { loadEdeLamps } from './ede-lamp-data.js?v=20261122-safari-cache';
 import { buildEdePosters } from './ede-posters.js';
@@ -45,7 +46,7 @@ import { buildEdeSeasonalDecorations } from './ede-seasonal-decorations.js';
 import { localClock } from './ede-transit-time.js';
 import { buildEdeLunterenPlatforms } from './ede-lunteren-platforms.js';
 import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdeHelipads, setEdePlatforms, setEdeStructureRoofs } from './ede-grade.js';
-import { buildEdeSports, loadEdeSports, setEdeSportsIceCover } from './ede-sports.js?v=20261122-rink-ice';
+import { buildEdeSports, loadEdeSports, setEdeSportsIceCover } from './ede-sports.js?v=20261126-rink-ice';
 import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
@@ -85,7 +86,7 @@ export async function initApp() {
   const scale = profiling ? Number(query.get('scale')) : 0;
   const graphics = {
     quality: standard ? 'standard' : 'fast',
-    msaa: enabled('msaa', standard), ssr: enabled('ssr', standard),
+    msaa: enabled('msaa', standard), ssr: enabled('ssr'),
     bloom: enabled('bloom', !compactGraphics), shadows: enabled('shadows', !compactGraphics), vegetation: enabled('vegetation'),
     buildingDetail: enabled('buildingDetail', !compactGraphics),
     scale: scale >= 0.5 && scale <= 1 ? scale : compactGraphics ? 0.75 : 1,
@@ -174,7 +175,7 @@ export async function initApp() {
   await showLoadingStage('Loading Ede’s map and timetables…');
   const useUtilityDetails = enabled('detail') && enabled('utilityDetail');
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
-    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult] = await Promise.allSettled([
+    motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult, woodlandResult] = await Promise.allSettled([
     loadTerrain({ expanded: query.get('terrainTiles') !== 'off' }), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
     loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces({ north: EDE_DATA.meta.north, fringe: Boolean(EDE_DATA.meta.travelBounds) }), loadEdeTrainTimetable(), loadEdeParking(),
     enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
@@ -191,6 +192,7 @@ export async function initApp() {
     enabled('roadFurniture') ? loadEdeRoadFurniture() : null,
     loadEdePondLevels(),
     enabled('curbs') ? loadEdeCurbs() : null,
+    loadEdeWoodland(),
   ]);
   if (curbResult.status === 'rejected') console.warn('[curbs] using original pavement:', curbResult.reason);
   if (terrainResult.status === 'fulfilled') {
@@ -200,6 +202,7 @@ export async function initApp() {
   if (aerialResult.status === 'fulfilled') container.dataset.aerialColors = 'PDOK 2025';
   else console.warn('[aerial] using procedural colors:', aerialResult.reason);
   if (treeResult.status === 'rejected') console.warn('[trees] using OpenStreetMap trees:', treeResult.reason);
+  if (woodlandResult.status === 'rejected') console.warn('[trees] using default woodland composition:', woodlandResult.reason);
   if (lampResult.status === 'fulfilled') container.dataset.lampPosts = String(lampResult.value.length);
   else console.warn('[lamps] using generated street lights:', lampResult.reason);
   let busSchedule = null;
@@ -241,7 +244,7 @@ export async function initApp() {
   if (pondLevelsResult.status === 'rejected') console.warn('[water] using terrain-draped ponds:', pondLevelsResult.reason);
   const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity,
     replacedPitches, forest?.cells, EDE_DATA.meta.north ? forest?.northernTreeSamples : undefined,
-    heath, pondLevelsResult.value, { woodlandSpacing: compactGraphics ? 28 : 14 });
+    heath, pondLevelsResult.value, { woodlandSpacing: compactGraphics ? 24 : 12, woodlandComposition: woodlandResult.value });
   const terrainTiles = createTerrainTiles(scene, heath, detailData?.fringeLandCover, cityGrid.shorelineCuts);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
@@ -281,6 +284,7 @@ export async function initApp() {
     if (waterWorksResult.status === 'rejected') throw waterWorksResult.reason;
     if (terrainResult.status === 'fulfilled' && waterWorksResult.value) {
       waterWorks = buildEdeWaterWorks(scene, waterWorksResult.value);
+      applySnowToModel(waterWorks);
       markInit('water works');
     }
   } catch (error) {
@@ -355,7 +359,10 @@ export async function initApp() {
     surveyed: importedDetail ? detailData?.features.filter(feature => feature.type === 'shelter') : undefined
   });
   allColliders.push(...busStops.colliders);
-  setEdeStructureRoofs([...(bgtWorld?.weatherCovers ?? []), ...landmarks.weatherCovers, ...busStops.covers]);
+  const weatherCovers = [...(bgtWorld?.weatherCovers ?? []), ...landmarks.weatherCovers,
+    ...busStops.covers, ...(importedDetail?.weatherCovers ?? [])];
+  setEdeStructureRoofs(weatherCovers);
+  setSnowShelters(weatherCovers);
   const forestCanopy = terrainTiles && createForestCanopy(scene, forest?.cells, treeSeasonsEnabled);
   if (forestCanopy) forestCanopy.group.visible = graphics.vegetation;
   if (signalHardwareResult.status === 'rejected') console.warn('[signals] using generated roadside placements:', signalHardwareResult.reason);
@@ -513,7 +520,7 @@ export async function initApp() {
   scene.updateMatrixWorld(true);
   scene.matrixWorldAutoUpdate = false;
   const expansionCulling = terrainTiles && createExpansionCulling(
-    [...cullingRoots, scene.getObjectByName('EdeLevelCrossings')].filter(Boolean), EDE_DATA.meta.baseBounds, terrainHeightAt);
+    [...cullingRoots, scene.getObjectByName('EdeLevelCrossings')].filter(Boolean));
   markInit('culling');
 
   // On WebGPU, small InstancedMeshes (<= 1000 instances) keep their matrices in uniform buffers that three.js
@@ -527,7 +534,7 @@ export async function initApp() {
     });
   }
 
-  // 5. TSL RenderPipeline with Half-Res Screen Space Reflections (SSRNode), Bloom & Filmic Toning
+  // 5. TSL RenderPipeline with reduced-resolution screen-space reflections, bloom and filmic toning.
   //    Fade out distant and matte surfaces so SSR spends its rays on visible glossy reflections.
   await showLoadingStage('Setting up visual effects, map and interface...');
   const scenePass = pass(scene, cameraSystem.camera);
@@ -539,11 +546,17 @@ export async function initApp() {
   let sceneMRT = null;
   let reflections = vec3(0);
   if (graphics.ssr) {
-    const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
+    const ssrFade = smoothstep(standard ? 180 : 90, standard ? 360 : 220, positionView.z.negate()).oneMinus();
     const maxSSRRoughness = 0.75;
+    // Supply bare ice reflectivity to SSR without changing its surface lighting.
+    const iceReflectivity = Fn(({ material }) => {
+      const ice = material.iceCoverageNode;
+      return ice ? ice.mul(material.snowCoverageNode?.oneMinus() ?? 1).mul(0.35) : float(0);
+    })();
+    const reflectivity = metalness.max(iceReflectivity).mul(ssrFade);
     sceneMRT = mrt({
       output, normal: normalView,
-      metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
+      metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(reflectivity, 0), roughness)
     });
     sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
     sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
@@ -552,15 +565,15 @@ export async function initApp() {
     const ssrPass = ssr(scenePassColor, scenePass.getTextureNode('depth'), scenePass.getTextureNode('normal'), {
       metalnessNode: surface.r, roughnessNode: surface.g, camera: cameraSystem.camera
     });
-    ssrPass.resolutionScale = 0.5;
+    ssrPass.resolutionScale = standard ? 0.5 : compactGraphics ? 0.25 : 0.35;
     ssrPass.blurQuality = 1;
-    ssrPass.maxDistance.value = 42;
+    ssrPass.maxDistance.value = standard ? 42 : 28;
     ssrPass.thickness.value = 0.85;
     ssrPass.quality.value = 0.25;
     ssrPass.binaryRefine = true;
     ssrPass.intensity.value = 0.50;
     ssrPass.screenEdgeFadeBlack = true;
-    const mask = surface.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, surface.g), 0);
+    const mask = surface.r.greaterThan(0).select(smoothstep(0.55, maxSSRRoughness, surface.g).oneMinus(), 0);
     reflections = ssrPass.mul(mask);
   }
   const colorGrade = createPostProcessing(renderer, scenePassColor, reflections, { bloomEnabled: graphics.bloom });
@@ -606,7 +619,6 @@ export async function initApp() {
   const liveWeather = createLiveWeather({
     onChange({ status, current }) {
       updatePhotoWeather(status === 'fresh' ? current : null);
-      if (status !== 'off') setEdeSportsIceCover(status === 'fresh' || status === 'stale' ? (current?.rinkIce ?? 0) : 0);
       weatherClock.hidden = !current;
       weatherClock.textContent = current ? formatWeatherTime(current.observedAt) : '';
       if (current) weatherClock.dateTime = new Date(current.observedAt).toISOString();
@@ -759,10 +771,9 @@ export async function initApp() {
   function applyPresetSeason() {
     if (treeSeasonsEnabled) setTreeSeason(presetSeason.value);
     decorations.update(undefined, presetSeason.value);
-    setEdeSportsIceCover(presetRinkIce(presetSeason.value));
     snowOption.disabled = snowOption.hidden = presetSeason.value !== 'winter';
     if (snowOption.disabled && presetWeather.value === 'snow') presetWeather.value = 'default';
-    liveWeather.setPreset(presetWeather.value);
+    liveWeather.setPreset(presetWeather.value, presetSeason.value);
   }
 
   function updateWaterLevels(levels) {
@@ -890,7 +901,7 @@ export async function initApp() {
   for (const button of environmentButtons) button.addEventListener('click', () => selectEnvironment(button.dataset.environment));
   presetTime.addEventListener('change', () => selectTime(presetTime.value));
   presetSeason.addEventListener('change', () => selectTreeSeason(presetSeason.value));
-  presetWeather.addEventListener('change', () => liveWeather.setPreset(presetWeather.value));
+  presetWeather.addEventListener('change', () => liveWeather.setPreset(presetWeather.value, presetSeason.value));
   for (const button of treeQualityButtons) button.addEventListener('click', () => {
     selectTreeQuality(button.dataset.treeQuality);
     closePopovers();
@@ -1219,12 +1230,16 @@ export async function initApp() {
     }
   }
 
+  const camera = cameraSystem.camera;
+  const updateRenderView = () => updateViewRange(camera, renderer.domElement.height,
+    terrainHeightAt(camera.position.x, camera.position.z));
   cameraSystem.update(0, 0);
+  const initialView = updateRenderView();
   await showLoadingStage('Building paving near your starting point...');
   while (cityGrid.pavingTiles.update(cameraSystem.camera.position, 140)) {
     await (cityGrid.pavingTiles.pendingWork() ?? nextTask());
   }
-  if (EDE_DATA.meta.fullMunicipality) expansionCulling?.update(cameraSystem.camera);
+  if (EDE_DATA.meta.fullMunicipality) expansionCulling?.update(camera, initialView);
   roadFurniture?.update(cameraSystem.camera, 0.25, lightingSystem.uNightFactor.value);
   markInit('local paving');
 
@@ -1234,11 +1249,12 @@ export async function initApp() {
   if (canPrecompile) {
     const restoreTreeWarmup = treeField.prepareWarmup();
     const aerialShell = cityBlocks.group.children.find(object => object.userData.aerialBuildingProxy);
+    const shellWasVisible = aerialShell?.visible;
     if (aerialShell) aerialShell.visible = true;
     try {
       await precompileShaders(warmWholeScene);
     } finally {
-      if (aerialShell) aerialShell.visible = false;
+      if (aerialShell) aerialShell.visible = shellWasVisible;
       restoreTreeWarmup();
     }
     markInit('compile');
@@ -1270,12 +1286,13 @@ export async function initApp() {
     gamepadControls.update(dt);
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
     cameraSystem.update(dt, elapsed);
-    laneDebug?.update(cameraSystem.camera.position);
-    terrainTiles?.update(cameraSystem.camera, renderer.domElement.height);
+    const renderView = updateRenderView();
+    laneDebug?.update(camera.position);
+    terrainTiles?.update(camera, renderView);
     bgtWorld?.updateMastLod(cameraSystem.camera, renderer.domElement.height);
     if (warmedUp) landmarks.updateMastLod(cameraSystem.camera, renderer.domElement.height, lightingSystem.uNightFactor.value);
     profiler?.stage('Player, camera and terrain');
-    if (warmedUp) cityGrid.pavingTiles.update(cameraSystem.camera.position);
+    if (warmedUp) cityGrid.pavingTiles.update(camera.position, THREE.MathUtils.clamp(900 * renderView.detailScale, 220, 1200));
     profiler?.stage('Paving tiles');
     if (trafficUpdates) {
       trafficClock += dt;
@@ -1290,7 +1307,7 @@ export async function initApp() {
     }
     profiler?.stage('Ambient highways');
     if (warmedUp) {
-      bagBuildings?.userData.update?.(cameraSystem.camera);
+      bagBuildings?.userData.update?.(camera, renderView.detailScale);
       exteriorBag.update(cameraSystem.camera);
       murals.update(cameraSystem.camera.position, now);
       landmarks.update(cameraSystem.camera.position);
@@ -1298,12 +1315,11 @@ export async function initApp() {
     cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     profiler?.stage('Buildings, façades and murals');
     if (graphics.vegetation) {
-      const camera = cameraSystem.camera;
-      forestCanopy?.update(camera, treeField);
+      forestCanopy?.update(camera, treeField, renderView);
       profiler?.stage('Woodland canopy');
       treeField.update(camera, {
         renderer, deltaMs: rawDt * 1000, viewportHeight: renderer.domElement.height,
-        groundHeight: terrainHeightAt(camera.position.x, camera.position.z),
+        groundHeight: camera.position.y - renderView.altitude,
         canopyRevision: forestCanopy?.stats.revision,
       });
     }
@@ -1319,6 +1335,7 @@ export async function initApp() {
     if (warmedUp) parcelTiles?.update(cameraSystem.camera.position, now);
     if (parcelTiles) profiler?.stage('Parcel tiles');
     const weatherEffects = liveWeather.update(dt);
+    setEdeSportsIceCover(weatherEffects.rinkIce);
     const windReading = liveWeather.windReading;
     const windDt = fixedStep ? dt : THREE.MathUtils.clamp(rawDt, 0, 0.25);
     updateSceneWind(windDt, weatherEffects.windX, weatherEffects.windZ);
@@ -1339,7 +1356,7 @@ export async function initApp() {
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
     profiler?.stage('Map and audio');
     if (warmedUp || !warmWholeScene) {
-      expansionCulling?.update(cameraSystem.camera);
+      expansionCulling?.update(camera, renderView);
       updateSceneCulling(cameraSystem.camera.position);
     }
     // Traffic collisions can move the player after controller updates; finalize moving hierarchies here.

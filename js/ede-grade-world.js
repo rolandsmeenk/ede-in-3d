@@ -5,6 +5,8 @@ import { sampleGroundColor } from './aerial-colors.js';
 import { addAsphaltLanes } from './ede-asphalt-lanes.js';
 import { EDE_PAVING_STYLE, gradePavement, osmRoadMaterial } from './ede-road-surfaces.js';
 import { createEdePavingMaterial, createRoadSurfaceMaterial } from './tsl-materials.js';
+import { attribute } from 'three/tsl';
+import { applySnowMaterial } from './ede-snow.js';
 
 const CELL = 160;
 
@@ -18,9 +20,10 @@ export function buildEdeGradeWorld(scene, bridgeFootprints) {
   const material = (color, extra) => new THREE.MeshStandardNodeMaterial({
     color, roughness: 0.86, side: THREE.DoubleSide, ...extra
   });
-  const road = material(0xffffff, { vertexColors: true });
-  const bike = material(0xffffff, { vertexColors: true });
-  const foot = material(0xffffff, { vertexColors: true });
+  const pathMaterial = () => applySnowMaterial(material(0xffffff, { vertexColors: true }), {
+    shelter: true, exposure: attribute('pavingExposure', 'float'), retention: 0.91,
+  });
+  const road = pathMaterial(), bike = pathMaterial(), foot = pathMaterial();
   const mappedAsphalt = createRoadSurfaceMaterial(true, true, true);
   const mappedPaving = createEdePavingMaterial(true, true);
   mappedAsphalt.side = mappedPaving.side = THREE.DoubleSide;
@@ -50,9 +53,9 @@ export function buildEdeGradeWorld(scene, bridgeFootprints) {
       if (exposed && sampleGroundColor(x, z, sample)) {
         colors.push(tint.r * 0.6 + sample[0] * 0.4, tint.g * 0.6 + sample[1] * 0.4, tint.b * 0.6 + sample[2] * 0.4);
       } else colors.push(tint.r, tint.g, tint.b);
+      exposure.push(Number(exposed));
       if (!paving) continue;
       colors.push(1);
-      exposure.push(Number(exposed));
       if (mat === mappedPaving) {
         uv.push(x * cs + z * sn, z * cs - x * sn);
         styles.push(EDE_PAVING_STYLE[paving.material]);
@@ -242,7 +245,10 @@ export function buildEdeGradeWorld(scene, bridgeFootprints) {
   for (const { mat, positions, colors, exposure, uv, styles, trackLayer } of batches.values()) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    if (colors.length) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, exposure.length ? 4 : 3));
+    if (colors.length) {
+      const mapped = mat === mappedAsphalt || mat === mappedPaving;
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, mapped ? 4 : 3));
+    }
     if (exposure.length) geometry.setAttribute('pavingExposure', new THREE.Float32BufferAttribute(exposure, 1));
     if (styles.length) {
       geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));

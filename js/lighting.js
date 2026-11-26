@@ -8,7 +8,9 @@ import {
   fog,
   pmremTexture,
   positionWorld,
+  positionView,
   cameraPosition,
+  cameraFar,
   length,
   normalize,
   max,
@@ -24,6 +26,7 @@ import { SkyMesh } from 'three/addons/objects/SkyMesh.js?v=20261126-moon';
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 import { cityUniforms } from './tsl-materials.js';
+import { snowCover } from './ede-snow.js';
 import { directSunFactor, edeSun, livePresetBlend } from './live-sky.js';
 import { edeMoon } from './ede-moon.js';
 import { liveWindowLights, PRESET_WINDOW_LIGHTS } from './ede-window-lights.js';
@@ -262,7 +265,9 @@ class LightingSystem {
     const eb = exp(yb.div(H).negate());
     const meanDensity = select(abs(dy).greaterThan(1.0), ea.sub(eb).mul(H).div(dy), ea);
     const tau = this.uFogDensity.mul(dist).mul(meanDensity);
-    return fog(skyColor, float(1.0).sub(exp(tau.mul(tau).negate())));
+    // Blend to the horizon before the moving far plane clips the landscape.
+    const rangeFade = smoothstep(cameraFar.mul(0.7), cameraFar, positionView.z.negate());
+    return fog(skyColor, mix(float(1.0).sub(exp(tau.mul(tau).negate())), 1, rangeFade));
   }
 
   bakeEnvironmentMap() {
@@ -397,6 +402,8 @@ class LightingSystem {
   }
 
   update(focusPos, weather) {
+    snowCover.value = weather?.snowCover ?? 0;
+    cityUniforms.uWaterIce.value = weather?.waterIce ?? 0;
     if (weather?.blend || this.hadWeather) {
       this.weather = weather;
       this.applyWeather();

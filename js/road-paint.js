@@ -29,7 +29,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
       const edgeX = x + sx * s, edgeZ = z + sz * s;
       cell.position.push(edgeX, y + (heightAt?.(edgeX, edgeZ, edge) ?? 0), edgeZ);
       cell.side.push(sx * s, sz * s);
-      cell.paint.push(u, period, duty);
+      cell.paint.push(u, period, duty, s);
       cell.colors.push(col.r, col.g, col.b);
     }
     cell.index.push(i, i + 1, i + 2, i, i + 2, i + 3);
@@ -80,7 +80,7 @@ function createRoadPaintChunkBuilder(name, { cellSize = PAINT_CELL_SIZE, cullDis
       geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(cell.colors, 3));
       geometry.setAttribute('side', new THREE.Float32BufferAttribute(cell.side, 2));
-      geometry.setAttribute('paint', new THREE.Float32BufferAttribute(cell.paint, 3));
+      geometry.setAttribute('paint', new THREE.Float32BufferAttribute(cell.paint, 4));
       geometry.setIndex(
         vertCount <= 65535
           ? new THREE.Uint16BufferAttribute(cell.index, 1)

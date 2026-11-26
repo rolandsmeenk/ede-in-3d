@@ -58,6 +58,7 @@ test('both RS34 directions use their published Lunteren platform and reach the p
       'three/webgpu': THREE,
       './ede-civic-landmarks.js': { CivicBatch: class { polygon() {} quad() {} mesh() { return new THREE.Group(); } }, polygonNormal: up },
       './ede-geodata.js': { EDE_DATA },
+      './ede-snow.js': { applySnowMaterial: material => material },
       './ede-north-rail-data.js': await import('../js/ede-north-rail-data.js'),
     } });
   const walkables = buildEdeLunterenPlatforms(new THREE.Scene());

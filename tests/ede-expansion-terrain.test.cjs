@@ -167,7 +167,7 @@ async function terrainRenderer() {
     './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
     './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
     'three/webgpu': three, 'three/tsl': {}, './aerial-colors.js': {},
-    './tsl-materials.js': {}, './ede-playable-boundary.js': {}, './ede-coverage.js': {},
+    './tsl-materials.js': {}, './ede-snow.js': {}, './ede-playable-boundary.js': {}, './ede-coverage.js': {},
     './terrain.js': { ...terrain, expansionSeamOffset: () => 0 },
   } });
   return { three, terrain, ...tiles };
@@ -226,6 +226,7 @@ test('buffered roots draw immediately after camera jumps while detail fetches wa
       './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
     './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
     'three/webgpu': three, 'three/tsl': tsl, './aerial-colors.js': { sampleGroundColor: () => false },
+      './ede-snow.js': { applySnowMaterial: material => material },
       './tsl-materials.js': { heathBloomColor: color => color, cityUniforms: { uRoadWetness: tsl.float(0) } },
       './ede-playable-boundary.js': {}, './ede-coverage.js': coverage, './terrain.js': terrain,
     },
@@ -234,13 +235,15 @@ test('buffered roots draw immediately after camera jumps while detail fetches wa
   const renderer = createTerrainTiles(scene, null);
   const group = scene.getObjectByName('EdeTerrainQuadtree');
   const camera = new three.PerspectiveCamera(56, 1.6, .35, 60000);
+  const { updateViewRange } = loadModule(readFileSync(path.resolve(__dirname, '../js/scene-culling.js'), 'utf8'),
+    { imports: { 'three/webgpu': three } });
   for (const [eye, target] of [
     [[18000, 700, -6000], [20300, 22, -6000]], [[-6750, 550, 250], [-8800, 16, 500]],
     [[10700, 750, -11200], [10600, 21, -13100]],
   ]) {
     camera.position.set(...eye);
     camera.lookAt(...target);
-    renderer.update(camera, 700);
+    renderer.update(camera, updateViewRange(camera, 700, terrain.terrainHeightAt(eye[0], eye[2])));
     const visible = group.children.filter(mesh => mesh.visible);
     assert.ok(visible.length > 0);
     assert.equal(renderer.stats.residentBytes, 0);
@@ -418,7 +421,7 @@ test('canopy walls reach the ground along connected crowns and leave continued t
     './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
     './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
     'three/webgpu': three, 'three/tsl': {}, './ede-scene-coordinates.js': { SCENE_NAP_ORIGIN: 0 },
-    './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {},
+    './terrain.js': { terrainHeightAt: () => 5 }, './tree-seasons.js': {}, './ede-snow.js': {},
     './ede-playable-boundary.js': {
       containsPlayablePoint: x => x < 250,
       playableBoundsCovered: (_minX, _minZ, maxX) => maxX < 250,

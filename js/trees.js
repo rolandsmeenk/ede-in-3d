@@ -425,6 +425,15 @@ const SPECIES = [
     twigs: { n: 1, t: [0.4, 1.0], angle: [0.35, 0.8], len: [0.35, 0.17], up: 0.02, out: 0, droop: 0.08, jitter: 0.12, segs: 2 },
     cards: { perTwig: 2, scale: [0.75, 0.95], droop: 0.15, tipScale: 0.27 },
     tints: [0x354e33, 0x3e5739, 0x315049]
+  },
+  { // 4: Scots pine: clear stem with spreading, irregular branches high in the crown
+    name: 'scots-pine', tile: 1, crownRatio: 0.5,
+    trunk: { r: 0.27, top: 15.2, tip: 0.08, lean: 0.024, segs: 9 },
+    limbs: { n: 7, y: [9.6, 14.7], tilt: [1.45, 0.72], len: [3.6, 1.55], r: 0.42, up: 0.14, out: 0, droop: 0.02, jitter: 0.17, segs: 5 },
+    branches: { n: 3, t: [0.42, 0.98], angle: [0.43, 0.82], len: [0.49, 0.29], up: 0.13, out: 0.02, droop: 0.02, jitter: 0.13, segs: 3 },
+    twigs: { n: 1, t: [0.52, 1.0], angle: [0.4, 0.86], len: [0.74, 0.38], up: 0.06, out: 0, droop: 0.05, jitter: 0.12, segs: 2 },
+    cards: { perTwig: 2, scale: [0.78, 1.03], droop: 0.07, tipScale: 0.72 },
+    tints: [0x3f5735, 0x46613c, 0x355247]
   }
 ];
 
@@ -948,8 +957,9 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
   group.name = 'Trees';
   const atlas = createLeafAtlas();
   const material = createTreeMaterial(atlas.texture, { seasons: season });
+  const farMaterial = createTreeMaterial(atlas.texture, { seasons: season, filtered: true });
   let mode = 'legacy';
-  let fadeClock, adaptiveMaterial;
+  let fadeClock, adaptiveMaterial, adaptiveFarMaterial;
   let previousLod, fadeStart;
   let qualityControl = createAutoCanopy();
   const stats = {
@@ -1048,7 +1058,9 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     plantedSites.add(t);
     dummy.matrix.toArray(mats, i * 16);
     tint.setHex(SPECIES[sp].tints[Math.floor(r3 * 2.999)]).multiplyScalar(0.82 + r1 * 0.36);
-    data.set([tint.r, tint.g, tint.b, season ? packTreeStyle(sp, r2, t.seasonGroup) : sp + r2 * 0.999], i * 4);
+    // The Scots pine geometry shares the existing conifer bark and evergreen shader style.
+    const styleSpecies = sp === 4 ? 3 : sp;
+    data.set([tint.r, tint.g, tint.b, season ? packTreeStyle(styleSpecies, r2, t.seasonGroup) : styleSpecies + r2 * 0.999], i * 4);
     keep[i] = hashPos(t.x, 11.1, t.z);
     priority[i] = Number(Boolean(t.priority));
     px[i] = t.x;
@@ -1145,7 +1157,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     return cell;
   });
 
-  function batchMesh(type, name, cap, batchMaterial = material) {
+  function batchMesh(type, name, cap, batchMaterial) {
     const geo = new THREE.BufferGeometry();
     for (const key of Object.keys(type.geo.attributes)) geo.setAttribute(key, type.geo.attributes[key]);
     geo.setIndex(type.geo.index);
@@ -1165,7 +1177,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
   }
 
   const instanced = meshes.map((m, index) => {
-    const mesh = batchMesh(m.type, m.name, m.capacity);
+    const mesh = batchMesh(m.type, m.name, m.capacity, m.type.lod === 2 ? farMaterial : material);
     mesh.userData.treeBatchIndex = index;
     mesh.castShadow = true;
     m.cell.group.add(mesh);
@@ -1208,7 +1220,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
   }
 
   function farBatchMesh({ type, name, capacity }) {
-    const mesh = batchMesh(type, name, capacity, adaptiveMaterial);
+    const mesh = batchMesh(type, name, capacity, adaptiveFarMaterial);
     mesh.geometry.setAttribute('aTreeFade', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
     const reference = type.meshes[0];
     if (reference.instanceMatrix.isStorageInstancedBufferAttribute) {
@@ -1541,8 +1553,9 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
     const detail = priority[i] ? ADAPTIVE_LEVELS[0] : profile;
     const density = lerp(1, profile.density, smooth(440, 1120, distance));
     if (distance > edge + margin || (!priority[i] && keep[i] > density)) return 255;
-    if (pixels > detail.near * (prior === 0 ? 0.87 : 1.08)) return 0;
-    if (pixels > detail.mid * (prior <= 1 ? 0.88 : 1.08)) return 1;
+    const pixelBudget = lerp(1, 1.45, above);
+    if (pixels > detail.near * pixelBudget * (prior === 0 ? 0.87 : 1.08)) return 0;
+    if (pixels > detail.mid * pixelBudget * (prior <= 1 ? 0.88 : 1.08)) return 1;
     if (!priority[i] && canopyCovers?.(px[i], pz[i])) return 255;
     return 2;
   }
@@ -1716,6 +1729,7 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
       fadeStart = new Float32Array(capacity);
       fadeClock = uniform(clock);
       adaptiveMaterial = createTreeMaterial(atlas.texture, { seasons: season, fadeClock });
+      adaptiveFarMaterial = createTreeMaterial(atlas.texture, { seasons: season, fadeClock, filtered: true });
       for (const mesh of instanced) {
         mesh.geometry.setAttribute('aTreeFade', new THREE.InstancedBufferAttribute(new Float32Array(mesh.instanceMatrix.count), 1));
       }
@@ -1741,7 +1755,8 @@ function createTreeField(_scene, sites, colliders = [], { quality = 'legacy', se
         cell.shadows = false;
         for (const mi of cell.meshIndices) {
           const mesh = instanced[mi];
-          mesh.material = adaptive ? adaptiveMaterial : material;
+          const far = meshes[mi].type.lod === 2;
+          mesh.material = far ? (adaptive ? adaptiveFarMaterial : farMaterial) : (adaptive ? adaptiveMaterial : material);
           mesh.castShadow = !adaptive;
           mesh.count = 0;
           mesh.visible = false;

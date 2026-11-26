@@ -160,6 +160,7 @@ const cars = loadModule(readFileSync(join(__dirname, '../js/cars.js'), 'utf8'), 
     'three/addons/utils/BufferGeometryUtils.js': { mergeGeometries: () => ({}) },
     'three/addons/geometries/LoftGeometry.js': { LoftGeometry: class {} },
     './tsl-materials.js': { cityUniforms: { uInteriorGlow: new TNode(() => [env.interiorGlow ?? 0.48]) } },
+    './ede-snow.js': { applySnowMaterial(material, { exposure }) { material.snowExposure = exposure; } },
     './vehicles.js': { part: (g) => g, mirrorSection: (s) => s, roundedRectShape: () => ({}), roundedBox: () => ({}) }
   },
   globals: {
@@ -301,6 +302,19 @@ test('parked car bodies emit no headlight or taillight glow at night', (t) => {
     env.attrs.carState[0] = cars.PARKED_CAR_LAMPS;
     assert.ok(material.emissiveNode.eval().every(channel => channel === 0));
   }
+});
+
+test('only the body and cabin of parked cars can collect snow', () => {
+  const { snowExposure } = createLoftedCarMaterial(BODY_SPECS.sedan);
+  const coverage = (brake, part) => {
+    env.attrs = { carState: [brake, 0, 0, 0], partId: [part] };
+    return snowExposure.eval()[0];
+  };
+  assert.equal(coverage(cars.PARKED_CAR_LAMPS, CAR_PARTS.BODY), 1);
+  assert.equal(coverage(cars.PARKED_CAR_LAMPS, CAR_PARTS.WINDOW), 1);
+  assert.equal(coverage(cars.PARKED_CAR_LAMPS, CAR_PARTS.TYRE), 0);
+  assert.equal(coverage(0, CAR_PARTS.WINDOW), 0);
+  assert.equal(coverage(0.5, CAR_PARTS.BODY), 0);
 });
 
 test('renderCar writes per-car wheel styles to both front and rear wheel slots with dirty tracking', () => {

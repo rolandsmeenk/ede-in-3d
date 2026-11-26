@@ -13,7 +13,7 @@ async function fixture(grade = {}, fetch = globalThis.fetch, roadPavement = () =
   const THREE = await import('../vendor/three/build/three.webgpu.js');
   const imports = { 'three/webgpu': THREE };
   const strokes = loadModule(source('ede-mast-strokes.js'), { imports: {
-    ...imports, 'three/tsl': await import('../vendor/three/build/three.tsl.js'), './tsl-materials.js': {},
+    ...imports, 'three/tsl': await import('../vendor/three/build/three.tsl.js'), './tsl-materials.js': {}, './ede-snow.js': {},
   } });
   const geometry = loadModule(source('ede-geometry.js').replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
     imports: { ...imports, './city-config.js': { EDE_DATA: { roads: [] } }, './ede-road-surfaces.js': { isEdeTrafficPavement: roadPavement },
@@ -31,6 +31,7 @@ async function fixture(grade = {}, fetch = globalThis.fetch, roadPavement = () =
         './ede-signal-hardware.js?v=20261121-hospital-signals': await import('../js/ede-signal-hardware.js'),
         './ede-playground-equipment.js': loadModule(source('ede-playground-equipment.js')),
         './ede-mast-strokes.js': strokes, './tsl-materials.js': {},
+        './ede-snow.js': { applySnowMaterial: material => material },
         './ede-scene-coordinates.js': loadModule(source('ede-scene-coordinates.js')),
         './terrain.js': { getTerrain: () => ({ napOrigin: 22.54 }), terrainHeightAt: () => 2 } },
       globals: { fetch, URL, Response, DecompressionStream, AbortController }
@@ -416,7 +417,7 @@ test('BGT drains, bridge balustrades and canopies use the assigned elevations', 
       return id === 'deck' ? { id, y: 8, kind: 'bridge' } : null;
     }
   });
-  const { group, stats, colliders } = buildEdeDetail(new THREE.Scene(), [
+  const { group, stats, colliders, weatherCovers } = buildEdeDetail(new THREE.Scene(), [
     { id: 'gutter-at-grade', source: 'bgt', type: 'gutter', level: 0, points: [[10, 15], [30, 15]] },
     { id: 'drain-on-deck', source: 'bgt', type: 'drain', level: 1, profileId: 'deck', points: [[20, 24], [26, 24]] },
     { id: 'railing-on-deck', source: 'bgt', type: 'balustrade', level: 1, profileId: 'deck', points: [[20, 20], [26, 20]] },
@@ -424,8 +425,14 @@ test('BGT drains, bridge balustrades and canopies use the assigned elevations', 
       polygon: [[10, 10], [16, 10], [16, 14], [10, 14]],
       supports: [{ position: [11, 11], baseY: 24.54, width: 0.48, depth: 0.35, angle: 0 }] },
     { id: 'unsupported-roof', source: 'bgt', type: 'canopy', level: 1, topY: 35.54,
-      polygon: [[40, 10], [46, 10], [46, 14], [40, 14]] }
+      polygon: [[40, 10], [46, 10], [46, 14], [40, 14]] },
+    { id: 'bus-roof', source: '1gis', type: 'shelter', position: [20, 30], width: 2, length: 3, height: 2.35 }
   ]);
+  assert.equal(weatherCovers.length, 2);
+  assert.equal(weatherCovers[0].height(11, 11), 12.85);
+  assert.equal(weatherCovers[1].minX, 19);
+  assert.equal(weatherCovers[1].maxZ, 31.5);
+  assert.ok(Math.abs(weatherCovers[1].height(20, 30) - 4.25) < 1e-6);
   assert.equal(stats.bgt, 4);
   assert.equal(stats.unresolved[0]?.id, 'unsupported-roof');
   assert.equal(colliders.length, 0);

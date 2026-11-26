@@ -50,7 +50,7 @@ function addBasin(group) {
   ]), granite);
   const water = new THREE.MeshStandardMaterial({ color: '#1d3937', roughness: 0.24, metalness: 0.18 });
   addMesh(group, 'Dark water between the glass', new THREE.CircleGeometry(2.085, 64)
-    .rotateX(-Math.PI / 2).translate(0, 0.19, 0), water, false);
+    .rotateX(-Math.PI / 2).translate(0, 0.19, 0), water, false).userData.snow = false;
 }
 
 function glassGeometry(width, height, depth, seed) {

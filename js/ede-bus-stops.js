@@ -8,6 +8,7 @@ import { projectLonLatInto } from './ede-scene-coordinates.js';
 import { terrainHeightAt } from './terrain.js';
 import { EDE_BUS_SHELTER_SITES } from './ede-bus-shelter-sites.js';
 import { batchBusStopParts, buildEdeBusShelters } from './ede-bus-shelters.js';
+import { applySnowMaterial } from './ede-snow.js';
 
 const TILE = 0.3;
 const SIGN_SIZE = 0.46;
@@ -281,7 +282,8 @@ function stopSurfaces(stop, quad) {
 function renderStops(group, stops) {
   if (!stops.length) return;
   const atlas = drawAtlas(stops);
-  const material = new THREE.MeshStandardNodeMaterial({ map: atlas, roughness: 0.85 });
+  const material = applySnowMaterial(new THREE.MeshStandardNodeMaterial({ map: atlas, roughness: 0.85 }),
+    { shelter: true, retention: 0.91 });
   const { width, height } = atlas.image;
   const posts = stops.map(({ sign }) => ({
     position: [sign.x, sign.y + POLE_HEIGHT / 2, sign.z], size: [1, 1, 1], yaw: 0

@@ -1,4 +1,4 @@
-import('./main.js?v=20261126-moon-wind')
+import('./main.js?v=20261126-pine-density')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

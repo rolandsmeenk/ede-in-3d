@@ -167,7 +167,7 @@ function setupSceneCulling(scene, roots, shadow = null) {
   };
   for (const root of roots) {
     root.traverse((o) => {
-      if (!isStaticMesh(o) || o.userData.mutableFallback) return;
+      if (!isStaticMesh(o) || o.layers.mask === 0 || o.userData.mutableFallback) return;
       if (o.userData.cullDistance > 0 && (!o.isInstancedMesh || o.userData.spatialTile)) {
         if (o.isInstancedMesh && !o.boundingSphere) o.computeBoundingSphere();
         if (!o.isInstancedMesh && !o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
@@ -362,9 +362,22 @@ function updateSceneCulling(cameraPosition) {
 
 export { setupSceneCulling, updateSceneCulling, SHADOW_PROXY_LAYER };
 
-// Use the aerial ground and building shells for distant town detail, including views inside the town bounds.
-export function createExpansionCulling(roots, bounds, getGroundHeight) {
-  if (!bounds) return null;
+export function updateViewRange(camera, viewportHeight, groundHeight) {
+  const altitude = Math.max(0, camera.position.y - groundHeight);
+  const { lerp, smoothstep } = THREE.MathUtils;
+  const aerialDetail = smoothstep(altitude, 15, 180);
+  const focal = viewportHeight * 0.5 * camera.projectionMatrix.elements[5];
+  const far = lerp(2600, 13000, smoothstep(altitude, 12, 320));
+  if (camera.far !== far) {
+    camera.far = far;
+    camera.updateProjectionMatrix();
+  }
+  return { altitude, focal, aerialDetail, detailScale: Math.max(0.5, focal / 900) / lerp(1, 1.85, aerialDetail) };
+}
+
+// Use the aerial ground and building shells where street detail projects to only a few pixels.
+export function createExpansionCulling(roots) {
+  // Reference distances at a 900 px focal length, calibrated to each layer's typical detail size.
   const reachByName = new Map([
     ['EdeCityGrid', 680],
     ['EdeCityBlocks', 820],
@@ -393,13 +406,14 @@ export function createExpansionCulling(roots, bounds, getGroundHeight) {
         if (tile) {
           let batch = buildingTiles.get(tile);
           if (!batch) {
-            const x = (tile.minX + tile.maxX) / 2, z = (tile.minZ + tile.maxZ) / 2;
-            const radius = Math.hypot(tile.maxX - x, tile.maxZ - z);
-            batch = { meshes: [], x, z, reach: reach + radius, hidden: false };
+            batch = { meshes: [], reach, box: new THREE.Box3(), hidden: false };
             buildingTiles.set(tile, batch);
             batches.push(batch);
           }
-          if (mesh.userData.aerialBuildingProxy) batch.proxy = mesh;
+          if (mesh.userData.aerialBuildingProxy) {
+            batch.proxy = mesh;
+            batch.box.setFromObject(mesh);
+          }
           else batch.meshes.push(mesh);
           return;
         }
@@ -411,37 +425,33 @@ export function createExpansionCulling(roots, bounds, getGroundHeight) {
         const keepInAerial = mesh.userData.keepInAerial || root.name === 'EdeLandmarks' ||
           root.name === 'EdeGradeWorld' || mesh.name === 'Ede rails' || mesh.name === 'Ede rail ballast' ||
           /^Ede BGT (deck|platform|platformEdge|abutment|pier|foundation|civilWall|retainingWall)$/.test(mesh.name);
-        batches.push({ meshes: [mesh], x: center.x, z: center.z, reach: reach + radius, keepInAerial, hidden: false });
+        if (!keepInAerial) batches.push({ meshes: [mesh], center, radius, reach, hidden: false });
       });
+    }
+    for (const batch of buildingTiles.values()) {
+      if (batch.box.isEmpty()) for (const mesh of batch.meshes) batch.box.expandByObject(mesh);
     }
   }
 
-  let lastX = Infinity, lastZ = Infinity, lastY = Infinity, lastTownReach = 0;
-  const [west, north, east, south] = bounds;
-  const hysteresis = 70;
+  const lastPosition = new THREE.Vector3(Infinity, Infinity, Infinity);
+  const nearest = new THREE.Vector3();
+  let lastDetailScale = 0;
   const stats = { hiddenBatches: 0, aerialShells: 0 };
   return {
     stats,
-    update(camera) {
-      const { x, y, z } = camera.position;
-      const townDepth = Math.min(x - west, east - x, z - north, south - z);
-      const altitude = y - getGroundHeight(x, z);
-      // Keep more street detail near the ground, then use the same distance limit for low flights.
-      const aerialBlend = THREE.MathUtils.smoothstep(altitude, 18, 40);
-      const townReach = 650 * (1 - aerialBlend) * THREE.MathUtils.smoothstep(townDepth, -360, 360);
-      if (Math.abs(townReach - lastTownReach) < hysteresis && Math.hypot(x - lastX, y - lastY, z - lastZ) < 18) return;
+    update({ position }, { detailScale }) {
+      if (Math.abs(detailScale - lastDetailScale) < 0.025 && lastPosition.distanceToSquared(position) < 12 ** 2) return;
       collectBatches();
-      lastX = x;
-      lastY = y;
-      lastZ = z;
-      lastTownReach = townReach;
-      const air = THREE.MathUtils.clamp((altitude - 38) * 2, 0, 500);
+      lastPosition.copy(position);
+      lastDetailScale = detailScale;
       let hiddenBatches = 0;
       let aerialShells = 0;
       for (const batch of batches) {
-        const reach = batch.reach + air + townReach + (batch.hidden ? 0 : hysteresis);
-        const hidden = !batch.keepInAerial &&
-          (x - batch.x) ** 2 + (z - batch.z) ** 2 > reach ** 2;
+        const reach = batch.reach * detailScale * (batch.hidden ? 0.94 : 1.06);
+        const distanceSq = batch.box
+          ? batch.box.clampPoint(position, nearest).distanceToSquared(position)
+          : batch.center.distanceToSquared(position);
+        const hidden = distanceSq > (reach + (batch.radius ?? 0)) ** 2;
         if (hidden) hiddenBatches += batch.meshes.length;
         if (batch.proxy) {
           batch.proxy.visible = hidden;

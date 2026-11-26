@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { edeAdMaterial } from './ede-advertising.js';
+import { applySnowMaterial } from './ede-snow.js';
 
 const ROOF = 2.26;
 const FRAME = 0x394649;
@@ -118,7 +119,8 @@ export function buildEdeBusShelters(parent, sites, blocked, groundAt, surveyed) 
       minZ: Math.min(...zs), maxZ: Math.max(...zs), height: () => pose.y + ROOF });
   }
   const box = new THREE.BoxGeometry();
-  batchBusStopParts(group, 'Shelter frames and roofs', solids, box, new THREE.MeshStandardNodeMaterial({ roughness: 0.68 }), 500, true);
+  const solid = applySnowMaterial(new THREE.MeshStandardNodeMaterial({ roughness: 0.68 }), { shelter: true });
+  batchBusStopParts(group, 'Shelter frames and roofs', solids, box, solid, 500, true);
   batchBusStopParts(group, 'Shelter glazing', glass, box, new THREE.MeshStandardNodeMaterial({ color: 0x9db5b6,
     roughness: 0.31, transparent: true, opacity: 0.29, depthWrite: false }), 350);
   if (posters.length) batchBusStopParts(group, 'Shelter poster faces', posters, new THREE.PlaneGeometry(), edeAdMaterial('portrait'), 420);

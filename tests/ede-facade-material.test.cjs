@@ -16,7 +16,7 @@ const atlasBake = loadModule(readFileSync(join(__dirname, '../js/ede-facade-atla
 const { buildFacadeMaskAtlas, buildFacadeMaskAtlasIncrementally, projectFacadeUv } = loadModule(
   readFileSync(join(__dirname, '../js/ede-facade-material.js'), 'utf8'),
   { imports: { 'three/webgpu': { DataTexture }, 'three/tsl': { Fn: body => body }, './tsl-materials.js': {}, './ede-facades.js': facade,
-    './ede-facade-atlas.js': atlasBake },
+    './ede-facade-atlas.js': atlasBake, './ede-snow.js': {} },
     globals: { performance: { now: () => ++turns * 6 }, setTimeout } }
 );
 

@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { attribute, cameraPosition, color, fwidth, length, max, min, mix, mx_noise_float,
-  positionLocal, positionWorld, smoothstep, uniform, vec3 } from 'three/tsl';
+import { attribute, cameraPosition, color, float, Fn, fwidth, If, length, max, min, mix, mx_noise_float,
+  positionWorld, smoothstep, uniform } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
+import { applySnowMaterial, surfaceSnowCoverage } from './ede-snow.js';
 import { polygonContains } from './building-collision.js';
 import { drapeEdeSurface, edePoints, edePolygonGeometry, edeSpatialGroups } from './ede-geometry.js';
 import { fitSportField, clipSportLine } from './ede-sport-fit.js';
@@ -19,16 +20,16 @@ export function setEdeSportsIceCover(cover) {
   rinkIceCover.value = cover;
 }
 
+const rinkFrost = mx_noise_float(positionWorld.xz.mul(0.29), 0.62, 0.40).clamp().toVar();
+const rinkIce = smoothstep(-0.07, 0.07, rinkIceCover.sub(mix(0.08, 0.92, rinkFrost))).toVar();
+
 function makeRinkMaterial() {
   const material = new THREE.MeshStandardNodeMaterial();
-  const point = positionWorld.xz;
-  const frost = mx_noise_float(point.mul(0.29), 0.62, 0.40);
-  const ice = mix(color(0x5b8499), color(0xb5cfd8), frost.clamp());
-  material.colorNode = mix(attribute('color', 'vec3'), ice, rinkIceCover);
-  material.roughnessNode = mix(0.90, 0.17, rinkIceCover);
-  // A thin ice layer buries the summer markings on multipurpose courts at full cover.
-  material.positionNode = positionLocal.add(vec3(0, rinkIceCover.mul(0.05), 0));
-  return material;
+  const ice = mix(color(0x5b8499), color(0xb5cfd8), rinkFrost);
+  material.colorNode = mix(attribute('color', 'vec3'), ice, rinkIce);
+  material.roughnessNode = mix(0.90, 0.17, rinkIce);
+  material.iceCoverageNode = rinkIce;
+  return applySnowMaterial(material, { shelter: true });
 }
 const WHITE = 0xf3f1df;
 const STEEL = 0x555e5b;
@@ -65,12 +66,12 @@ function collect(batch, geometry, tint) {
     const v = index ? index.getX(i) : i;
     batch.positions.push(position.getX(v), position.getY(v), position.getZ(v));
     batch.colors.push(color.r, color.g, color.b);
-    if (band) batch.band.push(band.getX(v), band.getY(v));
+    if (band) batch.band.push(band.getX(v), band.getY(v), band.getZ(v));
   }
   geometry.dispose();
 }
 
-function addStrip({ positions, band }, [ax, az], [bx, bz], width) {
+function addStrip({ positions, band }, [ax, az], [bx, bz], width, isRink) {
   const dx = bx - ax, dz = bz - az;
   const length = Math.hypot(dx, dz);
   if (length < 0.015) return;
@@ -81,7 +82,9 @@ function addStrip({ positions, band }, [ax, az], [bx, bz], width) {
   const a = [ax + nx, PAINT_Y, az + nz], b = [bx + nx, PAINT_Y, bz + nz];
   const c = [bx - nx, PAINT_Y, bz - nz], d = [ax - nx, PAINT_Y, az - nz];
   positions.push(...a, ...b, ...c, ...a, ...c, ...d);
-  band.push(support, half, support, half, -support, half, support, half, -support, half, -support, half);
+  const rink = Number(isRink);
+  band.push(support, half, rink, support, half, rink, -support, half, rink,
+    support, half, rink, -support, half, rink, -support, half, rink);
 }
 
 function makePaintMaterial() {
@@ -89,12 +92,18 @@ function makePaintMaterial() {
     vertexColors: true, roughness: 0.85, transparent: true, depthWrite: false,
   });
   material.mrtNode = transparentEffectMRT;
-  const band = attribute('sportPaintBand', 'vec2');
+  const band = attribute('sportPaintBand', 'vec3');
   const pixel = fwidth(band.x).max(0.0001);
   const low = max(band.y.negate(), band.x.sub(pixel.mul(0.5)));
   const high = min(band.y, band.x.add(pixel.mul(0.5)));
   const fade = smoothstep(290, 435, length(positionWorld.sub(cameraPosition))).oneMinus();
-  material.opacityNode = high.sub(low).max(0).div(pixel).mul(fade);
+  const ice = Fn(() => {
+    const cover = float(0).toVar();
+    If(band.z.greaterThan(0.5).and(rinkIceCover.greaterThan(0)), () => cover.assign(rinkIce));
+    return cover;
+  })();
+  material.opacityNode = high.sub(low).max(0).div(pixel).mul(fade)
+    .mul(surfaceSnowCoverage({ shelter: true }).oneMinus()).mul(ice.oneMinus());
   return material;
 }
 
@@ -202,7 +211,7 @@ function makeMesh(group, batch, material, name, close = false) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(batch.colors, 3));
-  if (batch.band) geometry.setAttribute('sportPaintBand', new THREE.Float32BufferAttribute(batch.band, 2));
+  if (batch.band) geometry.setAttribute('sportPaintBand', new THREE.Float32BufferAttribute(batch.band, 3));
   geometry.computeVertexNormals();
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = name;
@@ -216,7 +225,8 @@ function makeMesh(group, batch, material, name, close = false) {
 export function buildEdeSports(scene, asset) {
   const group = new THREE.Group();
   group.name = 'Ede sports fields';
-  const surface = new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.93 });
+  const surface = applySnowMaterial(new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.93 }),
+    { shelter: true });
   const paint = makePaintMaterial();
   const rink = makeRinkMaterial();
   const stats = { pitches: 0, layouts: {}, surfaceOnly: 0, triangles: 0, meshes: 0 };
@@ -257,14 +267,14 @@ export function buildEdeSports(scene, asset) {
         if (!lines.has(color)) lines.set(color, { positions: [], band: [] });
         for (let i = 1; i < points.length; i++) {
           for (const [a, b] of clipSportLine(at(...points[i - 1]), at(...points[i]), polygon)) {
-            addStrip(lines.get(color), a, b, width);
+            addStrip(lines.get(color), a, b, width, isRink);
           }
         }
       }
       for (const [index, fill] of (layout.fills ?? []).entries()) {
         const points = fill.points.map(p => at(...p));
         if (!points.every(p => contains(...p))) continue;
-        collect(ground, drapeEdeSurface(edePolygonGeometry(points.map(([x, z]) => ({ x, z })),
+        collect(isRink ? skating : ground, drapeEdeSurface(edePolygonGeometry(points.map(([x, z]) => ({ x, z })),
           [], SURFACE_Y + 0.004 + index * 0.0012), true), fill.color);
       }
       for (const item of layout.equipment ?? []) addEquipment(props, item, at, contains, sport);
@@ -274,7 +284,7 @@ export function buildEdeSports(scene, asset) {
       if (!positions.length) continue;
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geometry.setAttribute('sportPaintBand', new THREE.Float32BufferAttribute(band, 2));
+      geometry.setAttribute('sportPaintBand', new THREE.Float32BufferAttribute(band, 3));
       collect(painted, drapeEdeSurface(geometry, true, undefined, false, 'sportPaintBand'), color);
     }
     stats.triangles += makeMesh(group, ground, surface, 'Pitch surfaces') ?? 0;

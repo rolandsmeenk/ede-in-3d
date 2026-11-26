@@ -82,9 +82,48 @@ async function loadWoodlandCanopyDensity() {
   }
 }
 
+export function decodeEdeWoodland(buffer) {
+  const header = new DataView(buffer);
+  if (header.byteLength < 24 || header.getUint32(0, true) !== 0x31465745) throw new Error('Invalid Ede woodland asset');
+  const width = header.getUint32(4, true), height = header.getUint32(8, true);
+  const minX = header.getFloat32(12, true), minZ = header.getFloat32(16, true), step = header.getFloat32(20, true);
+  if (!width || !height || ![minX, minZ, step].every(Number.isFinite) || step <= 0 ||
+      buffer.byteLength !== 24 + width * height) throw new Error('Invalid Ede woodland extent');
+  const cells = new Uint8Array(buffer, 24);
+  const coverAt = (x, z) => {
+    const col = Math.floor((x - minX) / step), row = Math.floor((z - minZ) / step);
+    return col >= 0 && col < width && row >= 0 && row < height ? cells[row * width + col] : 0;
+  };
+  const pineCells = [];
+  for (let i = cells.indexOf(4); i !== -1; i = cells.indexOf(4, i + 1)) {
+    pineCells.push([minX + (i % width + 0.5) * step, minZ + (Math.floor(i / width) + 0.5) * step]);
+  }
+  return { coverAt, pineCells, step };
+}
+
+export async function loadEdeWoodland() {
+  const response = await fetch(new URL('../assets/ede-woodland.bin.gz', import.meta.url));
+  if (!response.ok) throw new Error(`Ede woodland request failed: ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const buffer = bytes[0] === 31 && bytes[1] === 139
+    ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()
+    : bytes.buffer;
+  return decodeEdeWoodland(buffer);
+}
+
 function randomAt(x, z, salt) {
   const value = Math.sin(x * 12.9898 + z * 78.233 + salt) * 43758.5453;
   return value - Math.floor(value);
+}
+
+export function woodlandTreeSpecies(cover, x, z, broadleaf) {
+  if (cover === 4) return 4; // Scots pine
+  if (cover === 2 || (cover === 3 && randomAt(x, z, 83) < 0.5)) return 3;
+  if (cover === 1 || cover === 3) {
+    const type = randomAt(x, z, 19);
+    return broadleaf ?? (type < 0.56 ? 0 : type < 0.74 ? 1 : 2);
+  }
+  return broadleaf ?? 255;
 }
 
 export function edeTreeSite(tree, groundY) {
@@ -98,7 +137,7 @@ export function edeTreeSite(tree, groundY) {
     x, y: groundY + 0.09, z, height, trunkDiameter, crownWidth, species,
     priority: Boolean(tree.sources & 8),
     // Unknown inventory trees keep generic phenology, independent of their procedural shape.
-    seasonGroup: tree.seasonGroup ?? [4, 2, 6, 1][tree.species] ?? 0,
+    seasonGroup: tree.seasonGroup ?? [4, 2, 6, 1, 1][tree.species] ?? 0,
     yaw: randomAt(x, z, 83) * Math.PI * 2,
     tier: tree.height >= 17 ? 0 : height >= 11 ? 1 : 2
   };

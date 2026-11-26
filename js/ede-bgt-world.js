@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { color, length, smoothstep, uniform, uv } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
+import { applySnowMaterial } from './ede-snow.js';
 import { addMemberStroke, createMemberStrokes, mastStrokeMesh, memberStrokeMaterial, memberStrokeMesh } from './ede-mast-strokes.js';
 import { edeBounds, edePoints, edePolygonGeometry, EDE_RENDER_CELL } from './ede-geometry.js';
 import { terrainHeightAt } from './terrain.js';
@@ -139,9 +140,13 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
   function materialFor(kind) {
     if (!materials.has(kind)) {
       const steel = ['steel', 'tank', 'bridgeRail', 'bridgeMetal'].includes(kind);
-      materials.set(kind, new THREE.MeshStandardNodeMaterial({
+      const material = new THREE.MeshStandardNodeMaterial({
         color: PALETTE[kind], roughness: steel ? 0.58 : 0.86, metalness: steel ? 0.26 : 0.03,
-      }));
+      });
+      if (kind === 'deck' || kind === 'platform' || kind === 'shed' || kind.startsWith('bridge')) {
+        applySnowMaterial(material, { shelter: true });
+      }
+      materials.set(kind, material);
     }
     return materials.get(kind);
   }

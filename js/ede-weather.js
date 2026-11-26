@@ -8,6 +8,10 @@ const EXPIRE_MS = 60 * 60 * 1000;
 const RINK_HISTORY_HOURS = 48;
 const HOUR_SECONDS = 3600;
 const DAY_SECONDS = 24 * HOUR_SECONDS;
+const WINTER_PRESET_TEMPERATURE = -4;
+const SNOW_MELT_DEGREE_SECONDS = 420;
+const ICE_FREEZE_DEGREE_SECONDS = 240;
+const ICE_THAW_DEGREE_SECONDS = 360;
 const PRESET_WIND = Object.freeze({ windSpeed: 18, windDirection: 225 });
 const dry = { interval: 900, rain: 0, showers: 0, snowfall: 0, windGusts: 22, ...PRESET_WIND };
 const breezy = { windSpeed: 39, windDirection: 250, windGusts: 58 };
@@ -91,7 +95,7 @@ function rinkIceFromHistory(hourly, time, temperature) {
 }
 
 export function presetRinkIce(season) {
-  return changeRinkIce(0, season === 'winter' ? -4 : 10, RINK_HISTORY_HOURS);
+  return changeRinkIce(0, season === 'winter' ? WINTER_PRESET_TEMPERATURE : 10, RINK_HISTORY_HOURS);
 }
 
 function parseLunarDays(daily) {
@@ -217,7 +221,7 @@ function windVector(reading) {
 
 const defaultWind = windVector(PRESET_WIND);
 
-function weatherTargets(reading) {
+function weatherTargets(reading, temperature) {
   if (!reading) return null;
   const hourly = 3600 / reading.interval;
   const rainRate = (reading.rain + reading.showers) * hourly;
@@ -228,6 +232,7 @@ function weatherTargets(reading) {
   const snow = Math.max(-Math.expm1(-snowRate / 0.65), condition === 'Snow' ? 0.14 : 0);
   return {
     cloud: reading.cloudCover / 100, fog: condition === 'Fog' ? 1 : 0, rain, snow,
+    snowCover: Math.min(1, snow / 0.8) * Math.max(0, Math.min(1, (3 - (temperature ?? 0)) / 3)),
     wetness: Math.max(rain * 0.65, rainRate > 0 ? 1 - 0.81 * Math.exp(-rainRate / 3) : 0),
     ...windVector(reading)
   };
@@ -239,10 +244,21 @@ function approach(value, target, dt, seconds) {
 
 export function createWeatherTransition() {
   let target = null;
-  const effects = { blend: 0, cloud: 0, fog: 0, rain: 0, raining: false, snow: 0, wetness: 0, ...defaultWind };
+  let iceRate = 0, snowMeltSeconds = 0;
+  let rinkTarget = 0, rinkDegrees = 1;
+  const effects = {
+    blend: 0, cloud: 0, fog: 0, rain: 0, raining: false, snow: 0, snowCover: 0,
+    waterIce: 0, rinkIce: 0, wetness: 0, ...defaultWind
+  };
   return {
-    setReading(reading) {
-      target = weatherTargets(reading);
+    setReading(reading, temperature = reading?.temperature, rinkIce = reading?.rinkIce ?? 0) {
+      target = weatherTargets(reading, temperature);
+      const degrees = temperature ?? 0;
+      snowMeltSeconds = degrees > 0 ? SNOW_MELT_DEGREE_SECONDS / degrees : 0;
+      iceRate = -degrees / (degrees < 0 ? ICE_FREEZE_DEGREE_SECONDS : ICE_THAW_DEGREE_SECONDS);
+      rinkTarget = rinkIce;
+      // A new historical estimate can change even when the current reading is near zero.
+      rinkDegrees = Math.max(1, Math.abs(degrees));
       effects.raining = (target?.rain ?? 0) > 0;
       if (target && effects.blend === 0) {
         for (const key of ['cloud', 'fog']) effects[key] = target[key];
@@ -253,6 +269,16 @@ export function createWeatherTransition() {
       const wind = target ?? defaultWind;
       effects.windX = approach(effects.windX, wind.windX, dt, 1.8);
       effects.windZ = approach(effects.windZ, wind.windZ, dt, 1.8);
+      const snowTarget = target?.snowCover ?? 0;
+      if (snowTarget > effects.snowCover) effects.snowCover = approach(effects.snowCover, snowTarget, dt, 10);
+      else if (snowMeltSeconds > 0) effects.snowCover = approach(effects.snowCover, snowTarget, dt, snowMeltSeconds);
+      effects.waterIce = Math.max(0, Math.min(1, effects.waterIce + iceRate * dt));
+      const rinkDelta = rinkTarget - effects.rinkIce;
+      if (rinkDelta) {
+        const rinkStep = rinkDegrees * dt / (rinkDelta > 0 ? ICE_FREEZE_DEGREE_SECONDS : ICE_THAW_DEGREE_SECONDS);
+        effects.rinkIce = rinkStep >= Math.abs(rinkDelta) ? rinkTarget
+          : effects.rinkIce + Math.sign(rinkDelta) * rinkStep;
+      }
       if (!target && effects.blend === 0 && effects.rain === 0 && effects.snow === 0) return effects;
       effects.blend = approach(effects.blend, target ? 1 : 0, dt, 0.85);
       effects.rain = approach(effects.rain, target?.rain ?? 0, dt, 0.8);
@@ -274,7 +300,7 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
   let current = null;
   let active = null;
   let preset = null;
-  let sceneReading = null;
+  let sceneReading = null, sceneTemperature, presetTemperature, presetIce = 0;
   let failed = false;
   let nextFetch = 0;
   let pending;
@@ -289,9 +315,11 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
       : age >= EXPIRE_MS ? 'expired' : age >= STALE_MS ? 'stale' : 'fresh';
     active = status === 'fresh' || status === 'stale' ? current : null;
     const nextReading = enabled ? active : preset;
-    if (nextReading !== sceneReading) {
+    const temperature = enabled ? active?.temperature : presetTemperature;
+    if (nextReading !== sceneReading || temperature !== sceneTemperature) {
       sceneReading = nextReading;
-      transition.setReading(sceneReading);
+      sceneTemperature = temperature;
+      transition.setReading(sceneReading, sceneTemperature, enabled ? active?.rinkIce ?? 0 : presetIce);
     }
     const displayed = enabled ? current : null;
     if (state.status !== status || state.current !== displayed || state.enabled !== enabled) {
@@ -345,8 +373,10 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
   page.addEventListener('visibilitychange', tick);
   return {
     setEnabled, update: transition.update,
-    setPreset(id) {
+    setPreset(id, season) {
       preset = Object.hasOwn(weatherPresets, id) ? weatherPresets[id] : null;
+      presetTemperature = season === 'winter' ? WINTER_PRESET_TEMPERATURE : 10;
+      presetIce = presetRinkIce(season);
       if (!enabled) tick();
     },
     get state() { return state; },

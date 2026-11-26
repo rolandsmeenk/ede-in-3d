@@ -354,14 +354,15 @@ test('createRoadPaintChunkBuilder subdivides long strips across cells with conti
   for (const chunk of group.children) {
     const pos = chunk.geometry.attributes.position.array;
     const pnt = chunk.geometry.attributes.paint.array;
+    assert.deepEqual([pnt[3], pnt[7], pnt[11], pnt[15]], [-1, 1, 1, -1]);
     for (let v = 0; v < pos.length / 3; v += 4) {
       quads.push({
         y0: pos[v * 3 + 1],
         z0: pos[v * 3 + 2],
         y1: pos[(v + 2) * 3 + 1],
         z1: pos[(v + 2) * 3 + 2],
-        u0: pnt[v * 3],
-        u1: pnt[(v + 2) * 3]
+        u0: pnt[v * 4],
+        u1: pnt[(v + 2) * 4]
       });
     }
   }
@@ -410,7 +411,9 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
     camPos: [0, 4, 20],
     wetness: 0,
     puddles: 0,
-    noiseCalls: 0
+    noiseCalls: 0,
+    paintAcross: 0,
+    acrossFootprint: 0.2
   };
 
   const arr = (v) => (v instanceof TNode ? v.eval() : typeof v === 'number' ? [v] : v);
@@ -436,6 +439,7 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
     sub(b) { return new TNode(() => broadcast(this, b, (x, y) => x - y)); }
     mul(b) { return new TNode(() => broadcast(this, b, (x, y) => x * y)); }
     div(b) { return new TNode(() => broadcast(this, b, (x, y) => x / y)); }
+    negate() { return this.mul(-1); }
     max(b) { return new TNode(() => broadcast(this, b, Math.max)); }
     greaterThan(b) { return new TNode(() => broadcast(this, b, (x, y) => (x > y ? 1 : 0))); }
     toVar() {
@@ -464,7 +468,7 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
     cameraProjectionMatrix: { mul: (v) => v },
     cameraViewMatrix: { mul: (v) => v },
     screenSize: wrap([1920, 1080]),
-    attribute: (name) => (name === 'paint' ? wrap([3.0, 12.0, 1.0]) : wrap([0.065, 0.0])),
+    attribute: (name) => (name === 'paint' ? new TNode(() => [3.0, 12.0, 1.0, env.paintAcross]) : wrap([0.065, 0.0])),
     varying: (v) => v,
     Fn: (builder) => (...args) => new TNode(() => {
       if (builder.toString().includes('pv = vec2(p)')) env.noiseCalls++;
@@ -476,6 +480,7 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
     vec3: (...args) => new TNode(() => { const f = args.flatMap(arr); return f.length === 1 ? [f[0], f[0], f[0]] : f.slice(0, 3); }),
     vec4: (...args) => new TNode(() => args.flatMap(arr).slice(0, 4)),
     sin: unary(Math.sin),
+    abs: unary(Math.abs),
     floor: unary(Math.floor),
     fract: unary((x) => x - Math.floor(x)),
     min: (a, b) => new TNode(() => broadcast(a, b, Math.min)),
@@ -492,7 +497,7 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
     }),
     dot: (a, b) => new TNode(() => { const va = arr(a), vb = arr(b); return [va.reduce((s, x, i) => s + x * vb[i], 0)]; }),
     length: (v) => new TNode(() => [Math.hypot(...arr(v))]),
-    fwidth: () => wrap([0.01])
+    fwidth: (v) => new TNode(() => [arr(v)[0] === 0.25 ? 0.01 : env.acrossFootprint])
   };
 
   const { createRoadPaintMaterial, roadWetMasks } = vm.runInNewContext(
@@ -511,6 +516,13 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
   const colDry = m1.colorNode.eval();
   assert.equal(env.noiseCalls, 0, 'skips both wear noise (>70 m) and puddle noise (dry midday)');
   assert.ok(opMid > 0, 'visible at 120 m');
+  const acrossStep = env.acrossFootprint / (m1.positionNode.eval()[0] + 0.065);
+  env.paintAcross = acrossStep / 2;
+  const edgePixel = m1.opacityNode.eval()[0];
+  env.paintAcross = -acrossStep / 2;
+  assert.ok(Math.abs(edgePixel + m1.opacityNode.eval()[0] - opMid) < 1e-10,
+    'shifting a subpixel stripe to a pixel boundary preserves total coverage');
+  env.paintAcross = 0;
   assert.deepEqual(colDry, [1, 1, 1]);
   assert.deepEqual(roadWetMasks(wrap(0.95)).eval(), [0, 0, 0]);
 

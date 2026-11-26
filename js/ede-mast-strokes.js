@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { attribute, cameraPosition, cameraProjectionMatrix, cameraViewMatrix, color, fwidth, length, max, mix,
-  positionGeometry, screenSize, sqrt, transformNormalToView, varying, vec4 } from 'three/tsl';
+  positionGeometry, screenSize, smoothstep, sqrt, transformNormalToView, varying, vec4 } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
+import { applySnowMaterial } from './ede-snow.js';
 
 const paintColor = new THREE.Color();
 const endpoint = new THREE.Vector3();
@@ -35,7 +36,7 @@ function strokeMesh(strokes, material) {
   return new THREE.Mesh(geometry, material);
 }
 
-function strokeMaterial({ cutoff, night, opacity } = {}) {
+function strokeMaterial({ cutoff, night, opacity, snow } = {}) {
   const options = { transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true };
   const mat = cutoff ? new THREE.MeshBasicNodeMaterial(options)
     : new THREE.MeshStandardNodeMaterial({ ...options, roughness: 0.72, metalness: 0.12 });
@@ -77,15 +78,21 @@ function strokeMaterial({ cutoff, night, opacity } = {}) {
     const lateralNormal = lateral.div(max(radius, 0.00001)).clamp(-1, 1);
     const towardCamera = right.cross(axis);
     const radial = sqrt(max(lateralNormal.mul(lateralNormal).oneMinus(), 0.0));
-    mat.normalNode = transformNormalToView(right.mul(lateralNormal).add(towardCamera.mul(radial)));
+    const normal = right.mul(lateralNormal).add(towardCamera.mul(radial));
+    mat.normalNode = transformNormalToView(normal);
+    if (snow) {
+      // Use the tube's shading normal and the upper tip of a vertical post.
+      const capUp = smoothstep(beamLength.sub(radius.mul(0.45)), beamLength, along).mul(axis.y.max(0));
+      applySnowMaterial(mat, { shelter: true, up: max(normal.y, capUp) });
+    }
   }
   mat.opacityNode = alpha.mul(endCoverage).mul(opacity ?? 1);
   mat.mrtNode = transparentEffectMRT;
   return mat;
 }
 
-export function memberStrokeMaterial(opacity) {
-  return strokeMaterial({ opacity });
+export function memberStrokeMaterial(opacity, { snow = false } = {}) {
+  return strokeMaterial({ opacity, snow });
 }
 
 export function memberStrokeMesh(strokes, material) {

@@ -28,6 +28,7 @@ async function models(globals = {}) {
       './ede-landscape-geometry.js': await import('../js/ede-landscape-geometry.js'),
       './ede-landscape-jobs.js': {},
       'three/webgpu': three, 'three/tsl': tsl,
+      './ede-snow.js': { applySnowMaterial: material => material },
       './ede-scene-coordinates.js': { SCENE_NAP_ORIGIN: 22.54 },
       './ede-playable-boundary.js': { playableBoundsCovered: () => true },
       './terrain.js': { terrainHeightAt: () => 0 },
@@ -75,12 +76,12 @@ test('canopy tiles hold the visible level while loading and crossfade both direc
   ];
   const canopy = createForestCanopy(new three.Scene(), source, false);
   const camera = new three.PerspectiveCamera(60, 1.5, 1, 8000);
-  const update = (z, time) => {
+  const update = (z, time, detailScale = 1) => {
     now = time;
     camera.position.set(500, 200, z);
     camera.lookAt(500, 20, 500);
     camera.updateMatrixWorld();
-    canopy.update(camera, {});
+    canopy.update(camera, {}, { altitude: 195, detailScale });
   };
   async function resolve(id) {
     const reply = requests.get(id + '.bin');
@@ -107,9 +108,9 @@ test('canopy tiles hold the visible level while loading and crossfade both direc
   update(2100, 610);
   assert.deepEqual(visible(), [[0, 1], [0, 1]]);
 
-  update(2400, 720);
-  update(2400, 920);
+  update(2100, 720, 0.7);
+  update(2100, 920, 0.7);
   assert.deepEqual(visible(), [[0.5, 1], [0, 0.5], [0, 0.5]]);
-  update(2400, 1120);
+  update(2100, 1120, 0.7);
   assert.deepEqual(visible(), [[0, 1]]);
 });

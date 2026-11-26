@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { applySnowToModel } from './ede-snow.js';
 import { LANDMARK_SITES, EDE_DATA, projectLonLat } from './city-config.js';
 import { createChicaSculpture, createChicoSculpture, createShermanMonument } from './street-props.js';
 import { terrainHeightAt } from './terrain.js';
@@ -329,6 +330,8 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
   group.add(station);
   station.traverse(registerDetail);
   colliders.push(...station.userData.colliders);
+  weatherCovers.push(...station.userData.weatherCovers);
+  applySnowToModel(group);
   const last = new THREE.Vector3(Infinity, Infinity, Infinity);
   function update(position) {
     if (last.distanceToSquared(position) < 4) return;

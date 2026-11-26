@@ -7,6 +7,7 @@ import { buildCanopyGeometry, CELLS, FULL_EDGE, restoreLandscapeGeometry } from 
 import { runLandscapeJob } from './ede-landscape-jobs.js';
 import { containsPlayablePoint, playableBoundsCovered, playableBoundsOverlap, playableBoundary } from './ede-playable-boundary.js';
 import { treeSeasonNodes } from './tree-seasons.js';
+import { applySnowMaterial } from './ede-snow.js';
 
 const DIRECTORY = new URL('../assets/ede-forest-canopy/', import.meta.url);
 const MAX_LOADS = 4;
@@ -60,6 +61,7 @@ export function createForestCanopy(scene, source, seasonal) {
   material.name = 'Distant woodland canopy';
   const base = float(attribute('crownShade', 'float')).mul(new THREE.Color(0x3b5525));
   material.colorNode = tint ? base.mul(mix(1, tint.rgb, 0.55)).mul(mix(0.48, 1, tint.a)) : base;
+  applySnowMaterial(material, { exposure: 0.55, retention: 0.87 });
   const distance = positionWorld.xz.distance(cameraPosition.xz).add(aerialOffset);
   const nearTrees = mix(smoothstep(FADE_START, FADE_END, distance), 1, holdNear);
   const visibility = mix(nearTrees, 1, attribute('exteriorCanopy', 'float'));
@@ -166,7 +168,7 @@ export function createForestCanopy(scene, source, seasonal) {
     root.target = target;
   }
 
-  function update(camera, treeField) {
+  function update(camera, treeField, { altitude, detailScale }) {
     while (ready[0]?.signal.aborted) ready.shift();
     const { x, y, z } = camera.position;
     const jumped = Math.hypot(x - viewX, z - viewZ) >= 500;
@@ -198,7 +200,7 @@ export function createForestCanopy(scene, source, seasonal) {
     }
     viewX = x;
     viewZ = z;
-    aerialOffset.value = Math.min(FADE_END, Math.max(0, (y - terrainHeightAt(x, z) - 40) * 4));
+    aerialOffset.value = Math.min(FADE_END, Math.max(0, (altitude - 40) * 4));
     fullCanopyRadiusSq = (FADE_END - aerialOffset.value) ** 2;
     holdNear.value = treeField.coveragePending?.(x, z) ? 1 : 0;
     const now = performance.now();
@@ -231,7 +233,8 @@ export function createForestCanopy(scene, source, seasonal) {
       if (d > FAR_LIMIT || (d > 650 && !inView(root))) continue;
       root.used = tick;
       const children = root.childTiles;
-      const preferDetail = d < SWITCH_DISTANCE && children.length > 0;
+      const distanceToCrowns = Math.hypot(d, Math.max(0, y - (root.maxY ?? 110)));
+      const preferDetail = distanceToCrowns < SWITCH_DISTANCE * detailScale && children.length > 0;
       const detailReady = children.length > 0 && children.every(child => child.mesh);
       if (preferDetail) {
         for (const child of children) {

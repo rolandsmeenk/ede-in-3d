@@ -284,20 +284,26 @@ test('BAG starts from fallback, bounds downloads, cancels stale work on a jump, 
   };
   const scene = new T.Scene();
   const camera = new T.PerspectiveCamera(55, 1, 0.1, 2000);
-  const focus = x => { camera.position.set(x, 6, 45); camera.lookAt(x, 0, 0); };
+  const focus = (x, altitude = 6) => {
+    const ground = 10 + x / 2;
+    camera.position.set(x, ground + altitude, 45);
+    camera.lookAt(x, ground, 0);
+  };
   const stream = createBagBuildingStream(scene, { fallback, fetchJson: async () => ({ root }), loader, loadBuffer });
   const { update, stats, setEnabled, dispose } = stream.userData;
-  const drain = () => new Promise(resolve => setTimeout(resolve, 4));
+  const waitFor = async ready => {
+    const deadline = performance.now() + 2000;
+    while (!ready() && performance.now() < deadline) {
+      update(camera);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  };
   assert.equal(stats.resident, 0);
   focus(0);
-  update(camera);
-  await drain();
-  update(camera);
+  await waitFor(() => pending.length >= 2);
   assert.deepEqual(pending.map(p => p.url.split('/').at(-1)), ['start.glb', 'cancel.glb']);
   pending[0].resolve(new Float64Array([0]).buffer);
-  await drain();
-  update(camera);
-  await drain();
+  await waitFor(() => stats.resident === 1);
   assert.deepEqual(changes, [[['start'], true]]);
   let released = false;
   stream.children[0].children[0].geometry.addEventListener('dispose', () => { released = true; });
@@ -308,10 +314,12 @@ test('BAG starts from fallback, bounds downloads, cancels stale work on a jump, 
   assert.equal(pending[1].signal.aborted, true);
   assert.equal(pending.at(-1).url.endsWith('jump.glb'), true);
   pending.at(-1).resolve(new Float64Array([1800]).buffer);
-  await drain();
-  update(camera);
-  await drain();
+  await waitFor(() => stats.resident === 1);
   assert.deepEqual(changes.at(-1), [['jump'], true]);
+  focus(1800, 800);
+  update(camera, 0.55);
+  assert.equal(stats.resident, 0, 'a high view returns distant tiles to their fallback');
+  assert.deepEqual(changes.at(-1), [['jump'], false]);
   setEnabled(false);
   assert.equal(stats.resident, 0);
   assert.equal(stats.geometryBytes, 0);
@@ -384,7 +392,7 @@ test('a landmark switches visible models without hiding its static sun-shadow si
 
 test('aerial town tiles keep their shells across the map boundary and restore street detail when descending', async () => {
   const THREE = await import('../vendor/three/build/three.webgpu.js');
-  const { createExpansionCulling } = loadModule(read('scene-culling.js'), {
+  const { createExpansionCulling, updateViewRange } = loadModule(read('scene-culling.js'), {
     imports: { 'three/webgpu': THREE },
   });
   const scene = new THREE.Scene();
@@ -419,11 +427,11 @@ test('aerial town tiles keep their shells across the map boundary and restore st
   roofs.visible = false; // A resident BAG tile owns these roofs.
   scene.updateMatrixWorld(true);
 
-  const culling = createExpansionCulling(roots, [0, 0, 3000, 2000], () => 40);
-  const camera = new THREE.PerspectiveCamera();
-  const at = (x, altitude) => {
+  const culling = createExpansionCulling(roots);
+  const camera = new THREE.PerspectiveCamera(55);
+  const at = (x, altitude, viewportHeight = 900) => {
     camera.position.set(x, 40 + altitude, 1000);
-    culling.update(camera);
+    culling.update(camera, updateViewRange(camera, viewportHeight, 40));
   };
   const rendered = object => object.visible && object.layers.isEnabled(0);
   for (const altitude of [40, 100]) {
@@ -436,17 +444,31 @@ test('aerial town tiles keep their shells across the map boundary and restore st
     }
   }
 
-  at(750, 40);
-  assert.ok(rendered(walls));
-  assert.ok(!rendered(shell));
-  at(1935, 30);
-  assert.ok(rendered(walls) && !rendered(shell));
-  at(1935, 36);
-  assert.ok(rendered(shell) && !rendered(walls));
-  at(1935, 17);
-  assert.ok(!rendered(shell));
+  at(1370, 2);
   assert.ok(rendered(walls) && rendered(paving));
+  assert.ok(!rendered(shell));
+  assert.equal(camera.far, 2600);
+  at(1370, 90);
+  assert.ok(camera.far > 2600 && camera.far < 13000);
+  at(1370, 320);
+  assert.equal(camera.far, 13000);
+  assert.ok(rendered(shell) && !rendered(walls) && !rendered(paving));
+  at(1370, 2);
+  assert.ok(!rendered(shell) && rendered(walls) && rendered(paving));
   assert.ok(roofs.layers.isEnabled(0) && !roofs.visible);
+
+  at(1650, 2);
+  assert.ok(rendered(shell) && !rendered(walls));
+  at(1650, 2, 1400);
+  assert.ok(rendered(walls) && !rendered(shell), 'a larger viewport resolves the facade detail');
+  at(1650, 2);
+  assert.ok(rendered(shell) && !rendered(walls));
+  camera.zoom = 1.6;
+  camera.updateProjectionMatrix();
+  at(1650, 2);
+  assert.ok(rendered(walls) && !rendered(shell), 'zooming in resolves the facade detail');
+  camera.zoom = 1;
+  camera.updateProjectionMatrix();
 
   at(2999, 2);
   assert.ok(rendered(shell));

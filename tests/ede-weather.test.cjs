@@ -321,3 +321,76 @@ test('Maanderbroek hub wind stays separate from town wind and follows the shorte
   weather.setEnabled(false);
   assert.equal(weather.turbineWind, weather.windReading);
 });
+
+test('snow outlasts the flakes and temperature controls how fast water freezes and thaws', async () => {
+  const { createLiveWeather, createWeatherTransition } = await import('../js/ede-weather.js');
+  const weather = createLiveWeather({ page: { hidden: false, addEventListener() {} } });
+  weather.setPreset('snow', 'winter');
+  const onset = { ...weather.update(3) };
+  assert.ok(onset.snow > onset.snowCover && onset.snowCover > 0);
+  const settled = weather.update(27).snowCover;
+  assert.ok(settled > 0.9);
+  weather.setPreset('default', 'winter');
+  const afterFlakes = weather.update(5);
+  assert.ok(afterFlakes.snow < 0.01);
+  assert.equal(afterFlakes.snowCover, settled);
+  const cold = weather.update(25);
+  assert.equal(cold.snowCover, settled, 'settled snow stays after snowfall stops in freezing weather');
+  assert.equal(cold.waterIce, 1, 'Winter freezes the water even in default weather');
+  weather.setPreset('default', 'spring');
+  const thaw = weather.update(12);
+  assert.ok(thaw.snowCover < settled && thaw.waterIce < 1);
+  assert.equal(weather.update(30).waterIce, 0);
+
+  const transition = createWeatherTransition();
+  const at = (temperature, seconds) => {
+    transition.setReading({ temperature, interval: 900, code: 0, rain: 0, showers: 0, snowfall: 0, cloudCover: 0 });
+    return transition.update(seconds).waterIce;
+  };
+  assert.equal(at(-1, 30), 0.125);
+  assert.equal(at(-4, 30), 0.625);
+  assert.equal(at(0, 30), 0.625);
+  assert.ok(at(4, 30) < 0.625);
+});
+
+test('settled snow melts faster at higher temperatures above zero', async () => {
+  const { createWeatherTransition, parseWeather } = await import('../js/ede-weather.js');
+  const snowfall = parseWeather(reading({ temperature_2m: -4, weather_code: 73, snowfall: 0.9 }), observedAt);
+  const remaining = temperature => {
+    const transition = createWeatherTransition();
+    transition.setReading(snowfall);
+    const settled = transition.update(40).snowCover;
+    transition.setReading(null, temperature);
+    return transition.update(42).snowCover / settled;
+  };
+
+  assert.equal(remaining(-2), 1);
+  assert.equal(remaining(0), 1);
+  const mild = remaining(2), warm = remaining(10), hot = remaining(20);
+  assert.ok(mild < 1 && warm < mild && hot < warm);
+  assert.ok(Math.abs(warm - Math.exp(-1)) < 1e-9);
+});
+
+test('outdoor rinks freeze and thaw gradually in presets and converge to the live history estimate', async () => {
+  const { createLiveWeather, createWeatherTransition, parseWeather } = await import('../js/ede-weather.js');
+  const presets = createLiveWeather({ page: { hidden: false, addEventListener() {} } });
+  presets.setPreset('default', 'winter');
+  assert.equal(presets.update(0).rinkIce, 0);
+  assert.equal(presets.update(30).rinkIce, 0.5);
+  assert.equal(presets.update(30).rinkIce, 1);
+  presets.setPreset('default', 'spring');
+  assert.equal(presets.update(0).rinkIce, 1);
+  assert.equal(presets.update(18).rinkIce, 0.5);
+  assert.equal(presets.update(18).rinkIce, 0);
+
+  const live = createWeatherTransition();
+  const warmReading = parseWeather(reading({ temperature_2m: 3 }), observedAt);
+  live.setReading({ ...warmReading, rinkIce: 0.5 });
+  assert.equal(live.update(0).rinkIce, 0);
+  assert.equal(live.update(20).rinkIce, 0.25);
+  assert.equal(live.update(40).rinkIce, 0.5);
+  assert.equal(live.update(60).waterIce, 0);
+  live.setReading({ ...warmReading, rinkIce: 0 });
+  assert.equal(live.update(30).rinkIce, 0.25);
+  assert.equal(live.update(30).rinkIce, 0);
+});

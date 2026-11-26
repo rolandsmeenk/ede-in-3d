@@ -365,7 +365,7 @@ const { createTreeField } = loadModule(treesSource, {
     'three/webgpu': threeStub,
     'three/tsl': { uniform: (value) => ({ value }) },
     './tree-seasons.js': { packTreeStyle: (species, random) => species + random },
-    './tsl-materials.js': { createTreeMaterial: () => ({ name: 'TreeMat' }) },
+    './tsl-materials.js': { createTreeMaterial: (texture, options) => ({ name: 'TreeMat', texture, ...options }) },
     './building-collision.js': buildingCollision
   },
   globals: {
@@ -765,6 +765,8 @@ test('distant tree handoffs preserve the crown mesh, transform, and seasonal sty
   const localCrowns = new Map(field.meshes.filter(mesh => mesh.count).map(mesh => [mesh.instanceMatrix.array[12], mesh]));
   for (const mesh of active()) {
     assert.equal(mesh.castShadow ?? false, false);
+    assert.equal(mesh.material.filtered, true);
+    assert.ok(mesh.material.texture.mipmaps.length > 1);
     assert.equal(mesh.count, 2);
     for (let i = 0; i < mesh.count; i++) {
       const matrix = new Matrix4();
@@ -772,6 +774,7 @@ test('distant tree handoffs preserve the crown mesh, transform, and seasonal sty
       const site = byX.get(matrix.elements[12]);
       assert.ok(site);
       const local = localCrowns.get(site.x);
+      assert.equal(mesh.material, local.material);
       assert.equal(mesh.geometry.attributes.position, local.geometry.attributes.position);
       assert.equal(mesh.geometry.index, local.geometry.index);
       assert.deepEqual(Array.from(matrix.elements), Array.from(local.instanceMatrix.array));

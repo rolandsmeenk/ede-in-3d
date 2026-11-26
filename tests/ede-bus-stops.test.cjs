@@ -10,7 +10,7 @@ const { boardingDirections, collectEdeBusStops, fitEdeBusStop } = loadModule(
     imports: {
       ...stubs(['three/webgpu', './city-config.js', './ede-geometry.js', './ede-grade.js',
         './ede-playable-boundary.js', './ede-scene-coordinates.js', './terrain.js',
-        './ede-bus-shelter-sites.js', './ede-bus-shelters.js']),
+        './ede-bus-shelter-sites.js', './ede-bus-shelters.js', './ede-snow.js']),
       './ede-geodata.js': { EDE_DATA: { meta: { bounds: [0, 0, 20, 30] } } },
     },
   });
@@ -75,7 +75,7 @@ test('a cycle path can rule out a platform while leaving space for a standalone 
 
 test('shelter footprints stay behind the boarding point and clear paving and the post', () => {
   const { fitShelter } = loadModule(readFileSync(join(__dirname, '../js/ede-bus-shelters.js'), 'utf8'), {
-    imports: stubs(['three/webgpu', './ede-advertising.js']),
+    imports: stubs(['three/webgpu', './ede-advertising.js', './ede-snow.js']),
   });
   const site = { x: 10, z: 20, tx: 1, tz: 0, green: true,
     pose: { sign: { x: 8.5, z: 23 }, platform: { width: 1.5 } } };
