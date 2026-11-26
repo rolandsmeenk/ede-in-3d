@@ -31,7 +31,7 @@ import { applySnowToModel, setSnowShelters } from './ede-snow.js';
 import { createKiteFlyers } from './ede-kites.js';
 import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js?v=20261122-municipal-coverage';
-import { createExpansionCulling, setupSceneCulling, updateSceneCulling, updateViewRange } from './scene-culling.js?v=20261126-view-lod';
+import { createExpansionCulling, setupSceneCulling, updateSceneCulling, updateViewRange } from './scene-culling.js?v=20261126-iphone-range';
 import { CityAudioSystem } from './audio-system.js?v=20261122-p2000';
 import { getExpansionTerrain, loadTerrain, terrainHeightAt } from './terrain.js';
 import { createTerrainTiles } from './ede-terrain-tiles.js';
@@ -86,10 +86,10 @@ export async function initApp() {
   const scale = profiling ? Number(query.get('scale')) : 0;
   const graphics = {
     quality: standard ? 'standard' : 'fast',
-    msaa: enabled('msaa', standard), ssr: enabled('ssr'),
+    msaa: enabled('msaa', standard), ssr: enabled('ssr', !compactGraphics),
     bloom: enabled('bloom', !compactGraphics), shadows: enabled('shadows', !compactGraphics), vegetation: enabled('vegetation'),
     buildingDetail: enabled('buildingDetail', !compactGraphics),
-    scale: scale >= 0.5 && scale <= 1 ? scale : compactGraphics ? 0.75 : 1,
+    scale: scale >= 0.5 && scale <= 1 ? scale : compactGraphics ? 0.65 : 1,
   };
   const requestedTreeInventory = profiling ? query.get('treeInventory') : null;
   const treeInventory = requestedTreeInventory === 'baseline' || (compactGraphics && requestedTreeInventory !== 'expanded')
@@ -177,8 +177,10 @@ export async function initApp() {
   const [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, featureResult,
     motorwayResult, roadSurfaceResult, trainResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult, woodlandResult] = await Promise.allSettled([
     loadTerrain({ expanded: query.get('terrainTiles') !== 'off' }), loadAerialColors(), loadEdeTrees(treeInventory), loadEdeLamps(), loadEdeBusSchedule(), loadEdeGrade(),
-    loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces({ north: EDE_DATA.meta.north, fringe: Boolean(EDE_DATA.meta.travelBounds) }), loadEdeTrainTimetable(), loadEdeParking(),
-    enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail'), bgtStage, municipal: enabled('municipalDetail'),
+    loadEdePostedSpeeds(), loadEdeStreetFeatures(), loadEdeMotorwayLanes(), loadEdeRoadSurfaces({
+      north: !compactGraphics && EDE_DATA.meta.north, fringe: !compactGraphics && Boolean(EDE_DATA.meta.travelBounds),
+    }), loadEdeTrainTimetable(), loadEdeParking(),
+    enabled('detail') ? loadEdeDetail({ bgt: enabled('bgtDetail', !compactGraphics), bgtStage, municipal: enabled('municipalDetail'),
       motorway: enabled('motorwayDetail'), parcels: enabled('parcelDetail'), utilities: useUtilityDetails,
       directional: enabled('motorwayDetail') && enabled('nbdSigns'), fringe: Boolean(EDE_DATA.meta.travelBounds) }) : null,
     enabled('laneFits') ? loadEdeFittedLanes() : null,
@@ -189,9 +191,9 @@ export async function initApp() {
     loadEdeSignalHardware(),
     enabled('detail') && enabled('waterWorks') ? loadEdeWaterWorks() : null,
     loadExteriorBagFootprints(),
-    enabled('roadFurniture') ? loadEdeRoadFurniture() : null,
+    enabled('roadFurniture', !compactGraphics) ? loadEdeRoadFurniture() : null,
     loadEdePondLevels(),
-    enabled('curbs') ? loadEdeCurbs() : null,
+    enabled('curbs', !compactGraphics) ? loadEdeCurbs() : null,
     loadEdeWoodland(),
   ]);
   if (curbResult.status === 'rejected') console.warn('[curbs] using original pavement:', curbResult.reason);
@@ -244,7 +246,7 @@ export async function initApp() {
   if (pondLevelsResult.status === 'rejected') console.warn('[water] using terrain-draped ponds:', pondLevelsResult.reason);
   const cityGrid = buildCityGrid(scene, loadedTrees?.records, detailData?.landCover, loadedTrees?.canopyDensity,
     replacedPitches, forest?.cells, EDE_DATA.meta.north ? forest?.northernTreeSamples : undefined,
-    heath, pondLevelsResult.value, { woodlandSpacing: compactGraphics ? 24 : 12, woodlandComposition: woodlandResult.value });
+    heath, pondLevelsResult.value, { compact: compactGraphics, woodlandComposition: woodlandResult.value });
   const terrainTiles = createTerrainTiles(scene, heath, detailData?.fringeLandCover, cityGrid.shorelineCuts);
   markInit('cityGrid');
   await showLoadingStage('Building bridges, tunnels and railway platforms…');
@@ -1235,7 +1237,7 @@ export async function initApp() {
 
   const camera = cameraSystem.camera;
   const updateRenderView = () => updateViewRange(camera, renderer.domElement.height,
-    terrainHeightAt(camera.position.x, camera.position.z));
+    terrainHeightAt(camera.position.x, camera.position.z), compactGraphics);
   cameraSystem.update(0, 0);
   const initialView = updateRenderView();
   await showLoadingStage('Building paving near your starting point...');
@@ -1295,7 +1297,8 @@ export async function initApp() {
     bgtWorld?.updateMastLod(cameraSystem.camera, renderer.domElement.height);
     if (warmedUp) landmarks.updateMastLod(cameraSystem.camera, renderer.domElement.height, lightingSystem.uNightFactor.value);
     profiler?.stage('Player, camera and terrain');
-    if (warmedUp) cityGrid.pavingTiles.update(camera.position, THREE.MathUtils.clamp(900 * renderView.detailScale, 220, 1200));
+    if (warmedUp) cityGrid.pavingTiles.update(camera.position,
+      THREE.MathUtils.clamp(900 * renderView.detailScale, 220, compactGraphics ? 550 : 1200));
     profiler?.stage('Paving tiles');
     if (trafficUpdates) {
       trafficClock += dt;

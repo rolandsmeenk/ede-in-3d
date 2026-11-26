@@ -31,11 +31,11 @@ The game can stay on GitHub Pages while the feed server runs separately over HTT
 
 ## Graphics and profiling
 
-**Graphics quality** in the **Menu** offers **Fast** and **Standard**. Both presets use screen-space reflections and color grading. Fast is the default and renders reflections at a lower resolution with shorter rays. Standard adds multisample antialiasing. Both presets use the 12 m AHN town grid and stream the outer terrain down to 5 m spacing.
+**Graphics quality** in the **Menu** offers **Fast** and **Standard**. Fast is the default. Both presets use color grading, the 12 m AHN town grid, and streamed outer terrain down to 5 m spacing. Standard adds multisample antialiasing. Fast on desktop renders screen-space reflections at a lower resolution with shorter rays.
 
-The camera draws up to 2.6 km at street level and gradually extends its range to 13 km by 320 m above local terrain. Terrain and scenery use coarser geometry as their projected detail gets smaller, with a larger pixel error budget in flight.
+The camera draws up to 2.6 km at street level and gradually extends its range to 13 km by 320 m above local terrain. Fast on iPhone and iPad draws up to 1.5 km at street level and extends to 5 km by the same altitude. Terrain and scenery use coarser geometry as their projected detail gets smaller, with a larger pixel error budget in flight.
 
-Fast keeps bloom and dynamic shadows on desktop. On iPhone and iPad, both presets use WebGL 2 for startup reliability. Fast on those devices uses a lower internal resolution, sparser woodland, and fallback buildings in town, with bloom and dynamic shadows disabled.
+Fast keeps bloom and dynamic shadows on desktop. On iPhone and iPad, both presets use WebGL 2. Fast on those devices lowers the internal resolution, uses sparser woodland and fallback buildings, and turns off screen-space reflections, bloom, and dynamic shadows. It keeps the town and corridor paving surveys, uses road centerlines for the remaining streets, and uses a 32 MiB paving cache budget. Standard loads the additional regional paving, curbs, and detailed roadside assets.
 
 Append `?debug=1` and choose **Debug → Traffic lanes** to see the motor traffic graph near the camera. `?laneDebug=on` opens the game with the overlay enabled. Arrows show the travel direction, thin lines show junction connections, cyan marks fitted paths, amber marks fallback paths, and purple marks paths used only by scheduled buses.
 

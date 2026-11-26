@@ -453,9 +453,13 @@ test('aerial town tiles keep their shells across the map boundary and restore st
   at(1370, 320);
   assert.equal(camera.far, 13000);
   assert.ok(rendered(shell) && !rendered(walls) && !rendered(paving));
+  updateViewRange(camera, 900, 40, true);
+  assert.equal(camera.far, 5000);
   at(1370, 2);
   assert.ok(!rendered(shell) && rendered(walls) && rendered(paving));
   assert.ok(roofs.layers.isEnabled(0) && !roofs.visible);
+  updateViewRange(camera, 900, 40, true);
+  assert.equal(camera.far, 1500);
 
   at(1650, 2);
   assert.ok(rendered(shell) && !rendered(walls));

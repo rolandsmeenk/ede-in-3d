@@ -1,4 +1,4 @@
-import('./main.js?v=20261126-winter-traffic')
+import('./main.js?v=20261126-iphone-range')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

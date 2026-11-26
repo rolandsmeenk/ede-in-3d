@@ -362,12 +362,12 @@ function updateSceneCulling(cameraPosition) {
 
 export { setupSceneCulling, updateSceneCulling, SHADOW_PROXY_LAYER };
 
-export function updateViewRange(camera, viewportHeight, groundHeight) {
+export function updateViewRange(camera, viewportHeight, groundHeight, compact = false) {
   const altitude = Math.max(0, camera.position.y - groundHeight);
   const { lerp, smoothstep } = THREE.MathUtils;
   const aerialDetail = smoothstep(altitude, 15, 180);
   const focal = viewportHeight * 0.5 * camera.projectionMatrix.elements[5];
-  const far = lerp(2600, 13000, smoothstep(altitude, 12, 320));
+  const far = lerp(compact ? 1500 : 2600, compact ? 5000 : 13000, smoothstep(altitude, 12, 320));
   if (camera.far !== far) {
     camera.far = far;
     camera.updateProjectionMatrix();

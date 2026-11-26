@@ -69,7 +69,8 @@ function setAerialSurfaceColors(geometry, segment, asphalt, sampleGround = true)
 }
 
 function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedPitches, forestCells, northernTreeSamples = [], heath, pondLevels = new Map(),
-  { woodlandSpacing: spacing = 12, woodlandComposition } = {}) {
+  { compact = false, woodlandComposition } = {}) {
+  const spacing = compact ? 36 : 12;
   const group = new THREE.Group();
   group.name = 'EdeCityGrid';
   const terrain = getTerrain();
@@ -119,7 +120,8 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const strip = (a, b, half, y, offset, wayId) => drapeEdeSurface(edeStrip(a, b, half, y, offset), true, wayId);
   const collections = new Map();
   const pavingMaterials = { asphalt: roadMat, mapped: mappedPavingMat, path: pavingMat, sidewalk: sidewalkMat, curb: curbMat };
-  const pavingTiles = createPavingTiles(scene, mergeCityBatches, undefined, createPavingWorker(preparePavingTile), pavingMaterials);
+  const pavingTiles = createPavingTiles(scene, mergeCityBatches, compact ? 32 * 1024 ** 2 : undefined,
+    createPavingWorker(preparePavingTile), pavingMaterials);
 
   function preparePavingTile(tile) {
     const bounds = { minX: tile.minX - 0.01, minZ: tile.minZ - 0.01, maxX: tile.maxX + 0.01, maxZ: tile.maxZ + 0.01 };
@@ -517,7 +519,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     }
     if (!isCarriageway(s)) continue;
     const nx = -s.uz, nz = s.ux;
-    if (!mapped && curbedKinds.has(s.road.kind)) for (const side of [-1, 1]) {
+    if (!compact && !mapped && curbedKinds.has(s.road.kind)) for (const side of [-1, 1]) {
       const offset = side * (width / 2 + 0.08);
       const a = { x: s.a.x + nx * offset, z: s.a.z + nz * offset };
       const b = { x: s.b.x + nx * offset, z: s.b.z + nz * offset };
