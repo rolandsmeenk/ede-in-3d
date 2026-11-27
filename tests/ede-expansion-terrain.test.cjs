@@ -253,7 +253,7 @@ test('buffered roots draw immediately after camera jumps while detail fetches wa
     './ede-landscape-jobs.js': {}, './ede-grade.js': { expansionGradeCuts: () => [] },
     'three/webgpu': three, 'three/tsl': tsl, './aerial-colors.js': { sampleGroundColor: () => false },
       './ede-snow.js': { applySnowMaterial: material => material },
-      './tsl-materials.js': { heathBloomColor: color => color, cityUniforms: { uRoadWetness: tsl.float(0) } },
+      './tsl-materials.js': { heathSeasonColor: color => color, wetFilm: tsl.float(0) },
       './ede-playable-boundary.js': {}, './ede-coverage.js': coverage, './terrain.js': terrain,
     },
   });

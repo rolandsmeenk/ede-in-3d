@@ -26,7 +26,7 @@ import { SkyMesh } from 'three/addons/objects/SkyMesh.js?v=20261127-volume-cloud
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 import { cityUniforms, setPhotoFrost } from './tsl-materials.js';
-import { snowCover } from './ede-snow.js';
+import { rinkSnowCover, snowCover, waterSnowCover } from './ede-snow.js';
 import { directSunFactor, edeSun, livePresetBlend } from './live-sky.js';
 import { edeMoon } from './ede-moon.js';
 import { createPhotoSky } from './ede-photo-sky.js';
@@ -437,6 +437,8 @@ class LightingSystem {
     this.photoSky.update(weather, timeSeconds);
     setPhotoFrost(weather?.frost ?? 0);
     snowCover.value = weather?.snowCover ?? 0;
+    waterSnowCover.value = weather?.waterSnowCover ?? 0;
+    rinkSnowCover.value = weather?.rinkSnowCover ?? 0;
     cityUniforms.uWaterIce.value = weather?.waterIce ?? 0;
     if (weather?.blend || this.hadWeather) {
       this.weather = weather;

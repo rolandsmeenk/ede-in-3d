@@ -1,4 +1,4 @@
-import('./main.js?v=20261127-volume-clouds')
+import('./main.js?v=20261127-weather-surfaces')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

@@ -152,6 +152,8 @@ const sandbox = {
   },
   ISLAND_BOUNDS: { minX: -1100, maxX: 1100, minZ: -5600, maxZ: 6400, waterLevel: -2.2 },
   EDE_DATA: null,
+  waterSnowCover: wrap(0),
+  applySnowMaterial: (material, options) => Object.assign(material, { snowOptions: options }),
   getEdeReflectionBanks: () => [[-950, -6000, -950, 6000, 70], [950, 6000, 950, -6000, 70]],
   CENTRAL_PARK_BOUNDS: { minX: -420, maxX: 420, minZ: -3800, maxZ: -600 },
   getIslandBoundsAtZ: () => ({ westX: -950, eastX: 950 }),
@@ -311,21 +313,26 @@ test('water emissiveNode evaluates skyline reflections at twilight/midnight in u
   assert.ok(midnight[0] > twilight[0], 'midnight reflection is brighter than twilight');
 });
 
-test('frozen water loses its wave tilt and takes on a blue ice tint', () => {
+test('frozen Ede water becomes glossy blue ice with its own snow cover', () => {
   env.posWorld = [20, -2.2, 10];
   env.camPos = [80, 14, 90];
   env.wind = [1, 0, 1];
+  sandbox.EDE_DATA = {};
+  const edeWater = createWaterMaterial();
+  sandbox.EDE_DATA = null;
   env.waterIce = 0;
-  assert.notEqual(waterMat.normalNode.eval()[0], 0);
-  const liquid = waterMat.colorNode.eval();
+  assert.notEqual(edeWater.normalNode.eval()[0], 0);
+  const liquid = edeWater.colorNode.eval();
   env.waterIce = 1;
   try {
-    const [x, y, z] = waterMat.normalNode.eval();
+    const [x, y, z] = edeWater.normalNode.eval();
     assert.ok(Math.abs(x) < 1e-8 && y === 1 && Math.abs(z) < 1e-8);
-    assert.equal(waterMat.roughnessNode.eval()[0], 0.32);
-    assert.equal(waterMat.metalnessNode.eval()[0], 0);
-    const frozen = waterMat.colorNode.eval();
-    assert.ok(frozen[2] > frozen[0] && frozen[2] > liquid[2]);
+    assert.ok(edeWater.roughnessNode.eval()[0] < 0.2);
+    assert.equal(edeWater.metalnessNode.eval()[0], 0);
+    assert.equal(edeWater.snowOptions.cover, sandbox.waterSnowCover);
+    assert.equal(edeWater.snowOptions.exposure, edeWater.iceCoverageNode);
+    const frozen = edeWater.colorNode.eval();
+    assert.ok(frozen[2] > frozen[0] && frozen[2] > liquid[2] && frozen[2] < 0.6);
   } finally {
     env.waterIce = 0;
   }

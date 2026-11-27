@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, cameraPosition, color, float, Fn, fwidth, If, length, max, min, mix, mx_noise_float,
   positionWorld, smoothstep, uniform } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
-import { applySnowMaterial, surfaceSnowCoverage } from './ede-snow.js';
+import { applySnowMaterial, rinkSnowCover, snowCover, surfaceSnowCoverage } from './ede-snow.js';
 import { polygonContains } from './building-collision.js';
 import { drapeEdeSurface, edePoints, edePolygonGeometry, edeSpatialGroups } from './ede-geometry.js';
 import { fitSportField, clipSportLine } from './ede-sport-fit.js';
@@ -30,7 +30,7 @@ function makeRinkMaterial() {
   material.colorNode = mix(attribute('color', 'vec3'), ice, rinkIce);
   material.roughnessNode = mix(0.90, 0.17, rinkIce);
   material.iceCoverageNode = rinkIce;
-  return applySnowMaterial(material, { shelter: true });
+  return applySnowMaterial(material, { shelter: true, cover: mix(snowCover, rinkSnowCover, rinkIce) });
 }
 const WHITE = 0xf3f1df;
 const STEEL = 0x555e5b;

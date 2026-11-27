@@ -67,7 +67,7 @@ import {
   waterAt
 } from './city-config.js';
 import { heatherBloom, treeSeasonNodes } from './tree-seasons.js';
-import { applySnowMaterial, snowBuildup, snowCover, surfaceSkyExposure } from './ede-snow.js';
+import { applySnowMaterial, snowBuildup, snowCover, surfaceSkyExposure, waterSnowCover } from './ede-snow.js';
 
 // Procedural city materials: facades and interiors, vegetation, roads, water and lighting effects.
 
@@ -100,20 +100,30 @@ function sampleEdeLandCover({ texture: mask, palette, minX, minZ, sizeX, sizeZ }
     .add(shade(corner.add(vec2(0, 1))).mul(mix(part.y, part.x.oneMinus(), upper)));
 }
 
-function heathBloomColor(base, heath) {
+function heathSeasonColor(base, heath) {
   if (!heath) return base;
   return Fn(() => {
     const result = vec3(base).toVar();
-    If(heatherBloom.greaterThan(0), () => {
+    If(max(heatherBloom, photoFrost).greaterThan(0), () => {
       const ground = positionWorld.xz;
       const coord = ground.sub(vec2(heath.minX, heath.minZ)).div(vec2(heath.sizeX, heath.sizeZ));
       const coverage = texture(heath.texture, coord).r.toVar();
       If(coverage.greaterThan(0), () => {
         const patch = noise2D(ground.mul(0.075)).mul(0.68).add(noise2D(ground.mul(0.46)).mul(0.32));
-        const flowers = noise2D(ground.mul(2.6));
-        const bloom = smoothstep(0.28, 0.68, patch).mul(0.89);
-        const tint = mix(color(0x552c4c), color(0xa45186), smoothstep(0.14, 0.83, flowers));
-        result.assign(mix(result, tint, bloom.mul(coverage).mul(heatherBloom)));
+        If(heatherBloom.greaterThan(0), () => {
+          const flowers = noise2D(ground.mul(2.6));
+          const bloom = smoothstep(0.28, 0.68, patch).mul(0.89);
+          const tint = mix(color(0x552c4c), color(0xa45186), smoothstep(0.14, 0.83, flowers));
+          result.assign(mix(result, tint, bloom.mul(coverage).mul(heatherBloom)));
+        });
+        If(photoFrost.greaterThan(0), () => {
+          const distance = length(positionWorld.sub(cameraPosition));
+          const tips = mix(0.5, noise2D(ground.mul(2.1)), smoothstep(25, 100, distance).oneMinus());
+          const tint = mix(color(0x858a7c), color(0xe4eeee), smoothstep(0.28, 0.75, tips));
+          const coating = smoothstep(0.30, 0.72, patch).mul(0.90)
+            .mul(photoFrost).mul(coverage).mul(surfaceSkyExposure());
+          result.assign(mix(result, tint, coating));
+        });
       });
     });
     return result;
@@ -128,9 +138,10 @@ function createEdeGroundMaterial(aerial, landCover, heath) {
     const base = mapped ? gray.mul(mapped.a.oneMinus()).add(mapped.rgb) : gray;
     const ground = aerial ? blendAerialSurfaceColor(base, mapped ? mix(0.85, 0.42, mapped.a) : 0.85) : base;
     const variation = noise2D(positionWorld.xz.mul(0.7)).mul(0.14).add(0.93);
-    const dampGround = heathBloomColor(ground, heath).mul(variation).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
-    return frostGround(dampGround, 0.88);
+    const frostedGround = frostGround(ground.mul(variation).mul(mix(1, 0.76, wetFilm)), 0.88);
+    return heathSeasonColor(frostedGround, heath);
   })();
+  mat.roughnessNode = mix(0.93, 0.76, wetFilm);
   return applySnowMaterial(mat, { shelter: true });
 }
 
@@ -149,6 +160,7 @@ const cityUniforms = {
   uWaterIce: uniform(0),
   uCanyonBounce: uniform(0.52)
 };
+const wetFilm = smoothstep(0, 0.65, cityUniforms.uRoadWetness);
 
 function updateSceneWind(dt, windX, windZ) {
   const speed = Math.hypot(windX, windZ);
@@ -1640,8 +1652,9 @@ function createEdePavingMaterial(aerial = false, grade = false) {
   const tinted = aerial ? blendAerialSurfaceColor(base, mix(0.32, 0.22, tile.mul(concrete.oneMinus()))) : base;
   mat.colorNode = tinted.mul(field.mul(0.17).add(0.91)).mul(grit.sub(0.5).mul(fine).mul(0.18).add(1))
     .mul(joint.mul(0.47).oneMinus()).mul(wet.mul(0.24).add(film.mul(0.1)).oneMinus());
-  mat.roughnessNode = mix(mix(mix(0.79, 0.97, gravel), 0.56, wet.mul(0.65).add(film.mul(0.12))), 0.12, puddle);
-  mat.metalnessNode = puddle.mul(0.12);
+  const pavingSheen = max(wet.mul(0.65), film.mul(mix(0.85, 0.35, gravel)));
+  mat.roughnessNode = mix(mix(mix(0.79, 0.97, gravel), 0.52, pavingSheen), 0.18, puddle);
+  mat.metalnessNode = max(puddle.mul(0.20), film.mul(gravel.oneMinus()).mul(0.18));
   mat.normalNode = bumpNormal(grit.sub(0.5).mul(mix(0.002, 0.009, gravel)).mul(fine)
     .sub(joint.mul(0.004)).mul(puddle.oneMinus()));
   applySnowMaterial(mat, { shelter: true, exposure: grade ? attribute('pavingExposure', 'float') : 1,
@@ -1677,23 +1690,21 @@ function roadPuddleField(wx, wz) {
   const nMacro = noise2D(vec2(wx.mul(0.095), wz.mul(0.075)));
   const nMid = noise2D(vec2(wx.mul(0.25).add(19.4), wz.mul(0.22).add(11.8)));
   const nDetail = noise2D(vec2(wx.mul(0.68).sub(7.3), wz.mul(0.68).add(29.1)));
-  const spawnPool = smoothstep(4.2, 1.4, length(vec2(wx.sub(1.6), wz.sub(122.8)))).mul(0.10);
-  return nMacro.mul(0.52).add(nMid.mul(0.34)).add(nDetail.mul(0.14)).add(spawnPool);
+  return nMacro.mul(0.52).add(nMid.mul(0.34)).add(nDetail.mul(0.14));
 }
 
 /**
  * Wetness masks over a puddle field, driven by cityUniforms.uRoadWetness (0 = bone dry … 1 = right after a downpour):
  * x = damp stains (darker, satin), y = standing water during rain, z = wet film over everything.
- * Water collects in the field's highest (lowest-lying) spots first, so pools appear, grow & merge as wetness rises;
- * `drainage` raises the water line for better-drained surfaces such as the crowned sidewalk flags.
+ * Standing water is limited to the lowest spots. Drainage further limits puddles on sidewalk flags.
  */
 function roadWetMasks(field, drainage = 0.0) {
   const w = cityUniforms.uRoadWetness;
-  const level = mix(float(0.86), float(0.56), clamp(w.sub(0.1).div(0.55), 0.0, 1.0)).add(drainage);
-  const damp = smoothstep(level.sub(0.09), level.sub(0.015), field).mul(smoothstep(0.02, 0.12, w));
-  const puddle = smoothstep(level, level.add(0.022), field).mul(smoothstep(0.1, 0.22, w)).mul(cityUniforms.uRoadPuddles);
-  const film = smoothstep(0, 0.8, w);
-  return vec3(damp, puddle, film);
+  const level = mix(0.94, 0.72, smoothstep(0.25, 0.82, w)).add(drainage);
+  const damp = smoothstep(0.40, 0.83, field).mul(wetFilm);
+  const puddle = smoothstep(level, level.add(0.045), field)
+    .mul(smoothstep(0.30, 0.60, w)).mul(cityUniforms.uRoadPuddles).mul(0.55);
+  return vec3(damp, puddle, wetFilm);
 }
 
 let asphaltTile;
@@ -1756,16 +1767,16 @@ function createRoadSurfaceMaterial(aerial = false, grade = false, wheelTracks = 
       .mul(smoothstep(0.16, 0.52, footprint).oneMinus()).mul(band.w);
   }
 
-  const wetDarkening = mix(1, 0.80, damp).mul(mix(1, 0.77, puddle)).mul(mix(1, 0.87, film));
+  const wetDarkening = mix(1, 0.91, damp).mul(mix(1, 0.90, puddle)).mul(mix(1, 0.70, film));
   mat.colorNode = asphalt.mul(grain.mul(0.20).add(0.90))
     .mul(float(1).sub(tracks.mul(0.145))).mul(wetDarkening);
   mat.aoNode = canyonSkyAONode();
   const dryRoughness = grain.mul(0.075).add(0.875);
-  const filmed = mix(dryRoughness, 0.68, film.mul(0.7));
-  mat.roughnessNode = mix(mix(filmed, 0.40, damp.mul(0.85)), 0.10, puddle);
+  const filmed = mix(dryRoughness, 0.43, film);
+  mat.roughnessNode = mix(mix(filmed, 0.36, damp), 0.18, puddle);
   const waterFresnel = pow(grazing, 5).mul(0.98).add(0.02);
   mat.metalnessNode = clamp(waterFresnel.mul(1.6), 0, 0.85)
-    .mul(max(puddle, max(damp.mul(0.35), film.mul(0.15))));
+    .mul(max(puddle, max(damp.mul(0.50), film.mul(0.44))));
   mat.normalNode = bumpNormal(grain.sub(0.5).mul(0.0016).mul(float(1).sub(max(puddle, film.mul(0.65)))));
   mat.emissiveNode = mix(cityUniforms.uSkyHorizonColor, cityUniforms.uSkyTopColor, 0.4)
     .mul(max(puddle, film.mul(0.35))).mul(pow(grazing, 2.3)).mul(cityUniforms.uInteriorGlow).mul(0.007);
@@ -1850,7 +1861,7 @@ function createRoadPaintMaterial(preserveGBuffer = false) {
     });
     return p;
   })();
-  const film = smoothstep(0, 0.8, cityUniforms.uRoadWetness);
+  const film = wetFilm;
   mat.colorNode = vec3(mix(float(1.0), float(0.72), puddle).mul(mix(float(1.0), float(0.86), film)));
   mat.roughnessNode = mix(mix(float(0.62), float(0.42), film), float(0.2), puddle);
   mat.aoNode = canyonSkyAONode();
@@ -2681,7 +2692,7 @@ function createWaterMaterial() {
   mat.normalNode = cameraViewMatrix.transformDirection(waterNormal);
 
   // GGX alpha ≈ RMS slope of the unresolved waves (Beckmann m), roughness = sqrt(alpha); murkier ponds a touch duller
-  mat.roughnessNode = mix(clamp(pow(variance, 0.25).add(pond.mul(0.05)), 0.08, 0.65), 0.32, ice);
+  mat.roughnessNode = mix(clamp(pow(variance, 0.25).add(pond.mul(0.05)), 0.08, 0.65), 0.17, ice);
 
   const viewDir = normalize(cameraPosition.sub(positionWorld));
   const fresnel = pow(float(1.0).sub(clamp(dot(waterNormal, viewDir), 0.0, 1.0)), 5.0).mul(0.98).add(0.02);
@@ -2693,8 +2704,8 @@ function createWaterMaterial() {
     const body = mix(color(0x162d2c), color(0x2e3f36), smoothstep(0.25, 0.85, silt));
     const lake = mix(color(0x24321f), color(0x33402a), silt);
     const crestTint = smoothstep(0.6, 2.4, waves.w).mul(0.35).add(1.0);
-    const frost = mix(color(0x719cae), color(0xb8d3df), silt);
-    return mix(mix(body, lake, pond).mul(crestTint), frost, ice);
+    const iceTint = mix(color(0x375565), color(0x608494), silt);
+    return mix(mix(body, lake, pond).mul(crestTint), iceTint, ice);
   })();
 
   // Night: nearby Ede facades and quay lamps, reflected along the same wave
@@ -2792,7 +2803,7 @@ function createWaterMaterial() {
     return emit.mul(liquid);
   })();
 
-  return EDE_DATA ? applySnowMaterial(mat, { shelter: true, exposure: ice }) : mat;
+  return EDE_DATA ? applySnowMaterial(mat, { shelter: true, exposure: ice, cover: waterSnowCover }) : mat;
 }
 
 /**
@@ -2824,9 +2835,10 @@ function createParkLawnMaterial(isMeadow = false, aerial = false, landCover = nu
     const base = mapped ? baseLawn.mul(mapped.a.oneMinus()).add(mapped.rgb) : baseLawn;
     const lawn = aerial ? blendAerialSurfaceColor(base, mapped ? mix(0.65, 0.42, mapped.a) : 0.65) : base;
     const blades = mapped ? mix(0.38, 0.12, mapped.a) : 0.38;
-    const vegetation = heathBloomColor(mix(lawn, cGrassSun, microBlade.mul(blades)), heath);
-    return EDE_DATA ? frostGround(vegetation, 1) : vegetation;
+    const vegetation = mix(lawn, cGrassSun, microBlade.mul(blades)).mul(mix(1, 0.82, wetFilm));
+    return heathSeasonColor(EDE_DATA ? frostGround(vegetation, 1) : vegetation, heath);
   })();
+  mat.roughnessNode = mix(0.86, 0.74, wetFilm);
 
   mat.normalNode = Fn(() => {
     const wp = positionWorld.xz;
@@ -2951,7 +2963,8 @@ function createCarFlareMaterial() {
 export {
   createEdeGroundMaterial,
   sampleEdeLandCover,
-  heathBloomColor,
+  heathSeasonColor,
+  wetFilm,
   cityUniforms,
   WALL_KINDS,
   bumpNormal,

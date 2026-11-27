@@ -3,7 +3,7 @@ import { attribute, mix } from 'three/tsl';
 import { sampleGroundColor } from './aerial-colors.js';
 import { createCoverageIndex, edeCoverage } from './ede-coverage.js';
 import { playableBoundary, playableBoundsCovered, playableBoundsOverlap } from './ede-playable-boundary.js';
-import { cityUniforms, heathBloomColor, sampleEdeLandCover } from './tsl-materials.js';
+import { heathSeasonColor, sampleEdeLandCover, wetFilm } from './tsl-materials.js';
 import { applySnowMaterial } from './ede-snow.js';
 import { expansionSeamOffset, getExpansionTerrain, getTerrain, sampleTerrain } from './terrain.js';
 import { buildTerrainGeometry, restoreLandscapeGeometry, SIDE } from './ede-landscape-geometry.js';
@@ -136,7 +136,9 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts,
   group.name = 'EdeTerrainQuadtree';
   scene.add(group);
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.93 });
-  material.colorNode = heathBloomColor(attribute('color', 'vec4').rgb, heath).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
+  material.colorNode = heathSeasonColor(attribute('color', 'vec4').rgb, heath).mul(mix(1, 0.76, wetFilm));
+  const terrainRoughness = mix(0.93, 0.76, wetFilm);
+  material.roughnessNode = terrainRoughness;
   material.name = 'PDOK terrain tiles';
   applySnowMaterial(material, { shelter: true });
   const official = fringeLandCover && edeCoverage && createCoverageIndex(edeCoverage.playableBoundary);
@@ -145,7 +147,8 @@ export function createTerrainTiles(scene, heath, fringeLandCover, shorelineCuts,
   if (fringeMaterial) {
     const mapped = sampleEdeLandCover(fringeLandCover);
     const color = attribute('color', 'vec4').rgb.mul(mapped.a.mul(0.4).oneMinus()).add(mapped.rgb.mul(0.4));
-    fringeMaterial.colorNode = heathBloomColor(color, heath).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
+    fringeMaterial.colorNode = heathSeasonColor(color, heath).mul(mix(1, 0.76, wetFilm));
+    fringeMaterial.roughnessNode = terrainRoughness;
     fringeMaterial.name = 'PDOK terrain with BGT fringe land cover';
     applySnowMaterial(fringeMaterial, { shelter: true });
   }

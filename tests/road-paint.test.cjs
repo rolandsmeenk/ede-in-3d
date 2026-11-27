@@ -509,6 +509,7 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
   };
 
   const helpers =
+    sliceBetween('const wetFilm = ', '\n\n') + '\n' +
     sliceBetween('const hash2D = Fn(', 'const filteredPulse = Fn(') + '\n' +
     sliceBetween('function roadPuddleField(', 'let asphaltTile;');
   const roadPaintMatSrc = sliceBetween('let _roadPaintMaterial = null;', '/**\n * NYC Concrete Sidewalk');
@@ -641,7 +642,11 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
   assert.ok(drying[0] > 0 && drying[1] === 0 && drying[2] > 0);
   env.puddles = 0.8;
   const raining = roadWetMasks(wrap(0.95)).eval();
-  assert.deepEqual(raining, [drying[0], 0.8, drying[2]]);
+  assert.deepEqual(raining, [drying[0], 0.8 * 0.55, drying[2]]);
+  env.wetness = 0.45;
+  const wetRoad = roadWetMasks(wrap(0.60)).eval();
+  assert.equal(wetRoad[1], 0, 'standing water is limited to low spots');
+  assert.ok(wetRoad[2] > 0.7, 'the film is visible away from puddles in moderate rain');
 
   // Smoothly fades to 0 by the 1,650 m chunk cull distance
   env.camPos = [0, 40, 1660];

@@ -242,17 +242,25 @@ function approach(value, target, dt, seconds) {
   return Math.abs(value - target) < 0.002 ? target : value + (target - value) * -Math.expm1(-dt / seconds);
 }
 
+function updateSnowCover(cover, target, dt, meltSeconds) {
+  if (target > cover) return approach(cover, target, dt, 10);
+  return meltSeconds > 0 ? approach(cover, target, dt, meltSeconds) : cover;
+}
+
 export function createWeatherTransition() {
   let target = null, photoTarget = NO_PHOTO_EFFECTS;
   let iceRate = 0, snowMeltSeconds = 0;
   let rinkTarget = 0, rinkDegrees = 1;
   const effects = {
     blend: 0, cloud: 0, fog: 0, rain: 0, raining: false, snow: 0, snowCover: 0,
-    waterIce: 0, rinkIce: 0, wetness: 0, auroraBearing: 0, auroraElevation: 13, ...defaultWind, ...NO_PHOTO_EFFECTS
+    waterIce: 0, rinkIce: 0, waterSnowCover: 0, rinkSnowCover: 0, wetness: 0, auroraBearing: 0, auroraElevation: 13, ...defaultWind, ...NO_PHOTO_EFFECTS
   };
   return {
     setPhotoEffects(next) { photoTarget = next ?? NO_PHOTO_EFFECTS; },
-    settleRinkIce() { effects.rinkIce = rinkTarget; },
+    settleRinkIce() {
+      effects.rinkIce = rinkTarget;
+      if (!rinkTarget) effects.rinkSnowCover = 0;
+    },
     setReading(reading, temperature = reading?.temperature, rinkIce = reading?.rinkIce ?? 0) {
       target = weatherTargets(reading, temperature);
       const degrees = temperature ?? 0;
@@ -284,8 +292,7 @@ export function createWeatherTransition() {
       effects.windX = approach(effects.windX, wind.windX, dt, 1.8);
       effects.windZ = approach(effects.windZ, wind.windZ, dt, 1.8);
       const snowTarget = target?.snowCover ?? 0;
-      if (snowTarget > effects.snowCover) effects.snowCover = approach(effects.snowCover, snowTarget, dt, 10);
-      else if (snowMeltSeconds > 0) effects.snowCover = approach(effects.snowCover, snowTarget, dt, snowMeltSeconds);
+      effects.snowCover = updateSnowCover(effects.snowCover, snowTarget, dt, snowMeltSeconds);
       effects.waterIce = Math.max(0, Math.min(1, effects.waterIce + iceRate * dt));
       const rinkDelta = rinkTarget - effects.rinkIce;
       if (rinkDelta) {
@@ -293,6 +300,11 @@ export function createWeatherTransition() {
         effects.rinkIce = rinkStep >= Math.abs(rinkDelta) ? rinkTarget
           : effects.rinkIce + Math.sign(rinkDelta) * rinkStep;
       }
+      // Settled ground snow never transfers onto newly formed ice.
+      effects.waterSnowCover = effects.waterIce
+        ? updateSnowCover(effects.waterSnowCover, snowTarget * effects.waterIce, dt, snowMeltSeconds) : 0;
+      effects.rinkSnowCover = effects.rinkIce
+        ? updateSnowCover(effects.rinkSnowCover, snowTarget * effects.rinkIce, dt, snowMeltSeconds) : 0;
       if (!target && effects.blend === 0 && effects.rain === 0 && effects.snow === 0) return effects;
       effects.blend = approach(effects.blend, target ? 1 : 0, dt, 0.85);
       effects.rain = approach(effects.rain, target?.rain ?? 0, dt, 0.8);

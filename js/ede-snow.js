@@ -5,7 +5,9 @@ import { color, diffuseColor, float, Fn, If, ivec2, materialMetalness, materialR
 import { polygonContains } from './building-collision.js';
 
 export const snowCover = uniform(0);
-export const snowBuildup = (retention = 1) => smoothstep(0.02, 0.80, snowCover.mul(retention));
+export const waterSnowCover = uniform(0);
+export const rinkSnowCover = uniform(0);
+export const snowBuildup = (retention = 1, cover = snowCover) => smoothstep(0.02, 0.80, cover.mul(retention));
 
 const SAMPLES_PER_METRE = 2;
 const TILE_SIZE = 32;
@@ -98,13 +100,13 @@ export const surfaceSkyExposure = Fn(() => {
 
 const skyExposure = surfaceSkyExposure();
 
-export function surfaceSnowCoverage({ shelter = false, exposure = 1, retention = 1, up = normalWorldGeometry.y } = {}) {
+export function surfaceSnowCoverage({ shelter = false, exposure = 1, retention = 1, cover = snowCover, up = normalWorldGeometry.y } = {}) {
   return Fn(() => {
     const snow = float(0).toVar();
-    If(snowCover.greaterThan(0), () => {
+    If(cover.greaterThan(0), () => {
       const slope = smoothstep(0.18, 0.90, up).toVar();
       If(slope.greaterThan(0).and(float(exposure).greaterThan(0)), () => {
-        snow.assign(snowBuildup(retention).mul(slope).mul(exposure).mul(shelter ? skyExposure : 1));
+        snow.assign(snowBuildup(retention, cover).mul(slope).mul(exposure).mul(shelter ? skyExposure : 1));
       });
     });
     return snow;
@@ -121,11 +123,11 @@ function snowNodes(options) {
 const openSnow = snowNodes();
 const shelteredSnow = snowNodes({ shelter: true });
 
-export function applySnowMaterial(material, { shelter = false, exposure = 1, retention = 1, up } = {}) {
+export function applySnowMaterial(material, { shelter = false, exposure = 1, retention = 1, cover = snowCover, up } = {}) {
   if (material.snowCoverageNode) return material;
-  const { amount, roughness, metalness } = exposure === 1 && retention === 1 && up === undefined
+  const { amount, roughness, metalness } = exposure === 1 && retention === 1 && cover === snowCover && up === undefined
     ? (shelter ? shelteredSnow : openSnow)
-    : snowNodes({ shelter, exposure, retention, up });
+    : snowNodes({ shelter, exposure, retention, cover, up });
   // Blend after Three.js has applied vertex and instance colors.
   material.snowCoverageNode = amount;
   const setupDiffuseColor = material.setupDiffuseColor;

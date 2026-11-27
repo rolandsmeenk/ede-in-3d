@@ -76,7 +76,7 @@ test('Live Time blends in the Night fill and uses the complete Night preset afte
     'three/addons/lights/SunLight.js': {},
     'three/addons/lights/SunLightNode.js': {},
     './tsl-materials.js': { cityUniforms: { uWindowLights: { value: { set() {} } } } },
-    './ede-snow.js': { snowCover: { value: 0 } },
+    './ede-snow.js': { snowCover: { value: 0 }, waterSnowCover: { value: 0 }, rinkSnowCover: { value: 0 } },
     './live-sky.js': await liveSky,
     './ede-moon.js': await lunarSky,
     './ede-photo-sky.js': {},

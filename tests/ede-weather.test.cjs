@@ -450,6 +450,36 @@ test('snow outlasts the flakes and temperature controls how fast water freezes a
   assert.ok(at(4, 30) < 0.625);
 });
 
+test('water and rinks freeze bare over existing ground snow and collect fresh snowfall', async () => {
+  const { createWeatherTransition, parseWeather } = await import('../js/ede-weather.js');
+  const snowfall = parseWeather(reading({ temperature_2m: 0, weather_code: 73, snowfall: 0.9 }), observedAt);
+  const transition = createWeatherTransition();
+
+  transition.setReading(snowfall);
+  const beforeFreeze = transition.update(35);
+  assert.ok(beforeFreeze.snowCover > 0.9);
+  assert.deepEqual([beforeFreeze.waterIce, beforeFreeze.rinkIce, beforeFreeze.waterSnowCover, beforeFreeze.rinkSnowCover], [0, 0, 0, 0]);
+
+  transition.setReading(null, -4, 1);
+  const bareIce = transition.update(60);
+  assert.ok(bareIce.snowCover > 0.9);
+  assert.deepEqual([bareIce.waterIce, bareIce.rinkIce, bareIce.waterSnowCover, bareIce.rinkSnowCover], [1, 1, 0, 0]);
+
+  transition.setReading(snowfall, -4, 1);
+  const { waterSnowCover, rinkSnowCover } = transition.update(10);
+  assert.ok(waterSnowCover > 0 && rinkSnowCover > 0);
+  transition.setReading(null, -4, 1);
+  const afterSnowfall = transition.update(30);
+  assert.equal(afterSnowfall.waterSnowCover, waterSnowCover);
+  assert.equal(afterSnowfall.rinkSnowCover, rinkSnowCover);
+
+  transition.setReading(null, 10, 0);
+  const thawed = transition.update(36);
+  assert.ok(thawed.snowCover > 0);
+  assert.equal(thawed.waterSnowCover, 0);
+  assert.equal(thawed.rinkSnowCover, 0);
+});
+
 test('settled snow melts faster at higher temperatures above zero', async () => {
   const { createWeatherTransition, parseWeather } = await import('../js/ede-weather.js');
   const snowfall = parseWeather(reading({ temperature_2m: -4, weather_code: 73, snowfall: 0.9 }), observedAt);
