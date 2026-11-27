@@ -27,7 +27,7 @@ import { createPavingTiles } from './ede-paving-tiles.js';
 import { createPavingWorker } from './ede-paving-client.js';
 import { captureGroundColor } from './ede-aerial-sampling.js';
 import { curbGeometryFor, curbTactileFor } from './ede-curbs.js';
-import { curbFaceGeometry, curbTopGeometry } from './ede-curb-geometry.js';
+import { curbBoxGeometry, curbFaceGeometry, curbTopGeometry } from './ede-curb-geometry.js';
 import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
 import { EDE_MTB_WAYS } from './ede-active-travel.js';
 
@@ -122,7 +122,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const pavingMaterials = { asphalt: roadMat, mapped: mappedPavingMat, path: pavingMat, sidewalk: sidewalkMat, curb: curbMat };
   function buildPavingJob(data, target) {
     if (data.outer) {
-      addSurveyedPaving(data, target);
+      addSurveyedPaving({ ...data, material: data.material === 'mapped' ? data.style : data.material }, target);
       return;
     }
     const { pieces, rise, wayId, material, style, angle, segment } = data;
@@ -197,7 +197,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       return;
     }
     const position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
-    const styles = new Float32Array(position.count).fill(EDE_PAVING_STYLE[material]);
+    const styles = new Float32Array(position.count).fill(typeof material === 'number' ? material : EDE_PAVING_STYLE[material]);
     const cs = Math.cos(angle), sn = Math.sin(angle);
     for (let i = 0; i < position.count; i++) {
       const x = position.getX(i), z = position.getZ(i);
@@ -266,7 +266,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
         const a = edge[i], b = edge[(i + 1) % edge.length];
         const len = Math.hypot(b.x - a.x, b.z - a.z);
         if (len < 0.4) continue;
-        const wall = new THREE.BoxGeometry(len + 0.05, bankTop - bankBottom, 0.38);
+        const wall = curbBoxGeometry(THREE, len + 0.05, bankTop - bankBottom, 0.38);
         wall.rotateY(-Math.atan2(b.z - a.z, b.x - a.x));
         wall.translate((a.x + b.x) / 2, (bankTop + bankBottom) / 2, (a.z + b.z) / 2);
         collect(wall, curbMat);
@@ -308,8 +308,9 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   const surveyedPaving = getEdeRoadSurfaces();
   const fringeSurfaces = new Set(surveyedPaving.fringeSurfaces);
   function addSurveyedPaving({ outer, holes, material, angle, motor, top, tactile }, target) {
-    const flat = top ? curbTopGeometry(THREE, top) : edePolygonGeometry(edePoints(outer), holes.map(edePoints), 0.065);
-    const geometry = drapeEdeSurface(flat, true, undefined, true, undefined, undefined, !!top);
+    const ramp = Array.isArray(top);
+    const flat = ramp ? curbTopGeometry(THREE, top) : edePolygonGeometry(edePoints(outer), holes.map(edePoints), top ?? 0.065);
+    const geometry = drapeEdeSurface(flat, true, undefined, true, undefined, undefined, ramp);
     if (top) {
       const local = localGradeSurface(null, edeBounds(edePoints(outer)));
       collect(curbFaceGeometry(THREE, geometry, outer, holes,
@@ -518,24 +519,24 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
         && !corridorDetail.zones.some(([left, top, right, bottom]) =>
           s.a.x >= left && s.a.x <= right && s.a.z >= top && s.a.z <= bottom);
       const signedTrail = EDE_MTB_WAYS.has(s.road.id) && /^(path|track)$/.test(s.road.kind);
-      const material = surface.kind !== 'sidewalk' && (osmRoadMaterial(s.road) ?? (naturalTrail || signedTrail ? 'sand' : undefined));
       const { kind } = surface;
+      const material = kind === 'sidewalk' ? 'tile' : osmRoadMaterial(s.road) ?? (naturalTrail || signedTrail ? 'sand' : undefined);
+      const tintSource = kind === 'sidewalk' ? undefined : s;
       const build = target => {
         const geometries = pieces.map(piece => edePolygonGeometry(piece, [], pavementHeight[kind]));
         // Keep each segment batched even when clipping splits it into several fragments.
         const joined = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
         if (geometries.length > 1) geometries.forEach(geometry => geometry.dispose());
         const geometry = drapeEdeSurface(joined, true, s.road.id);
-        if (material) collectPaving(geometry, material, Math.atan2(s.uz, s.ux), s, undefined, target);
+        if (material) collectPaving(geometry, material, Math.atan2(s.uz, s.ux), tintSource, undefined, target);
         else if (kind === 'road') collect(geometry, roadMat, s, undefined, target);
-        else if (kind === 'sidewalk') collect(geometry, sidewalkMat, undefined, undefined, target);
         else {
           const cycleway = s.road.kind === 'cycleway';
           setPavingStyle(geometry, cycleway ? 0 : 2);
           collect(geometry, pavingMat, cycleway ? s : null, undefined, target);
         }
       };
-      if (!material && kind === 'sidewalk') clippedSidewalkPieces += pieces.length;
+      if (kind === 'sidewalk') clippedSidewalkPieces += pieces.length;
       if (!material && kind === 'path') clippedPedestrianPieces += pieces.length;
       if (compact || EDE_DATA.meta.fullMunicipality) {
         const bounds = edeBounds(pieces.flat());
@@ -551,7 +552,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
         });
         pavingTiles.add(bounds, null, { bounds, pieces: packedPieces, rise: pavementHeight[kind], wayId: s.road.id,
           material: batch, style: material ? EDE_PAVING_STYLE[material] : cycleway ? 0 : 2,
-          angle: Math.atan2(s.uz, s.ux), segment: material || kind === 'road' || kind === 'path' && cycleway ? s : null });
+          angle: Math.atan2(s.uz, s.ux), segment: material || kind === 'road' || kind === 'path' && cycleway ? tintSource : null });
       } else build(collections);
     }
     if (!isCarriageway(s)) continue;
@@ -566,7 +567,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
         const mid = (start + end) / 2;
         const x = a.x + (b.x - a.x) * mid, z = a.z + (b.z - a.z) * mid;
         if (gradeWayAt(s.road.id, x, z, 2) || gradeCuts({ minX: x - 0.12, maxX: x + 0.12, minZ: z - 0.12, maxZ: z + 0.12 }).length) continue;
-        const geometry = new THREE.BoxGeometry(length, 0.18, 0.16, terrain ? Math.ceil(length / terrain.step) : 1);
+        const geometry = curbBoxGeometry(THREE, length, 0.18, 0.16, terrain ? Math.ceil(length / terrain.step) : 1);
         geometry.rotateY(-Math.atan2(s.uz, s.ux));
         geometry.translate(x, 0.08, z);
         collect(drapeEdeVertices(geometry), curbMat);

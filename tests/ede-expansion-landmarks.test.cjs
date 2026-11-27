@@ -23,21 +23,27 @@ test('Expansion landmarks build finite meshes in the surveyed frame', async () =
     './bag3d.js': {}, './ede-grade.js': { buildingPassageOpenings: () => [] }, './ede-geodata.js': { EDE_DATA: {} },
     './ede-wind-props.js': {}, './aerial-colors.js': {}, './ede-facades.js': {}, './ede-facade-material.js': {},
   }, { document });
-  const { EDE_OUTER_CULTURAL_FACTORIES } = load('ede-outer-cultural-models.js', {
-    'three/webgpu': three, './ede-civic-landmarks.js': civic, './terrain.js': terrain,
-    './ede-sint-hubertus.js': {},
-  });
-  const museum = EDE_OUTER_CULTURAL_FACTORIES['kijk-luistermuseum'](null, {
-    name: 'Kijk & Luistermuseum', x: 239, z: 5396, heading: 0,
-  });
-  const museumSize = new three.Box3().setFromObject(museum).getSize(new three.Vector3());
-  assert.ok(museumSize.x > 17 && museumSize.x < 20, 'Bennekom museum width stays within the modeled wings');
-  assert.ok(museumSize.z > 6 && museumSize.z < 8, 'Bennekom museum depth stays within the modeled wings and trim');
-
-  const surveys = load('ede-expansion-landmark-surveys.js');
   const surveyBuilder = load('ede-survey-landmark.js', {
     './ede-civic-landmarks.js': civic, './terrain.js': terrain,
   });
+  const cultural = await import('../js/ede-outer-cultural-survey.js');
+  const { EDE_OUTER_CULTURAL_FACTORIES } = load('ede-outer-cultural-models.js', {
+    'three/webgpu': three, 'three/tsl': tsl, './ede-civic-landmarks.js': civic, './terrain.js': terrain,
+    './ede-outer-cultural-survey.js': cultural, './ede-survey-landmark.js': surveyBuilder,
+    './ede-facade-material.js': { createFacadeSurfaceTexture: () => ({ texture: new three.DataTexture() }) },
+    './ede-sint-hubertus.js': {}, './ede-clock-model.js': {},
+  });
+  const museumSite = cultural.OUTER_CULTURAL_META.find(site => site.id === 'kijk-luistermuseum');
+  const museum = EDE_OUTER_CULTURAL_FACTORIES[museumSite.id](null, museumSite);
+  const museumBounds = new three.Box3().setFromObject(museum);
+  const [outline] = cultural.OUTER_CULTURAL_SURVEYS[museumSite.id][0].outline;
+  const footprint = new three.Box3().setFromPoints(outline.map(([x, z]) => new three.Vector3(x, 0, z)));
+  for (const axis of ['x', 'z']) {
+    assert.ok(Math.abs(museumBounds.min[axis] - footprint.min[axis]) < 0.1, 'museum trim follows the surveyed footprint');
+    assert.ok(Math.abs(museumBounds.max[axis] - footprint.max[axis]) < 0.1, 'museum trim follows the surveyed footprint');
+  }
+
+  const surveys = load('ede-expansion-landmark-surveys.js');
   const sheepFleeceInfluences = [0];
   const { EXPANSION_LANDMARK_FACTORIES } = load('ede-expansion-landmarks.js', {
     'three/webgpu': three, 'three/tsl': tsl, './ede-civic-landmarks.js': civic, './terrain.js': terrain,
@@ -112,7 +118,7 @@ test('Expansion landmarks build finite meshes in the surveyed frame', async () =
   const folds = sites.find(site => site.id === 'schaapskooi-ginkelse-heide');
   assert.equal(folds.surveyFootprints.length, 2);
   assert.deepEqual(captions.sort(), [
-    '10 MEI 1940', 'C.E. GRAAF VAN LIMBURG STIRUM', 'J.G. DIJKERS', 'P.CH. BONKERK',
+    '10 MEI 1940', 'C.E. GRAAF VAN LIMBURG STIRUM', 'J.G. DIJKERS', 'KIJK & LUISTERMUSEUM', 'P.CH. BONKERK',
     'RESTAURANT', 'RESTAURANT', 'STEAKHOUSE', 'THEESCHENKERIJ', 'Veenendaal-De Klomp',
   ]);
 

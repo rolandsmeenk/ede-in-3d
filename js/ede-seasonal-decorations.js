@@ -3,6 +3,8 @@ import { attribute, smoothstep } from 'three/tsl';
 import { CivicBatch } from './ede-civic-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
 import { cityUniforms } from './tsl-materials.js';
+import { edeEvents } from './ede-event-calendar.js';
+import { shiftDate } from './ede-transit-time.js';
 
 const turn = 2 * Math.PI;
 const warmWhite = 0xffdb94;
@@ -34,20 +36,17 @@ const tuinderslaan = [
 export function edeSeasonalVisibility(dateKey, season) {
   const preview = !dateKey && season === 'winter';
   const monthDay = dateKey?.slice(5) ?? '';
-  const heideweek = Boolean(dateKey >= '2026-08-10' && dateKey <= '2026-08-29');
+  const events = dateKey ? edeEvents(Number(dateKey.slice(0, 4))) : [];
+  const showsEvent = (id, leadDays = 0) => events.some(event => event.id === id &&
+    shiftDate(event.start, -leadDays) <= dateKey && dateKey <= event.end);
   const winter = preview || Boolean(dateKey >= '2025-12-01' && (monthDay >= '12-01' || monthDay <= '01-06'));
-  let kingsDay = false;
-  if (monthDay === '04-26' || monthDay === '04-27') {
-    const april27 = new Date(dateKey.slice(0, 4) + '-04-27T00:00:00Z');
-    kingsDay = dateKey >= '2018-04-26' && monthDay === (april27.getUTCDay() === 0 ? '04-26' : '04-27');
-  }
   return {
-    heideweek,
+    heideweek: showsEvent('heideweek', 11),
     airborne: monthDay.startsWith('09-'),
-    kingsDay,
+    kingsDay: showsEvent('kings-day'),
     winter,
     marketLights: preview || Boolean(dateKey >= '2025-11-15' && dateKey <= '2026-01-06'),
-    christmasMarket: dateKey === '2026-12-19',
+    christmasMarket: showsEvent('christmas-market'),
   };
 }
 

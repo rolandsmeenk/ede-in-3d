@@ -22,13 +22,14 @@ import {
   sqrt,
   If
 } from 'three/tsl';
-import { SkyMesh } from 'three/addons/objects/SkyMesh.js?v=20261126-moon';
+import { SkyMesh } from 'three/addons/objects/SkyMesh.js?v=20261127-photo-scenes';
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
-import { cityUniforms } from './tsl-materials.js';
+import { cityUniforms, setPhotoFrost } from './tsl-materials.js';
 import { snowCover } from './ede-snow.js';
 import { directSunFactor, edeSun, livePresetBlend } from './live-sky.js';
 import { edeMoon } from './ede-moon.js';
+import { createPhotoSky } from './ede-photo-sky.js';
 import { liveWindowLights, PRESET_WINDOW_LIGHTS } from './ede-window-lights.js';
 
 // Atmospheric sky, environment lighting, sunlight and time-of-day presets.
@@ -109,6 +110,8 @@ const TIME_PRESETS = {
   midnight: {
     id: 'midnight',
     sunDir: new THREE.Vector3(0.42, 0.68, -0.60).normalize(),
+    skySunDir: new THREE.Vector3(0, -1, 0),
+    showSunDisc: 0,
     sunColor: 0x8cb0e8,
     sunIntensity: 1.45,
     hemiSky: 0x263a62,
@@ -176,7 +179,9 @@ class LightingSystem {
     this.uMoonSun = uniform(new THREE.Vector3());
     this.uMoonRadius = uniform(0.0045);
     this.uMoonVisibility = uniform(1.0);
-    this.sky = new SkyMesh((raw, ray, cloudTransmission, extinction) => {
+    this.photoSky = createPhotoSky();
+    this.uPhotoSkyEnabled = uniform(1);
+    this.sky = new SkyMesh((raw, ray, cloudTransmission, extinction, sampleCloudTransmission) => {
       const sky = mix(raw.mul(this.uSkyExposure), this.uNightSkyColor, this.uNightFactor).toVar();
       const alignment = dot(ray, this.uMoonDirection);
       If(this.uShowMoon.greaterThan(0).and(ray.y.greaterThan(0)).and(alignment.greaterThan(0.99995)), () => {
@@ -188,6 +193,11 @@ class LightingSystem {
         const incidence = dot(normal, this.uMoonSun);
         const lit = smoothstep(0, 0.08, incidence).mul(incidence.max(0.25));
         sky.addAssign(extinction.mul(lit.mul(edge).mul(cloudTransmission).mul(this.uMoonVisibility)));
+      });
+      If(this.uPhotoSkyEnabled.greaterThan(0), () => {
+        const composite = this.photoSky.composite(sky, ray, cloudTransmission, extinction,
+          this.sky.sunPosition, this.uNightFactor, sampleCloudTransmission);
+        if (composite !== sky) sky.assign(composite);
       });
       return sky;
     });
@@ -272,12 +282,13 @@ class LightingSystem {
 
   bakeEnvironmentMap() {
     if (!this.pmremGenerator) return;
-    // Exclude the sun and moon discs from the environment map to avoid reflection artifacts.
+    // Keep sharp and transient highlights out of the environment map.
     // Reuses a single RenderTarget so texture identity never changes.
     const showDisc = this.sky.showSunDisc.value;
     const showMoon = this.uShowMoon.value;
     this.sky.showSunDisc.value = 0;
     this.uShowMoon.value = 0;
+    this.uPhotoSkyEnabled.value = 0;
     this.envScene.add(this.sky);
     this.envRenderTarget = this.pmremGenerator.fromScene(this.envScene, 0, 0.1, 100, {
       renderTarget: this.envRenderTarget
@@ -287,14 +298,23 @@ class LightingSystem {
     this.bakedCloudDensity = this.sky.cloudDensity.value;
     this.sky.showSunDisc.value = showDisc;
     this.uShowMoon.value = showMoon;
+    this.uPhotoSkyEnabled.value = 1;
     this.scene.add(this.sky);
   }
 
-  applyPreset(presetId, force = false) {
-    const p = TIME_PRESETS[presetId] || TIME_PRESETS.golden;
-    if (!force && !this.live && this.activePresetId === p.id && this.envRenderTarget !== null) {
-      return;
+  applyPreset(presetId, force = false, sunElevation) {
+    const base = TIME_PRESETS[presetId] || TIME_PRESETS.golden;
+    if (!force && !this.live && this.activePresetId === base.id &&
+        this.presetSunElevation === sunElevation && this.envRenderTarget !== null) return;
+
+    let p = base;
+    if (sunElevation !== undefined) {
+      const sunDir = base.sunDir.clone();
+      const horizontal = Math.hypot(sunDir.x, sunDir.z);
+      sunDir.setY(horizontal * Math.tan(THREE.MathUtils.degToRad(sunElevation))).normalize();
+      p = { ...base, sunDir, mieDirectionalG: Math.min(base.mieDirectionalG, 0.78) };
     }
+    this.presetSunElevation = sunElevation;
     this.live = false;
     this.uShowMoon.value = 0;
     cityUniforms.uWindowLights.value.set(...PRESET_WINDOW_LIGHTS[p.id]);
@@ -362,7 +382,6 @@ class LightingSystem {
     cityUniforms.uInteriorGlow.value = p.interiorGlow;
     cityUniforms.uCanyonBounce.value = p.canyonBounce;
 
-    this.scene.environmentIntensity = p.envIntensity;
     this.applyWeather();
     this.bakeEnvironmentMap();
   }
@@ -371,20 +390,24 @@ class LightingSystem {
     const p = this.basePreset;
     const weight = this.weather?.blend ?? 0;
     const cloud = this.weather?.cloud ?? 0;
-    const fog = (this.weather?.fog ?? 0) * weight;
+    const mist = this.weather?.mist ?? 0;
+    const storm = this.weather?.storm ?? 0;
+    const fog = Math.max((this.weather?.fog ?? 0) * weight, mist);
     const { lerp, smoothstep } = THREE.MathUtils;
     // An overcast weather reading can still leave small gaps in the procedural clouds.
     const overcast = smoothstep(cloud, 0.85, 1) * weight;
     this.uMoonVisibility.value = (1 - fog) * (1 - overcast);
 
-    this.sunLight.intensity = p.sunIntensity * (1 - (0.64 * cloud) * weight - 0.17 * fog);
-    this.hemiLight.intensity = p.hemiIntensity * lerp(1, 0.96 + 0.10 * cloud, weight);
+    this.sunLight.intensity = p.sunIntensity * (1 - (0.64 * cloud) * weight - 0.17 * fog) * (1 - 0.48 * storm);
+    this.hemiLight.intensity = p.hemiIntensity * lerp(1, 0.96 + 0.10 * cloud, weight) * (1 - 0.35 * storm);
+    this.scene.environmentIntensity = p.envIntensity * (1 - 0.28 * storm);
     this.sky.cloudCoverage.value = lerp(p.cloudCoverage, cloud, weight);
     this.sky.cloudDensity.value = lerp(p.cloudDensity, 0.22 + 0.68 * cloud, weight);
 
     const density = lerp(p.fogDensity, 0.0024, fog);
     this.scene.fog.density = density;
     if (this.uFogDensity) this.uFogDensity.value = density;
+    if (this.uFogHeight) this.uFogHeight.value = lerp(900, 135, Math.min(1, mist * 2.5));
     cityUniforms.uRoadWetness.value = (this.weather?.wetness ?? 0) * weight;
     cityUniforms.uRoadPuddles.value = this.weather?.raining ? this.weather.rain * weight : 0;
   }
@@ -401,7 +424,9 @@ class LightingSystem {
     }, 2400);
   }
 
-  update(focusPos, weather) {
+  update(focusPos, weather, timeSeconds) {
+    this.photoSky.update(weather, timeSeconds);
+    setPhotoFrost(weather?.frost ?? 0);
     snowCover.value = weather?.snowCover ?? 0;
     cityUniforms.uWaterIce.value = weather?.waterIce ?? 0;
     if (weather?.blend || this.hadWeather) {

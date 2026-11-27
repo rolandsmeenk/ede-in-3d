@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DAY, dateEpoch, localClock } from './ede-transit-time.js';
+import { DAY, dateEpoch } from './ede-transit-time.js';
 import { EDE_POSTER_SITES } from './ede-poster-sites.js';
 import { BEZOEK_EDE, paintEdeAd } from './ede-advertising.js';
 
@@ -25,7 +25,7 @@ function slot(series) {
   return [inset + (index % 3) * (posterWidth + inset), inset + Math.floor(index / 3) * (posterHeight + inset)];
 }
 
-function paintAtlas(ctx, week, image) {
+function paintAtlas(ctx, week, image, campaign) {
   ctx.fillStyle = frameColor;
   ctx.fillRect(0, 0, textureSize, textureSize);
   for (const [index, series] of [...'ABCDEF'].entries()) {
@@ -35,7 +35,9 @@ function paintAtlas(ctx, week, image) {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(0.5, 0.5);
-    paintEdeAd(ctx, posterWidth * 2, posterHeight * 2, { ...BEZOEK_EDE, title, detail }, image);
+    const eventArtwork = index % 2 === 0 ? campaign : null;
+    paintEdeAd(ctx, posterWidth * 2, posterHeight * 2,
+      eventArtwork ?? { ...BEZOEK_EDE, title, detail }, eventArtwork ? undefined : image);
     ctx.restore();
   }
 }
@@ -57,7 +59,7 @@ function posterGeometry(series) {
     print().rotateY(Math.PI).translate(0, 0, -0.153)];
 }
 
-export function buildEdePosters(scene, lampSupports) {
+export function buildEdePosters(scene, lampSupports, date, campaign) {
   const key = ({ x, z }) => `${x}:${z}`;
   const supports = new Map(lampSupports.filter(p => p.kind === 'lamp' && p.layer === 0).map(p => [key(p), p]));
   const chunks = new Map(), specimens = new Map();
@@ -78,15 +80,15 @@ export function buildEdePosters(scene, lampSupports) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = textureSize;
   const ctx = canvas.getContext('2d');
-  let displayedWeek = edePosterWeek(localClock(Date.now() / 1000).date);
+  let displayedWeek = edePosterWeek(date);
   let artwork;
-  paintAtlas(ctx, displayedWeek);
+  paintAtlas(ctx, displayedWeek, artwork, campaign);
   const atlas = new THREE.CanvasTexture(canvas);
   const image = new Image();
   image.src = BEZOEK_EDE.image;
   void image.decode().then(() => {
     artwork = image;
-    paintAtlas(ctx, displayedWeek, artwork);
+    paintAtlas(ctx, displayedWeek, artwork, campaign);
     atlas.needsUpdate = true;
   }, () => {});
   atlas.colorSpace = THREE.SRGBColorSpace;
@@ -105,21 +107,20 @@ export function buildEdePosters(scene, lampSupports) {
   for (const geometries of specimens.values()) for (const part of geometries) part.dispose();
   scene.add(group);
 
-  let nextRefresh = 0;
+  function setCampaign(date, nextCampaign) {
+    const week = edePosterWeek(date);
+    if (week === displayedWeek && nextCampaign === campaign) return;
+    displayedWeek = week;
+    campaign = nextCampaign;
+    paintAtlas(ctx, displayedWeek, artwork, campaign);
+    atlas.needsUpdate = true;
+  }
+
   const lastView = new THREE.Vector3(Infinity, Infinity, Infinity);
-  function updateView(position, now) {
-    if (now >= nextRefresh) {
-      nextRefresh = now + 30000;
-      const week = edePosterWeek(localClock(Date.now() / 1000).date);
-      if (week !== displayedWeek) {
-        displayedWeek = week;
-        paintAtlas(ctx, week, artwork);
-        atlas.needsUpdate = true;
-      }
-    }
+  function updateView(position) {
     if (lastView.distanceToSquared(position) < 16) return;
     lastView.copy(position);
     for (const mesh of group.children) mesh.visible = mesh.geometry.boundingBox.distanceToPoint(position) < 220;
   }
-  return { updateView };
+  return { setCampaign, updateView };
 }

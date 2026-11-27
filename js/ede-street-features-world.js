@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { texture } from 'three/tsl';
 import { gradeProfileAt, gradeWayAt } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
-import { registerCurbTable } from './ede-curbs.js';
+import { curbPaintGapFor, registerCurbTable } from './ede-curbs.js';
 import { createRoadSurfaceMaterial } from './tsl-materials.js';
 import { nearestEdeRoad, overlapsEdeTravelPavement } from './ede-geometry.js';
 
@@ -316,8 +316,15 @@ function collectRoadSurfaces({ bumps = [], crossings = [] }, quad, roadSurfaces)
         for (let i = 0; i < ring.length; i += 2) points.push(local(ring[i], ring[i + 1]));
         return points;
       })));
+    const refugeGap = curbPaintGapFor(crossing.id);
     const paintBand = (ring, paint, zebra) => {
       let polygons = mask ? mask.map(triangle => clipToTriangle(ring, triangle)) : [ring];
+      if (refugeGap) {
+        polygons = polygons.flatMap(polygon => [
+          clipRing(polygon, 1, -refugeGap, -1),
+          clipRing(polygon, 1, refugeGap, 1)
+        ]).filter(polygon => polygon.length >= 3);
+      }
       for (const triangle of blockers) {
         const outside = [];
         for (const polygon of polygons) {

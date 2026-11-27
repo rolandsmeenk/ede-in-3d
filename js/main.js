@@ -14,7 +14,7 @@ import { buildStreetDetails } from './street-details.js?v=20261126-keesom-juncti
 import { loadEdeSignalHardware } from './ede-signal-hardware.js?v=20261126-keesom-junction';
 import { createLiveSignalController, loadEdeLiveSignals, watchLiveSignals } from './live-signal-feed.js';
 import { buildLiveSignalSystem } from './live-signal-builders.js';
-import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261126-winter-traffic';
+import { createTrafficSystem, createHighwayTraffic } from './traffic.js?v=20261127-dutch-paving';
 import { loadEdeParking } from './ede-parking.js';
 import { buildRoadPaint } from './road-paint.js?v=20261126-keesom-junction';
 import { overlapsEdeTravelPavement } from './ede-geometry.js';
@@ -23,8 +23,8 @@ import { EDE_BIKE_STYLES } from './ede-bikes.js';
 import { TouchControls } from './touch-controls.js';
 import { GamepadControls } from './gamepad-controls.js';
 import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
-import { LightingSystem } from './lighting.js?v=20261126-snow-ice';
-import { createLiveWeather, formatWeatherTime, photogenicWeather, weatherCondition } from './ede-weather.js?v=20261126-winter-traffic';
+import { LightingSystem } from './lighting.js?v=20261127-photo-scenes';
+import { createLiveWeather, formatWeatherTime, PHOTO_WEATHER_PRESETS, weatherCondition } from './ede-weather.js?v=20261127-environment-modes';
 import { loadEdePondLevels, resolveFrankenengLevels, watchFrankenengLevels } from './ede-water-levels.js';
 import { loadEdeWaterWorks, buildEdeWaterWorks } from './ede-water-works-world.js';
 import { createWeatherPrecipitation } from './weather-precipitation.js?v=20261126-wind';
@@ -44,6 +44,8 @@ import { loadEdeTrees, loadEdeWoodland } from './ede-tree-data.js?v=20261122-saf
 import { TREE_SEASONS, setTreeSeason, getTreeSeason, seasonPresetFor } from './tree-seasons.js';
 import { loadEdeLamps } from './ede-lamp-data.js?v=20261122-safari-cache';
 import { buildEdePosters } from './ede-posters.js';
+import { setEdeAdCampaign } from './ede-advertising.js';
+import { edeEventCampaign } from './ede-event-calendar.js';
 import { buildEdeSeasonalDecorations } from './ede-seasonal-decorations.js';
 import { localClock } from './ede-transit-time.js';
 import { buildEdeLunterenPlatforms } from './ede-lunteren-platforms.js';
@@ -62,7 +64,7 @@ import { buildEdeStreetFeaturesWorld } from './ede-street-features-world.js?v=20
 import { buildEdeBusStops } from './ede-bus-stops.js';
 import { loadEdeMotorwayLanes } from './ede-motorway-lanes.js';
 import { loadEdeRoadSurfaces } from './ede-road-surfaces.js';
-import { loadEdeCurbs } from './ede-curbs.js';
+import { bindEdeCurbPaving, loadEdeCurbs } from './ede-curbs.js';
 import { buildEdeRoadFurniture, loadEdeRoadFurniture, roadFurnitureReplacementIds } from './road-furniture-manager.js';
 import { loadEdeFittedLanes } from './ede-lane-geometry.js';
 import { loadEdeCorridorFallbacks } from './ede-facades.js';
@@ -205,7 +207,7 @@ export async function initApp() {
       compactGraphics ? null : loadExteriorBagFootprints(),
       enabled('roadFurniture', !compactGraphics) ? loadEdeRoadFurniture() : null,
       loadEdePondLevels(),
-      enabled('curbs', !compactGraphics) ? loadEdeCurbs() : null,
+      enabled('curbs', !compactGraphics) ? loadEdeCurbs(enabled('curbRollout') && !compactGraphics) : null,
       compactGraphics ? null : loadEdeWoodland(),
     ]);
     if (compactGraphics) {
@@ -219,6 +221,7 @@ export async function initApp() {
   let [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, motorwayResult, trainResult,
     featureResult, roadSurfaceResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, liveSignalsResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult, woodlandResult] = await loadAssets();
   if (curbResult.status === 'rejected') console.warn('[curbs] using original pavement:', curbResult.reason);
+  else bindEdeCurbPaving(roadSurfaceResult.value?.surfaces ?? []);
   if (terrainResult.status === 'fulfilled') {
     container.dataset.terrain = 'PDOK AHN';
     container.dataset.napOrigin = String(terrainResult.value.napOrigin);
@@ -397,7 +400,10 @@ export async function initApp() {
       clearance: landmarks.treeClearance },
     signalHardwareResult.value, importedDetail?.gantries, landmarks.forecourtLights);
   const { treeField } = streetDetails;
-  const posters = mappedLamps && buildEdePosters(scene, streetDetails.signSupports);
+  let adDate = localClock(Date.now() / 1000).date;
+  const initialCampaign = edeEventCampaign(adDate);
+  setEdeAdCampaign(initialCampaign);
+  const posters = mappedLamps && buildEdePosters(scene, streetDetails.signSupports, adDate, initialCampaign);
   const decorations = buildEdeSeasonalDecorations(scene, mappedLamps);
   treeField.group.visible = graphics.vegetation;
   if (importedDetail) allColliders.push(...importedDetail.colliders);
@@ -646,13 +652,16 @@ export async function initApp() {
   const treeQualityButtons = document.querySelectorAll('[data-tree-quality]');
   const environmentButtons = document.querySelectorAll('[data-environment]');
   const environmentLabel = document.getElementById('environment-label');
-  const presetControls = document.getElementById('environment-presets');
+  const customControls = document.getElementById('environment-custom');
+  const photoControls = document.getElementById('environment-photo-scenes');
+  const photoSummary = document.getElementById('environment-photo-summary');
   const liveInfo = document.getElementById('environment-live-info');
-  const presetTime = document.getElementById('environment-time');
-  const presetSeason = document.getElementById('environment-season');
-  const presetWeather = document.getElementById('environment-weather');
-  const snowOption = presetWeather.querySelector('[value="snow"]');
-  presetSeason.value = initialTreeSeason;
+  const customTime = document.getElementById('environment-time');
+  const customSeason = document.getElementById('environment-season');
+  const customWeather = document.getElementById('environment-weather');
+  const photoScene = document.getElementById('environment-photo');
+  const snowOption = customWeather.querySelector('[value="snow"]');
+  customSeason.value = initialTreeSeason;
   const liveClock = document.getElementById('time-live-clock');
   const liveDate = document.getElementById('environment-live-date');
   const localDate = new Intl.DateTimeFormat('en-GB', {
@@ -665,20 +674,8 @@ export async function initApp() {
   const waterStatus = document.getElementById('live-water-status');
   const weatherStatus = document.getElementById('live-weather-status');
   const weatherClock = document.getElementById('live-weather-time');
-  const photoWeather = document.getElementById('photo-weather');
-  const photoWeatherStatus = document.getElementById('photo-weather-status');
-
-  function updatePhotoWeather(current, now = Date.now()) {
-    photoWeather.hidden = !current;
-    if (!current) return;
-    const moments = photogenicWeather(current, now);
-    const text = moments.join(' · ') || 'No photo opportunities flagged right now.';
-    if (photoWeatherStatus.textContent !== text) photoWeatherStatus.textContent = text;
-  }
-
   const liveWeather = createLiveWeather({
     onChange({ status, current }) {
-      updatePhotoWeather(status === 'fresh' ? current : null);
       weatherClock.hidden = !current;
       weatherClock.textContent = current ? formatWeatherTime(current.observedAt) : '';
       if (current) weatherClock.dateTime = new Date(current.observedAt).toISOString();
@@ -821,25 +818,37 @@ export async function initApp() {
     liveClock.dateTime = now.toISOString();
     liveDate.textContent = localDate.format(now);
     liveDate.dateTime = liveClock.dateTime;
-    updatePhotoWeather(liveWeather.state.status === 'fresh' ? liveWeather.state.current : null, now.getTime());
+    liveWeather.refreshPhotoEffects();
     if (!document.hidden) {
       liveTimeTimer = setTimeout(refreshLiveTime, 60000 - Date.now() % 60000);
     }
   }
 
-  function applyPresetTime() {
-    lightingSystem.applyPreset(presetTime.value);
+  function applyEnvironmentTime(time, sunElevation) {
+    lightingSystem.applyPreset(time, false, sunElevation);
     colorGrade.applyPreset(lightingSystem.activePresetId);
     landmarks.setClockMinutes(presetClockMinutes[lightingSystem.activePresetId]);
   }
 
-  function applyPresetSeason() {
-    if (treeSeasonsEnabled) setTreeSeason(presetSeason.value);
-    decorations.update(undefined, presetSeason.value);
-    landmarks.setMillLighting(undefined, undefined, presetSeason.value);
-    snowOption.disabled = snowOption.hidden = presetSeason.value !== 'winter';
-    if (snowOption.disabled && presetWeather.value === 'snow') presetWeather.value = 'default';
-    liveWeather.setPreset(presetWeather.value, presetSeason.value);
+  function applyEnvironmentSeason(season) {
+    if (treeSeasonsEnabled) setTreeSeason(season);
+    decorations.update(undefined, season);
+    landmarks.setMillLighting(undefined, undefined, season);
+  }
+
+  function applyCustomSeason() {
+    applyEnvironmentSeason(customSeason.value);
+    snowOption.disabled = snowOption.hidden = customSeason.value !== 'winter';
+    if (snowOption.disabled && customWeather.value === 'snow') customWeather.value = 'default';
+    liveWeather.setPreset(customWeather.value, customSeason.value);
+  }
+
+  function applyPhotoScene() {
+    const photo = PHOTO_WEATHER_PRESETS[photoScene.value];
+    applyEnvironmentTime(photo.time, photo.sunElevation);
+    applyEnvironmentSeason(photo.season);
+    liveWeather.setPreset(photoScene.value, photo.season);
+    photoSummary.textContent = `${TREE_SEASONS[photo.season].label} · ${photo.summary}`;
   }
 
   function updateWaterLevels(levels) {
@@ -851,11 +860,14 @@ export async function initApp() {
 
   function selectEnvironment(mode) {
     if (mode === environmentMode) return;
+    const photo = mode === 'photo';
+    const photoChanged = photo || environmentMode === 'photo';
     environmentMode = mode;
     clearTimeout(liveTimeTimer);
     const live = mode === 'live';
     setPressed(environmentButtons, 'environment', mode);
-    presetControls.hidden = live;
+    customControls.hidden = mode !== 'custom';
+    photoControls.hidden = !photo;
     liveInfo.hidden = !live;
     environmentLabel.textContent = live ? 'Live' : 'Environment';
     liveClock.hidden = !live;
@@ -870,16 +882,20 @@ export async function initApp() {
       stopWaterLevels?.();
       stopWaterLevels = undefined;
       if (cityGrid.waterLevels.length) updateWaterLevels(resolveFrankenengLevels());
-      applyPresetTime();
-      applyPresetSeason();
+      if (photo) applyPhotoScene();
+      else {
+        applyEnvironmentTime(customTime.value);
+        applyCustomSeason();
+      }
     }
+    if (photoChanged) liveWeather.resetEffects();
   }
 
   function selectTime(timeId) {
     if (timeId === 'live') return selectEnvironment('live');
-    presetTime.value = Object.hasOwn(presetClockMinutes, timeId) ? timeId : 'golden';
-    if (environmentMode === 'preset') applyPresetTime();
-    else selectEnvironment('preset');
+    customTime.value = Object.hasOwn(presetClockMinutes, timeId) ? timeId : 'golden';
+    if (environmentMode === 'custom') applyEnvironmentTime(customTime.value);
+    else selectEnvironment('custom');
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -959,15 +975,26 @@ export async function initApp() {
   function selectTreeSeason(season) {
     if (season === 'today') return selectEnvironment('live');
     if (TREE_SEASONS[season]?.day == null) return;
-    presetSeason.value = season;
-    if (environmentMode === 'preset') applyPresetSeason();
-    else selectEnvironment('preset');
+    customSeason.value = season;
+    if (environmentMode === 'custom') applyCustomSeason();
+    else selectEnvironment('custom');
   }
   setPressed(treeQualityButtons, 'treeQuality', treeQuality);
   for (const button of environmentButtons) button.addEventListener('click', () => selectEnvironment(button.dataset.environment));
-  presetTime.addEventListener('change', () => selectTime(presetTime.value));
-  presetSeason.addEventListener('change', () => selectTreeSeason(presetSeason.value));
-  presetWeather.addEventListener('change', () => liveWeather.setPreset(presetWeather.value, presetSeason.value));
+  customTime.addEventListener('change', () => {
+    if (environmentMode === 'custom') selectTime(customTime.value);
+  });
+  customSeason.addEventListener('change', () => {
+    if (environmentMode === 'custom') selectTreeSeason(customSeason.value);
+  });
+  customWeather.addEventListener('change', () => {
+    if (environmentMode === 'custom') liveWeather.setPreset(customWeather.value, customSeason.value);
+  });
+  photoScene.addEventListener('change', () => {
+    if (environmentMode !== 'photo') return;
+    applyPhotoScene();
+    liveWeather.resetEffects();
+  });
   for (const button of treeQualityButtons) button.addEventListener('click', () => {
     selectTreeQuality(button.dataset.treeQuality);
     closePopovers();
@@ -1196,7 +1223,7 @@ export async function initApp() {
   // Initialize the UI and chase camera around the restored player, or the default taxi on a first visit.
   selectMode(controllerManager.activeMode);
   selectCamera('chase', true);
-  posters?.updateView(cameraSystem.camera.position, performance.now());
+  posters?.updateView(cameraSystem.camera.position);
   decorations.updateView(cameraSystem.camera.position);
   selectTime('golden');
   // the web fonts change the buttons' widths once they arrive
@@ -1338,6 +1365,7 @@ export async function initApp() {
   let frameCount = 0;
   let fpsTimer = 0;
   let nextPlayerSave = 0;
+  let nextAdCheck = 0;
   let warmedUp = false; // see the first frame below
   const municipalWarning = document.getElementById('municipal-warning');
   const municipalStatus = document.getElementById('municipal-warning-status');
@@ -1407,7 +1435,17 @@ export async function initApp() {
     }
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
-    posters?.updateView(cameraSystem.camera.position, now);
+    if (now >= nextAdCheck) {
+      nextAdCheck = now + 30000;
+      const date = localClock(Date.now() / 1000).date;
+      if (date !== adDate) {
+        adDate = date;
+        const campaign = edeEventCampaign(date);
+        setEdeAdCampaign(campaign);
+        posters?.setCampaign(date, campaign);
+      }
+    }
+    posters?.updateView(cameraSystem.camera.position);
     decorations.updateView(cameraSystem.camera.position);
     if (warmedUp) parcelTiles?.update(cameraSystem.camera.position, now);
     if (parcelTiles) profiler?.stage('Parcel tiles');
@@ -1418,7 +1456,7 @@ export async function initApp() {
     updateSceneWind(windDt, weatherEffects.windX, weatherEffects.windZ);
     landmarks.updateWind(windDt, windReading);
     kiteFlyers.update(windDt, cameraSystem.camera.position, windReading);
-    lightingSystem.update(cameraSystem.currentPos, weatherEffects);
+    lightingSystem.update(cameraSystem.currentPos, weatherEffects, now / 1000);
     bgtWorld?.updateWind(windDt, liveWeather.turbineWind, now / 1000, lightingSystem.uNightFactor.value);
     precipitation.update(dt, cameraSystem.camera, weatherEffects);
     profiler?.stage('Lighting and weather');

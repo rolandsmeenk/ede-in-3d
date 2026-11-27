@@ -44,7 +44,7 @@ class SkyMesh extends Mesh {
 	/**
 	 * Constructs a new skydome.
 	 *
-	 * @param {?Function} [composite=null] - Optional color node factory taking sky color, view direction, cloud transmission and atmospheric extinction.
+	 * @param {?Function} [composite=null] - Optional color node factory taking sky color, view direction, cloud transmission, atmospheric extinction and a cloud transmission sampler.
 	 */
 	constructor( composite = null ) {
 
@@ -331,14 +331,11 @@ class SkyMesh extends Mesh {
 
 			}, { position: 'vec2', drift: 'vec2', return: 'float' } );
 
-			const cloudTransmission = composite ? float( 1.0 ).toVar() : null;
-
-			// Clouds
-			If( direction.y.greaterThan( 0.0 ).and( this.cloudCoverage.greaterThan( 0.0 ) ), () => {
+			const cloudField = Fn( ( [ ray ] ) => {
 
 				// Project to cloud plane (higher elevation = clouds appear lower/closer)
 				const elevation = mix( 1.0, 0.1, this.cloudElevation );
-				const cloudUV = direction.xz.div( direction.y.mul( elevation ) ).toVar();
+				const cloudUV = ray.xz.div( ray.y.max( 0.0001 ).mul( elevation ) ).toVar();
 				cloudUV.mulAssign( this.cloudScale );
 				cloudUV.addAssign( time.mul( this.cloudSpeed ) );
 
@@ -352,11 +349,26 @@ class SkyMesh extends Mesh {
 
 				// Carve clouds where noise rises above the coverage level
 				const threshold = sub( 1.0, cov ).toVar();
-				const cloudMask = smoothstep( threshold, threshold.add( 0.3 ), cloudNoise ).toVar();
+				const cloudMask = smoothstep( threshold, threshold.add( 0.3 ), cloudNoise );
 
 				// Fade clouds near horizon (adjusted by elevation)
-				const horizonFade = smoothstep( 0.0, add( 0.03, mul( 0.06, this.cloudElevation ) ), direction.y );
-				cloudMask.mulAssign( horizonFade );
+				const horizonFade = smoothstep( 0.0, add( 0.03, mul( 0.06, this.cloudElevation ) ), ray.y );
+				const depth = max( 0.0, cloudNoise.sub( threshold ) ).toVar();
+				// Cloud opacity via Beer's law: density sets how solid the clouds get.
+				const alpha = sub( 1.0, exp( depth.mul( this.cloudDensity ).mul( - 12.0 ) ) ).mul( horizonFade );
+				return vec3( depth, cloudMask.mul( horizonFade ), alpha );
+
+			}, { ray: 'vec3', return: 'vec3' } );
+
+			const cloudTransmission = composite ? float( 1.0 ).toVar() : null;
+
+			// Clouds
+			If( direction.y.greaterThan( 0.0 ).and( this.cloudCoverage.greaterThan( 0.0 ) ), () => {
+
+				const cloud = cloudField( direction ).toVar();
+				const depth = cloud.x;
+				const cloudMask = cloud.y;
+				const alpha = cloud.z;
 
 				// Cloud lighting from the sky's own radiance
 				const dayFactor = smoothstep( - 0.08, 0.3, vSunDirection.y );
@@ -364,7 +376,6 @@ class SkyMesh extends Mesh {
 				const skyAmbient = Lin.mul( 0.04 ).add( vec3( 0.0, 0.0003, 0.00075 ) );
 
 				// Beer-powder self-shadow from the sampled density
-				const depth = max( 0.0, cloudNoise.sub( threshold ) ).toVar();
 				const beer = exp( depth.mul( - 4.0 ) ).toVar();
 				const powder = sub( 1.0, beer.mul( beer ) ); // beer*beer == exp(-8*depth)
 				const shade = mix( 0.45, 1.0, beer.mul( powder ).mul( 2.6 ).clamp( 0.0, 1.0 ) ); // 2.6 = 1/0.385, normalizes beer*powder peak to 1
@@ -377,9 +388,6 @@ class SkyMesh extends Mesh {
 				cloudColor.addAssign( sunColor.mul( silver ).mul( edge ).mul( 0.6 ) );
 				cloudColor.mulAssign( dayFactor.max( 0.03 ) );
 
-				// Cloud opacity via Beer's law: density sets how solid the clouds get
-				const alpha = sub( 1.0, exp( depth.mul( this.cloudDensity ).mul( - 12.0 ) ) ).mul( horizonFade ).toVar();
-
 				if ( cloudTransmission ) cloudTransmission.assign( sub( 1.0, alpha ) );
 
 				// Occlude the sun disc/glow behind opaque cloud
@@ -391,7 +399,8 @@ class SkyMesh extends Mesh {
 
 			} );
 
-			const color = composite ? composite( texColor, direction, cloudTransmission, Fex ) : texColor;
+			const color = composite ? composite( texColor, direction, cloudTransmission, Fex,
+				( ray ) => cloudField( ray ).z.oneMinus() ) : texColor;
 			return vec4( color, 1.0 );
 
 		} )();

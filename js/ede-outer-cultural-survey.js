@@ -621,7 +621,7 @@ export const OUTER_CULTURAL_SURVEYS = {
 };
 
 export const OUTER_CULTURAL_META = [
-  {"id":"kroller-muller-museum","name":"Kr\u00f6ller-M\u00fcller Museum","district":"Otterlo","road":"Houtkampweg","x":9990.35,"z":-5521.45,"height":10.45,"focusHeight":4.7,"approach":{"x":9918.4,"z":-5507.4},"osmId":"r3629288","annexOsmIds":[],"bagIds":["0228100000019793"]},
+  {"id":"kroller-muller-museum","name":"Kr\u00f6ller-M\u00fcller Museum","district":"Otterlo","road":"Houtkampweg","x":9990.35,"z":-5521.45,"height":10.45,"focusHeight":4.7,"approach":{"x":9940.4,"z":-5486.4},"osmId":"r3629288","annexOsmIds":[],"bagIds":["0228100000019793"]},
   {"id":"alexanderkerk-bennekom","name":"Oude of Sint-Alexanderkerk","district":"Bennekom","road":"Dorpsstraat","x":333.31,"z":5339.9,"height":20.6,"focusHeight":9.27,"approach":{"x":305.3,"z":5355.9},"osmId":"w271158461","annexOsmIds":[],"bagIds":["0228100000033177"]},
   {"id":"kijk-luistermuseum","name":"Kijk & Luistermuseum","district":"Bennekom","road":"Kerkstraat","x":245.21,"z":5397.05,"height":7.51,"focusHeight":3.38,"approach":{"x":231.2,"z":5379.1},"osmId":"w271157043","annexOsmIds":[],"bagIds":["0228100000050412"]},
   {"id":"hervormde-kerk-harskamp","name":"Hervormde Kerk Harskamp","district":"Harskamp","road":"Dorpsstraat","x":5389.79,"z":-9542.62,"height":16.26,"focusHeight":7.32,"approach":{"x":5361.8,"z":-9530.6},"osmId":"w271889558","annexOsmIds":[],"bagIds":["0228100000051235"]},

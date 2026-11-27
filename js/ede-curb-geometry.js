@@ -26,29 +26,50 @@ export function curbFaceGeometry(THREE, geometry, outer, holes, baseHeightAt) {
       else edges.set(id, [a, b]);
     }
   }
-  const faces = [];
+  const boundary = [];
+  for (const ring of [outer, ...holes]) {
+    let distance = 0;
+    for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
+      const x = ring[j], z = ring[j + 1];
+      const dx = ring[i] - x, dz = ring[i + 1] - z, length = Math.hypot(dx, dz);
+      if (length < 1e-5) continue;
+      boundary.push({ x, z, ux: dx / length, uz: dz / length, length, distance });
+      distance += length;
+    }
+  }
+  const faces = [], uv = [];
   for (const edge of edges.values()) {
     if (!edge) continue;
     const [a, b] = edge;
     const x = (a[0] + b[0]) / 2, z = (a[2] + b[2]) / 2;
-    if (![outer, ...holes].some(ring => {
-      for (let i = 0, j = ring.length - 2; i < ring.length; j = i, i += 2) {
-        const dx = ring[i] - ring[j], dz = ring[i + 1] - ring[j + 1], length = Math.hypot(dx, dz);
-        if (length < 1e-5) continue;
-        const t = ((x - ring[j]) * dx + (z - ring[j + 1]) * dz) / length;
-        const d = ((x - ring[j]) * dz - (z - ring[j + 1]) * dx) / length;
-        if (t >= -0.001 && t <= length + 0.001 && Math.abs(d) < 0.001) return true;
-      }
-      return false;
-    })) continue;
+    const segment = boundary.find(({ x: sx, z: sz, ux, uz, length }) => {
+      const dx = x - sx, dz = z - sz;
+      const along = dx * ux + dz * uz;
+      return along >= -0.001 && along <= length + 0.001 && Math.abs(dx * uz - dz * ux) < 0.001;
+    });
+    if (!segment) continue;
     const baseA = [a[0], baseHeightAt(a[0], a[2]), a[2]];
     const baseB = [b[0], baseHeightAt(b[0], b[2]), b[2]];
-    if (a[1] - baseA[1] > 0.001 || b[1] - baseB[1] > 0.001) {
+    const heightA = a[1] - baseA[1], heightB = b[1] - baseB[1];
+    if (heightA > 0.001 || heightB > 0.001) {
       // Extend into the draped ground at edges without adjoining pavement.
       baseA[1] -= 0.09;
       baseB[1] -= 0.09;
+      const along = ([px, , pz]) => segment.distance + (px - segment.x) * segment.ux + (pz - segment.z) * segment.uz;
+      const uA = along(a), uB = along(b);
       faces.push(...a, ...baseA, ...b, ...b, ...baseA, ...baseB);
+      uv.push(uA, heightA, uA, -0.09, uB, heightB, uB, heightB, uA, -0.09, uB, -0.09);
     }
   }
-  return faces.length ? makeSurfaceGeometry(THREE, faces) : null;
+  return faces.length ? makeSurfaceGeometry(THREE, faces, undefined, uv) : null;
+}
+
+export function curbBoxGeometry(THREE, length, height, width, subdivisions = 1) {
+  const geometry = new THREE.BoxGeometry(length, height, width, subdivisions);
+  const { position, normal, uv } = geometry.attributes;
+  for (let i = 0; i < uv.count; i++) {
+    const along = Math.abs(normal.getX(i)) > 0.5 ? position.getZ(i) + width / 2 : position.getX(i) + length / 2;
+    uv.setXY(i, along, position.getY(i) + height / 2);
+  }
+  return geometry;
 }

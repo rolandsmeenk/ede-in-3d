@@ -39,6 +39,8 @@ function contains(ring, x, z) {
   return inside;
 }
 
+export { contains as containsPavingRing };
+
 const TRAFFIC_CELL = 32;
 
 export function isEdeTrafficPavement(x, z, layer = 0) {

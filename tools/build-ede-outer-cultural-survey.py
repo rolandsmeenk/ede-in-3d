@@ -19,7 +19,7 @@ TO_RD = Transformer.from_crs('EPSG:4326', 'EPSG:28992', always_xy=True)
 # (site_id, name, district, road, [(bag_id_or_None, osm_id, wall_hex, roof_hex)], lon, lat, radius_m, approach_offset)
 SITES = (
     ('kroller-muller-museum', 'Kröller-Müller Museum', 'Otterlo', 'Houtkampweg',
-     [('0228100000019793', 'r3629288', 0xc9c4b4, 0x6f746a)], 5.8175593, 52.0959092, 130, (-72, 14)),
+     [('0228100000019793', 'r3629288', 0xc9c4b4, 0x6f746a)], 5.8175593, 52.0959092, 130, (-50, 35)),
     ('alexanderkerk-bennekom', 'Oude of Sint-Alexanderkerk', 'Bennekom', 'Dorpsstraat',
      [('0228100000033177', 'w271158461', 0xa68d74, 0x4c4a46)], 5.6762979, 51.9980409, 45, (-28, 16)),
     ('kijk-luistermuseum', 'Kijk & Luistermuseum', 'Bennekom', 'Kerkstraat',

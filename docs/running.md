@@ -19,7 +19,7 @@ GitHub Pages serves the game and its bundled assets. Live features that use Ede 
 | Feature | On GitHub Pages |
 | --- | --- |
 | Environment clock and seasons | Live calculates the sun position and seasonal date in the browser and displays the current date and time in Europe/Amsterdam. |
-| Weather | Live fetches current Ede conditions directly from Open-Meteo if the game’s weather endpoint is absent. Preset weather works offline. |
+| Weather | Live fetches current Ede conditions directly from Open-Meteo if the game’s weather endpoint is absent. Live can also fetch NOAA's aurora forecast when the sky is dark and clear enough. Custom and Photo scenes work offline. |
 | Frankeneng water levels | Live fetches the waterschap’s gauge values directly. Preset mode and unavailable readings use bundled levels. |
 | Fuel prices | Street-side signs show estimates from the latest published CBS national average. The browser refreshes the reference hourly while visible and uses a dated bundled value offline. |
 | Road traffic | Uses bundled posted speed limits and Amsterdam time-of-day demand. Live NDW counts, speeds, closures and temporary limits require the feed server. |

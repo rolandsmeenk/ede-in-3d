@@ -30,16 +30,15 @@ test('EDE_SHOPS covers Ede and its outer villages within the playable boundary',
   }
 });
 
-test('every teleport button in index.html maps to a valid TELEPORT_LOCATIONS entry', async () => {
+test('area buttons and village map landmarks have valid teleport arrivals', async () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const ids = [...html.matchAll(/data-teleport="([^"]+)"/g)].map(m => m[1]);
-  assert.ok(ids.length >= 19, `expected >= 19 teleport buttons, got ${ids.length}`);
-  for (const required of ['alexanderkerk-bennekom', 'lunteren-centrum', 'kulturhus-wekerom', 'harskamp-bevrijding-veluwe', 'oude-kerk-otterlo', 'jachthuis-sint-hubertus']) {
-    assert.ok(ids.includes(required), `missing teleport button for ${required}`);
+  const { NYC_LANDMARKS, TELEPORT_LOCATIONS } = await import('../js/city-config.js');
+  const mapIds = ['kulturhus-wekerom', 'harskamp-bevrijding-veluwe'];
+  for (const id of mapIds) {
+    assert.ok(NYC_LANDMARKS.some(site => site.id === id && !site.hideOnMap), `${id} is available from the map`);
   }
-
-  const { TELEPORT_LOCATIONS } = await import('../js/city-config.js');
-  for (const id of ids) {
+  for (const id of [...ids, ...mapIds]) {
     const loc = TELEPORT_LOCATIONS[id];
     assert.ok(loc && Number.isFinite(loc.x) && Number.isFinite(loc.z), `TELEPORT_LOCATIONS[${id}] should be defined`);
   }

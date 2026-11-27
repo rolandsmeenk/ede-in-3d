@@ -10,7 +10,7 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 
 - **Walk the town centre.** Explore the shops and squares around Grotestraat, see Cultura and Raadhuis Ede, and look for street art at Astrant and the Van Eekelenflat.
 - **Cycle or drive across town.** Follow mapped cycle routes, pass buses on local streets, and watch the trains at Ede-Wageningen, Ede Centrum and Lunteren.
-- **Jump to a major area or find a landmark.** Use **Teleport** for areas such as Centrum, ENKA, Ginkelse Heide and Lunteren. Open **Map** and search for an individual landmark, such as De Eder Kuil, Groot Zonneoord or De Valenberg, then click its pin to teleport.
+- **Jump to a major area or find a landmark.** Use **Teleport** for areas such as Centrum, Bennekom, Ginkelse Heide and Lunteren. Open **Map** and search for an individual landmark, such as De Eder Kuil, Groot Zonneoord or De Valenberg, then click its pin to teleport.
 
 A border warning appears while you walk, cycle, drive or fly in the 500 m strip outside the municipality. The atlas marks the official boundary and the outer travel limit.
 
@@ -22,7 +22,7 @@ A border warning appears while you walk, cycle, drive or fly in the 500 m strip 
 | Playable area with the 500 m border | 361.15 km² |
 | Exterior terrain and canopy | 2 km buffer |
 | Gray BAG buildings in the 500 m buffer | 10,459 |
-| Teleport menu areas | 14 |
+| Teleport menu areas | 16 on wide screens, 8 on smaller screens |
 | Custom landmark models | 258 |
 | Mapped building footprints | 85,395 |
 | Municipal litter-bin placements | 742 |
@@ -79,7 +79,7 @@ Four courts count toward both football and basketball. [Bundled sports inventory
 
 ## See Ede in a different light
 
-Open **Environment** and choose **Live** to follow Ede’s local clock, seasons, weather and Frankeneng water levels. In **Preset**, set the time of day, season and weather yourself. Try a windy autumn rain, a snowy winter night or summer on the purple heath. [Environment and data sources](docs/simulation.md#environment)
+Open **Environment** and choose **Live** to follow Ede’s local clock, seasons, weather and Frankeneng water levels. In **Custom**, set the time of day, season and weather yourself. Choose **Photo scenes** to preview a complete scene, then return to **Custom** to restore your settings. [Environment and data sources](docs/simulation.md#environment)
 
 ### Four seasons at Kasteel Hoekelum
 

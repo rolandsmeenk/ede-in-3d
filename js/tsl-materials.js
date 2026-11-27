@@ -67,7 +67,7 @@ import {
   waterAt
 } from './city-config.js';
 import { heatherBloom, treeSeasonNodes } from './tree-seasons.js';
-import { applySnowMaterial, snowBuildup, snowCover } from './ede-snow.js';
+import { applySnowMaterial, snowBuildup, snowCover, surfaceSkyExposure } from './ede-snow.js';
 
 // Procedural city materials: facades and interiors, vegetation, roads, water and lighting effects.
 
@@ -128,7 +128,8 @@ function createEdeGroundMaterial(aerial, landCover, heath) {
     const base = mapped ? gray.mul(mapped.a.oneMinus()).add(mapped.rgb) : gray;
     const ground = aerial ? blendAerialSurfaceColor(base, mapped ? mix(0.85, 0.42, mapped.a) : 0.85) : base;
     const variation = noise2D(positionWorld.xz.mul(0.7)).mul(0.14).add(0.93);
-    return heathBloomColor(ground, heath).mul(variation).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
+    const dampGround = heathBloomColor(ground, heath).mul(variation).mul(mix(1, 0.78, cityUniforms.uRoadWetness));
+    return frostGround(dampGround, 0.88);
   })();
   return applySnowMaterial(mat, { shelter: true });
 }
@@ -159,6 +160,29 @@ function updateSceneWind(dt, windX, windZ) {
   // Accumulate travel so a change in weather never resets the water phase.
   cityUniforms.uWaterTravel.value.x += x * strength * dt;
   cityUniforms.uWaterTravel.value.y += z * strength * dt;
+}
+
+const photoFrost = uniform(0);
+
+export function setPhotoFrost(strength) {
+  photoFrost.value = Math.min(1, Math.max(0, strength));
+}
+
+function frostGround(base, exposure) {
+  const surface = vec3(base).toVar();
+  If(photoFrost.greaterThan(0), () => {
+    const ground = positionWorld.xz;
+    const patch = noise2D(ground.mul(0.45)).mul(0.65).add(noise2D(ground.mul(2.4)).mul(0.35));
+    const coating = smoothstep(0.24, 0.74, patch).mul(0.74).add(0.18);
+    // Filter the crystal grain by pixel footprint so it stays stable at grazing angles.
+    const fine = smoothstep(0.015, 0.085, length(fwidth(ground))).oneMinus();
+    const grain = mix(0.5, noise2D(ground.mul(24)), fine);
+    const tint = color(0xdbe5e7).mul(grain.mul(0.20).add(0.82));
+    const up = smoothstep(0.15, 0.82, normalWorldGeometry.y);
+    const amount = photoFrost.mul(exposure).mul(up).mul(surfaceSkyExposure()).mul(coating);
+    surface.assign(mix(surface, tint, amount));
+  });
+  return surface;
 }
 
 // Fast deterministic 2D -> 1D hash in TSL
@@ -1445,6 +1469,13 @@ function createTreeMaterial(leafAtlas, { seasons = false, fadeClock, filtered = 
     const bark = mix(furrowed, planeBark, step(species, 0.5)).mul(crownAO.mul(0.4).add(0.6));
 
     const surface = mix(bark, foliage, isLeaf).toVar();
+    If(photoFrost.greaterThan(0), () => {
+      const up = smoothstep(0.08, 0.82, normalWorldGeometry.y);
+      const branch = aTree.z.mul(0.72).add(0.08).mul(mix(0.48, 0.92, n2));
+      const crown = smoothstep(0.38, 0.80, crownAO).mul(mix(0.30, 0.78, max(leaf.r, leaf.b)));
+      const amount = photoFrost.mul(up).mul(mix(branch, crown, isLeaf));
+      surface.assign(mix(surface, color(0xdbe5e7), amount));
+    });
     If(snowCover.greaterThan(0), () => {
       // Reuse bark and atlas shading so thickness variation moves with the branches.
       const up = normalWorldGeometry.y;
@@ -1540,7 +1571,8 @@ function createParkPavingMaterial(aerial = false) {
     const isGranite = step(0.5, style).mul(float(1.0).sub(step(1.5, style)));
     const base = mix(mix(hexCol, granCol, isGranite), blueCol, step(1.5, style));
     const paving = aerial ? blendAerialSurfaceColor(base, mix(0.7, 0.52, step(0.5, style))) : base;
-    return paving.mul(grime.mul(0.18).add(0.91)).add(grit).mul(float(1.0).sub(joints.mul(0.42)));
+    const wornPaving = paving.mul(grime.mul(0.18).add(0.91)).add(grit).mul(float(1.0).sub(joints.mul(0.42)));
+    return EDE_DATA ? frostGround(wornPaving, joints.mul(-0.22).add(0.56)) : wornPaving;
   })();
 
   mat.roughnessNode = Fn(() => {
@@ -1572,12 +1604,12 @@ function createEdePavingMaterial(aerial = false, grade = false) {
   const gravel = step(3.5, style);
   const sand = step(4.5, style);
 
-  // Running bond for small brick and concrete pavers, aligned square sidewalk tiles.
+  // Municipal plans use gray 30 cm square sidewalk flags, often in running bond.
   const unitX = mix(0.202, 0.207, block).mix(0.30, tile);
   const unitY = mix(0.071, 0.103, block).mix(0.30, tile);
   const row = floor(p.y.div(unitY));
-  const x = p.x.add(mod(row, 2).mul(unitX).mul(float(0.5).sub(tile.mul(0.5))));
-  const jointWidth = mix(0.0023, 0.0035, block);
+  const x = p.x.add(mod(row, 2).mul(unitX).mul(0.5));
+  const jointWidth = mix(mix(0.0023, 0.0035, block), 0.0025, tile);
   const pixelSize = length(fwidth(p));
   const joint = max(gridLine(x, unitX, jointWidth), gridLine(p.y, unitY, jointWidth))
     .mul(float(1).sub(concrete)).mul(smoothstep(0.12, 0.022, pixelSize));
@@ -1593,17 +1625,17 @@ function createEdePavingMaterial(aerial = false, grade = false) {
   const puddle = damp.y.mul(gravel.oneMinus());
 
   const low = mix(
-    mix(mix(color(0x744737), color(0x66625c), block), color(0x817e75), tile),
+    mix(mix(color(0x744737), color(0x66625c), block), color(0x888a86), tile),
     mix(color(0x8c897f), mix(color(0x796b59), color(0x8e7657), sand), gravel), concrete
   );
   const high = mix(
-    mix(mix(color(0xa96449), color(0x939084), block), color(0xa9a69a), tile),
+    mix(mix(color(0xa96449), color(0x939084), block), color(0x9b9c97), tile),
     mix(color(0xb7b2a3), mix(color(0xb29e7c), color(0xbfaa84), sand), gravel), concrete
   );
   const tone = mix(mix(float(0.5), unit, smoothstep(0.16, 0.035, pixelSize)),
     mix(field, grit, gravel.mul(fine).mul(0.72)), concrete);
   const base = mix(low, high, tone);
-  const tinted = aerial ? blendAerialSurfaceColor(base, 0.32) : base;
+  const tinted = aerial ? blendAerialSurfaceColor(base, mix(0.32, 0.22, tile.mul(concrete.oneMinus()))) : base;
   mat.colorNode = tinted.mul(field.mul(0.17).add(0.91)).mul(grit.sub(0.5).mul(fine).mul(0.18).add(1))
     .mul(joint.mul(0.47).oneMinus()).mul(wet.mul(0.24).add(film.mul(0.1)).oneMinus());
   mat.roughnessNode = mix(mix(mix(0.79, 0.97, gravel), 0.56, wet.mul(0.65).add(film.mul(0.12))), 0.12, puddle);
@@ -1920,9 +1952,10 @@ function createSidewalkMaterial(aerialMix = 0) {
     const withJoints = withGum.mul(float(1.0).sub(joints.mul(0.55).mul(detail))).mul(float(1.0).sub(crack.mul(0.45)));
 
     // Post-rain damp patches, pools & the overall wet film darken the flags
-    return withJoints
+    const dampConcrete = withJoints
       .mul(mix(float(1.0), float(0.72), max(swWet.x, swPuddle)))
       .mul(mix(float(1.0), float(0.8), swWet.z));
+    return EDE_DATA ? frostGround(dampConcrete, joints.mul(-0.16).add(0.48)) : dampConcrete;
   })();
 
   mat.roughnessNode = Fn(() => {
@@ -1959,44 +1992,29 @@ function createSidewalkMaterial(aerialMix = 0) {
 }
 
 /**
- * NYC Dressed Granite Curbstone TSL Material (ported from SidewalkGenerator.js `createCurbMaterial`)
- * Dense cool grey flamed granite with 1.5m segment joints, grimier road-facing vertical face,
- * and `bumpNormal` granite grain.
+ * Gray precast concrete street curb with subtle joints and mineral grain.
  */
 function createCurbMaterial() {
-  const mat = new THREE.MeshStandardNodeMaterial({
-    metalness: 0.06,
-    roughness: 0.72
-  });
-
+  const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0, roughness: 0.88 });
+  mat.name = 'Ede precast concrete curb';
   mat.aoNode = canyonSkyAONode();
 
-  mat.colorNode = Fn(() => {
-    const wx = positionWorld.x;
-    const wz = positionWorld.z;
-    const camDist = length(positionWorld.sub(cameraPosition));
-    const detail = smoothstep(180.0, 16.0, camDist);
-
-    const tone = noise2D(vec2(wx.mul(0.6), wz.mul(0.6)));
-    const speckle = noise2D(vec2(wx.mul(18.0), wz.mul(18.0))).sub(0.5).mul(0.06).mul(detail);
-    const stone = mix(color(0x4c4c45), color(0x63635a), tone).add(speckle);
-
-    const joints = max(gridLine(wx, 1.5, 0.005), gridLine(wz, 1.5, 0.005)).mul(detail);
-    const topFace = smoothstep(0.5, 0.85, normalWorldGeometry.y);
-    const wetFilm = smoothstep(0.2, 0.8, cityUniforms.uRoadWetness); // rain-darkened granite, like the roadway's film
-    return mix(stone.mul(0.68), stone, topFace).mul(float(1.0).sub(joints.mul(0.42))).mul(mix(float(1.0), float(0.78), wetFilm));
-  })();
-
-  mat.roughnessNode = mix(float(0.72), float(0.5), smoothstep(0.2, 0.8, cityUniforms.uRoadWetness));
-
-  mat.normalNode = Fn(() => {
-    const wx = positionWorld.x;
-    const wz = positionWorld.z;
-    const camDist = length(positionWorld.sub(cameraPosition));
-    const detail = smoothstep(120.0, 12.0, camDist);
-    const grain = noise2D(vec2(wx.mul(5.5), wz.mul(5.5))).sub(0.5).mul(0.0022);
-    return bumpNormal(grain.mul(detail));
-  })();
+  // Vertical faces use metres along the curb and above the adjacent pavement.
+  const side = smoothstep(0.35, 0.85, abs(normalWorldGeometry.y)).oneMinus();
+  const p = mix(positionWorld.xz, uv(), side);
+  const pixelSize = length(fwidth(p));
+  const joint = gridLine(p.x, 1.0, 0.004).mul(side).mul(smoothstep(0.10, 0.015, pixelSize));
+  const blockTone = hash2D(vec2(floor(p.x), 8.73)).sub(0.5).mul(side);
+  const mottle = noise2D(p.mul(7));
+  const grain = noise2D(p.mul(52)).sub(0.5).mul(smoothstep(0.04, 0.008, pixelSize));
+  const foot = smoothstep(0, 0.055, uv().y).oneMinus().mul(side);
+  const wet = smoothstep(0.2, 0.8, cityUniforms.uRoadWetness);
+  mat.colorNode = mix(color(0x969892), color(0xb3b3aa), mottle)
+    .mul(blockTone.mul(0.13).add(1))
+    .add(grain.mul(0.095))
+    .mul(joint.mul(0.36).add(foot.mul(0.15)).add(wet.mul(0.20)).oneMinus());
+  mat.roughnessNode = mix(0.88, 0.62, wet);
+  mat.normalNode = bumpNormal(grain.mul(0.0014).sub(joint.mul(0.0018)));
 
   return mat;
 }
@@ -2800,7 +2818,8 @@ function createParkLawnMaterial(isMeadow = false, aerial = false, landCover = nu
     const base = mapped ? baseLawn.mul(mapped.a.oneMinus()).add(mapped.rgb) : baseLawn;
     const lawn = aerial ? blendAerialSurfaceColor(base, mapped ? mix(0.65, 0.42, mapped.a) : 0.65) : base;
     const blades = mapped ? mix(0.38, 0.12, mapped.a) : 0.38;
-    return heathBloomColor(mix(lawn, cGrassSun, microBlade.mul(blades)), heath);
+    const vegetation = heathBloomColor(mix(lawn, cGrassSun, microBlade.mul(blades)), heath);
+    return EDE_DATA ? frostGround(vegetation, 1) : vegetation;
   })();
 
   mat.normalNode = Fn(() => {

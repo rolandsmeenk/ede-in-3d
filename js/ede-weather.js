@@ -1,13 +1,15 @@
 import { EDE_DATA } from './ede-geodata.js';
-import { edeSun, formatEdeTime } from './live-sky.js';
+import { edeSun } from './live-sky.js';
+import { edeMoon } from './ede-moon.js';
+import { fetchAurora, isAuroraFresh } from './ede-aurora.js';
 
 const REFRESH_MS = 15 * 60 * 1000;
 const RETRY_MS = 60 * 1000;
+const AURORA_REFRESH_MS = 5 * 60 * 1000;
 const STALE_MS = 30 * 60 * 1000;
 const EXPIRE_MS = 60 * 60 * 1000;
 const RINK_HISTORY_HOURS = 48;
 const HOUR_SECONDS = 3600;
-const DAY_SECONDS = 24 * HOUR_SECONDS;
 const WINTER_PRESET_TEMPERATURE = -4;
 const SNOW_MELT_DEGREE_SECONDS = 420;
 const ICE_FREEZE_DEGREE_SECONDS = 240;
@@ -16,6 +18,27 @@ const PRESET_WIND = Object.freeze({ windSpeed: 18, windDirection: 225 });
 const dry = { interval: 900, rain: 0, showers: 0, snowfall: 0, windGusts: 22, ...PRESET_WIND };
 const breezy = { windSpeed: 39, windDirection: 250, windGusts: 58 };
 const rain = { code: 63, cloudCover: 97, rain: 0.9 };
+const NO_PHOTO_EFFECTS = Object.freeze({ frost: 0, rainbow: 0, sunbeams: 0, storm: 0, stars: 0, mist: 0, aurora: 0 });
+const PHOTO_EFFECT_KEYS = Object.keys(NO_PHOTO_EFFECTS);
+export const PHOTO_WEATHER_PRESETS = Object.freeze({
+  'misty-dawn': { ...dry, code: 1, cloudCover: 22, windSpeed: 5, windGusts: 7,
+    time: 'golden', sunElevation: 6, season: 'autumn', summary: 'Dawn · Mist', photo: { mist: 0.42 } },
+  'hoar-frost': { ...dry, code: 1, cloudCover: 24, windSpeed: 4, windGusts: 6,
+    time: 'golden', sunElevation: 9, season: 'winter', summary: 'Morning · Frost', photo: { frost: 1, mist: 0.14 } },
+  rainbow: { ...dry, code: 80, cloudCover: 42, showers: 0.16,
+    time: 'golden', sunElevation: 14, season: 'spring', summary: 'Sunlight · Showers', photo: { rainbow: 1 } },
+  sunbeams: { ...dry, code: 2, cloudCover: 62,
+    time: 'golden', sunElevation: 12, season: 'summer', summary: 'Low sun · Broken clouds', photo: { sunbeams: 1 } },
+  'storm-light': { ...dry, ...breezy, code: 95, cloudCover: 92, showers: 0.85,
+    time: 'golden', sunElevation: 11, season: 'summer', summary: 'Low sun · Thunderstorm', photo: { storm: 1 } },
+  'sunlit-snow': { ...dry, code: 85, cloudCover: 35, snowfall: 0.16, windSpeed: 10, windGusts: 15,
+    time: 'golden', sunElevation: 16, season: 'winter', summary: 'Sunlight · Snow' },
+  'starry-night': { ...dry, code: 0, cloudCover: 0, windSpeed: 5, windGusts: 7,
+    time: 'midnight', season: 'autumn', summary: 'Night · Clear skies', photo: { stars: 1 } },
+  'northern-lights': { ...dry, code: 0, cloudCover: 0, windSpeed: 5, windGusts: 7,
+    time: 'midnight', season: 'autumn', summary: 'Night · Clear skies', photo: { stars: 0.8, aurora: 1, auroraBearing: 0, auroraElevation: 13 } },
+});
+
 const weatherPresets = {
   clear: { ...dry, code: 0, cloudCover: 8 },
   cloudy: { ...dry, code: 3, cloudCover: 83 },
@@ -24,6 +47,7 @@ const weatherPresets = {
   'wind-and-rain': { ...dry, ...rain, ...breezy },
   fog: { ...dry, code: 45, cloudCover: 85, windSpeed: 6, windGusts: 9 },
   snow: { ...dry, code: 73, cloudCover: 94, snowfall: 0.32, windSpeed: 12, windGusts: 18 },
+  ...PHOTO_WEATHER_PRESETS
 };
 const MAANDERBROEK = { latitude: 52.03207, longitude: 5.61268 };
 const HUB_WEIGHT = (99.5 - 80) / (120 - 80);
@@ -34,7 +58,6 @@ const CURRENT_FIELDS = [
 ];
 
 const PHOTO_FIELDS = ['relative_humidity_2m', 'dew_point_2m'];
-const MOON_FIELDS = 'moonrise,moonset,moon_phase';
 
 const weatherTime = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Amsterdam', day: 'numeric', month: 'short',
@@ -108,16 +131,6 @@ export function presetRinkIce(season) {
   return changeRinkIce(0, season === 'winter' ? WINTER_PRESET_TEMPERATURE : 10, RINK_HISTORY_HOURS);
 }
 
-function parseLunarDays(daily) {
-  if (!Array.isArray(daily?.time)) return [];
-  return daily.time.flatMap((start, i) => {
-    const phase = daily.moon_phase?.[i];
-    if (!Number.isInteger(start) || !Number.isFinite(phase) || phase < 0 || phase > 1) return [];
-    const eventTime = time => Number.isInteger(time) && time >= start && time < start + DAY_SECONDS ? time : null;
-    return [Object.freeze({ start, phase, rise: eventTime(daily.moonrise?.[i]), set: eventTime(daily.moonset?.[i]) })];
-  });
-}
-
 export function parseWeather(payload, now = Date.now()) {
   const [town, park] = Array.isArray(payload) ? payload : [payload];
   const p = town?.current;
@@ -134,7 +147,6 @@ export function parseWeather(payload, now = Date.now()) {
   const turbineWind = parseTurbineWind(park?.current ?? town.parkWind, p.time);
   const rinkIce = rinkIceFromHistory(town.hourly, p.time, p.temperature_2m);
   const { relative_humidity_2m: humidity, dew_point_2m: dewPoint } = p;
-  const lunarDays = parseLunarDays(town.daily);
   return Object.freeze({
     source: 'Open-Meteo', observedAt,
     fetchedAt: Number.isFinite(town.fetchedAt) ? town.fetchedAt : now,
@@ -143,60 +155,39 @@ export function parseWeather(payload, now = Date.now()) {
     windSpeed: p.wind_speed_10m, windDirection: p.wind_direction_10m, windGusts: p.wind_gusts_10m,
     ...(turbineWind && { turbineWind }), ...(rinkIce !== undefined && { rinkIce }),
     ...(Number.isFinite(humidity) && humidity >= 0 && humidity <= 100 && { humidity }),
-    ...(Number.isFinite(dewPoint) && dewPoint >= -100 && dewPoint <= 70 && { dewPoint }),
-    ...(lunarDays.length && { lunarDays: Object.freeze(lunarDays) })
+    ...(Number.isFinite(dewPoint) && dewPoint >= -100 && dewPoint <= 70 && { dewPoint })
   });
 }
 
-export function photogenicWeather(reading, now = Date.now()) {
-  if (!reading || now - reading.observedAt >= STALE_MS) return [];
-  const { elevation } = edeSun(new Date(now));
+const clampUnit = value => Math.max(0, Math.min(1, value));
+
+export function photoWeatherEffects(reading, now = Date.now(), auroraForecast = null) {
+  if (!reading || now - reading.observedAt >= STALE_MS) return NO_PHOTO_EFFECTS;
+  const date = new Date(now);
+  const { elevation, direction } = edeSun(date);
   const { cloudCover, temperature, humidity, dewPoint, windSpeed } = reading;
-  const cloudOktas = cloudCover * 8 / 100;
   const condition = weatherCondition(reading.code);
-  const thunder = condition === 'Thunderstorms';
-  const rainy = reading.rain + reading.showers > 0 || ['Drizzle', 'Rain', 'Showers'].includes(condition);
-  const moments = [];
+  const storm = condition === 'Thunderstorms';
+  const rainy = storm || reading.rain + reading.showers > 0 || ['Drizzle', 'Rain', 'Showers'].includes(condition);
 
-  if (thunder && elevation > 0 && elevation < 15) moments.push('Storm light (view from indoors)');
-  if (!rainy && cloudOktas >= 1 && cloudOktas <= 6 && elevation > -4 && elevation < 12) moments.push('Possible red sky');
-  if (!rainy && windSpeed <= 7.2 && temperature - dewPoint <= 2 && elevation > 0 && elevation < 15) {
-    moments.push('Possible mist in low sunlight');
+  const frost = temperature <= 0 && (reading.code === 48 ||
+    (temperature >= -8 && humidity >= 90 && windSpeed <= 10.8 && !rainy));
+  const rainbow = rainy && !storm && cloudCover <= 75 && elevation > 2 && elevation < 42;
+  const sunbeams = !rainy && cloudCover >= 50 && cloudCover <= 75 && elevation > 0 && elevation < 12;
+  const mist = !rainy && windSpeed <= 7.2 && temperature - dewPoint <= 2 && elevation > 0 && elevation < 15;
+  let stars = 0, aurora = 0;
+  if (cloudCover < 80 && elevation < -12 && condition !== 'Fog' && !rainy && reading.snowfall === 0) {
+    const moon = edeMoon(date);
+    const elongationCosine = moon.direction.reduce((sum, axis, i) => sum + axis * direction[i], 0);
+    const moonlight = (1 - elongationCosine) / 2 * clampUnit(moon.elevation / 20);
+    const skyClarity = clampUnit((-12 - elevation) / 6) * clampUnit((80 - cloudCover) / 60);
+    stars = skyClarity * (1 - 0.6 * moonlight);
+    if (humidity > 85) stars *= 0.7;
+    if (isAuroraFresh(auroraForecast, now)) aurora = auroraForecast.strength * skyClarity * (1 - 0.35 * moonlight);
   }
-  if (temperature >= -8 && temperature <= 0 && humidity >= 90 && windSpeed <= 10.8 && elevation > -6 && elevation < 15) {
-    moments.push('Possible rime or hoar frost');
-  }
-  if (rainy && !thunder && cloudOktas <= 6 && elevation > 2 && elevation < 42) {
-    moments.push('Possible rainbow (look away from the sun)');
-  }
-  if (cloudOktas <= 2 && elevation > 0 && elevation < 6) moments.push('Golden hour');
-  if (cloudOktas <= 2 && elevation >= -8 && elevation <= -4) moments.push('Blue hour');
-  if (!rainy && cloudOktas >= 4 && cloudOktas <= 6 && elevation > 0 && elevation < 10) {
-    moments.push('Possible sunbeams through clouds');
-  }
-  if (condition === 'Snow' && temperature <= 2 && cloudOktas <= 5 && elevation > 5) moments.push('Snow in sunlight');
-
-  const time = now / 1000;
-  const day = reading.lunarDays?.find(({ start }) => start <= time && time < start + DAY_SECONDS);
-  if (day) {
-    const illuminated = (1 - Math.cos(2 * Math.PI * day.phase)) / 2;
-    if (illuminated >= 0.95 && cloudOktas <= 6) {
-      let lastRise = -Infinity, lastSet = -Infinity, nextRise = Infinity;
-      for (const { rise, set } of reading.lunarDays) {
-        if (rise !== null && rise <= time) lastRise = Math.max(lastRise, rise);
-        if (set !== null && set <= time) lastSet = Math.max(lastSet, set);
-        if (rise !== null && rise > time) nextRise = Math.min(nextRise, rise);
-      }
-      if (lastRise > lastSet) moments.push('Nearly full moon');
-      else if (nextRise - time <= 3 * HOUR_SECONDS) {
-        moments.push('Nearly full moon rises at ' + formatEdeTime(nextRise * 1000));
-      }
-    }
-    if (illuminated <= 0.1 && cloudOktas <= 1 && elevation < -18 && humidity <= 85) {
-      moments.push('Clear, dark sky for stargazing');
-    }
-  }
-  return moments;
+  return { frost: Number(frost), rainbow: Number(rainbow), sunbeams: Number(sunbeams),
+    storm: Number(storm), stars, mist: mist ? 0.36 : 0, aurora,
+    ...(aurora > 0 && { auroraBearing: auroraForecast.bearing, auroraElevation: auroraForecast.elevation }) };
 }
 
 async function fetchWeather(signal) {
@@ -211,7 +202,6 @@ async function fetchWeather(signal) {
       longitude: [lon0, MAANDERBROEK.longitude].join(','),
       current: [...CURRENT_FIELDS, ...PARK_FIELDS, ...PHOTO_FIELDS].join(','),
       hourly: 'temperature_2m', past_hours: RINK_HISTORY_HOURS, forecast_hours: 1,
-      daily: MOON_FIELDS, past_days: 1, forecast_days: 2,
       timezone: 'GMT', timeformat: 'unixtime', temperature_unit: 'celsius',
       wind_speed_unit: 'kmh', precipitation_unit: 'mm'
     });
@@ -253,14 +243,15 @@ function approach(value, target, dt, seconds) {
 }
 
 export function createWeatherTransition() {
-  let target = null;
+  let target = null, photoTarget = NO_PHOTO_EFFECTS;
   let iceRate = 0, snowMeltSeconds = 0;
   let rinkTarget = 0, rinkDegrees = 1;
   const effects = {
     blend: 0, cloud: 0, fog: 0, rain: 0, raining: false, snow: 0, snowCover: 0,
-    waterIce: 0, rinkIce: 0, wetness: 0, ...defaultWind
+    waterIce: 0, rinkIce: 0, wetness: 0, auroraBearing: 0, auroraElevation: 13, ...defaultWind, ...NO_PHOTO_EFFECTS
   };
   return {
+    setPhotoEffects(next) { photoTarget = next ?? NO_PHOTO_EFFECTS; },
     setReading(reading, temperature = reading?.temperature, rinkIce = reading?.rinkIce ?? 0) {
       target = weatherTargets(reading, temperature);
       const degrees = temperature ?? 0;
@@ -276,6 +267,18 @@ export function createWeatherTransition() {
       }
     },
     update(dt) {
+      if (photoTarget.aurora > 0) {
+        const { auroraBearing, auroraElevation } = photoTarget;
+        const turn = (auroraBearing - effects.auroraBearing + 540) % 360 - 180;
+        effects.auroraBearing = effects.aurora > 0
+          ? (approach(effects.auroraBearing, effects.auroraBearing + turn, dt, 3) + 360) % 360
+          : auroraBearing;
+        effects.auroraElevation = effects.aurora > 0 ? approach(effects.auroraElevation, auroraElevation, dt, 3) : auroraElevation;
+      }
+      for (const key of PHOTO_EFFECT_KEYS) {
+        const strength = photoTarget[key] ?? 0;
+        if (effects[key] !== strength) effects[key] = approach(effects[key], strength, dt, key === 'frost' ? 2.5 : 1);
+      }
       const wind = target ?? defaultWind;
       effects.windX = approach(effects.windX, wind.windX, dt, 1.8);
       effects.windZ = approach(effects.windZ, wind.windZ, dt, 1.8);
@@ -303,8 +306,8 @@ export function createWeatherTransition() {
   };
 }
 
-export function createLiveWeather({ onChange, request = fetchWeather, now = Date.now, page = document } = {}) {
-  const transition = createWeatherTransition();
+export function createLiveWeather({ onChange, request = fetchWeather, requestAurora = fetchAurora, now = Date.now, page = document } = {}) {
+  let transition = createWeatherTransition();
   let state = Object.freeze({ enabled: false, status: 'off', current: null });
   let enabled = false;
   let current = null;
@@ -316,6 +319,42 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
   let nextFetch = 0;
   let pending;
   let timer;
+  let auroraForecast = null, auroraPending;
+  let nextAuroraFetch = 0;
+
+  function refreshPhotoEffects() {
+    const at = now();
+    const photo = enabled ? photoWeatherEffects(active, at, auroraForecast) : preset?.photo;
+    transition.setPhotoEffects(photo);
+
+    // The live clock calls this every minute, so the separate space-weather feed needs no timer.
+    if (!enabled || page.hidden || !photo.stars) {
+      if (auroraPending) {
+        auroraPending.abort();
+        auroraPending = undefined;
+        nextAuroraFetch = 0;
+      }
+      return;
+    }
+    if (!auroraPending && at >= nextAuroraFetch) void refreshAurora(at);
+  }
+
+  async function refreshAurora(at) {
+    const controller = new AbortController();
+    auroraPending = controller;
+    nextAuroraFetch = at + AURORA_REFRESH_MS;
+    try {
+      const forecast = await requestAurora(controller.signal);
+      if (auroraPending === controller && forecast.observedAt >= (auroraForecast?.observedAt ?? 0)) auroraForecast = forecast;
+    } catch {
+      // Preserve any still-valid forecast during a temporary outage.
+    } finally {
+      if (auroraPending === controller) {
+        auroraPending = undefined;
+        transition.setPhotoEffects(photoWeatherEffects(active, now(), auroraForecast));
+      }
+    }
+  }
 
   function tick() {
     clearTimeout(timer);
@@ -325,6 +364,7 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
       : !current ? failed ? 'unavailable' : 'loading'
       : age >= EXPIRE_MS ? 'expired' : age >= STALE_MS ? 'stale' : 'fresh';
     active = status === 'fresh' || status === 'stale' ? current : null;
+    refreshPhotoEffects();
     const nextReading = enabled ? active : preset;
     const temperature = enabled ? active?.temperature : presetTemperature;
     if (nextReading !== sceneReading || temperature !== sceneTemperature) {
@@ -384,7 +424,13 @@ export function createLiveWeather({ onChange, request = fetchWeather, now = Date
 
   page.addEventListener('visibilitychange', tick);
   return {
-    setEnabled, update: transition.update,
+    setEnabled, refreshPhotoEffects,
+    update(dt) { return transition.update(dt); },
+    resetEffects() {
+      transition = createWeatherTransition();
+      sceneReading = undefined;
+      tick();
+    },
     setPreset(id, season) {
       preset = Object.hasOwn(weatherPresets, id) ? weatherPresets[id] : null;
       presetTemperature = season === 'winter' ? WINTER_PRESET_TEMPERATURE : 10;

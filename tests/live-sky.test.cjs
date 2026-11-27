@@ -72,13 +72,14 @@ test('Live Time blends in the Night fill and uses the complete Night preset afte
   const { LightingSystem } = loadModule(readFileSync(join(__dirname, '../js/lighting.js'), 'utf8'), { imports: {
     'three/webgpu': THREE,
     'three/tsl': {},
-    'three/addons/objects/SkyMesh.js?v=20261126-moon': {},
+    'three/addons/objects/SkyMesh.js?v=20261127-photo-scenes': {},
     'three/addons/lights/SunLight.js': {},
     'three/addons/lights/SunLightNode.js': {},
     './tsl-materials.js': { cityUniforms: { uWindowLights: { value: { set() {} } } } },
     './ede-snow.js': { snowCover: { value: 0 } },
     './live-sky.js': await liveSky,
     './ede-moon.js': await lunarSky,
+    './ede-photo-sky.js': {},
     './ede-window-lights.js': await import('../js/ede-window-lights.js'),
   } });
   const lighting = Object.create(LightingSystem.prototype);
@@ -110,6 +111,13 @@ test('Live Time blends in the Night fill and uses the complete Night preset afte
   assert.equal(lighting.uShowMoon.value, 1, 'the Moon can appear during daylight');
   lighting.applyPreset('midnight');
   assert.equal(lighting.uShowMoon.value, 0);
+  lighting.envRenderTarget = {};
+  lighting.applyPreset('golden');
+  const goldenSun = lighting.basePreset.sunDir;
+  lighting.applyPreset('golden', false, 14);
+  assert.ok(Math.abs(Math.asin(lighting.basePreset.sunDir.y) * 180 / Math.PI - 14) < 1e-6);
+  lighting.applyPreset('golden');
+  assert.equal(lighting.basePreset.sunDir, goldenSun);
 });
 
 test('the Ede clock follows Amsterdam standard and daylight saving time', async () => {

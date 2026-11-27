@@ -60,6 +60,29 @@ test('zebra evidence controls paint independently from signals, with measured fo
   }
 });
 
+test('the Diedenweg zebra keeps its center refuge unpainted', async t => {
+  const { setEdeCurbs } = await import('../js/ede-curbs.js');
+  const { THREE, buildEdeStreetFeaturesWorld } = await loadWorld();
+  const read = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets', name))));
+  const baked = read('ede-curbs-v1.json.gz');
+  const [id, gap] = Object.entries(baked.paintGaps)[0];
+  const crossing = read('ede-street-features.json.gz').crossings.find(row => row.id === id);
+  setEdeCurbs(baked);
+  t.after(() => setEdeCurbs(null));
+  const { group } = await buildEdeStreetFeaturesWorld(new THREE.Scene(), { crossings: [crossing] });
+  assert.equal(group.userData.zebras, 1);
+  const [{ geometry }] = group.children;
+  const { position } = geometry.attributes;
+  const [dx, dz] = crossing.tangent;
+  const sides = new Set();
+  for (let i = 0; i < position.count; i++) {
+    const across = ((position.getZ(i) - crossing.z) * dx - (position.getX(i) - crossing.x) * dz) / Math.hypot(dx, dz);
+    assert.ok(Math.abs(across) >= gap - 0.001);
+    sides.add(Math.sign(across));
+  }
+  assert.deepEqual(sides, new Set([-1, 1]));
+});
+
 test('the baked Klinkenbergerweg landings meet the rendered table at both seams', async t => {
   const { setEdeCurbs, curbHeightAt } = await import('../js/ede-curbs.js');
   const { THREE, buildEdeStreetFeaturesWorld } = await loadWorld();

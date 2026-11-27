@@ -173,9 +173,10 @@ test('collision sparks bounce at elevated ground', () => {
   assert.equal(h.writes[0].matrix.position[1], 42.03);
 });
 
-test('street audio uses the simulated elevations of vehicles and walkers below scene zero', () => {
+test('street audio uses the simulated elevations of vehicles and walkers below scene zero', async () => {
   const { CityAudioSources } = loadModule(readFileSync(join(__dirname, '../js/audio-sources.js'), 'utf8'), {
-    imports: { './city-config.js': {}, './terrain.js': { terrainHeightAt: () => -40 } }
+    imports: { './city-config.js': {}, './terrain.js': { terrainHeightAt: () => -40 },
+      './ede-soundscape.js': await import('../js/ede-soundscape.js') }
   });
   const rig = { speed: 1, feet: [{ py: -39.78 }, { py: -39.78 }] };
   const player = { type: 'person', position: { x: 0, y: -40, z: 0 }, mesh: {}, rig, verticalVel: 0 };
@@ -191,9 +192,10 @@ test('street audio uses the simulated elevations of vehicles and walkers below s
   assert.equal(snapshot.people.find(source => source.id === ped).y, -39.78);
 });
 
-test('player car audio follows the drivable surface beneath covered terrain', () => {
+test('player car audio follows the drivable surface beneath covered terrain', async () => {
   const { CityAudioSources } = loadModule(readFileSync(join(__dirname, '../js/audio-sources.js'), 'utf8'), {
-    imports: { './city-config.js': {}, './terrain.js': { terrainHeightAt: () => 14 } }
+    imports: { './city-config.js': {}, './terrain.js': { terrainHeightAt: () => 14 },
+      './ede-soundscape.js': await import('../js/ede-soundscape.js') }
   });
   const player = { type: 'car', position: { x: 0, y: 8, z: 0 }, mesh: {}, speed: 20 };
   const audio = new CityAudioSources({

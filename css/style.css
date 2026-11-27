@@ -449,16 +449,26 @@ body.hud-minimized .toolbar > :not(#btn-toggle-hud) {
   background: var(--hover);
 }
 
+#environment-popover {
+  width: min(330px, calc(100vw - 2 * var(--edge)));
+  min-width: 0;
+}
+
 .environment-modes {
   display: flex;
   gap: 4px;
 }
 
-.environment-modes button { justify-content: center; min-height: 36px; }
+.environment-modes button {
+  flex: 1;
+  justify-content: center;
+  min-height: 36px;
+  white-space: nowrap;
+}
 
 .environment-settings {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 6px 12px;
   padding: 9px 6px 4px;
@@ -479,23 +489,19 @@ body.hud-minimized .toolbar > :not(#btn-toggle-hud) {
   font: inherit;
 }
 
+.environment-summary {
+  grid-column: 1 / -1;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
 .environment-live-info {
-  width: 260px;
-  max-width: calc(100vw - 2 * var(--edge) - 14px);
   padding: 9px 6px 5px;
   font-size: 12px;
 }
 
 .environment-live-info > time { display: block; margin-bottom: 6px; font-weight: 650; }
 #live-water-status { margin-top: 6px; }
-
-#photo-weather {
-  margin-top: 8px;
-  padding-top: 7px;
-  border-top: 1px solid var(--divider);
-}
-
-#photo-weather h2 { margin: 0 0 3px; font-size: inherit; font-weight: 650; }
 
 .weather-source {
   display: flex;
@@ -638,11 +644,18 @@ body.hud-minimized .icon-show {
   box-shadow: none;
 }
 
-.tp-btn {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
+#teleport-popover {
+  width: min(330px, calc(100vw - 2 * var(--edge)));
+  min-width: 0;
 }
+
+.teleport-destinations {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.teleport-destinations [hidden],
+.teleport-destinations .teleport-extra { display: none; }
 
 .pop-sub {
   font-size: 11.5px;
@@ -654,15 +667,20 @@ body.hud-minimized .icon-show {
   #teleport-popover {
     inset-inline: 0 !important;
     margin-inline: auto;
-    width: min(420px, calc(100vw - 2 * var(--edge)));
   }
+}
 
-  .teleport-destinations {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+@media (max-height: 360px) and (min-width: 500px) {
+  #environment-popover,
+  #teleport-popover { width: min(500px, calc(100vw - 2 * var(--edge))); }
+  #environment-custom { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); }
+  .teleport-destinations { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
-  #teleport-popover .tp-btn { padding: 5px 8px; }
+@media (min-width: 768px) and (min-height: 480px) {
+  #teleport-popover { width: 560px; }
+  .teleport-destinations { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .teleport-destinations .teleport-extra:not([hidden]) { display: flex; }
 }
 
 #crossing-debug-popover { width: min(330px, calc(100vw - 2 * var(--edge))); }

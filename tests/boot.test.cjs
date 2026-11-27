@@ -37,6 +37,10 @@ test('native module entry and imports share canonical preloaded URLs on GitHub P
   const base = 'https://example.test/slop-newyork/';
   const urls = new Set(links.map((src) => new URL(src, base).href));
   const { imports: mappings } = JSON.parse(importMap[1]);
+  for (const name of ['ede-curbs', 'ede-road-surfaces', 'city-grid', 'ede-paving-client']) {
+    assert.match(mappings[`./js/${name}.js`] ?? '', new RegExp(`^\\./js/${name}\\.js\\?v=[\\w-]+$`),
+      `${name} uses a fresh URL when the curb data format changes`);
+  }
   const localMappings = new Map(Object.entries(mappings)
     .filter(([specifier]) => specifier.startsWith('./js/'))
     .map(([specifier, target]) => [new URL(specifier, base).href, new URL(target, base).href]));
@@ -55,6 +59,28 @@ test('native module entry and imports share canonical preloaded URLs on GitHub P
       assert.ok(urls.has(localMappings.get(url.href) ?? url.href), `${src} imports an unpreloaded or mismatched URL: ${specifier}`);
     }
   }
+});
+
+test('Custom and Photo scenes expose separate controls and Live is a third mode', async () => {
+  const { PHOTO_WEATHER_PRESETS } = await import('../js/ede-weather.js');
+  const optionsIn = (id) => [...html.match(new RegExp(`<select id="${id}">([\\s\\S]*?)</select>`))[1]
+    .matchAll(/<option value="([^"]*)"/g)].map(([, value]) => value);
+  assert.deepEqual([...html.matchAll(/data-environment="([^"]+)"/g)].map(([, mode]) => mode), ['live', 'custom', 'photo']);
+  const custom = html.match(/<div[^>]*id="environment-custom"[^>]*>([^]*?)<\/div>/)[1];
+  const photo = html.match(/<div[^>]*id="environment-photo-scenes" hidden>([^]*?)<\/div>/)[1];
+  assert.deepEqual([...custom.matchAll(/<select id="([^"]+)"/g)].map(([, id]) => id), [
+    'environment-time', 'environment-season', 'environment-weather',
+  ]);
+  assert.deepEqual([...photo.matchAll(/<select id="([^"]+)"/g)].map(([, id]) => id), ['environment-photo']);
+  assert.deepEqual(optionsIn('environment-photo'), Object.keys(PHOTO_WEATHER_PRESETS));
+  for (const scene of Object.values(PHOTO_WEATHER_PRESETS)) {
+    assert.ok(optionsIn('environment-season').includes(scene.season));
+    assert.ok(optionsIn('environment-time').includes(scene.time));
+    assert.ok(scene.summary);
+  }
+  const manualWeather = optionsIn('environment-weather');
+  assert.ok(manualWeather.includes('default'));
+  assert.ok(manualWeather.every((id) => !Object.hasOwn(PHOTO_WEATHER_PRESETS, id)));
 });
 
 test('a failed entry import stops the loading spinner and offers a retry', async () => {

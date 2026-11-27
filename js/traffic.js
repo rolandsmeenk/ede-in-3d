@@ -2766,7 +2766,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     if (grade && grade.span.profile.site.kind !== 'surface') return gradeContactHeight(grade.span.profile.id, grade.y);
     const base = grade?.y ?? terrainHeightAt(x, z);
     if (edge.structure || edge.bridge || edge.underpass) return base;
-    return gradeCurbHeightAt(x, z, base, undefined, edge.layer ?? 0, edge.mapped) ?? base;
+    return gradeCurbHeightAt(x, z, base, undefined, edge.layer ?? 0, Boolean(edge.mapped)) ?? base;
   }
 
   function fitVehicleGrade(v, sinY, cosY) {

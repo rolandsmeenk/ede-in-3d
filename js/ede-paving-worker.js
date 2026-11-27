@@ -2,7 +2,7 @@ import * as THREE from '../vendor/three/build/three.core.js';
 import { mergeGeometries } from '../vendor/three/examples/jsm/utils/BufferGeometryUtils.js?v=20261124-workers';
 import { createTerrainSampler } from './terrain.js?v=20261124-workers';
 import { drapeSurface, edeGeometryGroups, edePoints, polygonGeometry } from './ede-surface-geometry.js';
-import { curbFaceGeometry, curbTopGeometry } from './ede-curb-geometry.js';
+import { curbFaceGeometry, curbTopGeometry } from './ede-curb-geometry.js?v=20261127-curb-concrete';
 import { clipEdeGround, nearestEdeSpan } from './ede-grade-query.js';
 import { nearestRoadInCells } from './ede-road-cell-query.js';
 import { applyAsphaltLanes } from './ede-asphalt-attributes.js';
@@ -12,10 +12,11 @@ const CHUNK_BYTES = 4 * 1024 * 1024;
 
 function pavingGeometry(job, terrain, roads, ground) {
   const { rise, material, style, angle, layer, segment, cuts, local, roadColor, groundColor } = job;
-  const surfaces = job.top ? [] : job.outer
-    ? [polygonGeometry(THREE, edePoints(job.outer), job.holes.map(edePoints), rise)]
+  const ramp = Array.isArray(job.top);
+  const surfaces = ramp ? [] : job.outer
+    ? [polygonGeometry(THREE, edePoints(job.outer), job.holes.map(edePoints), job.top ?? rise)]
     : job.pieces.map(points => polygonGeometry(THREE, typeof points[0] === 'number' ? edePoints(points) : points, [], rise));
-  const joined = job.top ? curbTopGeometry(THREE, job.top) : surfaces.length === 1 ? surfaces[0] : mergeGeometries(surfaces);
+  const joined = ramp ? curbTopGeometry(THREE, job.top) : surfaces.length === 1 ? surfaces[0] : mergeGeometries(surfaces);
   const grade = {
     gradeCuts: () => cuts,
     clipEdeGround,
@@ -24,7 +25,7 @@ function pavingGeometry(job, terrain, roads, ground) {
     },
   };
   let geometry = drapeSurface(THREE, terrain, grade, joined, true, job.wayId, Boolean(job.outer),
-    undefined, undefined, !!job.top);
+    undefined, undefined, ramp);
   if (!geometry?.attributes.position.count) return null;
   if (material === 'asphalt') {
     geometry = applyAsphaltLanes(THREE, geometry, segment, layer,

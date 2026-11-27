@@ -76,7 +76,7 @@ export function setSnowShelters(covers) {
   heights.needsUpdate = true;
 }
 
-const skyExposure = Fn(() => {
+export const surfaceSkyExposure = Fn(() => {
   const sample = positionWorld.xz.mul(SAMPLES_PER_METRE).floor().toVar();
   const tile = sample.div(TILE_SIZE).floor().toVar();
   const lookup = ivec2(tile.sub(tileOrigin)).toVar();
@@ -94,7 +94,9 @@ const skyExposure = Fn(() => {
     });
   });
   return exposure;
-})();
+});
+
+const skyExposure = surfaceSkyExposure();
 
 export function surfaceSnowCoverage({ shelter = false, exposure = 1, retention = 1, up = normalWorldGeometry.y } = {}) {
   return Fn(() => {

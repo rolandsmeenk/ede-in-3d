@@ -11,11 +11,14 @@ test.before(async () => {
 });
 
 test('the area menu uses a subset of clear, framed arrivals', () => {
-  const buttons = [...read('index.html').matchAll(/data-teleport="([^"]+)"/g)].map((match) => match[1]);
+  const entries = [...read('index.html').matchAll(/<button[^>]*class="([^"]+)"[^>]*data-teleport="([^"]+)"/g)];
+  const buttons = entries.map(([, , id]) => id);
+  const compactButtons = entries.filter(([, classes]) => !classes.split(' ').includes('teleport-extra'))
+    .map(([, , id]) => id);
+  assert.equal(buttons.length, 16);
   assert.equal(new Set(buttons).size, buttons.length, 'teleport destinations are unique');
-  assert.deepEqual(buttons, ['oudekerk', 'edewageningen', 'enka-westhal', 'johan-willem-friso',
-    'de-zuiderpoort', 'emmaus', 'bellestein', 'huis-kernhem', 'hoekelum', 'schaapskooi-ginkelse-heide',
-    'planken-wambuis', 'veenendaal-de-klomp', 'hervormde-kerk-ederveen', 'lunteren-centrum']);
+  assert.deepEqual(compactButtons, ['oudekerk', 'edewageningen', 'alexanderkerk-bennekom', 'lunteren-centrum',
+    'hervormde-kerk-ederveen', 'oude-kerk-otterlo', 'schaapskooi-ginkelse-heide', 'jachthuis-sint-hubertus']);
   for (const id of buttons) assert.ok(TELEPORT_LOCATIONS[id]?.focus, id);
   const scenic = Object.entries(TELEPORT_LOCATIONS).filter(([, point]) => point.focus);
   for (const [name, point] of scenic) {
@@ -56,6 +59,9 @@ test('expansion scenic approaches face their surveyed landmarks', () => {
     assert.equal(heading, Math.atan2(focus.x - x, focus.z - z));
     assert.ok(focus.height > 0, landmark.id);
   }
+  const museum = TELEPORT_LOCATIONS['kroller-muller-museum'];
+  assert.ok(nearestRoads(museum.x, museum.z, 4).some(({ road, dist }) => road.kind === 'service' && dist < road.w / 2),
+    'the museum arrival is on the mapped access lane');
 });
 
 test('selected buildings stay modeled when their atlas landmarks are hidden', async () => {
@@ -138,6 +144,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
   const end = main.indexOf('  const openMapBtn', start);
   const handlers = new Map();
   const calls = [];
+  const chimes = [];
   const landed = { x: -305.7, z: 5210 };
   let map;
   const environment = {
@@ -152,6 +159,12 @@ test('preset and map teleports share arrival resets and mark the resolved landin
       resetForTeleport: (focus) => calls.push(focus ? ['camera', focus.x, focus.y, focus.z] : ['camera'])
     },
     selectCamera: (...args) => calls.push(['selectCamera', ...args]),
+    lightingSystem: { activePresetId: 'golden' },
+    audioSystem: { chimeCarillon: motif => chimes.push(motif) },
+    setTimeout(callback, delay) {
+      assert.equal(delay, 450);
+      callback();
+    },
     getLocationLabel: (x, z) => `${x}, ${z}`,
     cityBlocks: { allBlocks: [] },
     trafficSystem: {},
@@ -176,6 +189,10 @@ test('preset and map teleports share arrival resets and mark the resolved landin
     assert.equal(map.waypoint.x, landed.x);
     assert.equal(map.waypoint.z, landed.z);
   }
+  assert.deepEqual(chimes, ['quarter']);
+  environment.lightingSystem.activePresetId = 'midnight';
+  handlers.get('oudekerk')();
+  assert.deepEqual(chimes, ['quarter'], 'night arrivals are quiet');
   map.waypoint = { x: 100, z: 200, name: 'inside a building' };
   map.onTeleport(100, 200);
   assert.equal(map.waypoint.x, landed.x, 'map marker follows the safe position returned by the controller');

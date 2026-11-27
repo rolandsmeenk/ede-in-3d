@@ -32,6 +32,9 @@
         "./js/ede-landscape-jobs.js": "./js/ede-landscape-jobs.js?v=20261126-terrain-clipping",
         "./js/ede-grade.js": "./js/ede-grade.js?v=20261126-curbs",
         "./js/aerial-colors.js": "./js/aerial-colors.js?v=20261126-iphone-memory",
+        "./js/ede-curb-geometry.js": "./js/ede-curb-geometry.js?v=20261127-curb-concrete",
+        "./js/ede-curbs.js": "./js/ede-curbs.js?v=20261127-toorop-zebra",
+        "./js/ede-paving-client.js": "./js/ede-paving-client.js?v=20261127-curb-concrete",
         "./js/ede-paving-tiles.js": "./js/ede-paving-tiles.js?v=20261126-iphone-memory",
         "./js/ede-asphalt-lanes.js": "./js/ede-asphalt-lanes.js?v=20261124-workers",
         "./js/ede-coverage.js": "./js/ede-coverage.js?v=20261124-workers",
@@ -40,8 +43,9 @@
         "./js/bag3d-coverage.js": "./js/bag3d-coverage.js?v=20261127-holes-fix",
         "./js/building-collision.js": "./js/building-collision.js?v=20261127-holes-fix",
         "./js/bag3d.js": "./js/bag3d.js?v=20261126-view-lod",
+        "./js/ede-photo-sky.js": "./js/ede-photo-sky.js?v=20261127-aurora",
         "./js/city-config.js": "./js/city-config.js?v=20261126-iphone-memory",
-        "./js/city-grid.js": "./js/city-grid.js?v=20261126-iphone-memory",
+        "./js/city-grid.js": "./js/city-grid.js?v=20261127-curb-concrete",
         "./js/buildings.js": "./js/buildings.js?v=20261126-iphone-memory",
         "./js/controllers.js?v=20261122-municipal-coverage": "./js/controllers.js?v=20261126-flight-lights",
         "./js/ede-survey-landmark.js": "./js/ede-survey-landmark.js?v=20261126-roof-landing",
@@ -52,11 +56,13 @@
         "./js/ede-geodata.js": "./js/ede-geodata.js?v=20261126-iphone-memory",
         "./js/ede-landmark-sites.js": "./js/ede-landmark-sites.js?v=20261126-rural",
         "./js/ede-north-rail-data.js": "./js/ede-north-rail-data.js?v=20261123-municipal",
+        "./js/ede-outer-cultural-survey.js": "./js/ede-outer-cultural-survey.js?v=20261127-museum-arrival",
         "./js/ede-outer-cultural-models.js": "./js/ede-outer-cultural-models.js?v=20261123-museum-trim",
         "./js/ede-outer-memorial-sites.js": "./js/ede-outer-memorial-sites.js?v=20261123-municipal",
         "./js/ede-outer-memorials.js": "./js/ede-outer-memorials.js?v=20261123-municipal",
         "./js/ede-playable-boundary.js": "./js/ede-playable-boundary.js?v=20261123-municipal",
-        "./js/ede-road-surfaces.js": "./js/ede-road-surfaces.js?v=20261126-terrain-paving",
+        "./js/ede-street-features-world.js?v=20261121-shared-sign-posts": "./js/ede-street-features-world.js?v=20261127-toorop-zebra-gap",
+        "./js/ede-road-surfaces.js": "./js/ede-road-surfaces.js?v=20261127-dutch-paving",
         "./js/ede-terrain-tiles.js": "./js/ede-terrain-tiles.js?v=20261126-iphone-memory",
         "./js/ede-town-memorial-sites.js": "./js/ede-town-memorial-sites.js?v=20261123-municipal",
         "./js/ede-town-memorials.js": "./js/ede-town-memorials.js?v=20261123-municipal",
@@ -80,14 +86,17 @@
         "./js/ede-road-traffic.js?v=20261122-p2000": "./js/ede-road-traffic.js?v=20261123-harderwijkerweg",
         "./js/ede-street-features.js?v=20261122-startup": "./js/ede-street-features.js?v=20261123-harderwijkerweg",
         "./js/trees.js": "./js/trees.js?v=20261126-iphone-memory",
-        "./js/ede-snow.js": "./js/ede-snow.js?v=20261126-snow-blanket",
+        "./js/ede-snow.js": "./js/ede-snow.js?v=20261127-photo-frost",
+        "./js/ede-advertising.js": "./js/ede-advertising.js?v=20261127-event-ads",
+        "./js/ede-posters.js": "./js/ede-posters.js?v=20261127-event-ads",
+        "./js/ede-seasonal-decorations.js": "./js/ede-seasonal-decorations.js?v=20261127-event-ads",
         "./js/ede-bus-stops.js": "./js/ede-bus-stops.js?v=20261126-snow-surfaces",
         "./js/ede-bus-shelters.js": "./js/ede-bus-shelters.js?v=20261126-snow-surfaces",
         "./js/ede-lunteren-platforms.js": "./js/ede-lunteren-platforms.js?v=20261126-snow-surfaces",
         "./js/ede-on-the-rocks.js": "./js/ede-on-the-rocks.js?v=20261126-snow-surfaces",
         "./js/ede-fuel-stations.js": "./js/ede-fuel-stations.js?v=20261126-snow-surfaces",
         "./js/ede-station-landmark.js": "./js/ede-station-landmark.js?v=20261126-snow-surfaces",
-        "./js/tsl-materials.js": "./js/tsl-materials.js?v=20261126-keesom-junction",
+        "./js/tsl-materials.js": "./js/tsl-materials.js?v=20261127-curb-concrete",
         "./js/live-signal-atlas.js": "./js/live-signal-atlas.js?v=20261126-live-signals-2",
         "./js/live-signal-feed.js": "./js/live-signal-feed.js?v=20261126-live-signals-2",
         "./js/live-led-signal-material.js": "./js/live-led-signal-material.js?v=20261126-live-signals-2",
@@ -98,13 +107,13 @@
   <!-- Preload the resolved module URLs before stylesheets. -->
   <link rel="modulepreload" href="./js/ede-aerial-sampling.js" />
   <link rel="modulepreload" href="./js/ede-asphalt-attributes.js" />
-  <link rel="modulepreload" href="./js/ede-snow.js?v=20261126-snow-blanket" />
+  <link rel="modulepreload" href="./js/ede-snow.js?v=20261127-photo-frost" />
   <link rel="modulepreload" href="./js/ede-boundary-index.js" />
   <link rel="modulepreload" href="./js/ede-grade-query.js?v=20261126-motorway-grades" />
   <link rel="modulepreload" href="./vendor/three/build/three.core.js" />
   <link rel="modulepreload" href="./js/ede-landscape-geometry.js?v=20261126-terrain-clipping" />
   <link rel="modulepreload" href="./js/ede-landscape-jobs.js?v=20261126-terrain-clipping" />
-  <link rel="modulepreload" href="./js/ede-paving-client.js" />
+  <link rel="modulepreload" href="./js/ede-paving-client.js?v=20261127-curb-concrete" />
   <link rel="modulepreload" href="./js/ede-road-cell-query.js" />
   <link rel="modulepreload" href="./js/ede-surface-geometry.js?v=20261126-curbs" />
   <link rel="modulepreload" href="./js/bag3d-coverage.js?v=20261127-holes-fix" />
@@ -187,8 +196,8 @@
   <link rel="modulepreload" href="./js/ede-terrain-tiles.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/ede-heath.js" />
   <link rel="modulepreload" href="./js/terrain.js?v=20261126-iphone-memory" />
-  <link rel="modulepreload" href="./js/ede-curbs.js" />
-  <link rel="modulepreload" href="./js/ede-curb-geometry.js" />
+  <link rel="modulepreload" href="./js/ede-curbs.js?v=20261127-toorop-zebra" />
+  <link rel="modulepreload" href="./js/ede-curb-geometry.js?v=20261127-curb-concrete" />
   <link rel="modulepreload" href="./js/ede-grade.js?v=20261126-curbs" />
   <link rel="modulepreload" href="./js/ede-grade-world.js?v=20261126-snow-surfaces" />
   <link rel="modulepreload" href="./js/ede-bgt-world.js?v=20261126-flight-lights" />
@@ -200,14 +209,14 @@
   <link rel="modulepreload" href="./js/ede-playground-equipment.js" />
   <link rel="modulepreload" href="./js/aerial-colors.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/city-config.js?v=20261126-iphone-memory" />
-  <link rel="modulepreload" href="./js/tsl-materials.js?v=20261126-keesom-junction" />
+  <link rel="modulepreload" href="./js/tsl-materials.js?v=20261127-curb-concrete" />
   <link rel="modulepreload" href="./js/trees.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/tree-seasons.js" />
   <link rel="modulepreload" href="./js/ede-tree-data.js?v=20261126-pine-density" />
   <link rel="modulepreload" href="./js/ede-lamp-data.js?v=20261122-safari-cache" />
   <link rel="modulepreload" href="./js/ede-poster-sites.js" />
-  <link rel="modulepreload" href="./js/ede-posters.js" />
-  <link rel="modulepreload" href="./js/ede-seasonal-decorations.js" />
+  <link rel="modulepreload" href="./js/ede-posters.js?v=20261127-event-ads" />
+  <link rel="modulepreload" href="./js/ede-seasonal-decorations.js?v=20261127-event-ads" />
   <link rel="modulepreload" href="./js/building-collision.js?v=20261127-holes-fix" />
   <link rel="modulepreload" href="./js/ede-building-bases.js" />
   <link rel="modulepreload" href="./js/vehicles.js" />
@@ -238,20 +247,23 @@
   <link rel="modulepreload" href="./js/ede-bus-stops.js?v=20261126-snow-surfaces" />
   <link rel="modulepreload" href="./js/ede-bus-shelters.js?v=20261126-snow-surfaces" />
   <link rel="modulepreload" href="./js/ede-bus-shelter-sites.js" />
-  <link rel="modulepreload" href="./js/ede-advertising.js" />
+  <link rel="modulepreload" href="./js/ede-advertising.js?v=20261127-event-ads" />
+  <link rel="modulepreload" href="./js/ede-event-calendar.js" />
   <link rel="modulepreload" href="./js/ede-bus-traffic.js?v=20261122-startup" />
   <link rel="modulepreload" href="./js/helicopter.js?v=20261126-helicopter" />
   <link rel="modulepreload" href="./js/vehicle-lights.js" />
   <link rel="modulepreload" href="./js/vehicle-physics.js" />
   <link rel="modulepreload" href="./js/pedestrians.js" />
-  <link rel="modulepreload" href="./js/lighting.js?v=20261126-snow-ice" />
+  <link rel="modulepreload" href="./js/lighting.js?v=20261127-photo-scenes" />
   <link rel="modulepreload" href="./js/live-sky.js" />
   <link rel="modulepreload" href="./js/ede-moon.js" />
+  <link rel="modulepreload" href="./js/ede-photo-sky.js?v=20261127-aurora" />
+  <link rel="modulepreload" href="./js/ede-aurora.js" />
   <link rel="modulepreload" href="./js/ede-window-lights.js" />
-  <link rel="modulepreload" href="./js/ede-weather.js?v=20261126-winter-traffic" />
+  <link rel="modulepreload" href="./js/ede-weather.js?v=20261127-environment-modes" />
   <link rel="modulepreload" href="./js/weather-precipitation.js?v=20261126-wind" />
   <link rel="modulepreload" href="./js/ede-kites.js" />
-  <link rel="modulepreload" href="./js/city-grid.js?v=20261126-iphone-memory" />
+  <link rel="modulepreload" href="./js/city-grid.js?v=20261127-curb-concrete" />
   <link rel="modulepreload" href="./js/ede-paving-tiles.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/buildings.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/shop-signs.js" />
@@ -261,6 +273,7 @@
   <link rel="modulepreload" href="./js/landmarks.js?v=20261126-flight-lights" />
   <link rel="modulepreload" href="./js/ede-outer-cultural-models.js?v=20261123-museum-trim" />
   <link rel="modulepreload" href="./js/ede-outer-cultural-sites.js" />
+  <link rel="modulepreload" href="./js/ede-outer-cultural-survey.js?v=20261127-museum-arrival" />
   <link rel="modulepreload" href="./js/ede-sint-hubertus.js" />
   <link rel="modulepreload" href="./js/ede-sint-hubertus-survey.js" />
   <link rel="modulepreload" href="./js/ede-estate-landmarks.js" />
@@ -378,8 +391,8 @@
   <link rel="modulepreload" href="./js/ede-mtb-routes.js" />
   <link rel="modulepreload" href="./js/road-paint.js?v=20261126-reviewed-junctions" />
   <link rel="modulepreload" href="./js/ede-street-features.js?v=20261123-harderwijkerweg" />
-  <link rel="modulepreload" href="./js/ede-street-features-world.js?v=20261121-shared-sign-posts" />
-  <link rel="modulepreload" href="./js/traffic.js?v=20261126-winter-traffic" />
+  <link rel="modulepreload" href="./js/ede-street-features-world.js?v=20261127-toorop-zebra-gap" />
+  <link rel="modulepreload" href="./js/traffic.js?v=20261127-dutch-paving" />
   <link rel="modulepreload" href="./js/ede-trips.js" />
   <link rel="modulepreload" href="./js/ede-driving-controls.js" />
   <link rel="modulepreload" href="./js/ede-driving-control-evidence.js" />
@@ -394,7 +407,7 @@
   <link rel="modulepreload" href="./js/ede-motorway-lanes.js" />
   <link rel="modulepreload" href="./js/ede-road-lanes.js" />
   <link rel="modulepreload" href="./js/ede-lane-geometry.js?v=20261126-reviewed-junctions" />
-  <link rel="modulepreload" href="./js/ede-road-surfaces.js?v=20261126-terrain-paving" />
+  <link rel="modulepreload" href="./js/ede-road-surfaces.js?v=20261127-dutch-paving" />
   <link rel="modulepreload" href="./js/ede-asphalt-lanes.js?v=20261124-workers" />
   <link rel="modulepreload" href="./js/pedestrian-system.js" />
   <link rel="modulepreload" href="./js/pedestrian-routes.js" />
@@ -408,6 +421,7 @@
   <link rel="modulepreload" href="./js/audio-synthesis.js" />
   <link rel="modulepreload" href="./js/audio-events.js" />
   <link rel="modulepreload" href="./js/audio-sources.js?v=20261126-soundscape" />
+  <link rel="modulepreload" href="./js/ede-soundscape.js" />
   <link rel="modulepreload" href="./js/audio-acoustics.js" />
   <link rel="modulepreload" href="./js/audio-system.js?v=20261126-soundscape" />
   <link rel="modulepreload" href="./js/bag3d.js?v=20261126-view-lod" />
@@ -425,14 +439,14 @@
   <link rel="modulepreload" href="./js/live-signal-feed.js?v=20261126-live-signals-2" />
   <link rel="modulepreload" href="./js/live-led-signal-material.js?v=20261126-live-signals-2" />
   <link rel="modulepreload" href="./js/live-signal-builders.js?v=20261126-live-signals-3" />
-  <link rel="modulepreload" href="./js/main.js?v=20261126-live-signals-2" />
-  <link rel="modulepreload" href="./js/startup.js?v=20261126-live-signals-2" />
-  <script type="module" src="./js/startup.js?v=20261126-live-signals-2"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261127-event-ads" />
+  <link rel="modulepreload" href="./js/startup.js?v=20261127-event-ads" />
+  <script type="module" src="./js/startup.js?v=20261127-event-ads"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261126-credits-details" />
+  <link rel="stylesheet" href="./css/style.css?v=20261127-environment-modes" />
 </head>
 <body>
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
@@ -527,10 +541,11 @@
 
   <div id="environment-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Environment">
     <div class="environment-modes" role="group" aria-label="Environment mode">
-      <button class="pop-item active" type="button" data-environment="preset" aria-pressed="true">Preset</button>
       <button class="pop-item" type="button" data-environment="live" aria-pressed="false">Live</button>
+      <button class="pop-item active" type="button" data-environment="custom" aria-pressed="true">Custom</button>
+      <button class="pop-item" type="button" data-environment="photo" aria-pressed="false">Photo scenes</button>
     </div>
-    <div class="environment-settings" id="environment-presets">
+    <div class="environment-settings" id="environment-custom">
       <label for="environment-time">Time of day</label>
       <select id="environment-time">
         <option value="golden">Golden Hour</option>
@@ -557,6 +572,20 @@
         <option value="snow" hidden disabled>Snow</option>
       </select>
     </div>
+    <div class="environment-settings" id="environment-photo-scenes" hidden>
+      <label for="environment-photo">Scene</label>
+      <select id="environment-photo">
+        <option value="misty-dawn">Misty dawn</option>
+        <option value="hoar-frost">Hoar frost</option>
+        <option value="rainbow">Rainbow shower</option>
+        <option value="sunbeams">Sunbeams</option>
+        <option value="storm-light">Storm light</option>
+        <option value="sunlit-snow">Snow in sunlight</option>
+        <option value="starry-night">Starry night</option>
+        <option value="northern-lights">Northern lights</option>
+      </select>
+      <p id="environment-photo-summary" class="environment-summary" aria-live="polite"></p>
+    </div>
     <div id="environment-live-info" class="environment-live-info" hidden>
       <time id="environment-live-date"></time>
       <div id="live-weather-status" role="status"></div>
@@ -565,36 +594,29 @@
         <time id="live-weather-time" title="Model update time in Europe/Amsterdam" hidden></time>
       </div>
       <div id="live-water-status" role="status" hidden></div>
-      <div id="photo-weather" hidden>
-        <h2>Photogenic weather</h2>
-        <div id="photo-weather-status" role="status"></div>
-      </div>
     </div>
   </div>
 
   <!-- Teleport Destinations (native popover: light-dismiss & Esc) -->
-  <div id="teleport-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" aria-label="Teleport the active player">
+  <div id="teleport-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Teleport the active player">
     <div class="pop-title">Teleport to an area</div>
     <div class="teleport-destinations">
-      <button id="tp-oudekerk" class="pop-item tp-btn" data-teleport="oudekerk" type="button"><span class="pop-name">Centrum</span><span class="pop-sub">Torenstraat</span></button>
-      <button id="tp-edewageningen" class="pop-item tp-btn" data-teleport="edewageningen" type="button"><span class="pop-name">Stationsgebied</span><span class="pop-sub">Station Ede-Wageningen</span></button>
-      <button id="tp-enka-westhal" class="pop-item tp-btn" data-teleport="enka-westhal" type="button"><span class="pop-name">ENKA</span><span class="pop-sub">Akulaan</span></button>
-      <button id="tp-johan-willem-friso" class="pop-item tp-btn" data-teleport="johan-willem-friso" type="button"><span class="pop-name">Veluwse Poort</span><span class="pop-sub">Frisopark</span></button>
-      <button id="tp-de-zuiderpoort" class="pop-item tp-btn" data-teleport="de-zuiderpoort" type="button"><span class="pop-name">Ede-Zuid</span><span class="pop-sub">Poortplein</span></button>
-      <button id="tp-emmaus" class="pop-item tp-btn" data-teleport="emmaus" type="button"><span class="pop-name">Rietkampen</span><span class="pop-sub">Laan der Verenigde Naties</span></button>
-      <button id="tp-bellestein" class="pop-item tp-btn" data-teleport="bellestein" type="button"><span class="pop-name">Veldhuizen</span><span class="pop-sub">Bellestein</span></button>
-      <button id="tp-huis-kernhem" class="pop-item tp-btn" data-teleport="huis-kernhem" type="button"><span class="pop-name">Landgoed Kernhem</span><span class="pop-sub">Kernhemselaan</span></button>
-      <button id="tp-hoekelum" class="pop-item tp-btn" data-teleport="hoekelum" type="button"><span class="pop-name">Landgoed Hoekelum</span><span class="pop-sub">Bennekomseweg</span></button>
-      <button id="tp-schaapskooi-ginkelse-heide" class="pop-item tp-btn" data-teleport="schaapskooi-ginkelse-heide" type="button"><span class="pop-name">Ginkelse Heide</span><span class="pop-sub">Wijde Veldweg</span></button>
-      <button id="tp-planken-wambuis" class="pop-item tp-btn" data-teleport="planken-wambuis" type="button"><span class="pop-name">Planken Wambuis</span><span class="pop-sub">Verlengde Arnhemseweg</span></button>
-      <button id="tp-veenendaal-de-klomp" class="pop-item tp-btn" data-teleport="veenendaal-de-klomp" type="button"><span class="pop-name">De Klomp</span><span class="pop-sub">Stationsplein</span></button>
-      <button id="tp-hervormde-kerk-ederveen" class="pop-item tp-btn" data-teleport="hervormde-kerk-ederveen" type="button"><span class="pop-name">Ederveen</span><span class="pop-sub">Hoofdweg</span></button>
-      <button id="tp-alexanderkerk-bennekom" class="pop-item tp-btn" data-teleport="alexanderkerk-bennekom" type="button" hidden><span class="pop-name">Bennekom</span><span class="pop-sub">Dorpsstraat</span></button>
-      <button id="tp-lunteren-centrum" class="pop-item tp-btn" data-teleport="lunteren-centrum" type="button" hidden><span class="pop-name">Lunteren</span><span class="pop-sub">Dorpsstraat</span></button>
-      <button id="tp-kulturhus-wekerom" class="pop-item tp-btn" data-teleport="kulturhus-wekerom" type="button" hidden><span class="pop-name">Wekerom</span><span class="pop-sub">Dorpsplein</span></button>
-      <button id="tp-harskamp" class="pop-item tp-btn" data-teleport="harskamp-bevrijding-veluwe" type="button" hidden><span class="pop-name">Harskamp</span><span class="pop-sub">Dorpsstraat</span></button>
-      <button id="tp-oude-kerk-otterlo" class="pop-item tp-btn" data-teleport="oude-kerk-otterlo" type="button" hidden><span class="pop-name">Otterlo</span><span class="pop-sub">Kerklaan</span></button>
-      <button id="tp-hoge-veluwe" class="pop-item tp-btn" data-teleport="jachthuis-sint-hubertus" type="button" hidden><span class="pop-name">De Hoge Veluwe</span><span class="pop-sub">Jachthuis Sint Hubertus</span></button>
+      <button id="tp-oudekerk" class="pop-item" data-teleport="oudekerk" type="button">Centrum</button>
+      <button id="tp-edewageningen" class="pop-item" data-teleport="edewageningen" type="button">Stationsgebied</button>
+      <button id="tp-alexanderkerk-bennekom" class="pop-item" data-teleport="alexanderkerk-bennekom" type="button" hidden>Bennekom</button>
+      <button id="tp-lunteren-centrum" class="pop-item" data-teleport="lunteren-centrum" type="button" hidden>Lunteren</button>
+      <button id="tp-hervormde-kerk-ederveen" class="pop-item" data-teleport="hervormde-kerk-ederveen" type="button" hidden>Ederveen</button>
+      <button id="tp-oude-kerk-otterlo" class="pop-item" data-teleport="oude-kerk-otterlo" type="button" hidden>Otterlo</button>
+      <button id="tp-schaapskooi-ginkelse-heide" class="pop-item" data-teleport="schaapskooi-ginkelse-heide" type="button">Ginkelse Heide</button>
+      <button id="tp-hoge-veluwe" class="pop-item" data-teleport="jachthuis-sint-hubertus" type="button" hidden>De Hoge Veluwe</button>
+      <button id="tp-johan-willem-friso" class="pop-item teleport-extra" data-teleport="johan-willem-friso" type="button">Veluwse Poort</button>
+      <button id="tp-de-zuiderpoort" class="pop-item teleport-extra" data-teleport="de-zuiderpoort" type="button">Ede-Zuid</button>
+      <button id="tp-emmaus" class="pop-item teleport-extra" data-teleport="emmaus" type="button">Rietkampen</button>
+      <button id="tp-bellestein" class="pop-item teleport-extra" data-teleport="bellestein" type="button">Veldhuizen</button>
+      <button id="tp-huis-kernhem" class="pop-item teleport-extra" data-teleport="huis-kernhem" type="button">Landgoed Kernhem</button>
+      <button id="tp-veenendaal-de-klomp" class="pop-item teleport-extra" data-teleport="veenendaal-de-klomp" type="button">De Klomp</button>
+      <button id="tp-kulturhus-wekerom" class="pop-item teleport-extra" data-teleport="kulturhus-wekerom" type="button">Wekerom</button>
+      <button id="tp-harskamp" class="pop-item teleport-extra" data-teleport="harskamp-bevrijding-veluwe" type="button">Harskamp</button>
     </div>
   </div>
 

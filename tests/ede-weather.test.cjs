@@ -29,54 +29,126 @@ test('current conditions preserve model time, source and wind and format Ede tim
   assert.throws(() => parseWeather(reading({}, observedAt + 6 * minute), observedAt));
 });
 
-test('photogenic weather combines fresh local light with weather and lunar conditions', async () => {
-  const { parseWeather, photogenicWeather } = await import('../js/ede-weather.js');
-  const at = time => Date.parse(`2026-11-26T${time}:00Z`);
-  const moments = (time, values, daily) => {
-    const now = at(time);
-    return photogenicWeather(parseWeather({ ...reading(values, now), daily }, now), now);
-  };
+test('fresh live weather enables visual effects that fit the local conditions', async () => {
+  const { parseWeather, photoWeatherEffects } = await import('../js/ede-weather.js');
+  const morning = Date.parse('2026-11-26T08:30:00Z');
+  const noon = Date.parse('2026-11-26T12:00:00Z');
+  const night = Date.parse('2026-12-09T23:00:00Z');
+  const effects = (values, time = morning) => photoWeatherEffects(parseWeather(reading(values, time), time), time);
 
-  assert.deepEqual(moments('06:50', { cloud_cover: 25 }), ['Blue hour']);
-  assert.deepEqual(moments('06:50', { cloud_cover: 26 }), []);
-  assert.deepEqual(moments('08:00'), ['Golden hour']);
-  assert.deepEqual(moments('08:00', { weather_code: 3, cloud_cover: 100 }), []);
-  assert.deepEqual(moments('08:00', { weather_code: 2, cloud_cover: 60 }),
-    ['Possible red sky', 'Possible sunbeams through clouds']);
-  assert.deepEqual(moments('08:30', {
+  assert.equal(effects({ weather_code: 2, cloud_cover: 60 }).sunbeams, 1);
+  assert.equal(effects({ weather_code: 2, cloud_cover: 60 }, noon).sunbeams, 0);
+  const frost = effects({
     weather_code: 48, cloud_cover: 85, temperature_2m: -2,
     relative_humidity_2m: 96, dew_point_2m: -2.5, wind_speed_10m: 7.2
-  }), ['Possible mist in low sunlight', 'Possible rime or hoar frost']);
-  assert.deepEqual(moments('08:30', {
-    cloud_cover: 85, temperature_2m: 4, dew_point_2m: 3, wind_speed_10m: 7.3
-  }), []);
-  assert.deepEqual(moments('08:30', { weather_code: 80, cloud_cover: 75 }),
-    ['Possible rainbow (look away from the sun)']);
-  assert.deepEqual(moments('08:30', { weather_code: 95, cloud_cover: 70, showers: 1 }),
-    ['Storm light (view from indoors)']);
-  assert.deepEqual(moments('08:30', { weather_code: 85, cloud_cover: 50, temperature_2m: 2 }),
-    ['Possible red sky', 'Possible sunbeams through clouds', 'Snow in sunlight']);
+  });
+  assert.equal(frost.frost, 1);
+  assert.ok(frost.mist > 0);
+  assert.equal(effects({ temperature_2m: 4, dew_point_2m: 3, wind_speed_10m: 7.3 }).mist, 0);
+  assert.equal(effects({ weather_code: 80, cloud_cover: 75 }).rainbow, 1);
+  assert.equal(effects({ weather_code: 80, cloud_cover: 76 }).rainbow, 0);
+  const storm = effects({ weather_code: 95, cloud_cover: 70, showers: 1 });
+  assert.equal(storm.storm, 1);
+  assert.equal(storm.rainbow, 0);
+  const starry = effects({ relative_humidity_2m: 80 }, night).stars;
+  assert.ok(starry > 0.9);
+  assert.ok(effects({ cloud_cover: 55 }, night).stars < starry);
+  assert.equal(effects({ cloud_cover: 85 }, night).stars, 0);
+  assert.equal(effects({ cloud_cover: 0 }, noon).stars, 0);
 
-  const start = at('00:00') / 1000;
-  const daily = {
-    time: [start - 86400, start], moon_phase: [0.49, 0.5],
-    moonrise: [start - 7200, at('20:00') / 1000], moonset: [null, at('06:00') / 1000]
-  };
-  assert.deepEqual(moments('03:00', {}, daily), ['Nearly full moon']);
-  assert.deepEqual(moments('16:00', { cloud_cover: 40 }, daily), []);
-  assert.deepEqual(moments('18:00', {}, daily), ['Nearly full moon rises at 21:00']);
-  assert.deepEqual(moments('22:00', {}, daily), ['Nearly full moon']);
-  const newMoon = { ...daily, moon_phase: [0.09, 0.1] };
-  assert.deepEqual(moments('18:00', { relative_humidity_2m: 85 }, newMoon), ['Clear, dark sky for stargazing']);
-  assert.deepEqual(moments('18:00', { relative_humidity_2m: 86 }, newMoon), []);
-  assert.deepEqual(moments('18:00'), []);
-
-  const now = at('08:00');
-  const invalidOptional = parseWeather(reading({ relative_humidity_2m: 120, dew_point_2m: null }, now), now);
+  const invalidOptional = parseWeather(reading({ relative_humidity_2m: 120, dew_point_2m: null }, morning), morning);
   assert.equal(invalidOptional.humidity, undefined);
   assert.equal(invalidOptional.dewPoint, undefined);
-  const stale = parseWeather(reading({}, now - 30 * minute), now);
-  assert.deepEqual(photogenicWeather(stale, now), []);
+  const stale = parseWeather(reading({ weather_code: 95, showers: 1 }, morning - 30 * minute), morning);
+  assert.deepEqual(photoWeatherEffects(stale, morning), photoWeatherEffects(null, morning));
+});
+
+test('photo presets blend visual effects and restore their selection when Live is switched off', async t => {
+  const { createLiveWeather, PHOTO_WEATHER_PRESETS } = await import('../js/ede-weather.js');
+  const now = Date.parse('2026-11-26T08:30:00Z');
+  const weather = createLiveWeather({ now: () => now, page: { hidden: false, addEventListener() {} },
+    request: async () => reading({ weather_code: 2, cloud_cover: 60 }, now) });
+  t.after(() => weather.setEnabled(false));
+
+  weather.setPreset('rainbow', 'autumn');
+  assert.ok(weather.update(2).rainbow > 0.8);
+  assert.ok(weather.update(0).rain > 0);
+  weather.setEnabled(true);
+  await setImmediate();
+  const live = weather.update(10);
+  assert.ok(live.sunbeams > 0.99);
+  assert.ok(live.rainbow < 0.001);
+  weather.setEnabled(false);
+  const preset = weather.update(10);
+  assert.ok(preset.rainbow > 0.99);
+  assert.ok(preset.sunbeams < 0.001);
+  weather.setPreset('hoar-frost', 'winter');
+  assert.ok(weather.update(8).frost > 0.9);
+  assert.equal(PHOTO_WEATHER_PRESETS['starry-night'].time, 'midnight');
+  assert.equal(PHOTO_WEATHER_PRESETS['sunlit-snow'].season, 'winter');
+  weather.setPreset('clear', 'winter');
+  assert.ok(weather.update(20).frost < 0.001);
+});
+
+test('leaving the snowy photo scene clears its accumulated snow and uses the new weather', async () => {
+  const { createLiveWeather, PHOTO_WEATHER_PRESETS } = await import('../js/ede-weather.js');
+  const weather = createLiveWeather({ page: { hidden: false, addEventListener() {} } });
+  weather.setPreset('sunlit-snow', PHOTO_WEATHER_PRESETS['sunlit-snow'].season);
+  assert.ok(weather.update(30).snowCover > 0);
+  weather.setPreset('rain', 'summer');
+  weather.resetEffects();
+  const custom = weather.update(3);
+  assert.equal(custom.snow, 0);
+  assert.equal(custom.snowCover, 0);
+  assert.ok(custom.rain > 0);
+});
+
+test('the Northern lights preset works offline and Live fades expired aurora independently of weather', async t => {
+  const { createLiveWeather, PHOTO_WEATHER_PRESETS } = await import('../js/ede-weather.js');
+  let now = Date.parse('2026-11-26T23:00:00Z');
+  const weatherTime = now;
+  const pending = [];
+  const page = { hidden: false, addEventListener() {} };
+  const weather = createLiveWeather({
+    now: () => now, page, request: async () => reading({ cloud_cover: 20 }, weatherTime),
+    requestAurora: signal => new Promise(resolve => pending.push({ signal, resolve })),
+  });
+  t.after(() => weather.setEnabled(false));
+
+  weather.setPreset('northern-lights', 'winter');
+  assert.equal(PHOTO_WEATHER_PRESETS['northern-lights'].time, 'midnight');
+  assert.ok(weather.update(12).aurora > 0.99);
+  assert.equal(weather.update(0).auroraBearing, 0);
+  assert.equal(pending.length, 0);
+
+  weather.setEnabled(true);
+  await setImmediate();
+  assert.equal(pending.length, 1);
+  assert.equal(weather.state.status, 'fresh');
+  assert.ok(weather.update(12).aurora < 0.001, 'the preview does not persist into Live');
+  pending[0].resolve({ strength: 0.9, bearing: 327, elevation: 8, observedAt: now - 29 * minute, forecastAt: now + 30 * minute });
+  await setImmediate();
+  const live = weather.update(12);
+  assert.ok(live.aurora > 0.4 && live.aurora < 0.91);
+  assert.ok(Math.abs(live.auroraBearing - 327) < 1, 'the curtain turns toward the forecast bearing');
+  assert.ok(Math.abs(live.auroraElevation - 8) < 0.1);
+
+  now += 2 * minute;
+  weather.refreshPhotoEffects();
+  assert.equal(pending.length, 1, 'minutes between refreshes do not poll NOAA again');
+  assert.equal(weather.state.status, 'fresh');
+  assert.ok(weather.update(12).aurora < 0.001, 'an expired forecast fades out');
+
+  now += 4 * minute;
+  page.hidden = true;
+  weather.refreshPhotoEffects();
+  assert.equal(pending.length, 1);
+  page.hidden = false;
+  weather.refreshPhotoEffects();
+  assert.equal(pending.length, 2);
+  weather.setEnabled(false);
+  assert.equal(pending[1].signal.aborted, true);
+  assert.ok(weather.update(12).aurora > 0.99, 'switching back restores the offline preset');
 });
 
 test('static hosting requests photography inputs alongside the existing weather fields', async t => {
@@ -97,7 +169,6 @@ test('static hosting requests photography inputs alongside the existing weather 
   const forecast = requests[1];
   assert.equal(forecast.hostname, 'api.open-meteo.com');
   assert.ok(forecast.searchParams.get('current').split(',').includes('dew_point_2m'));
-  assert.equal(forecast.searchParams.get('daily'), 'moonrise,moonset,moon_phase');
   assert.equal(forecast.searchParams.get('past_hours'), '48');
 });
 

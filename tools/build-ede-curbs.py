@@ -9,9 +9,11 @@ from math import hypot
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from shapely import constrained_delaunay_triangles, make_valid
+from shapely import constrained_delaunay_triangles, make_valid, union_all
 from shapely.geometry import LineString, Polygon
 from shapely.ops import split
+
+from ede_curb_rollout import municipal_profiles, split_top
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'assets'
@@ -115,8 +117,9 @@ def osm_kerbs(files):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--review', type=Path, default=ROOT / 'tools/data/ede-curb-pilots.json')
-    parser.add_argument('--output', type=Path, default=ASSETS / 'ede-curbs-v1.json.gz')
+    parser.add_argument('--output', type=Path)
     parser.add_argument('--audit', type=Path)
+    parser.add_argument('--municipal', action='store_true', help='Include the municipality-wide inventory')
     parser.add_argument('--osm', type=Path, nargs='*', default=[], help='Dated Overpass JSON or OSM XML snapshots')
     args = parser.parse_args()
     review = json.loads(args.review.read_text())
@@ -132,18 +135,27 @@ def main():
     walk, island, lift = (defaults[key] for key in ('sidewalk', 'island', 'roadLift'))
     profiles, tactile, counts = {}, {}, Counter()
     baked_sites, driveways, grade_profiles = [], [], {}
+    paint_gaps = {}
 
-    def add(key, bands, kind, seam=None):
+    def add(key, bands, kind, seam=None, crossing_openings=None):
         row = surfaces[key]
         if row['layer'] or row['function'] not in ('voetpad', 'verkeerseiland', 'inrit') or row['id'] in profiles:
             raise ValueError(f"Unexpected or duplicate curb surface {row['id']}")
-        profiles[row['id']] = [bake_top(rings, bands, lift, seam) for rings in row['polygons']]
+        if crossing_openings is None:
+            tops = [bake_top(rings, bands, lift, seam) for rings in row['polygons']]
+        else:
+            assert row['function'] == 'verkeerseiland'
+            tops = [split_top(make_valid(polygon(rings)), crossing_openings,
+                              defaults['municipalRampRun'], island, lift) for rings in row['polygons']]
+            if any(top is None for top in tops):
+                raise ValueError(f"Reviewed island has no room outside the crossing openings: {row['id']}")
+        profiles[row['id']] = tops
         counts[kind] += 1
 
     for site in review['sites']:
         if 'gradeProfiles' in site:
             grade_profiles.update((profile, defaults['gradeLift']) for profile in site['gradeProfiles'])
-        else:
+        elif 'junctionIslands' not in site:
             baked_sites.append([*site['center'], site['radius']])
         for item in site.get('crossings', []):
             crossing = crossings[item['id']]
@@ -160,6 +172,40 @@ def main():
                                [(-2.4, height), (-1.25, 0), (1.25, 0), (2.4, height)])
                 add(key, [band], 'refuge island' if refuge else 'crossing approach')
             counts['existing refuge cut-through'] += 1
+        if 'boardingIslands' in site:
+            x, z, _, _ = station((0, 0), site['boardingAxis'], ())
+            run = defaults['boardingRampRun']
+            landing = defaults['boardingLanding']
+            height = defaults['boardingIsland']
+            for key in site['boardingIslands']:
+                row = surfaces[key]
+                assert row['function'] == 'voetpad' and len(row['polygons']) == 1
+                outer = row['polygons'][0][0]
+                extent = [x * px + z * pz for px, pz in zip(outer[::2], outer[1::2])]
+                start, end = min(extent), max(extent)
+                start, end = start + landing, end - landing
+                assert end - start > 2 * run
+                band = station((0, 0), (x, z), [(start, 0), (start + run, height),
+                                               (end - run, height), (end, 0)])
+                add(key, [band], 'station boarding island')
+        if 'junctionIslands' in site:
+            openings = []
+            for key in site.get('crossingOpenings', []):
+                crossing = crossings[key]
+                assert crossing['layer'] == 0 and not any(crossing.get(flag) for flag in ('bridge', 'tunnel', 'bumpId'))
+                openings.append(LineString(crossing['ends']).buffer(crossing['length'] / 2 + 0.25))
+            for a, b, half_width in site.get('cutThroughs', []):
+                openings.append(LineString([a, b]).buffer(half_width))
+            assert openings
+            low = union_all(openings)
+            for key in site['junctionIslands']:
+                add(key, None, 'junction traffic island', crossing_openings=low)
+        if 'paintGap' in site:
+            key, half_width = site['paintGap']
+            crossing = crossings[key]
+            assert crossing['refuge'] and crossing['markings'] == 'zebra' and len(crossing['segments']) == 1
+            assert 0 < 2 * half_width < crossing['width']
+            paint_gaps[key] = half_width
         if 'table' in site:
             crossing, table = crossings[site['crossing']], bumps[site['table']]
             assert crossing['bumpId'] == table['id'] and table['profile'] == 'table' and table['layer'] == 0
@@ -202,20 +248,32 @@ def main():
                 add(key, [driveway, limit], 'driveway sidewalk')
 
     result = {'version': 1, 'roadLift': lift, 'table': next(site['table'] for site in review['sites'] if 'table' in site),
-              'sites': baked_sites, 'profiles': profiles, 'driveways': driveways, 'gradeProfiles': grade_profiles, 'tactile': tactile}
-    args.output.write_bytes(gzip.compress(json.dumps(result, separators=(',', ':')).encode(), mtime=0))
+              'sites': baked_sites, 'profiles': profiles, 'driveways': driveways, 'gradeProfiles': grade_profiles, 'tactile': tactile,
+              'paintGaps': paint_gaps}
+    municipal = None
+    if args.municipal:
+        additions, municipal = municipal_profiles(ASSETS, paving, street, result, defaults, include_locations=bool(args.audit))
+        result.update(additions, version=2)
+    # Junction support circles keep openings level without reserving unrelated nearby paving.
+    baked_sites.extend([*site['center'], site['radius']] for site in review['sites'] if 'junctionIslands' in site)
+    output = args.output or ASSETS / f"ede-curbs-v{result['version']}.json.gz"
+    output.write_bytes(gzip.compress(json.dumps(result, separators=(',', ':')).encode(), mtime=0))
     audit = {
         'inventory': dict(sorted(Counter(row['function'] for row in inventory.values()).items())),
         'crossings': len(crossings),
         'osmKerbTagsInSuppliedSnapshots': osm_kerbs(args.osm) if args.osm else None,
         'fitted': dict(sorted(counts.items())),
         'existingGradeContacts': len(grade_profiles),
-        'heightSources': {'measured': 0, 'default': len(profiles), 'existingTableEstimate': 1},
+        'municipal': municipal,
+        'heightSources': {'measured': 0, 'default': len(profiles) + (municipal or {}).get('fittedParts', 0),
+                          'existingTableEstimate': 1},
         'unresolved': [site['id'] for site in review['sites'] if 'review' in site],
-        'compressedBytes': args.output.stat().st_size,
+        'compressedBytes': output.stat().st_size,
     }
     if args.audit:
         args.audit.write_text(json.dumps(audit, indent=2) + '\n')
+    if municipal is not None:
+        municipal.pop('reviewLocations', None)
     print(json.dumps(audit, indent=2))
 
 
