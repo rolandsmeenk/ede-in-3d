@@ -59,3 +59,27 @@ test('trip demand follows Amsterdam weekday, summer time and overnight hours', a
   assert.equal(get('2026-11-19T06:00:00Z').school, get('2026-07-03T05:00:00Z').school);
   assert.ok(get('2026-11-19T23:00:00Z').homes > get('2026-11-19T23:00:00Z').shops);
 });
+
+test('mapped pedestrian destinations shift from school or work to home and nightlife', async () => {
+  const {createEdeTrips} = await import('../js/ede-trips.js');
+  const {edeActivity} = await import('../js/ede-activity.js');
+  const track = {ax: 0, az: 0, ux: 1, uz: 0, len: 200, layer: 0, allowed: [true, true], mapped: true};
+  const places = [
+    {id: 'school', kind: 'school', foot: [100, 0, 0]},
+    {id: 'work', kind: 'work', foot: [100, 0, 0]},
+    {id: 'homes', kind: 'homes', foot: [100, 0, 0]},
+    {id: 'astrant', kind: 'nightlife', foot: [100, 0, 0]}
+  ];
+  const network = {edges: [], activeTravel: {foot: (_x, _z, _radius, out) => out.push(track)}};
+  const trips = createEdeTrips(network, {isClosed: () => false}, {places, random: () => .45});
+  const wall = Date.parse('2026-11-27T11:00:00Z');
+  function trip(tick, weekday, minute, options) {
+    trips.updateClock(tick, wall, edeActivity({weekday, minute, ...options}));
+    return trips.active('foot', track, 1, 5)?.hub.id;
+  }
+  assert.equal(trip(1, 4, 480), 'school');
+  assert.equal(trip(2, 4, 480, {schoolHoliday: true}), 'work');
+  assert.equal(trip(3, 4, 990), 'homes');
+  assert.equal(trip(4, 6, 90), 'astrant');
+  assert.equal(trip(5, 6, 120), 'homes');
+});

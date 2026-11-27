@@ -34,7 +34,7 @@ test('worker tile buffers match synchronous terrain and canopy geometry across t
       const tile = { bounds: tileData.bounds, skirts: [5, 5, 5, 5], detail: detailField };
       const buffer = Uint8Array.from(readFileSync(new URL(id + '.bin', directory))).buffer;
       const direct = geom.buildTerrainGeometry(buffer, tile, legacy, field, terrain.expansionSeamOffset);
-      const context = terrain.captureTerrainContext(tile.bounds);
+      const context = terrain.captureTerrainContext(tile.bounds, true);
       assert.ok(context.expansion.field.heights.length < field.heights.length);
       const { mesh } = await render({ type: 'terrain', buffer, tile: { ...tile, detail: Boolean(detailField) }, context });
       assert.deepEqual(mesh, geom.packLandscapeGeometry(direct));

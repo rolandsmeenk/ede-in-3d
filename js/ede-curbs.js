@@ -70,7 +70,7 @@ export function setEdeCurbs(asset) {
 }
 
 export async function loadEdeCurbs(municipality = false) {
-  const url = municipality ? '../assets/ede-curbs-v2.json.gz?v=20261127-toorop-zebra' : '../assets/ede-curbs-v1.json.gz?v=20261127-toorop-zebra';
+  const url = municipality ? '../assets/ede-curbs-v2.json.gz?v=20261127-island-review' : '../assets/ede-curbs-v1.json.gz?v=20261127-toorop-zebra';
   const response = await fetch(new URL(url, import.meta.url));
   if (municipality && response.status === 404) return loadEdeCurbs();
   if (!response.ok) throw new Error('Ede curb profiles returned HTTP ' + response.status);
@@ -157,8 +157,10 @@ export function curbHeightAt(x, z, base, layer, allowCurbs = true) {
     }
   }
   // Nearby road, path and cut-through meshes have the mapped pavement lift.
+  let margin = 0;
   for (const [cx, cz, radius] of sites.get(cell) ?? []) {
-    const distance = Math.hypot(x - cx, z - cz);
-    if (distance < radius) return base + roadLift * Math.min(1, (radius - distance) / 4);
+    margin = Math.max(margin, radius - Math.hypot(x - cx, z - cz));
+    if (margin >= 4) return base + roadLift;
   }
+  if (margin > 0) return base + roadLift * margin / 4;
 }

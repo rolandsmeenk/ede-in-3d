@@ -44,9 +44,10 @@ class SkyMesh extends Mesh {
 	/**
 	 * Constructs a new skydome.
 	 *
-	 * @param {?Function} [composite=null] - Optional color node factory taking sky color, view direction, cloud transmission, atmospheric extinction and a cloud transmission sampler.
+	 * @param {?Function} [composite=null] - Optional color node factory taking sky color, view direction, cloud transmission, atmospheric extinction a cloud transmission sampler and cloud shade.
+	 * @param {?Object} [clouds=null] - Optional volumetric cloud field and transmission sampler.
 	 */
-	constructor( composite = null ) {
+	constructor( composite = null, clouds = null ) {
 
 		const material = new NodeMaterial();
 
@@ -361,11 +362,15 @@ class SkyMesh extends Mesh {
 			}, { ray: 'vec3', return: 'vec3' } );
 
 			const cloudTransmission = composite ? float( 1.0 ).toVar() : null;
+			const cloudShade = composite && clouds ? float( 0.0 ).toVar() : null;
 
 			// Clouds
-			If( direction.y.greaterThan( 0.0 ).and( this.cloudCoverage.greaterThan( 0.0 ) ), () => {
+			const hasClouds = this.cloudCoverage.greaterThan( 0.0 );
+			If( clouds ? hasClouds : hasClouds.and( direction.y.greaterThan( 0.0 ) ), () => {
 
-				const cloud = cloudField( direction ).toVar();
+				const cloud = ( clouds
+					? clouds.trace( direction, cameraPosition, this.cloudCoverage, this.cloudDensity, vSunDirection )
+					: cloudField( direction ) ).toVar();
 				const depth = cloud.x;
 				const cloudMask = cloud.y;
 				const alpha = cloud.z;
@@ -375,32 +380,45 @@ class SkyMesh extends Mesh {
 				const sunColor = vSunE.mul( Fex ).mul( 0.22 ).mul( 0.04 ).toVar(); // 0.22 ~ albedo/pi, 0.04 = exposure; the aerial composite adds the eye-leg extinction
 				const skyAmbient = Lin.mul( 0.04 ).add( vec3( 0.0, 0.0003, 0.00075 ) );
 
-				// Beer-powder self-shadow from the sampled density
-				const beer = exp( depth.mul( - 4.0 ) ).toVar();
-				const powder = sub( 1.0, beer.mul( beer ) ); // beer*beer == exp(-8*depth)
-				const shade = mix( 0.45, 1.0, beer.mul( powder ).mul( 2.6 ).clamp( 0.0, 1.0 ) ); // 2.6 = 1/0.385, normalizes beer*powder peak to 1
+				let shade = depth;
+				if ( ! clouds ) {
+
+					// Beer-powder self-shadow from the projected density.
+					const beer = exp( depth.mul( - 4.0 ) ).toVar();
+					const powder = sub( 1.0, beer.mul( beer ) );
+					shade = mix( 0.45, 1.0, beer.mul( powder ).mul( 2.6 ).clamp( 0.0, 1.0 ) );
+
+				}
 
 				// Henyey-Greenstein forward lobe ( g = 0.7 ): silver lining on rims toward the sun
 				const silver = float( 0.51 ).div( pow( sub( 1.49, cosTheta.mul( 1.4 ) ), 1.5 ) ).clamp( 0.0, 3.0 ); // 0.51=1-g^2, 1.49=1+g^2, 1.4=2g
 				const edge = cloudMask.mul( sub( 1.0, cloudMask ) ).mul( 4.0 );
 
-				const cloudColor = skyAmbient.add( sunColor.mul( shade ) ).toVar();
+				const cloudColor = ( clouds ? skyAmbient.mul( 0.24 ) : skyAmbient ).add( sunColor.mul( shade ) ).toVar();
+				if ( clouds ) {
+
+					const diffuse = mix( 1.0, 0.65, smoothstep( 0.72, 1.0, this.cloudCoverage ) );
+					cloudColor.addAssign( vec3( 0.84, 0.89, 0.99 ).mul( mix( 0.52, 1.0, shade ) ).mul( diffuse ) );
+
+				}
 				cloudColor.addAssign( sunColor.mul( silver ).mul( edge ).mul( 0.6 ) );
 				cloudColor.mulAssign( dayFactor.max( 0.03 ) );
 
 				if ( cloudTransmission ) cloudTransmission.assign( sub( 1.0, alpha ) );
+				if ( cloudShade ) cloudShade.assign( shade );
 
 				// Occlude the sun disc/glow behind opaque cloud
 				texColor.subAssign( L0.mul( 0.04 ).add( sundiscColor ).mul( alpha ) );
 
 				// Composite through the atmosphere so distant clouds dissolve into haze
-				const cloudAerial = mix( texColor, cloudColor, Fex );
+				const cloudAerial = mix( texColor, cloudColor, clouds ? pow( Fex, 0.32 ) : Fex );
 				texColor.assign( mix( texColor, cloudAerial, alpha ) );
 
 			} );
 
 			const color = composite ? composite( texColor, direction, cloudTransmission, Fex,
-				( ray ) => cloudField( ray ).z.oneMinus() ) : texColor;
+				clouds ? ( ray ) => clouds.transmission( ray, cameraPosition, this.cloudCoverage, this.cloudDensity )
+					: ( ray ) => cloudField( ray ).z.oneMinus(), cloudShade ) : texColor;
 			return vec4( color, 1.0 );
 
 		} )();

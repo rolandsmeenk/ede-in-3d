@@ -12,6 +12,8 @@
       "imports": {
         "./js/ede-north-landmarks.js": "./js/ede-north-landmarks.js?v=20261126-flight-lights",
         "./js/ede-expansion-landmarks.js": "./js/ede-expansion-landmarks.js?v=20261126-flight-lights",
+        "./js/ede-civic-landmarks.js": "./js/ede-civic-landmarks.js?v=20261127-kuil-paths",
+        "./js/ede-next-landmarks.js": "./js/ede-next-landmarks.js?v=20261127-kuil-paths",
         "./js/ede-concordia-buildings.js": "./js/ede-concordia-buildings.js?v=20261126-flight-lights",
         "./js/ede-concordiamolen.js": "./js/ede-concordiamolen.js?v=20261126-flight-lights",
         "./js/ede-windmill.js": "./js/ede-windmill.js?v=20261126-flight-lights",
@@ -21,20 +23,20 @@
         "three/addons/": "./vendor/three/examples/jsm/",
         "three/addons/libs/meshopt_decoder.module.js": "./vendor/three/examples/jsm/libs/meshopt_decoder.module.js?v=20261124-workers",
         "three/addons/utils/BufferGeometryUtils.js": "./vendor/three/examples/jsm/utils/BufferGeometryUtils.js?v=20261124-workers",
-        "./js/ede-surface-geometry.js": "./js/ede-surface-geometry.js?v=20261126-curbs",
+        "./js/ede-surface-geometry.js": "./js/ede-surface-geometry.js?v=20261127-terrain-normals",
         "./js/ede-water-levels.js": "./js/ede-water-levels.js?v=20261126-pond-levels",
         "./js/ede-mast-strokes.js": "./js/ede-mast-strokes.js?v=20261126-lamp-snow",
         "./js/ede-bgt-world.js": "./js/ede-bgt-world.js?v=20261126-flight-lights",
-        "./js/ede-geometry.js": "./js/ede-geometry.js?v=20261126-pond-levels",
+        "./js/ede-geometry.js": "./js/ede-geometry.js?v=20261127-terrain-normals",
         "./js/ede-grade-query.js": "./js/ede-grade-query.js?v=20261126-motorway-grades",
         "./js/ede-grade-world.js": "./js/ede-grade-world.js?v=20261126-snow-surfaces",
-        "./js/ede-landscape-geometry.js": "./js/ede-landscape-geometry.js?v=20261126-terrain-clipping",
-        "./js/ede-landscape-jobs.js": "./js/ede-landscape-jobs.js?v=20261126-terrain-clipping",
+        "./js/ede-landscape-geometry.js": "./js/ede-landscape-geometry.js?v=20261127-terrain-normals",
+        "./js/ede-landscape-jobs.js": "./js/ede-landscape-jobs.js?v=20261127-terrain-normals",
         "./js/ede-grade.js": "./js/ede-grade.js?v=20261126-curbs",
         "./js/aerial-colors.js": "./js/aerial-colors.js?v=20261126-iphone-memory",
         "./js/ede-curb-geometry.js": "./js/ede-curb-geometry.js?v=20261127-curb-concrete",
-        "./js/ede-curbs.js": "./js/ede-curbs.js?v=20261127-toorop-zebra",
-        "./js/ede-paving-client.js": "./js/ede-paving-client.js?v=20261127-curb-concrete",
+        "./js/ede-curbs.js": "./js/ede-curbs.js?v=20261127-island-opening",
+        "./js/ede-paving-client.js": "./js/ede-paving-client.js?v=20261127-terrain-normals",
         "./js/ede-paving-tiles.js": "./js/ede-paving-tiles.js?v=20261126-iphone-memory",
         "./js/ede-asphalt-lanes.js": "./js/ede-asphalt-lanes.js?v=20261124-workers",
         "./js/ede-coverage.js": "./js/ede-coverage.js?v=20261124-workers",
@@ -45,7 +47,7 @@
         "./js/bag3d.js": "./js/bag3d.js?v=20261126-view-lod",
         "./js/ede-photo-sky.js": "./js/ede-photo-sky.js?v=20261127-aurora",
         "./js/city-config.js": "./js/city-config.js?v=20261126-iphone-memory",
-        "./js/city-grid.js": "./js/city-grid.js?v=20261127-curb-concrete",
+        "./js/city-grid.js": "./js/city-grid.js?v=20261127-terrain-normals",
         "./js/buildings.js": "./js/buildings.js?v=20261126-iphone-memory",
         "./js/controllers.js?v=20261122-municipal-coverage": "./js/controllers.js?v=20261126-flight-lights",
         "./js/ede-survey-landmark.js": "./js/ede-survey-landmark.js?v=20261126-roof-landing",
@@ -72,8 +74,8 @@
         "./js/ede-enka-chimneys.js": "./js/ede-enka-chimneys.js?v=20261126-night-lights",
         "./js/landmarks.js": "./js/landmarks.js?v=20261126-flight-lights",
         "./js/nyc-map.js?v=20261122-municipal-coverage": "./js/nyc-map.js?v=20261126-iphone-memory",
-        "./js/terrain.js": "./js/terrain.js?v=20261126-iphone-memory",
-        "./js/terrain.js?v=20261124-workers": "./js/terrain.js?v=20261126-iphone-memory",
+        "./js/terrain.js": "./js/terrain.js?v=20261127-terrain-normals",
+        "./js/terrain.js?v=20261124-workers": "./js/terrain.js?v=20261127-terrain-normals",
         "./js/ede-road-furniture-placement.js": "./js/ede-road-furniture-placement.js?v=20261126-a12-lukkien",
         "./js/road-furniture-atlas.js": "./js/road-furniture-atlas.js?v=20261126-atlas-gutters",
         "./js/road-furniture-manager.js": "./js/road-furniture-manager.js?v=20261126-filtered-members",
@@ -83,10 +85,16 @@
         "./js/cars.js": "./js/cars.js?v=20261126-parked-snow",
         "./js/audio-sources.js?v=20261122-p2000": "./js/audio-sources.js?v=20261126-soundscape",
         "./js/ede-lane-geometry.js": "./js/ede-lane-geometry.js?v=20261126-reviewed-junctions",
-        "./js/ede-road-traffic.js?v=20261122-p2000": "./js/ede-road-traffic.js?v=20261123-harderwijkerweg",
+        "./js/ede-road-traffic.js?v=20261122-p2000": "./js/ede-road-traffic.js?v=20261127-living-city",
         "./js/ede-street-features.js?v=20261122-startup": "./js/ede-street-features.js?v=20261123-harderwijkerweg",
         "./js/trees.js": "./js/trees.js?v=20261126-iphone-memory",
         "./js/ede-snow.js": "./js/ede-snow.js?v=20261127-photo-frost",
+        "./js/ede-kites.js": "./js/ede-kites.js?v=20261127-living-city",
+        "./js/ede-trips.js": "./js/ede-trips.js?v=20261127-living-city",
+        "./js/ede-parking.js": "./js/ede-parking.js?v=20261127-living-city",
+        "./js/ede-parking-demand.js": "./js/ede-parking-demand.js?v=20261127-living-city",
+        "./js/pedestrians.js": "./js/pedestrians.js?v=20261127-living-city",
+        "./js/ede-event-calendar.js": "./js/ede-event-calendar.js?v=20261127-living-city",
         "./js/ede-advertising.js": "./js/ede-advertising.js?v=20261127-event-ads",
         "./js/ede-posters.js": "./js/ede-posters.js?v=20261127-event-ads",
         "./js/ede-seasonal-decorations.js": "./js/ede-seasonal-decorations.js?v=20261127-event-ads",
@@ -96,7 +104,7 @@
         "./js/ede-on-the-rocks.js": "./js/ede-on-the-rocks.js?v=20261126-snow-surfaces",
         "./js/ede-fuel-stations.js": "./js/ede-fuel-stations.js?v=20261126-snow-surfaces",
         "./js/ede-station-landmark.js": "./js/ede-station-landmark.js?v=20261126-snow-surfaces",
-        "./js/tsl-materials.js": "./js/tsl-materials.js?v=20261127-curb-concrete",
+        "./js/tsl-materials.js": "./js/tsl-materials.js?v=20261127-track-snow-2",
         "./js/live-signal-atlas.js": "./js/live-signal-atlas.js?v=20261126-live-signals-2",
         "./js/live-signal-feed.js": "./js/live-signal-feed.js?v=20261126-live-signals-2",
         "./js/live-led-signal-material.js": "./js/live-led-signal-material.js?v=20261126-live-signals-2",
@@ -111,11 +119,11 @@
   <link rel="modulepreload" href="./js/ede-boundary-index.js" />
   <link rel="modulepreload" href="./js/ede-grade-query.js?v=20261126-motorway-grades" />
   <link rel="modulepreload" href="./vendor/three/build/three.core.js" />
-  <link rel="modulepreload" href="./js/ede-landscape-geometry.js?v=20261126-terrain-clipping" />
-  <link rel="modulepreload" href="./js/ede-landscape-jobs.js?v=20261126-terrain-clipping" />
-  <link rel="modulepreload" href="./js/ede-paving-client.js?v=20261127-curb-concrete" />
+  <link rel="modulepreload" href="./js/ede-landscape-geometry.js?v=20261127-terrain-normals" />
+  <link rel="modulepreload" href="./js/ede-landscape-jobs.js?v=20261127-terrain-normals" />
+  <link rel="modulepreload" href="./js/ede-paving-client.js?v=20261127-terrain-normals" />
   <link rel="modulepreload" href="./js/ede-road-cell-query.js" />
-  <link rel="modulepreload" href="./js/ede-surface-geometry.js?v=20261126-curbs" />
+  <link rel="modulepreload" href="./js/ede-surface-geometry.js?v=20261127-terrain-normals" />
   <link rel="modulepreload" href="./js/bag3d-coverage.js?v=20261127-holes-fix" />
   <link rel="modulepreload" href="./js/bag3d-projection.js" />
   <link rel="modulepreload" href="./js/bag3d-worker-client.js?v=20261127-holes-fix" />
@@ -135,8 +143,8 @@
   <link rel="modulepreload" href="./js/ede-scene-coordinates.js" />
   <link rel="modulepreload" href="./js/ede-road-tags.js" />
   <link rel="modulepreload" href="./js/nyc-geodata.js" />
-  <link rel="modulepreload" href="./js/ede-geometry.js?v=20261126-pond-levels" />
-  <link rel="modulepreload" href="./js/ede-sports.js?v=20261126-rink-ice" />
+  <link rel="modulepreload" href="./js/ede-geometry.js?v=20261127-terrain-normals" />
+  <link rel="modulepreload" href="./js/ede-sports.js?v=20261127-living-city" />
   <link rel="modulepreload" href="./js/ede-sport-fit.js" />
   <link rel="modulepreload" href="./js/ede-sport-layouts.js" />
   <link rel="modulepreload" href="./js/ede-expansion-landmark-surveys.js" />
@@ -195,8 +203,8 @@
   <link rel="modulepreload" href="./js/ede-forest-canopy.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/ede-terrain-tiles.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/ede-heath.js" />
-  <link rel="modulepreload" href="./js/terrain.js?v=20261126-iphone-memory" />
-  <link rel="modulepreload" href="./js/ede-curbs.js?v=20261127-toorop-zebra" />
+  <link rel="modulepreload" href="./js/terrain.js?v=20261127-terrain-normals" />
+  <link rel="modulepreload" href="./js/ede-curbs.js?v=20261127-island-opening" />
   <link rel="modulepreload" href="./js/ede-curb-geometry.js?v=20261127-curb-concrete" />
   <link rel="modulepreload" href="./js/ede-grade.js?v=20261126-curbs" />
   <link rel="modulepreload" href="./js/ede-grade-world.js?v=20261126-snow-surfaces" />
@@ -209,7 +217,7 @@
   <link rel="modulepreload" href="./js/ede-playground-equipment.js" />
   <link rel="modulepreload" href="./js/aerial-colors.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/city-config.js?v=20261126-iphone-memory" />
-  <link rel="modulepreload" href="./js/tsl-materials.js?v=20261127-curb-concrete" />
+  <link rel="modulepreload" href="./js/tsl-materials.js?v=20261127-track-snow-2" />
   <link rel="modulepreload" href="./js/trees.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/tree-seasons.js" />
   <link rel="modulepreload" href="./js/ede-tree-data.js?v=20261126-pine-density" />
@@ -223,6 +231,8 @@
   <link rel="modulepreload" href="./js/ede-bikes.js" />
   <link rel="modulepreload" href="./js/ede-bike-parking.js" />
   <link rel="modulepreload" href="./js/ede-bike-parking-sites.js" />
+  <link rel="modulepreload" href="./js/ede-white-bike-sites.js" />
+  <link rel="modulepreload" href="./js/ede-white-bike-traffic.js" />
   <link rel="modulepreload" href="./js/cars.js?v=20261126-parked-snow" />
   <link rel="modulepreload" href="./js/ede-cargo-truck.js" />
   <link rel="modulepreload" href="./js/ede-vehicle-mix.js" />
@@ -248,22 +258,26 @@
   <link rel="modulepreload" href="./js/ede-bus-shelters.js?v=20261126-snow-surfaces" />
   <link rel="modulepreload" href="./js/ede-bus-shelter-sites.js" />
   <link rel="modulepreload" href="./js/ede-advertising.js?v=20261127-event-ads" />
-  <link rel="modulepreload" href="./js/ede-event-calendar.js" />
+  <link rel="modulepreload" href="./js/ede-event-calendar.js?v=20261127-living-city" />
+  <link rel="modulepreload" href="./js/ede-city-clock.js" />
+  <link rel="modulepreload" href="./js/ede-activity.js" />
+  <link rel="modulepreload" href="./js/ede-sport-activity.js" />
   <link rel="modulepreload" href="./js/ede-bus-traffic.js?v=20261122-startup" />
   <link rel="modulepreload" href="./js/helicopter.js?v=20261126-helicopter" />
   <link rel="modulepreload" href="./js/vehicle-lights.js" />
   <link rel="modulepreload" href="./js/vehicle-physics.js" />
-  <link rel="modulepreload" href="./js/pedestrians.js" />
-  <link rel="modulepreload" href="./js/lighting.js?v=20261127-photo-scenes" />
+  <link rel="modulepreload" href="./js/pedestrians.js?v=20261127-living-city" />
+  <link rel="modulepreload" href="./js/lighting.js?v=20261127-volume-clouds" />
+  <link rel="modulepreload" href="./js/ede-clouds.js?v=20261127-volume-clouds" />
   <link rel="modulepreload" href="./js/live-sky.js" />
   <link rel="modulepreload" href="./js/ede-moon.js" />
   <link rel="modulepreload" href="./js/ede-photo-sky.js?v=20261127-aurora" />
   <link rel="modulepreload" href="./js/ede-aurora.js" />
   <link rel="modulepreload" href="./js/ede-window-lights.js" />
-  <link rel="modulepreload" href="./js/ede-weather.js?v=20261127-environment-modes" />
+  <link rel="modulepreload" href="./js/ede-weather.js?v=20261127-living-city" />
   <link rel="modulepreload" href="./js/weather-precipitation.js?v=20261126-wind" />
-  <link rel="modulepreload" href="./js/ede-kites.js" />
-  <link rel="modulepreload" href="./js/city-grid.js?v=20261127-curb-concrete" />
+  <link rel="modulepreload" href="./js/ede-kites.js?v=20261127-living-city" />
+  <link rel="modulepreload" href="./js/city-grid.js?v=20261127-terrain-normals" />
   <link rel="modulepreload" href="./js/ede-paving-tiles.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/buildings.js?v=20261126-iphone-memory" />
   <link rel="modulepreload" href="./js/shop-signs.js" />
@@ -343,7 +357,7 @@
   <link rel="modulepreload" href="./js/ede-nijverheidplein-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-nijverheidplein-survey.js" />
   <link rel="modulepreload" href="./js/ede-wvede-circuit-survey.js" />
-  <link rel="modulepreload" href="./js/ede-next-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-next-landmarks.js?v=20261127-kuil-paths" />
   <link rel="modulepreload" href="./js/ede-next-survey.js" />
   <link rel="modulepreload" href="./js/ede-kuil-terrain.js" />
   <link rel="modulepreload" href="./js/ede-north-landmarks.js?v=20261126-flight-lights" />
@@ -375,7 +389,7 @@
   <link rel="modulepreload" href="./js/ede-heritage-survey.js" />
   <link rel="modulepreload" href="./js/ede-heritage-landmarks.js" />
   <link rel="modulepreload" href="./js/ede-historic-landmarks.js" />
-  <link rel="modulepreload" href="./js/ede-civic-landmarks.js" />
+  <link rel="modulepreload" href="./js/ede-civic-landmarks.js?v=20261127-kuil-paths" />
   <link rel="modulepreload" href="./js/ede-work-garden.js" />
   <link rel="modulepreload" href="./js/ede-enka-chimneys.js?v=20261126-night-lights" />
   <link rel="modulepreload" href="./js/ede-lamp-halos.js" />
@@ -392,18 +406,18 @@
   <link rel="modulepreload" href="./js/road-paint.js?v=20261126-reviewed-junctions" />
   <link rel="modulepreload" href="./js/ede-street-features.js?v=20261123-harderwijkerweg" />
   <link rel="modulepreload" href="./js/ede-street-features-world.js?v=20261127-toorop-zebra-gap" />
-  <link rel="modulepreload" href="./js/traffic.js?v=20261127-dutch-paving" />
-  <link rel="modulepreload" href="./js/ede-trips.js" />
+  <link rel="modulepreload" href="./js/traffic.js?v=20261127-living-city" />
+  <link rel="modulepreload" href="./js/ede-trips.js?v=20261127-living-city" />
   <link rel="modulepreload" href="./js/ede-driving-controls.js" />
   <link rel="modulepreload" href="./js/ede-driving-control-evidence.js" />
   <link rel="modulepreload" href="./js/ede-level-crossings.js" />
   <link rel="modulepreload" href="./js/ede-turn-restrictions.js" />
   <link rel="modulepreload" href="./js/ede-turn-restriction-data.js" />
-  <link rel="modulepreload" href="./js/ede-parking.js" />
+  <link rel="modulepreload" href="./js/ede-parking.js?v=20261127-living-city" />
   <link rel="modulepreload" href="./js/ede-parking-access.js" />
-  <link rel="modulepreload" href="./js/ede-parking-demand.js" />
+  <link rel="modulepreload" href="./js/ede-parking-demand.js?v=20261127-living-city" />
   <link rel="modulepreload" href="./js/traffic-area.js" />
-  <link rel="modulepreload" href="./js/ede-road-traffic.js?v=20261123-harderwijkerweg" />
+  <link rel="modulepreload" href="./js/ede-road-traffic.js?v=20261127-living-city" />
   <link rel="modulepreload" href="./js/ede-motorway-lanes.js" />
   <link rel="modulepreload" href="./js/ede-road-lanes.js" />
   <link rel="modulepreload" href="./js/ede-lane-geometry.js?v=20261126-reviewed-junctions" />
@@ -439,14 +453,14 @@
   <link rel="modulepreload" href="./js/live-signal-feed.js?v=20261126-live-signals-2" />
   <link rel="modulepreload" href="./js/live-led-signal-material.js?v=20261126-live-signals-2" />
   <link rel="modulepreload" href="./js/live-signal-builders.js?v=20261126-live-signals-3" />
-  <link rel="modulepreload" href="./js/main.js?v=20261127-event-ads" />
-  <link rel="modulepreload" href="./js/startup.js?v=20261127-event-ads" />
-  <script type="module" src="./js/startup.js?v=20261127-event-ads"></script>
+  <link rel="modulepreload" href="./js/main.js?v=20261127-volume-clouds" />
+  <link rel="modulepreload" href="./js/startup.js?v=20261127-volume-clouds" />
+  <script type="module" src="./js/startup.js?v=20261127-volume-clouds"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261127-environment-modes" />
+  <link rel="stylesheet" href="./css/style.css?v=20261127-living-city" />
 </head>
 <body>
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
@@ -494,7 +508,7 @@
   <!-- 3D WebGPU Viewport Container -->
   <main id="canvas-container" data-train-prediction-seconds="32" aria-label="Interactive map of Ede in 3D"></main>
   <div id="municipal-warning" class="municipal-warning" hidden aria-hidden="true">
-    <span>Outside Gemeente Ede · 500 m travel area</span>
+    <span>Outside Gemeente Ede · Travel area</span>
   </div>
   <div id="municipal-warning-status" class="municipal-warning-status" role="status" aria-live="polite"></div>
 
@@ -571,6 +585,14 @@
         <option value="fog">Fog</option>
         <option value="snow" hidden disabled>Snow</option>
       </select>
+      <label for="environment-preview">Date and time in Ede</label>
+      <input id="environment-preview" type="datetime-local" min="1970-01-01T00:00" max="2099-12-31T23:59"
+        aria-describedby="environment-preview-status" />
+      <div class="preview-actions">
+        <button id="environment-preview-apply" class="pop-item" type="button">Preview</button>
+        <button id="environment-preview-clear" class="pop-item" type="button" hidden>Clear preview</button>
+      </div>
+      <p id="environment-preview-status" class="environment-summary" role="status"></p>
     </div>
     <div class="environment-settings" id="environment-photo-scenes" hidden>
       <label for="environment-photo">Scene</label>
@@ -628,6 +650,7 @@
   </div>
 
   <div id="menu-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-label="Menu">
+    <button class="pop-item" type="button" popovertarget="agenda-popover">Agenda</button>
     <button class="pop-item" type="button" popovertarget="map-attribution">Map credits</button>
     <div class="pop-title">Graphics quality</div>
     <button class="pop-item active" data-graphics-quality="fast" aria-pressed="true" type="button">Fast</button>
@@ -635,6 +658,11 @@
     <div class="pop-title">Tree quality</div>
     <button class="pop-item active" data-tree-quality="auto" aria-pressed="true" type="button">Auto</button>
     <button class="pop-item" data-tree-quality="high" aria-pressed="false" type="button">High</button>
+  </div>
+
+  <div id="agenda-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-labelledby="agenda-title">
+    <h2 id="agenda-title" class="pop-title">Agenda</h2>
+    <ul id="agenda-list" class="agenda-list"></ul>
   </div>
 
   <div id="map-attribution" class="popover" popover data-side="below" data-anchor="hud-toolbar" data-align="hud-toolbar" aria-labelledby="map-attribution-title">

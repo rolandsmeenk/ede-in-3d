@@ -717,6 +717,7 @@ function buildPersonGeometry(detail = 1) {
 // ============================================================================
 const COAT_COLORS = [0x2b3a52, 0x33332f, 0x8a6a44, 0x5a2f2f, 0x4f5238, 0x6a6a66, 0x222024, 0x7d3f22];
 const COAT_COLORS_F = [0x7a2630, 0xb89a72, 0x2e3e5c, 0x1f1d22, 0xc9c1b2, 0x5b6b4a, 0x8c5a7a, 0x3c3c40];
+const SPORTS_SHIRT_COLORS = [0xd74938, 0x4673c3, 0x50a971, 0xe9ce4a];
 const SHIRT_COLORS = [0xe8e6e0, 0xb8c4d8, 0xcfc8b8, 0x9aa7b8];
 const LEG_COLORS = [0x22242c, 0x35485b, 0x51473d, 0x7c7160, 0x252526];
 const LEG_COLORS_F = [0x1c1c22, 0x2f4a6e, 0x46413b, 0xcfc8bb, 0x5a2a2e];
@@ -743,7 +744,7 @@ const qrot = (q, v) => v.add(cross(q.xyz, cross(q.xyz, v).add(v.mul(q.w))).mul(2
  * the near LOD (`detail = 1`) adds fine procedural facial/jacket/shoe detail per body part in the fragment stage,
  * while the far LOD (`detail = 0`) shades its part colours directly in the vertex stage.
  */
-function createPersonMaterial(pose, detail = 1) {
+function createPersonMaterial(pose, detail = 1, sportswear = false) {
   const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0 });
   const base = int(instanceIndex).mul(STRIDE);
   const info = pose.element(base.add(STRIDE - 1)); // seed, female, girth, hair
@@ -788,7 +789,7 @@ function createPersonMaterial(pose, detail = 1) {
   const coatCol = vertexStage(
     mix(pickColorFromPalette(COAT_COLORS, lane(29.0)), pickColorFromPalette(COAT_COLORS_F, lane(29.0)), female)
   ).toVar();
-  const shirtCol = vertexStage(pickColorFromPalette(SHIRT_COLORS, lane(71.0))).toVar();
+  const shirtCol = vertexStage(pickColorFromPalette(sportswear ? SPORTS_SHIRT_COLORS : SHIRT_COLORS, lane(71.0))).toVar();
   const legsCol = vertexStage(
     mix(pickColorFromPalette(LEG_COLORS, lane(47.0)), pickColorFromPalette(LEG_COLORS_F, lane(47.0)), female)
   ).toVar();
@@ -967,15 +968,15 @@ function createPersonMaterial(pose, detail = 1) {
 class PersonCrowd {
   /**
    * @param {number} maxCount - most people drawn at once
-   * @param {{ farDistance?: number, castShadow?: boolean }} options - beyond farDistance (m) people use the far LOD
+   * @param {{ farDistance?: number, castShadow?: boolean, sportswear?: boolean }} options - beyond farDistance (m) people use the far LOD
    */
-  constructor(maxCount, { farDistance = 34, castShadow = true } = {}) {
+  constructor(maxCount, { farDistance = 34, castShadow = true, sportswear = false } = {}) {
     this.farDistance = farDistance;
     this.updates = 0;
     const levels = Number.isFinite(farDistance) ? [1, 0] : [1];
     this.lods = levels.map((detail) => {
       const pose = attributeArray(maxCount * STRIDE, 'vec4').toReadOnly();
-      const mesh = new THREE.Mesh(buildPersonGeometry(detail), createPersonMaterial(pose, detail));
+      const mesh = new THREE.Mesh(buildPersonGeometry(detail), createPersonMaterial(pose, detail, sportswear));
       mesh.name = detail ? 'PeopleNear' : 'PeopleFar';
       mesh.count = 1; // one (degenerate) person until warm-up finishes, so the pipelines compile up front
       mesh.frustumCulled = false;
@@ -1718,8 +1719,33 @@ class PersonRig {
     }
   }
 
+  skate(x, z, yaw, ground, owner, cycle, blades) {
+    if (!this.placed) this.reset(x, z, yaw, ground, owner);
+    this.x = x;
+    this.z = z;
+    this.yaw = yaw;
+    this.pelvisY = this.standingHeight(ground(owner, x, z)) - 0.15;
+    this.pelvisTilt = 0.2;
+    const swing = Math.sin(cycle * Math.PI * 2);
+    this.pelvisRoll = swing * 0.14;
+    this.sway = swing * 0.11;
+    for (const foot of this.feet) {
+      const push = Math.max(0, foot.side * swing);
+      const side = foot.side * (0.12 + push * 0.27);
+      const forward = 0.13 - push * 0.50;
+      foot.ax = x + Math.cos(yaw) * side + Math.sin(yaw) * forward;
+      foot.az = z - Math.sin(yaw) * side + Math.cos(yaw) * forward;
+      foot.ay = ground(owner, foot.ax, foot.az) + ANKLE_H * this.s + 0.035 + push ** 3 * 0.13;
+      foot.yaw = yaw + foot.side * (0.04 + 0.38 * push);
+      foot.swing = false;
+      foot.pitch = push * 0.28;
+      foot.toe = 0;
+    }
+    this.solve(null, { skate: true, blades });
+  }
+
   // Bones of the whole body from the feet, pelvis and gait state (world space)
-  solve(kite = null) {
+  solve(kite = null, sport = null) {
     const s = this.s;
     const g = this.gait;
     const run = this.run;
@@ -1744,11 +1770,11 @@ class PersonRig {
 
     // Arms swing against the legs, a little behind them (elbows bend more on the forward swing, ~90 degrees running)
     const swingAmp = 0.42 * this.armSwing * g * (1 + run * 0.3);
-    if (kite) qY(_qRoot, yaw);
+    if (kite || sport) qY(_qRoot, yaw);
     for (let i = 0; i < 2; i++) {
       const side = SIDES[i];
       const flex = 0.06 - side * this.arm * swingAmp + idle * 0.02;
-      const abduction = 0.1 + (this.girth - 1) * 0.35 + run * 0.08;
+      const abduction = 0.1 + (this.girth - 1) * 0.35 + run * 0.08 + (sport?.skate ? 0.42 : 0);
       this.jointFrom(BONE.CHEST, LIMB.upperArm[i], _qChest, _chest, _shoulder);
       if (kite) {
         const right = side < 0;
@@ -1760,6 +1786,16 @@ class PersonRig {
         const grip = this.limb(LIMB.upperArm[i], LIMB.forearm[i], _shoulder, _target,
           UPPER_ARM * s, (FOREARM + 0.07) * s, _pole, _front, side * ARM_BIND_ABDUCTION);
         if (right) kite.hand.copy(grip);
+        continue;
+      }
+      if (sport?.swing != null && side < 0) {
+        const swing = sport.swing;
+        _front.set(0, 0, 1).applyQuaternion(_qRoot);
+        _pole.set(-0.8, -1, -0.25).applyQuaternion(_qRoot);
+        _target.set(-0.17 + swing * 0.39, -0.30 + swing * 0.09, 0.26 + swing * 0.19)
+          .multiplyScalar(s).applyQuaternion(_qRoot).add(_shoulder);
+        sport.hand.copy(this.limb(LIMB.upperArm[i], LIMB.forearm[i], _shoulder, _target,
+          UPPER_ARM * s, (FOREARM + 0.05) * s, _pole, _front, side * ARM_BIND_ABDUCTION));
         continue;
       }
       _qUpper.copy(_qChest).multiply(qZ(_q, side * (abduction - ARM_BIND_ABDUCTION))).multiply(qX(_q, -flex));
@@ -1774,8 +1810,21 @@ class PersonRig {
       const foot = this.feet[i];
       const footYaw = foot.swing ? foot.swingYaw : foot.yaw;
       this.jointFrom(BONE.PELVIS, LIMB.thigh[i], _qPelvis, _pelvis, _hip);
-      const ankle = this.solveLeg(i, _hip, _target.set(foot.ax, foot.ay, foot.az), footYaw);
-      this.writeFoot(i, ankle, qY(_qa, footYaw).multiply(qX(_q, foot.pitch)), foot.toe);
+      _target.set(foot.ax, foot.ay, foot.az);
+      const kick = i === 1 ? sport?.kick ?? 0 : 0;
+      if (kick) {
+        _target.x = this.x + Math.sin(yaw) * kick * 0.58 - Math.cos(yaw) * 0.1;
+        _target.y += 0.18 * kick;
+        _target.z = this.z + Math.cos(yaw) * kick * 0.58 + Math.sin(yaw) * 0.1;
+        _target.lerp(_v.set(foot.ax, foot.ay, foot.az), 1 - kick);
+      }
+      const ankle = this.solveLeg(i, _hip, _target, footYaw);
+      this.writeFoot(i, ankle, qY(_qa, footYaw).multiply(qX(_q, foot.pitch - kick * 0.5)), foot.toe);
+      const blade = sport?.blades?.[i];
+      if (blade) {
+        blade.quaternion.copy(_qa);
+        blade.position.set(0, -ANKLE_H * s - 0.0175, 0.053 * s).applyQuaternion(_qa).add(ankle);
+      }
     }
   }
 

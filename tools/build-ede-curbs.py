@@ -10,7 +10,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from shapely import constrained_delaunay_triangles, make_valid, union_all
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import GeometryCollection, LineString, Polygon
 from shapely.ops import split
 
 from ede_curb_rollout import municipal_profiles, split_top
@@ -112,6 +112,39 @@ def osm_kerbs(files):
                     element.clear()
     return {key: dict(sorted(Counter(tags[key] for tags in nodes.values() if key in tags).items()))
             for key in ('kerb', 'kerb:height', 'tactile_paving')}
+
+
+def reviewed_crossing_islands(review, inventory, crossings, defaults, profiles):
+    counts = Counter()
+    support = set()
+    for site in review['sites']:
+        counts['level'] += len(site['level'])
+        counts['unresolved'] += len(site['unresolved'])
+        if not site['raised']:
+            continue
+        approaches = [crossings[key] for key in site['crossings']]
+        assert all(c['layer'] == 0 and not c.get('bridge') and not c.get('tunnel') for c in approaches)
+        openings = union_all([LineString(c['ends']).buffer(c['length'] / 2 + 0.25) for c in approaches])
+        for id_ in site['raised']:
+            row = inventory[id_]
+            assert row['layer'] == 0 and row['function'] == 'verkeerseiland' and id_ not in profiles
+            caps = []
+            for rings in row['polygons']:
+                shape = make_valid(polygon(rings))
+                # A separate cap has a curb across its full footprint. Only cut a taper
+                # where the mapped crossing comes to its edge or enters the same shape.
+                low = openings if shape.distance(openings) <= 0.1 else GeometryCollection()
+                top = split_top(shape, low, defaults['municipalRampRun'], defaults['island'], defaults['roadLift'])
+                if top is None:
+                    raise ValueError(f'Reviewed island no longer leaves room for its crossing: {id_}')
+                caps.append(top)
+            profiles[id_] = caps
+            counts['raised'] += 1
+        for crossing in approaches:
+            a, b = crossing['ends']
+            support.add((round((a[0] + b[0]) / 2, 2), round((a[1] + b[1]) / 2, 2),
+                         round(hypot(b[0] - a[0], b[1] - a[1]) / 2 + 8, 2)))
+    return counts, support
 
 
 def main():
@@ -251,8 +284,15 @@ def main():
               'sites': baked_sites, 'profiles': profiles, 'driveways': driveways, 'gradeProfiles': grade_profiles, 'tactile': tactile,
               'paintGaps': paint_gaps}
     municipal = None
+    island_review_counts = None
     if args.municipal:
+        island_support = set()
+        if 'islandCrossingReview' in review:
+            island_review = json.loads((args.review.parent / review['islandCrossingReview']).read_text())
+            island_review_counts, island_support = reviewed_crossing_islands(
+                island_review, inventory, crossings, defaults, profiles)
         additions, municipal = municipal_profiles(ASSETS, paving, street, result, defaults, include_locations=bool(args.audit))
+        additions['transitionSites'] = sorted(set(additions['transitionSites']) | island_support)
         result.update(additions, version=2)
     # Junction support circles keep openings level without reserving unrelated nearby paving.
     baked_sites.extend([*site['center'], site['radius']] for site in review['sites'] if 'junctionIslands' in site)
@@ -265,6 +305,7 @@ def main():
         'fitted': dict(sorted(counts.items())),
         'existingGradeContacts': len(grade_profiles),
         'municipal': municipal,
+        'crossingIslandReview': island_review_counts,
         'heightSources': {'measured': 0, 'default': len(profiles) + (municipal or {}).get('fittedParts', 0),
                           'existingTableEstimate': 1},
         'unresolved': [site['id'] for site in review['sites'] if 'review' in site],

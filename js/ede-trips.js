@@ -1,12 +1,22 @@
 import { CAR, VAN, BUS, MOTOR, VEHICLE_CLEARANCE, fitsRoad } from './road-access.js?v=20261122-startup';
 import { localClock, weekday } from './ede-transit-time.js';
 import { indexLocalRoads } from './traffic-area.js';
+import { EDE_WHITE_BIKE_SITES } from './ede-white-bike-sites.js';
+import { whiteBikePath, whiteBikeTrack } from './ede-white-bike-traffic.js';
 
 // Separate public approaches keep a station or square from attracting vehicles to a bus-only or walking surface.
 const destinations = [
-  { id:'grotestraat', kind:'shops', foot:[-61,51,0], bike:[-75,-155,0], road:[43,-53,0] },
-  { id:'markt', kind:'shops', foot:[-119,-53,0], bike:[-190,-83,0], road:[-42.3,-136.9,0], parking:'q-park-markt' },
-  { id:'kuiperplein', kind:'parking', foot:[-213,115,0], bike:[-254,128,0], road:[-251.8,129.5,0], parking:'kuiperplein' },
+  { id:'grotestraat', kind:'shops', foot:[-61,51,0], bike:[-75,-155,0], road:[43,-53,0], zone:'centrum' },
+  { id:'markt', kind:'shops', foot:[-119,-53,0], bike:[-190,-83,0], road:[-42.3,-136.9,0], parking:'q-park-markt', zone:'centrum' },
+  { id:'kuiperplein', kind:'parking', foot:[-213,115,0], bike:[-254,128,0], road:[-251.8,129.5,0], parking:'kuiperplein', zone:'centrum' },
+  { id:'astrant', kind:'nightlife', foot:[-184,102,0], bike:[-254,128,0], zone:'centrum' },
+  { id:'museumplein', kind:'nightlife', foot:[-195,248,0], bike:[-214,300,0], zone:'centrum' },
+  { id:'raadhuis', kind:'work', foot:[247,24,0], bike:[189,31,0], road:[191,32,0] },
+  { id:'ziekenhuis-gelderse-vallei', kind:'work', foot:[-1666,2595,0], bike:[-1666,2595,0],
+    road:[-1636,2838,0], parking:'ziekenhuis-gelderse-vallei' },
+  { id:'hoekelum', kind:'recreation', foot:[452,3373,0] },
+  { id:'sportpark-hoekelumse-eng', kind:'recreation', foot:[-166,3558,0], bike:[-166,3558,0] },
+  { id:'ginkelse-heide', kind:'recreation', foot:[4286,1019,0], bike:[4286,1019,0], zone:'ginkelse-heide' },
   { id:'station', kind:'station', foot:[180,2121,0], bike:[94,2036,0], road:[192.9,2305.3,0], parking:'ede-wageningen-pr' },
   { id:'bospoort-homes', kind:'homes', foot:[-69,-332,0], bike:[-71,-258,0], road:[-73,-344,0] },
   { id:'bergstraat-homes', kind:'homes', foot:[300,50,0], bike:[293,-13,0], road:[306,45,0] },
@@ -136,7 +146,7 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, bike
   const eligible=network.edges.filter(e=>e.ambientLanes?.length || e.vanLanes?.length);
   const nearRoad=indexLocalRoads(eligible,[]);
   const objectIds=new WeakMap(), cache=new Map();
-  let nextId=0, wallAt=-Infinity, profile=weights.daytime, frame=-Infinity, plans=0;
+  let nextId=0, wallAt=-Infinity, profile=weights.daytime, frame=-Infinity, plans=0, activity=null;
   const stats={road:{started:0,arrived:0,failed:0,rerouted:0}, bike:{started:0,arrived:0,failed:0},
     foot:{started:0,arrived:0,failed:0}, destinations:{}, bus:{rerouted:0,failed:0}};
 
@@ -153,13 +163,13 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, bike
     return { at,x:px,z:pz,d:sq(x,z,px,pz) };
   }
 
-  function bake(place, kind) {
+  function bake(place, kind, filter) {
     const coord=place[kind];
     if (!coord) return [];
     const [x,z,layer]=coord, candidates=[];
     if (kind==='road') nearRoad(x,z,56,candidates,[]);
-    else network.activeTravel?.[kind==='bike'?'bikes':'foot'](x,z,kind==='bike'?70:48,candidates);
-    const ranked=candidates.filter(value=>(value.layer??0)===layer && !value.crossing && !value.noSpawn && !value.underpass)
+    else network.activeTravel?.[kind==='bike'?'bikes':'foot']?.(x,z,kind==='bike'?70:48,candidates);
+    const ranked=candidates.filter(value=>(value.layer??0)===layer && !value.crossing && !value.noSpawn && !value.underpass && (!filter || filter(value)))
       .map(value=>({ ...projected(value,x,z,kind==='road'),
         ...(kind==='road' ? {edge:value} : {track:value}) }))
       .sort((a,b)=>a.d-b.d);
@@ -174,10 +184,38 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, bike
   }
   const hubs=places.map(place=>({...place, anchors:{ road:bake(place,'road'),bike:bake(place,'bike'),foot:bake(place,'foot') }}));
   const parkingHubs=bikeParking.map(({bikeAnchors,...place})=>({...place, anchors:{bike:bikeAnchors}}));
+  const parkBikeHubs = EDE_WHITE_BIKE_SITES.map(({ id, approach, entrance }) => ({
+    id, entrance, parkBike: true, anchors: { bike: bake({ bike: [approach.x, approach.z, 0] }, 'bike', whiteBikeTrack) },
+  })).filter(hub => hub.anchors.bike.length);
 
-  function updateClock(clock, now=Date.now()) {
+  function updateClock(clock, now=Date.now(), nextActivity=null) {
     if (clock!==frame) {frame=clock;plans=0;}
+    activity=nextActivity;
     if (now<wallAt || now>=wallAt+30000) {wallAt=now;profile=destinationWeights(now);}
+  }
+
+  function weightFor(hub, kind) {
+    if (!activity) return profile[hub.kind] ?? 0;
+    const {minute, weekday, holiday, schoolHoliday, morning, afternoon, market, nightlife,
+      recreation, centrumEvent, heideEvent} = activity;
+    const weekend = weekday === 0 || weekday === 6 || holiday;
+    const base = minute < 360 || minute >= 1320 ? weights.night :
+      morning ? weights.morning : afternoon ? weights.afternoon :
+      minute < 870 ? weights.daytime : weights.evening;
+    switch (hub.kind) {
+      case 'school': return weekend || schoolHoliday ? 0 : base.school;
+      case 'station': return weekend ? base.station * .65 : base.station;
+      case 'homes': return afternoon ? 3.2 : base.homes;
+      case 'work': return morning ? (schoolHoliday ? 1.8 : 2.8) : weekend ? 0 : .35;
+      case 'shops':
+        if (kind !== 'road' && centrumEvent && hub.zone === 'centrum') return 6;
+        return market && hub.id === 'markt' ? (kind === 'road' ? 3.1 : 6) : base.shops;
+      case 'nightlife': return nightlife || centrumEvent ? 5.5 : 0;
+      case 'recreation':
+        if (heideEvent && hub.zone === 'ginkelse-heide') return 6;
+        return recreation ? 3.5 : 0;
+      default: return base[hub.kind] ?? 0;
+    }
   }
 
   function tryBudget(urgent=false) {
@@ -193,18 +231,22 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, bike
       if (!candidates.length) return [];
       const distance=Math.sqrt(sq(x,z,candidates[0].x,candidates[0].z));
       if (!preferred && (distance<31 || distance>miles[kind])) return [];
-      const weight=(profile[hub.kind]??0)/(1+distance*0.004);
+      const weight=weightFor(hub,kind)/(1+distance*0.004);
       return weight>0 || preferred ? [{hub,weight:weight||1}] : [];
     });
     if (kind==='bike' && !preferred) {
       const nearby = parkingHubs.flatMap(hub => {
         const {x:px,z:pz}=hub.anchors.bike[0];
-        const distance=Math.hypot(x-px,z-pz), weight=profile[hub.kind]??0;
+        const distance=Math.hypot(x-px,z-pz), weight=weightFor(hub,kind);
         return distance>=31 && distance<=miles.bike && weight>0
           ? [{hub,distance,weight:weight*.65/(1+distance*.004)}] : [];
       });
       choices.push(...nearby.sort((a,b)=>a.distance-b.distance).slice(0,4));
     }
+    return pick(choices, plan);
+  }
+
+  function pick(choices, plan) {
     for (let tried=0; choices.length && tried<3; tried++) {
       let draw=random()*choices.reduce((sum,item)=>sum+item.weight,0);
       let index=choices.findIndex(item=>(draw-=item.weight)<0);
@@ -265,7 +307,8 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, bike
     if (cached===null && !goal.has(track)) return null;
     if (cached && (cached.steps.length || onCurrentPath(cached.goal,dir))) return cached;
     const route=search({track,dir}, {
-      budget:kind==='foot'?105:145, range:kind==='foot'?620:850,
+      budget: hub.parkBike ? 950 : kind === 'foot' ? 105 : 145,
+      range: hub.parkBike ? 12500 : kind === 'foot' ? 620 : 850,
       identify:row=>id(row.track)+'/'+row.dir,
       target: (row,moved) => {
         const picked=goal.get(row.track);
@@ -279,7 +322,7 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, bike
         const options=row.track.links?.[row.dir>0?1:0]??[];
         return options.flatMap(legs=>{
           const last=legs.at(-1);
-          if (!last || !last.track.allowed?.[last.dir>0?0:1]) return [];
+          if (!last || !last.track.allowed?.[last.dir>0?0:1] || (hub.parkBike && !whiteBikePath(legs))) return [];
           const length=legs.reduce((sum,leg)=>sum+leg.track.len,0);
           return [{track:last.track,dir:last.dir,cost:length+1,step:{from:row.track,dir:row.dir,legs}}];
         });
@@ -302,11 +345,32 @@ export function createEdeTrips(network, roadTraffic, { places=destinations, bike
     return route;
   }
 
+  function parkBike(track, dir, at, returning) {
+    if (!whiteBikeTrack(track) || !tryBudget()) return null;
+    const x = track.ax + track.ux * at, z = track.az + track.uz * at;
+    const choices = parkBikeHubs.filter(hub => Boolean(hub.entrance) === returning).flatMap(hub => {
+      const anchor = hub.anchors.bike[0];
+      const distance = Math.hypot(anchor.x - x, anchor.z - z);
+      if (distance < 95 || (hub.id === 'white-bike-kroller-muller' && activity?.weekday === 1 && !activity.holiday)) return [];
+      const lunch = activity?.minute >= 660 && activity.minute < 840 && hub.id === 'white-bike-marchantplein';
+      return [{ hub, weight: (lunch ? 2.4 : 1) / (1 + distance / 1800) }];
+    });
+    const route = pick(choices, hub => {
+      const forward = activePlan('bike', track, dir, at, hub);
+      if (forward) return { ...forward, startDir: dir };
+      if (!track.allowed?.[dir > 0 ? 1 : 0]) return null;
+      const reverse = activePlan('bike', track, -dir, at, hub);
+      return reverse && { ...reverse, startDir: -dir };
+    });
+    if (route) stats.bike.started++;
+    return route;
+  }
+
   function finished(kind, trip) {
     stats[kind].arrived++;
     const counts=(stats.destinations[trip.hub.id]??={road:0,bike:0,foot:0});
     counts[kind]++;
   }
 
-  return { hubs, stats, updateClock, road, busDetour, active, finished };
+  return { hubs, stats, updateClock, road, busDetour, active, parkBike, finished };
 }

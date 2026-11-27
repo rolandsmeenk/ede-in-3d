@@ -7,6 +7,7 @@ export const EDE_BIKE_STYLES = [
   { id: 'ebike', label: 'City e-bike', color: 0x3b6691, radius: 0.355, tireWidth: 0.047 },
   { id: 'fatbike', label: 'Fatbike', color: 0x955939, radius: 0.318, tireWidth: 0.104 }
 ];
+export const EDE_WHITE_BIKE_STYLE = { id: 'white-bike', color: 0xf2f0e9, radius: 0.354, tireWidth: 0.045 };
 export const EDE_MOUNTAIN_BIKE_STYLE = { id: 'mountainbike', color: 0x597650, radius: 0.37, tireWidth: 0.061 };
 
 // Keep the rider's contact points and wheelbase aligned for the player and instanced traffic.
@@ -145,6 +146,7 @@ export function buildEdeBike(style, detailed = false) {
   const lampRadius = fat ? 0.050 : 0.024;
   const bridgeWidth = tireWidth / 2 + 0.018;
   tube(fork, [-bridgeWidth, 0.68, 0.466], [bridgeWidth, 0.68, 0.466], 0.011, trim);
+  if (id === 'white-bike') return { body: mergeGeometries(body), fork: mergeGeometries(fork), wheel: mergeGeometries(wheel) };
   if (mountain) {
     add(body, new THREE.SphereGeometry(0.128, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.54)
       .scale(1, 0.86, 1.22).translate(0, 1.613, 0.086), 0xe0ddc7);

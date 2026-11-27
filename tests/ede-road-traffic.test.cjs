@@ -47,6 +47,8 @@ test('measurements and temporary controls stay directional, smooth, and expire i
   assert.ok(traffic.cruise(east, 12) < 10);
   assert.equal(traffic.cruise(west, 12), 12);
   assert.ok(traffic.demand(east) < traffic.demand(west));
+  assert.equal(traffic.demand(east, .22), traffic.demand(east));
+  assert.equal(traffic.demand(west, .22), .22);
   now += 40000;
   traffic.refresh();
   assert.equal(Math.round(traffic.limit(east) * 3.6), 50);
@@ -57,6 +59,7 @@ test('measurements and temporary controls stay directional, smooth, and expire i
   assert.ok(retiringSpeed < 12);
   assert.equal(traffic.cruise(east, 12), 12);
   assert.equal(traffic.demand(east), traffic.demand(west));
+  assert.equal(traffic.demand(east, .22), .22);
 });
 
 test('a long road contributes only its local clipped length and spawn choices follow area weight', async () => {

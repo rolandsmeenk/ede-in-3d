@@ -204,13 +204,14 @@ export function terrainHeightAt(x, z, context) {
   return sampleTerrain(getTerrainPatch(x, z, localPatches) ?? town, x, z);
 }
 
-function cropTerrain(field, [west, north, east, south]) {
+function cropTerrain(field, [west, north, east, south], smoothGround) {
   if (!field) return null;
   const { columns, rows, minX, minZ, step, heights } = field;
+  const padding = smoothGround ? step / 2 : 0;
   const start = (value, origin, count) => Math.min(count - 2, Math.max(0, Math.floor((value - origin) / step)));
   const end = (value, origin, count) => start(value, origin, count) + 1;
-  const columnOffset = start(west, minX, columns), rowOffset = start(north, minZ, rows);
-  const columnEnd = end(east, minX, columns), rowEnd = end(south, minZ, rows);
+  const columnOffset = start(west - padding, minX, columns), rowOffset = start(north - padding, minZ, rows);
+  const columnEnd = end(east + padding, minX, columns), rowEnd = end(south + padding, minZ, rows);
   const stride = columnEnd - columnOffset + 1;
   const plain = Array.isArray(heights);
   const HeightArray = plain ? Float64Array : heights.constructor;
@@ -223,17 +224,17 @@ function cropTerrain(field, [west, north, east, south]) {
   return { ...field, columnOffset, rowOffset, stride, heights: local };
 }
 
-export function captureTerrainContext(bounds) {
+export function captureTerrainContext(bounds, smoothGround = false) {
   const [west, north, east, south] = bounds;
   const seamBounds = [west - 5, north - 5, east + 5, south + 5];
   const overlaps = field => field && field.minX <= east && field.maxX >= west && field.minZ <= south && field.maxZ >= north;
   return {
-    terrain: cropTerrain(terrain, seamBounds),
-    patches: patches.filter(overlaps).map(patch => cropTerrain(patch, bounds)),
+    terrain: cropTerrain(terrain, seamBounds, smoothGround),
+    patches: patches.filter(overlaps).map(patch => cropTerrain(patch, bounds, smoothGround)),
     expansion: expansion ? {
-      field: cropTerrain(expansion.field, seamBounds),
-      detail: overlaps(expansion.detail) ? cropTerrain(expansion.detail, bounds) : null,
-      overviewField: cropTerrain(expansion.overviewField, bounds),
+      field: cropTerrain(expansion.field, seamBounds, smoothGround),
+      detail: overlaps(expansion.detail) ? cropTerrain(expansion.detail, bounds, smoothGround) : null,
+      overviewField: cropTerrain(expansion.overviewField, bounds, smoothGround),
     } : null,
   };
 }

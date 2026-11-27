@@ -170,6 +170,7 @@ export class ParkingDemand {
     this.readings = new Map();
     this.overrides = new Map();
     this.pending = new Map();
+    this.activity = null;
     for (const facility of facilities) {
       const areaId = facility.areaId ?? facility.id;
       const zone = this.zones.get(areaId);
@@ -242,12 +243,19 @@ export class ParkingDemand {
   }
 
   context(now) {
-    return {now, time: cityTime(now), profiles: new Map()};
+    return {now, time: cityTime(now), profiles: new Map(), activity: this.activity};
   }
 
   profile(area, context) {
     if (context.profiles.has(area)) return context.profiles.get(area);
     let profile = zoneProfile(area, context.time);
+    if (profile.source === 'inferred' && context.activity) {
+      if (area.kind === 'station' && context.activity.holiday) profile.fraction *= .60;
+      if (area.kind === 'shopping') {
+        const point = position(area) ? area : area.slots[0]?.space;
+        if (point) profile.fraction = Math.min(.98, profile.fraction + context.activity.parking(point.x, point.z));
+      }
+    }
     const rules = area.facility?.rules ?? area.rules;
     if (rules?.open24h) profile.open = true;
     const reading = this.readings.get(area.facility?.id);
@@ -303,7 +311,8 @@ export class ParkingDemand {
     return slot ? this.spaceState(slot, this.context(now)) : null;
   }
 
-  refresh({x, z, radius, now = Date.now(), limit = 12, canManeuver}) {
+  refresh({x, z, radius, now = Date.now(), limit = 12, canManeuver, activity = null}) {
+    this.activity = activity;
     const context = this.context(now);
     const states = [];
     const arrivals = [];

@@ -477,7 +477,8 @@ body.hud-minimized .toolbar > :not(#btn-toggle-hud) {
 
 .environment-settings[hidden] { display: none; }
 
-.environment-settings select {
+.environment-settings select,
+.environment-settings input {
   width: 100%;
   min-height: 34px;
   padding: 3px 7px;
@@ -488,6 +489,39 @@ body.hud-minimized .toolbar > :not(#btn-toggle-hud) {
   background: #242b33;
   font: inherit;
 }
+
+.environment-settings input { min-width: 0; }
+
+.preview-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 6px;
+}
+
+.preview-actions .pop-item,
+.agenda-actions .pop-item {
+  width: auto;
+  min-height: 36px;
+  border: 1px solid var(--divider);
+}
+
+.preview-actions .pop-item[hidden],
+#environment-preview-status:empty { display: none; }
+
+#agenda-popover { width: min(350px, calc(100vw - 16px)); }
+
+.agenda-list {
+  margin: 0;
+  padding: 0 8px 2px;
+  list-style: none;
+}
+
+.agenda-list li { padding: 10px 0; }
+.agenda-list li + li { border-top: 1px solid var(--divider); }
+.agenda-list h3 { margin: 0 0 4px; font-size: 14px; }
+.agenda-list p { margin: 0 0 8px; color: var(--text-2); font-size: 12px; }
+.agenda-actions { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.agenda-actions a { color: var(--text-2); font-size: 12px; }
 
 .environment-summary {
   grid-column: 1 / -1;
@@ -678,8 +712,6 @@ body.hud-minimized .icon-show {
 }
 
 @media (min-width: 768px) and (min-height: 480px) {
-  #teleport-popover { width: 560px; }
-  .teleport-destinations { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .teleport-destinations .teleport-extra:not([hidden]) { display: flex; }
 }
 

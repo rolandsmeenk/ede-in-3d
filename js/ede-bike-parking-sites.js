@@ -1,6 +1,7 @@
 import { EDE_SCHOOL_LANDMARKS } from './ede-school-survey.js';
 import { EDE_SHOPS } from './ede-shops.js';
 import { EDE_SPORT_LANDMARKS } from './ede-sport-landmark-survey.js';
+import { EDE_WHITE_BIKE_SITES } from './ede-white-bike-sites.js';
 
 // OpenStreetMap contributors, ODbL. Geofabrik Gelderland extract, 2026-11-20.
 // Row endpoints and counts are fitted samples inside the mapped parking ways.
@@ -32,6 +33,35 @@ const outdoorSites = [
       ['w1308852211', 25, 1978.6, 57, 1988.0, 23],
       ['w1308852211', 19, 1985.1, 55, 1995.7, 25],
       ['w1308852211', 16, 1991.5, 53, 2002.4, 25],
+    ] },
+  // OpenStreetMap, 2026-11-26, and 2026 PDOK aerial imagery show the banks and their access aisles.
+  { id: 'veenendaal-de-klomp-noord', name: 'Veenendaal-De Klomp · Stationsplein', kind: 'station',
+    access: 'public', mappedAccess: 'unknown', rows: [
+      ['w587850941', -6732.5, -12.0, -6709.6, -5.3, 16],
+      ['w587850941', -6732.5, -9.0, -6709.6, -2.3, 16],
+      ['w587850941', -6732.7, -6.2, -6711.0, 0.2, 15],
+    ] },
+  { id: 'veenendaal-de-klomp-zuid', name: 'Veenendaal-De Klomp · South side', kind: 'station',
+    access: 'public', mappedAccess: 'public', reportedCapacity: 1240, rows: [
+      ['w219897247', -6747.4, 26.0, -6738.2, 28.7, 7],
+      ['w219897247', -6749.0, 30.4, -6739.4, 33.2, 7],
+      ['w219897247', -6750.1, 34.2, -6740.5, 37.0, 7],
+      ['w219897247', -6733.3, 30.1, -6717.1, 34.9, 12],
+      ['w219897247', -6734.4, 34.3, -6718.3, 39.0, 12],
+      ['w219897247', -6735.5, 38.2, -6719.5, 42.9, 12],
+      ['w219897247', -6713.5, 36.6, -6697.4, 41.2, 12],
+      ['w219897247', -6714.5, 40.4, -6698.1, 45.2, 12],
+      ['w219897247', -6715.7, 44.6, -6700.1, 49.2, 11],
+      ['w219897247', -6688.3, 47.8, -6676.8, 51.1, 8],
+      ['w219897247', -6689.1, 51.5, -6678.0, 54.8, 8],
+      ['w219897247', -6690.4, 55.4, -6679.2, 58.7, 8],
+      ['w219897247', -6673.4, 52.1, -6663.0, 55.2, 7],
+      ['w219897247', -6674.4, 55.9, -6664.1, 59.0, 7],
+      ['w219897247', -6675.5, 59.8, -6665.4, 62.8, 7],
+    ] },
+  { id: 'veenendaal-de-klomp-stationsweg', name: 'Veenendaal-De Klomp · Stationsweg', kind: 'station',
+    access: 'public', mappedAccess: 'unknown', rows: [
+      ['n14383905464', -6795.5, 22.1, -6790.8, 23.4, 5],
     ] },
   { id: 'ede-centrum', name: 'Station Ede Centrum', kind: 'station', access: 'public', mappedAccess: 'unknown', rows: [
     ['w1067217195', -258.8, 359.3, -265.3, 370.1, 9],
@@ -146,7 +176,8 @@ export function buildEdeBikeParkingSites(features = [], { placementAt, canPlace 
     sites.push(site);
   }
 
-  for (const { rows, source = 'osm', standType = 'stands', ...site } of outdoorSites) {
+  const whiteBikeSites = EDE_WHITE_BIKE_SITES.map(({ id, name, rows, entrance }) => ({ id, name, rows, entrance, kind: 'white-bike' }));
+  for (const { rows, source = 'osm', standType = 'stands', ...site } of [...outdoorSites, ...whiteBikeSites]) {
     const slots = [];
     for (const [index, [sourceId, x, z, endX, endZ, count]] of rows.entries()) {
       const dx = endX - x, dz = endZ - z, angle = Math.atan2(-dz, dx);

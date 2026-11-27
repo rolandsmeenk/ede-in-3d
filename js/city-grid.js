@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { SCHAARSBERGEN_RACK_PAD } from './ede-white-bike-sites.js';
 import { color, mix, texture } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ISLAND_BOUNDS, blockAt, containsPlayablePoint, EDE_DATA, nearestRoads, pointInPoly, waterAt } from './city-config.js';
@@ -125,11 +126,11 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       addSurveyedPaving({ ...data, material: data.material === 'mapped' ? data.style : data.material }, target);
       return;
     }
-    const { pieces, rise, wayId, material, style, angle, segment } = data;
+    const { pieces, rise, wayId, material, style, angle, segment, smoothGround } = data;
     const geometries = pieces.map(piece => edePolygonGeometry(typeof piece[0] === 'number' ? edePoints(piece) : piece, [], rise));
     const joined = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
     if (geometries.length > 1) geometries.forEach(geometry => geometry.dispose());
-    const geometry = drapeEdeSurface(joined, true, wayId);
+    const geometry = drapeEdeSurface(joined, true, wayId, false, undefined, undefined, false, smoothGround);
     if (material === 'mapped') {
       const position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
       const styles = new Float32Array(position.count).fill(style);
@@ -154,7 +155,8 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
 
   function preparePavingTile(tile) {
     const bounds = { minX: tile.minX - 0.01, minZ: tile.minZ - 0.01, maxX: tile.maxX + 0.01, maxZ: tile.maxZ + 0.01 };
-    const context = captureTerrainContext([bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ]);
+    const smoothGround = tile.jobs.some(({ data }) => data.smoothGround);
+    const context = captureTerrainContext([bounds.minX, bounds.minZ, bounds.maxX, bounds.maxZ], smoothGround);
     const aerialColors = getAerialColors();
     const ground = [captureGroundColor(aerialColors?.ground, bounds), captureGroundColor(aerialColors?.expansion, bounds)];
     const sections = new Map();
@@ -275,6 +277,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   }
   const baseParks = baseParkCount ?? EDE_DATA.parks?.length ?? 0;
   const scenery = [...(EDE_DATA.parks || []), ...(EDE_DATA.squares || [])];
+  if (EDE_DATA.meta.fullMunicipality) scenery.push({ kind: 'square', ring: SCHAARSBERGEN_RACK_PAD });
   for (const [index, park] of scenery.entries()) {
     // Aerial terrain supplies the natural ground in the expansion.
     if (index >= baseParks && index < EDE_DATA.parks.length
@@ -282,9 +285,10 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     if (!park.ring || park.ring.length < 6 || park.kind === 'pitch' && replacedPitches?.has(park.id)) continue;
     const ring = edePoints(park.ring), holes = (park.holes || []).map(edePoints);
     const paved = ['square', 'pedestrian', 'plaza'].includes(park.kind);
+    const sand = park.id === 'w572342371';
     const geometry = drapeEdeSurface(edePolygonGeometry(ring, holes, paved ? 0.05 : 0.045),
-      true, undefined, false, undefined, shorelineCuts);
-    if (park.id === 'w572342371') collectPaving(geometry, 'sand', 0);
+      true, undefined, false, undefined, shorelineCuts, false, !paved);
+    if (sand) collectPaving(geometry, 'sand', 0);
     else {
       if (paved) setPavingStyle(geometry, 2);
       collect(geometry, paved ? pavingMat : lawnMat);
@@ -307,10 +311,10 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   let mappedPavingCount = 0;
   const surveyedPaving = getEdeRoadSurfaces();
   const fringeSurfaces = new Set(surveyedPaving.fringeSurfaces);
-  function addSurveyedPaving({ outer, holes, material, angle, motor, top, tactile }, target) {
+  function addSurveyedPaving({ outer, holes, material, angle, motor, top, tactile, smoothGround }, target) {
     const ramp = Array.isArray(top);
     const flat = ramp ? curbTopGeometry(THREE, top) : edePolygonGeometry(edePoints(outer), holes.map(edePoints), top ?? 0.065);
-    const geometry = drapeEdeSurface(flat, true, undefined, true, undefined, undefined, ramp);
+    const geometry = drapeEdeSurface(flat, true, undefined, true, undefined, undefined, ramp, smoothGround);
     if (top) {
       const local = localGradeSurface(null, edeBounds(edePoints(outer)));
       collect(curbFaceGeometry(THREE, geometry, outer, holes,
@@ -325,10 +329,11 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     const { layer, material, angle, polygons, function: use } = surface;
     if (layer !== 0) continue;
     const motor = use.startsWith('rijbaan ') || ['ov-baan', 'verbindingsweg', 'overweg', 'verkeersdrempel', 'woonerf'].includes(use);
+    const smoothGround = material === 'sand' || material === 'gravel';
     for (const [index, [outer, ...holes]] of polygons.entries()) {
       const top = curbGeometryFor(surface.id, index);
       const tactile = index === 0 ? curbTactileFor(surface.id) : undefined;
-      const entry = { outer, holes, material, angle, motor, top, tactile };
+      const entry = { outer, holes, material, angle, motor, top, tactile, smoothGround };
       if (compact || EDE_DATA.meta.fullMunicipality || fringeSurfaces.has(surface)) {
         const bounds = { minX: Infinity, minZ: Infinity, maxX: -Infinity, maxZ: -Infinity };
         for (let i = 0; i < outer.length; i += 2) {
@@ -521,13 +526,14 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
       const signedTrail = EDE_MTB_WAYS.has(s.road.id) && /^(path|track)$/.test(s.road.kind);
       const { kind } = surface;
       const material = kind === 'sidewalk' ? 'tile' : osmRoadMaterial(s.road) ?? (naturalTrail || signedTrail ? 'sand' : undefined);
+      const smoothGround = material === 'sand' || material === 'gravel' || (!material && kind === 'path');
       const tintSource = kind === 'sidewalk' ? undefined : s;
       const build = target => {
         const geometries = pieces.map(piece => edePolygonGeometry(piece, [], pavementHeight[kind]));
         // Keep each segment batched even when clipping splits it into several fragments.
         const joined = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
         if (geometries.length > 1) geometries.forEach(geometry => geometry.dispose());
-        const geometry = drapeEdeSurface(joined, true, s.road.id);
+        const geometry = drapeEdeSurface(joined, true, s.road.id, false, undefined, undefined, false, smoothGround);
         if (material) collectPaving(geometry, material, Math.atan2(s.uz, s.ux), tintSource, undefined, target);
         else if (kind === 'road') collect(geometry, roadMat, s, undefined, target);
         else {
@@ -551,7 +557,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
           return flat;
         });
         pavingTiles.add(bounds, null, { bounds, pieces: packedPieces, rise: pavementHeight[kind], wayId: s.road.id,
-          material: batch, style: material ? EDE_PAVING_STYLE[material] : cycleway ? 0 : 2,
+          material: batch, style: material ? EDE_PAVING_STYLE[material] : cycleway ? 0 : 2, smoothGround,
           angle: Math.atan2(s.uz, s.ux), segment: material || kind === 'road' || kind === 'path' && cycleway ? tintSource : null });
       } else build(collections);
     }

@@ -1,0 +1,874 @@
+{
+  "reviewedOn": "2026-11-27",
+  "footprints": "BGT as shipped in the five paving packs",
+  "imageryYear": 2026,
+  "height": "estimated using the configurable island default",
+  "sites": [
+    {
+      "name": "De Klomp / Hoofdweg / Rijksweg / Stationsweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=941&HEIGHT=850&BBOX=52.0478925062%2C5.5735926922%2C52.0485867243%2C5.5748423879",
+      "crossings": [
+        "osm-crossing-n1307472539",
+        "osm-crossing-n1745738910",
+        "osm-crossing-n1111362065",
+        "osm-crossing-n1745738989",
+        "osm-crossing-n273508320",
+        "osm-crossing-n1111398365",
+        "osm-crossing-n1745738911",
+        "osm-crossing-n1745738936"
+      ],
+      "raised": [
+        "P0025.1425fc1cfe884333ab998e115aeff5f3",
+        "P0025.47cfd02e31e34058b63915c7ff0f2a7b",
+        "P0025.4acd5eab9bad4dc6831af6bb1a9362cc",
+        "P0025.551ec96fda0148d5807135470288e4c2",
+        "P0025.700cb660109e44c2a607b8f0af572450",
+        "P0025.834914c273db494fb3739348113f28f0",
+        "P0025.93dea2be06b54980a2df92f280fa3023",
+        "P0025.d2afff15785d4498a0697a40ab76ef41",
+        "P0025.f5e7d0bd9b1345f9be5508b24b829b0c"
+      ],
+      "level": {},
+      "unresolved": {
+        "P0025.3ed82d7f81594842a401cf55d59c8cab": "Shadows or pale tapers obscure the curb edge."
+      }
+    },
+    {
+      "name": "Argonstraat / Heremeijesteeg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=740&HEIGHT=864&BBOX=52.0451270426%2C5.6132398571%2C52.0458330286%2C5.6142218234",
+      "crossings": [
+        "osm-crossing-n270769329",
+        "osm-crossing-n9225433804",
+        "osm-crossing-n273508434",
+        "osm-crossing-n9225433795",
+        "osm-crossing-n293185274"
+      ],
+      "raised": [
+        "P0025.046fb15dc9b54a64b241dfcc19459876",
+        "P0025.3d6ac89f03fb4cf68f66311691dc615e",
+        "P0025.4902310cd8c74bbaa01be55cceb5bc30",
+        "P0025.f1efb1d889ff40debf953563aa5af9c5"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Dorpsstraat",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=534&HEIGHT=542&BBOX=52.0826487737%2C5.6223422162%2C52.0830916431%2C5.6230516332",
+      "crossings": [
+        "osm-crossing-n5048273281"
+      ],
+      "raised": [
+        "G0228.fe246f4a580dd6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f4a580ad6d6e0400a0a35020533": "Shadows or pale tapers obscure the curb edge."
+      }
+    },
+    {
+      "name": "Galvanistraat",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=553&HEIGHT=517&BBOX=52.0334499321%2C5.6226093613%2C52.0338722301%2C5.6233440468",
+      "crossings": [
+        "osm-crossing-n4764548042"
+      ],
+      "raised": [
+        "G0228.0e884a99da864f35a2333bcc29c59744",
+        "G0228.cfdc853b2ccb49c7963bf270fc43fed6",
+        "G0228.dae04a083c1a40dda4356c4391656cd7"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Laan der Verenigde Naties",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=646&HEIGHT=810&BBOX=52.0215407867%2C5.6341807311%2C52.0222019467%2C5.6350383998",
+      "crossings": [
+        "osm-crossing-n12255712020",
+        "osm-crossing-n12255712021"
+      ],
+      "raised": [
+        "G0228.fe246f565477d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f2d954fd6d6e0400a0a35020533": "Shadows or pale tapers obscure the curb edge.",
+        "G0228.fe246f565478d6d6e0400a0a35020533": "Shadows or pale tapers obscure the curb edge.",
+        "G0228.fe246f56547bd6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f56547dd6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening."
+      }
+    },
+    {
+      "name": "Laan der Verenigde Naties",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=519&HEIGHT=500&BBOX=52.0228736171%2C5.6350204343%2C52.0232823505%2C5.6357091107",
+      "crossings": [
+        "osm-crossing-n4359135270"
+      ],
+      "raised": [
+        "G0228.fe246f2d9560d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Attleedreef / Laan der Verenigde Naties / Professor Oudpark",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=935&HEIGHT=951&BBOX=52.0230502258%2C5.6378082956%2C52.0238265499%2C5.6390502501",
+      "crossings": [
+        "osm-crossing-n12255712005",
+        "ndw-vop-34046",
+        "ndw-vop-45781",
+        "ndw-vop-47908",
+        "ndw-vop-47909",
+        "osm-crossing-n6199031170"
+      ],
+      "raised": [
+        "G0228.fe246f2db985d6d6e0400a0a35020533",
+        "G0228.fe246f2db997d6d6e0400a0a35020533",
+        "G0228.fe246f2db9a1d6d6e0400a0a35020533",
+        "G0228.fe246f4a40bcd6d6e0400a0a35020533",
+        "G0228.fe246f4ad4c2d6d6e0400a0a35020533",
+        "G0228.fe246f4ad4d4d6d6e0400a0a35020533",
+        "G0228.fe246f565509d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f2db996d6d6e0400a0a35020533": "Shadows or pale tapers obscure the curb edge.",
+        "G0228.fe246f2db999d6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f2db9a9d6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f4a40bed6d6e0400a0a35020533": "Shadows or pale tapers obscure the curb edge.",
+        "G0228.fe246f4a40c0d6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f4ad4c4d6d6e0400a0a35020533": "Shadows or pale tapers obscure the curb edge.",
+        "G0228.fe246f565508d6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f56550bd6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening."
+      }
+    },
+    {
+      "name": "Rijksweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=514&HEIGHT=558&BBOX=52.0485383949%2C5.6380776316%2C52.0489943797%2C5.6387606116",
+      "crossings": [
+        "osm-crossing-n340027138"
+      ],
+      "raised": [
+        "G0228.fe246f2dbd56d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Foster Dullesdreef / Laan der Verenigde Naties / Professor Schermerhornpark",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=947&HEIGHT=947&BBOX=52.0232234210%2C5.6403880204%2C52.0239968705%2C5.6416454573",
+      "crossings": [
+        "ndw-vop-8540",
+        "ndw-vop-8541",
+        "ndw-vop-23201",
+        "ndw-vop-33512",
+        "osm-crossing-n12255681062"
+      ],
+      "raised": [
+        "G0228.fe246f2dc3fad6d6e0400a0a35020533",
+        "G0228.fe246f2dc426d6d6e0400a0a35020533",
+        "G0228.fe246f2dc427d6d6e0400a0a35020533"
+      ],
+      "level": {
+        "G0228.cc27e8e666014988a7a50a074558fbfd": "Continuous crossing surface or cut-through.",
+        "G0228.fe246f2dc405d6d6e0400a0a35020533": "Painted separation or taper on road-level paving."
+      },
+      "unresolved": {
+        "G0228.fe246f2dc3f2d6d6e0400a0a35020533": "Shadows or pale tapers obscure the curb edge.",
+        "G0228.fe246f2dc409d6d6e0400a0a35020533": "The mapped crossing enters the footprint. The raised edge and flush opening need a closer fit.",
+        "G0228.fe246f2dc40bd6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f2dc40ed6d6e0400a0a35020533": "Shadows or pale tapers obscure the curb edge.",
+        "G0228.fe246f2dc432d6d6e0400a0a35020533": "The mapped crossing enters the footprint. The raised edge and flush opening need a closer fit."
+      }
+    },
+    {
+      "name": "Hogerhorst / Kastelenlaan / Slotlaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=964&HEIGHT=1033&BBOX=52.0429712656%2C5.6414979359%2C52.0438150531%2C5.6427778662",
+      "crossings": [
+        "osm-crossing-n44993703",
+        "osm-crossing-n271607953",
+        "osm-crossing-n333991687",
+        "osm-crossing-n44995416",
+        "osm-crossing-n271607959",
+        "osm-crossing-n271607957",
+        "osm-crossing-n271607952"
+      ],
+      "raised": [
+        "G0228.fe246f32eff4d6d6e0400a0a35020533",
+        "G0228.fe246f32eff5d6d6e0400a0a35020533",
+        "G0228.fe246f32eff9d6d6e0400a0a35020533",
+        "G0228.fe246f32effad6d6e0400a0a35020533",
+        "G0228.fe246f32effcd6d6e0400a0a35020533",
+        "G0228.fe246f32f005d6d6e0400a0a35020533",
+        "G0228.fe246f32f009d6d6e0400a0a35020533"
+      ],
+      "level": {
+        "G0228.fe246f32f006d6d6e0400a0a35020533": "Continuous crossing surface or cut-through."
+      },
+      "unresolved": {
+        "G0228.fe246f32eff6d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f32eff8d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f32effbd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f32effdd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f32efffd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f32f003d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f32f007d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f32f019d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f32f01bd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing."
+      }
+    },
+    {
+      "name": "Heyendaal / Loevestein",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=877&HEIGHT=744&BBOX=52.0405403346%2C5.6432905393%2C52.0411478652%2C5.6444555198",
+      "crossings": [
+        "osm-crossing-n10286251272",
+        "osm-crossing-n10286251281",
+        "osm-crossing-n271607949",
+        "osm-crossing-n270772146"
+      ],
+      "raised": [
+        "G0228.fe246f4a4a51d6d6e0400a0a35020533",
+        "G0228.fe246f4a4a6bd6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f4a4a50d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a4a54d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a4a68d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing."
+      }
+    },
+    {
+      "name": "Van Steenbergenweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=550&HEIGHT=490&BBOX=52.0233801770%2C5.6433185830%2C52.0237801968%2C5.6440483024",
+      "crossings": [
+        "osm-crossing-n12516134847"
+      ],
+      "raised": [
+        "G0228.fe246f498b89d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f498b7cd6d6e0400a0a35020533": "The mapped crossing enters the footprint. The raised edge and flush opening need a closer fit."
+      }
+    },
+    {
+      "name": "Parkweide",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=521&HEIGHT=493&BBOX=52.0503863193%2C5.6449898100%2C52.0507893035%2C5.6456818457",
+      "crossings": [
+        "osm-crossing-n2559099935"
+      ],
+      "raised": [
+        "G0228.fe246f54bf95d6d6e0400a0a35020533",
+        "G0228.fe246f54bf96d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Galvanistraat",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=506&HEIGHT=672&BBOX=52.0263908807%2C5.6466462848%2C52.0269393920%2C5.6473178721",
+      "crossings": [
+        "osm-crossing-n273512660",
+        "osm-crossing-n7171519329"
+      ],
+      "raised": [
+        "G0228.aec22b58caa8481c95b60a5f8c886498",
+        "G0228.fe246f495430d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Willy Brandtlaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=565&HEIGHT=578&BBOX=52.0166925791%2C5.6479497308%2C52.0171641946%2C5.6487001909",
+      "crossings": [
+        "ndw-vop-5834",
+        "osm-crossing-n12516134855"
+      ],
+      "raised": [
+        "G0228.fe246f4e9c33d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f4e9c32d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing."
+      }
+    },
+    {
+      "name": "Laan der Verenigde Naties",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=610&HEIGHT=528&BBOX=52.0163700839%2C5.6481074764%2C52.0168011854%2C5.6489172371",
+      "crossings": [
+        "osm-crossing-n12516134857",
+        "osm-crossing-n12516134858"
+      ],
+      "raised": [
+        "G0228.fe246f4e9c25d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f4e9c26d6d6e0400a0a35020533": "The mapped crossing enters the footprint. The raised edge and flush opening need a closer fit.",
+        "G0228.fe246f4e9c29d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4e9c2ad6d6e0400a0a35020533": "The mapped crossing enters the footprint. The raised edge and flush opening need a closer fit."
+      }
+    },
+    {
+      "name": "Willy Brandtlaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=509&HEIGHT=691&BBOX=52.0165113889%2C5.6486620690%2C52.0170756207%2C5.6493376000",
+      "crossings": [
+        "ndw-vop-29468",
+        "ndw-vop-29981",
+        "osm-crossing-n12516134852"
+      ],
+      "raised": [
+        "G0228.27c75c61b20a403886f658e4bfe96abe"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.4a3653e98e6c4538aba6cac6f5f97163": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f4e9c36d6d6e0400a0a35020533": "The transition beside the bus stop is unclear."
+      }
+    },
+    {
+      "name": "Lunterseweg / Proosdijerveldweg / Rijksweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=1003&HEIGHT=1005&BBOX=52.0502078240%2C5.6490846228%2C52.0510283452%2C5.6504161124",
+      "crossings": [
+        "osm-crossing-n273183350",
+        "osm-crossing-n273183352",
+        "osm-crossing-n273183353",
+        "osm-crossing-n273183346",
+        "osm-crossing-n273183347",
+        "osm-crossing-n273183344"
+      ],
+      "raised": [
+        "G0228.4d54396c55974d57af33b60ecd230ed3",
+        "G0228.e838b305b7754ae08df86514f0ce92ac",
+        "G0228.fe246f54bfe2d6d6e0400a0a35020533",
+        "G0228.fe246f550191d6d6e0400a0a35020533",
+        "G0228.fe246f550193d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Jan Th. Tooroplaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=841&HEIGHT=832&BBOX=52.0238387670%2C5.6493776206%2C52.0245178934%2C5.6504944010",
+      "crossings": [
+        "osm-crossing-n4019779938",
+        "osm-crossing-n4019779937",
+        "osm-crossing-n269466145"
+      ],
+      "raised": [
+        "G0228.fe246f4a8f61d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f4a8f30d6d6e0400a0a35020533": "The lip of the pale splitter or signal base is unclear.",
+        "G0228.fe246f4a8f70d6d6e0400a0a35020533": "The lip of the pale splitter or signal base is unclear."
+      }
+    },
+    {
+      "name": "Klaphekweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=611&HEIGHT=540&BBOX=52.0383663218%2C5.6495601965%2C52.0388074844%2C5.6503717100",
+      "crossings": [
+        "osm-crossing-n9241943040",
+        "osm-crossing-n9241943041"
+      ],
+      "raised": [],
+      "level": {},
+      "unresolved": {
+        "G0228.8c8857fbc34c41f8906b8dc10b6395eb": "Pole base merges into road paint and the rest of the footprint has no clear edge."
+      }
+    },
+    {
+      "name": "Doctor W. Dreeslaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=790&HEIGHT=521&BBOX=52.0155246794%2C5.6501150813%2C52.0159504808%2C5.6511646737",
+      "crossings": [
+        "osm-crossing-n276098434",
+        "osm-crossing-n276098439"
+      ],
+      "raised": [
+        "G0228.a6e5abb10b184cfa8e304245808e9677",
+        "G0228.fe246f2dd1c7d6d6e0400a0a35020533",
+        "P0025.fd1d60865a9948c2e04014ac0e2861a4"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Molenstraat / Proosdijerveldweg / Slotlaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=1070&HEIGHT=1057&BBOX=52.0454502564%2C5.6510256239%2C52.0463130883%2C5.6524469409",
+      "crossings": [
+        "osm-crossing-n273499808",
+        "osm-crossing-n273499801",
+        "osm-crossing-n273510634",
+        "osm-crossing-n273510646",
+        "osm-crossing-n271725691",
+        "osm-crossing-n271725697"
+      ],
+      "raised": [
+        "G0228.fe246f2d548ad6d6e0400a0a35020533",
+        "G0228.fe246f2d946cd6d6e0400a0a35020533",
+        "G0228.fe246f335eaed6d6e0400a0a35020533",
+        "G0228.fe246f4a92bfd6d6e0400a0a35020533",
+        "G0228.fe246f4a92c9d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f2d5488d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f2d548cd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f2d5491d6d6e0400a0a35020533": "The BGT footprint includes part of the cycle crossing.",
+        "G0228.fe246f2d944fd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f2d946dd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f335ea7d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f335eddd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a92c2d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a92c5d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a92c7d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f566f83d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing."
+      }
+    },
+    {
+      "name": "Frans Halslaan / Rubensstraat",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=1043&HEIGHT=821&BBOX=52.0166086764%2C5.6518464852%2C52.0172792688%2C5.6532312871",
+      "crossings": [
+        "osm-crossing-n12516134849",
+        "osm-crossing-n12516134850",
+        "ndw-vop-32113"
+      ],
+      "raised": [
+        "G0228.fe246f335115d6d6e0400a0a35020533",
+        "G0228.fe246f33511ed6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f3350f3d6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f4a93bed6d6e0400a0a35020533": "A vehicle covers the relevant edge."
+      }
+    },
+    {
+      "name": "Proosdijerveldweg / Veenderweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=792&HEIGHT=978&BBOX=52.0400565918%2C5.6543528875%2C52.0408553738%2C5.6554049630",
+      "crossings": [
+        "osm-crossing-n12496796658",
+        "osm-crossing-n12496796655",
+        "ndw-vop-40372",
+        "osm-crossing-n12496796656"
+      ],
+      "raised": [
+        "G0228.360af2696d484d039ad2ba3f981756cf",
+        "G0228.fe246f334f2bd6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.36c70a0f4e974380a211bba97f1fa2e7": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.dacab1b3385a4dc39b7cbc2e7ba4cf0d": "The aerial does not resolve the curb or its transition to the crossing."
+      }
+    },
+    {
+      "name": "Hakselseweg / Klaphekweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=807&HEIGHT=597&BBOX=52.0333232696%2C5.6545138464%2C52.0338106056%2C5.6555853480",
+      "crossings": [
+        "ndw-vop-48750",
+        "ndw-vop-7666"
+      ],
+      "raised": [
+        "G0228.44fba3fe4d814b469279fa48a4a1dbc4",
+        "G0228.5e5222909f2d4aa99bd5e930d13b21f1",
+        "G0228.a09ff6bbb59e4fb892f87e6f1be2d3b4",
+        "G0228.f66b44dce92f4c5a924ca709086c39e0"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.7a442cf25b2141c58151aeefe5efaf75": "Part of a longer roadside separator with an unclear transition at the crossing."
+      }
+    },
+    {
+      "name": "Hakselseweg / Klaphekweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=783&HEIGHT=546&BBOX=52.0330102067%2C5.6545902362%2C52.0334563999%2C5.6556304808",
+      "crossings": [
+        "osm-crossing-n10059624066",
+        "ndw-vop-8051",
+        "ndw-vop-18434"
+      ],
+      "raised": [
+        "G0228.cc4ae451bc794807b2fe403e3a3c5538"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.bb8964776e124b7ca009891126aa3e47": "The mapped crossing enters the footprint. The raised edge and flush opening need a closer fit.",
+        "G0228.d90abb726e7d4b13b1211ed221d1c49a": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.ec1ffd3d02fd412b9ff67c09b32c93ac": "The aerial does not resolve the curb or its transition to the crossing."
+      }
+    },
+    {
+      "name": "Doctor W. Dreeslaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=583&HEIGHT=532&BBOX=52.0023569045%2C5.6569419601%2C52.0027915094%2C5.6577154978",
+      "crossings": [
+        "osm-crossing-n276102713"
+      ],
+      "raised": [
+        "P0025.0946241472424800a5ce6e133a027594",
+        "P0025.fd1d60865b2748c2e04014ac0e2861a4"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Bovenbuurtweg / Jan Th. Tooroplaan / Vincent van Goghstraat",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=741&HEIGHT=971&BBOX=52.0243576339%2C5.6597553821%2C52.0251508463%2C5.6607396854",
+      "crossings": [
+        "ndw-vop-31401",
+        "osm-crossing-n12516134837",
+        "ndw-vop-6866",
+        "ndw-vop-47435",
+        "ndw-vop-31400"
+      ],
+      "raised": [
+        "G0228.e9801d386f2543ca910bfcc4cbd74d50"
+      ],
+      "level": {
+        "G0228.1d132a7fcf8846d3ac798029dc5c491d": "Continuous crossing surface or cut-through.",
+        "G0228.c7be02ba76924226b37a6a4f496e2bf8": "Continuous crossing surface or cut-through."
+      },
+      "unresolved": {
+        "G0228.0a5a27a5d9374d4ea7911cb175b8c6dd": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.858ee97606d74ca3b827a60fd357fccf": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear."
+      }
+    },
+    {
+      "name": "Schaapsweg / Veenderweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=883&HEIGHT=883&BBOX=52.0426354753%2C5.6606332071%2C52.0433565530%2C5.6618054906",
+      "crossings": [
+        "ndw-vop-4446",
+        "osm-crossing-n12894984763",
+        "osm-crossing-n12894984710",
+        "osm-crossing-n12894984723",
+        "ndw-vop-17724",
+        "osm-crossing-n12894984769",
+        "ndw-vop-19526",
+        "osm-crossing-n12894984736"
+      ],
+      "raised": [
+        "G0228.fe246f4a1e4dd6d6e0400a0a35020533",
+        "G0228.fe246f4a1e54d6d6e0400a0a35020533",
+        "G0228.fe246f4a1e74d6d6e0400a0a35020533",
+        "G0228.fe246f4a1e7bd6d6e0400a0a35020533",
+        "G0228.fe246f4a1e81d6d6e0400a0a35020533",
+        "G0228.fe246f4a1e86d6d6e0400a0a35020533",
+        "G0228.fe246f4a1e89d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f4a1e4bd6d6e0400a0a35020533": "A vehicle covers the relevant edge.",
+        "G0228.fe246f4a1e4ed6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f4a1e50d6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f4a1e52d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e55d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e57d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e58d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e5ad6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e5bd6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e76d6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f4a1e79d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e83d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e84d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e87d6d6e0400a0a35020533": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.fe246f4a1e90d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a1e94d6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.fe246f4a3f3ad6d6e0400a0a35020533": "The aerial does not resolve the curb or its transition to the crossing."
+      }
+    },
+    {
+      "name": "Mansholtlaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=602&HEIGHT=543&BBOX=51.9935466773%2C5.6639391459%2C51.9939899959%2C5.6647382442",
+      "crossings": [
+        "osm-crossing-n10314698613"
+      ],
+      "raised": [
+        "P0025.3a8f832dfc54453ba4301be58c8862df"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Molenstraat / Telefoonweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=936&HEIGHT=827&BBOX=52.0462787726%2C5.6662163788%2C52.0469542159%2C5.6674592096",
+      "crossings": [
+        "osm-crossing-n247652605",
+        "ndw-vop-19569",
+        "ndw-vop-6363"
+      ],
+      "raised": [
+        "G0228.23e1b4c4343b45b0aaf2cadda2b110e4",
+        "G0228.f0f13bb393c74d63a3625a9b687b0c93"
+      ],
+      "level": {
+        "G0228.4e55a211bfeb474eb29096373c9ca687": "Painted separation or taper on road-level paving.",
+        "G0228.4f7b4094d8774801ba367d8aef453147": "Painted separation or taper on road-level paving.",
+        "G0228.952bddda65b541a285221c7d39cafca9": "Painted separation or taper on road-level paving.",
+        "G0228.a3f1a302a150483db7ceb7823d8498a1": "Painted separation or taper on road-level paving."
+      },
+      "unresolved": {
+        "G0228.34f9aa1025d84b5a9e3baca38f3b0f8d": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.391be3c5b6d44e75821e01dc0fd5deaf": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.59fcba1923854d6dbd6f75f3df8ca45e": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.6a272c9ece014f98ac8380d220cda5a1": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.6dc3469043f549619549a25890cfb6ac": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.7d8584f8f5fe4bc2956e6eb9ef454289": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.8ef0d05b90da4dcbacdb441bf48fe851": "A raised section is visible, with insufficient space for a taper clear of the mapped opening.",
+        "G0228.9cf86cbbe7664a00b63e485798946619": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.a65a29e54afa48ebb93e8b9d17d7dfdf": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.add65509c8bf43348cc563f7e517ef60": "The aerial does not resolve the curb or its transition to the crossing.",
+        "G0228.c8ed565bd04544e58518c8d1a59b8358": "The aerial does not resolve the curb or its transition to the crossing."
+      }
+    },
+    {
+      "name": "Telefoonweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=606&HEIGHT=556&BBOX=52.0453850387%2C5.6667405908%2C52.0458386880%2C5.6675458237",
+      "crossings": [
+        "ndw-vop-4215"
+      ],
+      "raised": [],
+      "level": {},
+      "unresolved": {
+        "G0228.6d3e0532c3304629b49a4a1f92bf9c0c": "The bollards are visible. The paved strip around them has no identifiable curb edge in the aerial.",
+        "G0228.98855b0a38f44862b0caf0a4ca06b2ee": "The bollards are visible. The paved strip around them has no identifiable curb edge in the aerial."
+      }
+    },
+    {
+      "name": "Ericalaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=519&HEIGHT=592&BBOX=52.0379442932%2C5.6703934238%2C52.0384281259%2C5.6710821002",
+      "crossings": [
+        "ndw-vop-38251",
+        "ndw-vop-38252"
+      ],
+      "raised": [],
+      "level": {},
+      "unresolved": {
+        "G0228.bf54f62fa5f04fdf929aedae95f969dd": "A raised section is visible, with insufficient space for a taper clear of the mapped opening."
+      }
+    },
+    {
+      "name": "Commandeursweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=559&HEIGHT=500&BBOX=52.0005149090%2C5.6704814984%2C52.0009229238%2C5.6712240712",
+      "crossings": [
+        "osm-crossing-n10961841456"
+      ],
+      "raised": [
+        "G0228.fe246f4a5ebed6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Eikenlaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=499&HEIGHT=638&BBOX=52.0365783150%2C5.6710134516%2C52.0370994277%2C5.6716759831",
+      "crossings": [
+        "ndw-vop-10244",
+        "ndw-vop-10245"
+      ],
+      "raised": [
+        "G0228.fe246f331330d6d6e0400a0a35020533"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f33132fd6d6e0400a0a35020533": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear."
+      }
+    },
+    {
+      "name": "Commandeursweg / Kierkamperweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=816&HEIGHT=743&BBOX=51.9959371841%2C5.6717310480%2C51.9965441757%2C5.6728139424",
+      "crossings": [
+        "osm-crossing-n10961791427",
+        "osm-crossing-n10961791443",
+        "osm-crossing-n10961791438"
+      ],
+      "raised": [
+        "G0228.2551171b85da4aa5bac1083b709677f5",
+        "G0228.6886cee978c048d1bd5529df74e919eb",
+        "G0228.7d43f88f79b2483386a5e79a2167fb3b",
+        "G0228.a6a453f483ad4f129060177706b22cf7",
+        "G0228.bf68104d2d4a42cfa2685ea3b3074ef6",
+        "G0228.f15477ad0d2340d3ba6e7268498e3f09"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Akulaan / Emmalaan",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=920&HEIGHT=789&BBOX=52.0252662798%2C5.6719384543%2C52.0259108210%2C5.6731596681",
+      "crossings": [
+        "osm-crossing-n272309127",
+        "osm-crossing-n5527818496",
+        "osm-crossing-n273175326",
+        "osm-crossing-n5527818493"
+      ],
+      "raised": [],
+      "level": {},
+      "unresolved": {
+        "G0228.77fe5ac6db7140b3909acedfc85d78bd": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear.",
+        "G0228.e332ecb1fe4a4e68a4b2886cc86935e0": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear."
+      }
+    },
+    {
+      "name": "Bunschoterweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=589&HEIGHT=491&BBOX=52.0473645663%2C5.6720887508%2C52.0477657539%2C5.6728711982",
+      "crossings": [
+        "ndw-vop-7354"
+      ],
+      "raised": [],
+      "level": {},
+      "unresolved": {
+        "G0228.fe246f40e8e9d6d6e0400a0a35020533": "The lip of the pale splitter or signal base is unclear."
+      }
+    },
+    {
+      "name": "Edeseweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=629&HEIGHT=491&BBOX=52.0116506947%2C5.6725843349%2C52.0120513433%2C5.6734198023",
+      "crossings": [
+        "ndw-vop-19735",
+        "ndw-vop-32927"
+      ],
+      "raised": [
+        "G0228.29ba2f69ffac42aabf66337687208117"
+      ],
+      "level": {},
+      "unresolved": {}
+    },
+    {
+      "name": "Edeseweg / Van Balverenweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=739&HEIGHT=746&BBOX=52.0072891943%2C5.6733911744%2C52.0078987911%2C5.6743728486",
+      "crossings": [
+        "ndw-vop-48772",
+        "osm-crossing-n13482075091",
+        "osm-crossing-n13482075092"
+      ],
+      "raised": [],
+      "level": {},
+      "unresolved": {
+        "G0228.955fd37cd1b444be93b4cfd188fffff9": "The 2026 aerial shows intersection reconstruction and an incomplete surface layout.",
+        "G0228.a2fc9111f2e44a0db5e45a4ad780255b": "The 2026 aerial shows intersection reconstruction and an incomplete surface layout.",
+        "G0228.c5bd04ba031448218574edb993b288cc": "The 2026 aerial shows intersection reconstruction and an incomplete surface layout.",
+        "G0228.d881d33308094ad587efd46eb8972f4f": "The 2026 aerial shows intersection reconstruction and an incomplete surface layout."
+      }
+    },
+    {
+      "name": "Arthur van Schendellaan / Molenstraat / Raadhuisstraat",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=984&HEIGHT=999&BBOX=52.0468468672%2C5.6740706489%2C52.0476623578%2C5.6753765780",
+      "crossings": [
+        "ndw-vop-46839",
+        "osm-crossing-n12496796644",
+        "ndw-vop-27370",
+        "osm-crossing-n12496796632",
+        "ndw-vop-39995",
+        "ndw-vop-861",
+        "ndw-vop-7208"
+      ],
+      "raised": [
+        "G0228.fe246f40e8cdd6d6e0400a0a35020533",
+        "G0228.fe246f40e8ced6d6e0400a0a35020533",
+        "G0228.fe246f40e9a6d6d6e0400a0a35020533"
+      ],
+      "level": {
+        "G0228.3617b08d45104a7f8cd7ed293e1c41db": "Continuous crossing surface or cut-through.",
+        "G0228.fe246f40e8cbd6d6e0400a0a35020533": "Continuous crossing surface or cut-through.",
+        "G0228.fe246f40e9a7d6d6e0400a0a35020533": "Continuous crossing surface or cut-through.",
+        "G0228.fe246f40e9b3d6d6e0400a0a35020533": "Continuous crossing surface or cut-through.",
+        "G0228.fe246f40e9b9d6d6e0400a0a35020533": "Continuous crossing surface or cut-through.",
+        "G0228.fe246f4844cfd6d6e0400a0a35020533": "Continuous crossing surface or cut-through.",
+        "G0228.fe246f4844d0d6d6e0400a0a35020533": "Continuous crossing surface or cut-through."
+      },
+      "unresolved": {
+        "G0228.a61c6a85be474504934765caf92d973c": "Part of a longer roadside separator with an unclear transition at the crossing.",
+        "G0228.fe246f40e9bad6d6e0400a0a35020533": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear."
+      }
+    },
+    {
+      "name": "Edeseweg / Molenstraat",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=690&HEIGHT=706&BBOX=52.0013253690%2C5.6750850408%2C52.0019022671%2C5.6760008416",
+      "crossings": [
+        "osm-crossing-n12496796627",
+        "osm-crossing-n12496796630"
+      ],
+      "raised": [
+        "G0228.f1fdb825c95b4df6a68b5ec93de8b055"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.43b40c78fa404d038268e9b9ff70d291": "Part of a longer roadside separator with an unclear transition at the crossing.",
+        "G0228.9005dd5baec44ad89f69abc8dabb2bc9": "Part of a longer roadside separator with an unclear transition at the crossing."
+      }
+    },
+    {
+      "name": "Apeldoornseweg / Raadhuisstraat / Rijksweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=1322&HEIGHT=1250&BBOX=52.0503615258%2C5.6752318318%2C52.0513823712%2C5.6769866055",
+      "crossings": [
+        "osm-crossing-n5841910431",
+        "osm-crossing-n255107780",
+        "osm-crossing-n273180361",
+        "osm-crossing-n5841910461",
+        "osm-crossing-n275742582",
+        "osm-crossing-n250724091",
+        "osm-crossing-n250724093",
+        "osm-crossing-n271725725",
+        "osm-crossing-n5841910430",
+        "osm-crossing-n5841912098",
+        "osm-crossing-n5841910484",
+        "osm-crossing-n275742580",
+        "osm-crossing-n5841910437"
+      ],
+      "raised": [
+        "P0025.1e112a1aa8f5470da0948d71e334f3d3",
+        "P0025.7966a27f61374c17b1ec9a18949b3208",
+        "P0025.c022ed615bfe4d10b5cb5c0174f208c2",
+        "P0025.fd1d608374b848c2e04014ac0e2861a4",
+        "P0025.fd1d608374c148c2e04014ac0e2861a4",
+        "P0025.fd1d608374cb48c2e04014ac0e2861a4",
+        "P0025.fd1d608374d148c2e04014ac0e2861a4",
+        "P0025.fd1d608374d448c2e04014ac0e2861a4",
+        "P0025.fd1d608374d548c2e04014ac0e2861a4",
+        "P0025.fd1d608374ea48c2e04014ac0e2861a4",
+        "P0025.fd1d608374eb48c2e04014ac0e2861a4",
+        "P0025.fd1d608374ec48c2e04014ac0e2861a4",
+        "P0025.fd1d608374f348c2e04014ac0e2861a4",
+        "P0025.fd1d6088fd2948c2e04014ac0e2861a4"
+      ],
+      "level": {},
+      "unresolved": {
+        "G0228.d6f851c0d8f74b51ac1a6c00f21cb944": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear.",
+        "G0228.fe246f56631ad6d6e0400a0a35020533": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear.",
+        "G0228.fe246f56631bd6d6e0400a0a35020533": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear."
+      }
+    },
+    {
+      "name": "Kierkamperweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=520&HEIGHT=630&BBOX=51.9961597866%2C5.6759041494%2C51.9966738925%2C5.6765945785",
+      "crossings": [
+        "osm-crossing-n13481967240",
+        "osm-crossing-n13481967299"
+      ],
+      "raised": [],
+      "level": {
+        "G0228.52d34b33a9a34cd1a1c73d2537d97d66": "Painted separation or taper on road-level paving."
+      },
+      "unresolved": {
+        "G0228.9b70b34b7b9642ee9535e217f144089b": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear.",
+        "G0228.db6aabf3ea5649fb8598f493b0b4cc3e": "Tree shadow, paint or a narrow edge makes the separation from the crossing unclear."
+      }
+    },
+    {
+      "name": "Heelsumseweg",
+      "imagery": "https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=488&HEIGHT=635&BBOX=51.9962364129%2C5.6766248131%2C51.9967551900%2C5.6772723003",
+      "crossings": [
+        "osm-crossing-n13481967250",
+        "osm-crossing-n13481967245"
+      ],
+      "raised": [
+        "G0228.5b6eefba8ee7405cadacda10f948f966",
+        "G0228.7c1fc4b805254cb7a8247792fdbf2ed6",
+        "G0228.f47940e65dfd46f0a57fd7945f06c9ff"
+      ],
+      "level": {},
+      "unresolved": {}
+    }
+  ]
+}

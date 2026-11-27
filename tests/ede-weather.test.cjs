@@ -479,6 +479,14 @@ test('outdoor rinks freeze and thaw gradually in presets and converge to the liv
   assert.equal(presets.update(0).rinkIce, 1);
   assert.equal(presets.update(18).rinkIce, 0.5);
   assert.equal(presets.update(18).rinkIce, 0);
+  presets.setPreset('clear', 'winter', { preview: true });
+  assert.equal(presets.update(0).rinkIce, 1);
+  assert.deepEqual(presets.activityWeather, { weather: 'frost', heavyRain: false, weatherAvailable: true });
+  presets.setPreset('rain', 'winter', { preview: true });
+  assert.equal(presets.trafficCondition, 'frost');
+  assert.deepEqual(presets.activityWeather, { weather: 'rain', heavyRain: true, weatherAvailable: true });
+  presets.setPreset('clear', 'summer', { preview: true });
+  assert.equal(presets.update(0).rinkIce, 0);
 
   const live = createWeatherTransition();
   const warmReading = parseWeather(reading({ temperature_2m: 3 }), observedAt);

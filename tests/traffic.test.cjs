@@ -216,7 +216,7 @@ function populationContext() {
     hasView: true, camX: 0, camY: 10, camZ: 0, visible: () => true,
     terrainHeightAt: () => 0, roadGround: () => 0,
     focusX: 0, focusZ: 0, player: { active: false },
-    clock: 0, recentlyUsedRoads: null,
+    clock: 0, recentlyUsedRoads: null, ambient: null,
     VEHICLE_SPAWN_DISTANCE: 250, PED_SPAWN_DISTANCE: 150, NEAR_RADIUS: 350, PED_AVOID_INTERVAL: 0.12,
     nearEdges: [], nearSignals: [], fittedA: {}, activeTravel: null, nearFoot: null, nearBikes: [], nearCycleways: [], track: {}, KERB: 1.6, QUEUE_GAP: 0.62,
     atCurb: () => {}, laneClear: () => true, crowdedAt: () => false,
@@ -232,6 +232,7 @@ function populationContext() {
   context.nearView = trafficFunction('nearView', context);
   context.lanePoint = trafficFunction('lanePoint', context);
   context.ambientLanes = trafficFunction('ambientLanes', context);
+  context.activeArea = trafficFunction('activeArea', context);
   return context;
 }
 

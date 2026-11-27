@@ -866,11 +866,11 @@ class NYCMapSystem {
               this.elHoverInfo.textContent = 'Outside the travel area';
               return;
             }
-            if (containsPlayablePoint && !containsPlayablePoint(wPos.x, wPos.z)) {
+            const landmark = this.scenicLandmarkAt(wPos, rect);
+            if (!landmark && containsPlayablePoint && !containsPlayablePoint(wPos.x, wPos.z)) {
               this.elHoverInfo.textContent = 'Outside Gemeente Ede · Click to teleport here';
               return;
             }
-            const landmark = this.scenicLandmarkAt(wPos, rect);
             this.elHoverInfo.textContent = landmark
               ? `${landmark.name} · Click to teleport to the approach`
               : `${getLocationLabel(wPos.x, wPos.z, MAP_LANDMARKS)} · Click to teleport here`;

@@ -72,7 +72,7 @@ test('Live Time blends in the Night fill and uses the complete Night preset afte
   const { LightingSystem } = loadModule(readFileSync(join(__dirname, '../js/lighting.js'), 'utf8'), { imports: {
     'three/webgpu': THREE,
     'three/tsl': {},
-    'three/addons/objects/SkyMesh.js?v=20261127-photo-scenes': {},
+    'three/addons/objects/SkyMesh.js?v=20261127-volume-clouds': {},
     'three/addons/lights/SunLight.js': {},
     'three/addons/lights/SunLightNode.js': {},
     './tsl-materials.js': { cityUniforms: { uWindowLights: { value: { set() {} } } } },
@@ -80,6 +80,7 @@ test('Live Time blends in the Night fill and uses the complete Night preset afte
     './live-sky.js': await liveSky,
     './ede-moon.js': await lunarSky,
     './ede-photo-sky.js': {},
+    './ede-clouds.js?v=20261127-volume-clouds': {},
     './ede-window-lights.js': await import('../js/ede-window-lights.js'),
   } });
   const lighting = Object.create(LightingSystem.prototype);
@@ -87,6 +88,7 @@ test('Live Time blends in the Night fill and uses the complete Night preset afte
   lighting.uMoonDirection = { value: new THREE.Vector3() };
   lighting.uMoonSun = { value: new THREE.Vector3() };
   lighting.uMoonRadius = { value: 0 };
+  lighting.uCloudMoonlight = { value: 0 };
   lighting.applyValues = (preset) => { lighting.basePreset = preset; };
   lighting.applyPreset('midnight');
   const night = lighting.basePreset;
@@ -105,10 +107,13 @@ test('Live Time blends in the Night fill and uses the complete Night preset afte
   const rising = lighting.uMoonDirection.value.clone();
   lighting.applyLive(new Date('2026-11-26T23:00:00Z'));
   assert.ok(lighting.uMoonDirection.value.y > rising.y, 'the Moon keeps moving in the Night preset blend');
+  assert.ok(lighting.uCloudMoonlight.value > 0.8, 'the high, nearly full Moon lights the cloud layer');
   lighting.applyLive(new Date('2026-11-26T14:50:00Z'));
   assert.equal(lighting.uShowMoon.value, 0, 'below the horizon');
+  assert.equal(lighting.uCloudMoonlight.value, 0);
   lighting.applyLive(new Date('2026-06-21T20:00:00Z'));
   assert.equal(lighting.uShowMoon.value, 1, 'the Moon can appear during daylight');
+  assert.equal(lighting.uCloudMoonlight.value, 0, 'direct sunlight takes over at dawn');
   lighting.applyPreset('midnight');
   assert.equal(lighting.uShowMoon.value, 0);
   lighting.envRenderTarget = {};

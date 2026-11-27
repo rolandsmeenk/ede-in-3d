@@ -4,6 +4,7 @@ import { containsPlayablePoint, constrainToPlayableArea, playableBoundary, playa
 import { GEO } from './nyc-geodata.js';
 import { projectLonLatInto, unprojectScene } from './ede-scene-coordinates.js';
 import { FOOT } from './road-access.js?v=20261122-startup';
+import { EDE_WHITE_BIKE_SITES } from './ede-white-bike-sites.js';
 
 // Ede spatial adapter for mrdoob/slop-newyork's engine, via an irregular-city data path.
 // Legacy export names are retained as API aliases; all visible geography is Ede.
@@ -324,7 +325,10 @@ const NYC_LANDMARKS=[
 })) : []).concat(EDE_MODELED_LANDMARKS.map(site => ({
  ...site, short: site.name,
  ...unprojectScene(AFF, site.x, site.z),
-})));
+}))).concat(EDE_DATA.meta.fullMunicipality ? EDE_WHITE_BIKE_SITES.map(({ rows, ...site }) => ({
+ ...site, short: site.name, district: 'Hoge Veluwe', mapScenic: true, focusHeight: 0.65,
+ ...unprojectScene(AFF, site.x, site.z),
+})) : []);
 // Specific approaches point toward the entrance or main façade from a mapped street.
 const LANDMARK_APPROACHES={
  'nieuwe-kerk':[5.6629353,52.0368761],

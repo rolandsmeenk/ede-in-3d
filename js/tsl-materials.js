@@ -1540,8 +1540,6 @@ function createParkPavingMaterial(aerial = false) {
     roughness: 0.86
   });
 
-  mat.aoNode = canyonSkyAONode();
-
   mat.colorNode = Fn(() => {
     const wx = positionWorld.x;
     const wz = positionWorld.z;
@@ -1589,13 +1587,17 @@ function createParkPavingMaterial(aerial = false) {
     return bumpNormal(grain.sub(pavingJoints(uv().x, wx, wz).mul(0.006)).mul(detail));
   })();
 
+  mat.aoNode = canyonSkyAONode();
+  if (EDE_DATA) {
+    applySnowMaterial(mat, { shelter: true, retention: 0.91 });
+    mat.aoNode = mix(mat.aoNode, 1, mat.snowCoverageNode);
+  }
   return mat;
 }
 
 function createEdePavingMaterial(aerial = false, grade = false) {
   const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0, roughness: 0.86 });
   mat.name = 'Ede non-asphalt paving';
-  mat.aoNode = canyonSkyAONode();
   const style = attribute('pavingStyle', 'float');
   const p = uv();
   const block = step(0.5, style);
@@ -1642,7 +1644,11 @@ function createEdePavingMaterial(aerial = false, grade = false) {
   mat.metalnessNode = puddle.mul(0.12);
   mat.normalNode = bumpNormal(grit.sub(0.5).mul(mix(0.002, 0.009, gravel)).mul(fine)
     .sub(joint.mul(0.004)).mul(puddle.oneMinus()));
-  return applySnowMaterial(mat, { shelter: true, exposure: grade ? attribute('pavingExposure', 'float') : 1, retention: 0.91 });
+  applySnowMaterial(mat, { shelter: true, exposure: grade ? attribute('pavingExposure', 'float') : 1,
+    retention: mix(0.91, 1, gravel) });
+  // Avoid tinting exposed snow with the ambient darkening of dry pavement.
+  mat.aoNode = mix(canyonSkyAONode(), 1, mat.snowCoverageNode);
+  return mat;
 }
 
 /**

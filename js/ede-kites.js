@@ -10,6 +10,18 @@ const SPOTS = [
 ];
 const TAIL_SEGMENTS = 12;
 const LINE_SEGMENTS = 12;
+const LANDING_SECONDS = 4;
+
+function activeFlyerCount(activity) {
+  if (!activity) return SPOTS.length;
+  const { daylight, weather, weatherAvailable, weekday, minute, season, events } = activity;
+  if (!daylight || !weatherAvailable || (weather !== 'dry' && weather !== 'frost') ||
+      events.some(event => event.id === 'airborne')) return 0;
+  if (weekday > 0 && weekday < 6) return 1;
+  const weekendAfternoon = minute >= 12 * 60 && minute < 18 * 60;
+  const warmSeason = season === 'spring' || season === 'summer';
+  return weekendAfternoon && warmSeason && weather === 'dry' ? SPOTS.length : 0;
+}
 
 function makeSail(color, material) {
   const vertices = [[0, 0.61, 0], [-0.66, 0.09, 0], [0, -0.85, 0], [0.66, 0.09, 0]];
@@ -55,6 +67,7 @@ export function createKiteFlyers(scene, terrainHeightAt) {
   const { lerp, smoothstep } = THREE.MathUtils;
   let crowd, flyers;
   let time = 0, flutterTime = 0, lift = 0, gust = 0;
+  let landingTime = 0;
 
   function populate() {
     crowd = new PersonCrowd(SPOTS.length);
@@ -70,17 +83,24 @@ export function createKiteFlyers(scene, terrainHeightAt) {
       line.name = 'Kite line';
       line.frustumCulled = false;
       group.add(sail, line);
-      return { ...spot, y: terrainHeightAt(spot.x, spot.z), sail, cordVertices, phase: index * 2.1,
+      return { ...spot, y: terrainHeightAt(spot.x, spot.z), sail, line, cordVertices, phase: index * 2.1,
         rig: new PersonRig({ seed: index * 3.19 + 1.8, female: index === 1, scale: [1.02, 0.95, 0.9][index] }),
         control: { elevation: 0, pull: 0, hand: new THREE.Vector3() } };
     });
   }
 
   return {
-    update(dt, camera, wind) {
+    update(dt, camera, wind, activity) {
       const dx = camera.x - 4301, dz = camera.z - 1158;
       const radius = group.visible ? 275 : 250;
-      if (dx * dx + dz * dz > radius * radius) {
+      const count = activeFlyerCount(activity);
+      const windSpeed = wind?.windSpeed;
+      const windGusts = wind?.windGusts ?? windSpeed;
+      const flyingWind = windSpeed >= 11 && windSpeed <= 35 && windGusts < 50;
+      const landing = activity && !flyingWind && group.visible && activity.weather === 'dry';
+      landingTime = landing ? landingTime + dt : 0;
+      if (count === 0 || dx * dx + dz * dz > radius * radius ||
+          (activity && !flyingWind && (!landing || landingTime >= LANDING_SECONDS))) {
         group.visible = false;
         return;
       }
@@ -92,15 +112,19 @@ export function createKiteFlyers(scene, terrainHeightAt) {
       flutterTime += dt * (1.8 + speed * 0.26);
       const yaw = windHeading.rotation.y + Math.PI / 2;
       const downwindX = Math.sin(yaw), downwindZ = Math.cos(yaw);
-      const windGusts = (wind?.windGusts ?? wind?.windSpeed ?? 0) / 3.6;
-      const targetLift = smoothstep(speed, 2, 3.4) * (1 - smoothstep(Math.max(speed, windGusts), 10, 15));
-      const blend = entering ? 1 : -Math.expm1(-dt / 1.8);
-      lift += (targetLift - lift) * blend;
-      gust += (Math.min(4, Math.max(0, windGusts - speed)) - gust) * blend;
+      const gustSpeed = (windGusts ?? 0) / 3.6;
+      const targetLift = smoothstep(speed, 2, 3.4) * (1 - smoothstep(Math.max(speed, gustSpeed), 10, 15));
+      const blend = entering ? 1 : -Math.expm1(-dt / (landing ? 0.75 : 1.8));
+      lift += ((landing ? 0 : targetLift) - lift) * blend;
+      gust += (Math.min(4, Math.max(0, gustSpeed - speed)) - gust) * blend;
       crowd.begin();
 
-      for (const flyer of flyers) {
-        const { x, y, z, sail, rig, phase, control, cordVertices } = flyer;
+      for (let i = 0; i < flyers.length; i++) {
+        const flyer = flyers[i];
+        const { x, y, z, sail, line, rig, phase, control, cordVertices } = flyer;
+        if (entering || !sail.visible) rig.placed = false;
+        sail.visible = line.visible = i < count;
+        if (!sail.visible) continue;
         const wave = Math.sin(time * 1.05 + phase);
         const flutter = Math.sin(flutterTime + phase);
         const elevation = lift * (lerp(0.47, 0.93, smoothstep(speed, 2, 9)) + wave * 0.07 + gust * flutter * 0.014);
@@ -117,7 +141,6 @@ export function createKiteFlyers(scene, terrainHeightAt) {
 
         control.elevation = elevation;
         control.pull = lift * (0.08 + wave * 0.05);
-        if (entering) rig.placed = false;
         rig.update(dt, x, z, yaw, ground, null, 0, false);
         rig.solve(control);
         crowd.add(rig, Math.hypot(x - camera.x, y - camera.y, z - camera.z));

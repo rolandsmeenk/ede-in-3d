@@ -3,6 +3,7 @@ import { localClock, weekday } from './ede-transit-time.js';
 import { parkingAppearanceSeed } from './ede-parking-demand.js';
 
 const CELL = 96, VIEW_RADIUS = 215, DRAW_CAPACITY = 256;
+const STAND_DRAW_CAPACITY = DRAW_CAPACITY * 3;
 const SECOND = 1000;
 const profiles = {
   school:  [[0, .03], [7, .03], [8.6, .86], [14.6, .83], [17, .09], [20, .03]],
@@ -46,7 +47,7 @@ export function bikeParkingOccupancy(kind, { hour, weekend }) {
 // Existing cycle approaches only. Transfers represent walking the last few metres with the bike.
 function approaches(site, tracks, canWalk, ground) {
   const result = new Map(), candidates = [];
-  if (!['public', 'permissive', 'customers', 'school', 'students', 'unknown', undefined].includes(site.access)) return result;
+  if (site.kind === 'white-bike' || !['public', 'permissive', 'customers', 'school', 'students', 'unknown', undefined].includes(site.access)) return result;
   const { wayId, reach = 10, via, maxHeightDifference = .8 } = site.handoff ?? {};
   const layer = site.level ?? 0;
   const clear = (a, b) => canWalk(a.x, a.z, b.x, b.z, layer);
@@ -86,7 +87,7 @@ export function createBikeParkingState(sites, tracks, canWalk, ground) {
     const z = site.z ?? slots.reduce((sum, slot) => sum + slot.z, 0) / slots.length;
     const area = { ...site, x, z, slots, anchors: approaches({ ...site, slots }, tracks, canWalk, ground) };
     area.spaces = new Map(slots.map(slot => [slot.id, {
-      slot, seed: seeded(slot.id), style: bikeStyleFor(site.secondary, seeded(slot.id + '/style')),
+      slot, seed: seeded(slot.id), style: site.kind === 'white-bike' ? 'white-bike' : bikeStyleFor(site.secondary, seeded(slot.id + '/style')),
       change: null,
     }]));
     areas.set(site.id, area);
@@ -118,13 +119,21 @@ export function createBikeParkingState(sites, tracks, canWalk, ground) {
     if (space.change?.until > now) return space.change.style;
     return space.seed < area.occupancy ? space.style : null;
   }
-  function tick(x, z, clock, moved, epoch = Date.now()) {
+  let lastParkActivity, lastParkReturns;
+  function tick(x, z, clock, moved, epoch = Date.now(), parkActivity = 0, parkReturns = 0) {
+    moved ||= parkActivity !== lastParkActivity || parkReturns !== lastParkReturns;
+    lastParkActivity = parkActivity;
+    lastParkReturns = parkReturns;
     if (clock < nextRefresh && !moved) return;
     nextRefresh = clock + 30;
     now = epoch;
     time = bikeParkingTime(now);
     nearby = around(x, z, VIEW_RADIUS + 26).sort((a, b) => distance(a, { x, z }) - distance(b, { x, z }));
-    for (const area of nearby) area.occupancy = bikeParkingOccupancy(area.kind, time);
+    const exploring = parkActivity * (1 - .8 * parkReturns);
+    for (const area of nearby) {
+      area.occupancy = area.kind !== 'white-bike' ? bikeParkingOccupancy(area.kind, time)
+        : area.entrance ? .96 - .52 * exploring : .62 + .30 * exploring;
+    }
     dirty = true;
   }
   function park(goal, areaId, style, canTransfer) {
@@ -172,8 +181,8 @@ export function renderBikeParking(parent, state, bikeModels) {
   const group = new THREE.Group();
   group.name = 'Ede bicycle parking';
   parent.add(group);
-  const instances = (geometry, material) => {
-    const mesh = new THREE.InstancedMesh(geometry, material, DRAW_CAPACITY);
+  const instances = (geometry, material, capacity = DRAW_CAPACITY) => {
+    const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     mesh.count = 0;
     mesh.visible = false;
     mesh.receiveShadow = true;
@@ -186,7 +195,7 @@ export function renderBikeParking(parent, state, bikeModels) {
     return [id, mesh];
   }));
   const stand = instances(new THREE.BoxGeometry(.05, .045, 1.04),
-    new THREE.MeshStandardNodeMaterial({ color: 0x666d6e, metalness: .26, roughness: .68 }));
+    new THREE.MeshStandardNodeMaterial({ color: 0x666d6e, metalness: .26, roughness: .68 }), STAND_DRAW_CAPACITY);
   const meshes = [...models.values(), stand];
   const pose = new THREE.Object3D();
   const usedStands = new Set();
@@ -199,7 +208,7 @@ export function renderBikeParking(parent, state, bikeModels) {
       for (const space of area.spaces.values()) {
         const { slot } = space;
         const rail = slot.stand;
-        if (rail && stand.count <= DRAW_CAPACITY - 3 && !usedStands.has(slot.rackId)) {
+        if (rail && stand.count < STAND_DRAW_CAPACITY && !usedStands.has(slot.rackId)) {
           usedStands.add(slot.rackId);
           pose.rotation.set(0, rail.yaw, 0);
           pose.position.set(rail.x, rail.y + .68, rail.z);

@@ -124,3 +124,32 @@ Chrome WebGPU raycasts matched travel contact at three reviewed sites. The Diede
 A 27 November screen deduplicated BGT island IDs from the five paving inputs and checked the distance to the endpoint-to-endpoint axis of each baked ground-level crossing. Within 3 m it found 264 island IDs, of which 24 have curb profiles and 240 are review candidates. Of those 240, 74 are outside the automatic materials filter (46 cement concrete, 28 asphalt), 157 have no nearby crossing marked as a matched refuge, and nine pass those two checks. This distance screen includes splitter islands and potentially flush surfaces. Overlaying the 2026 imagery on BGT confirmed examples of raised footprints without curb profiles. [Edeseweg, Bennekom](https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=528&HEIGHT=588&BBOX=52.0116333572%2C5.6727653041%2C52.0120735317%2C5.6734079714) · [Heelsumseweg, Bennekom](https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=588&HEIGHT=636&BBOX=51.9962272501%2C5.6765920955%2C51.9967033572%2C5.6773077931) · [De Klomp](https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=2026_orthoHR&STYLES=&CRS=EPSG%3A4326&FORMAT=image%2Fjpeg&WIDTH=768&HEIGHT=672&BBOX=52.0480330925%2C5.5736484874%2C52.0485361491%2C5.5745832761)
 
 Of 22 closed rings reconstructible from the shipped at-grade OSM roundabout ways, zero have a baked traffic-island profile inside the ring. The game drapes those centers on the terrain. BGT identifies the surface and level, and roundabout collars can surround a separately mapped planted center. Native PDOK AHN DTM samples at 0.5 m resolution show approximate median center ground rises of 31 cm at Bovenbuurtweg, 29 cm at Molenstraat, and 47 cm at Akulaan. Each uses a plane fitted to 48 samples around the circulating road and up to 25 central samples. The Chrome terrain sampler returns about +8 cm, +6 cm and −4 cm at the corresponding centers relative to the loop road samples. These values describe the broad ground rise. Individual curb and truck apron dimensions require finer evidence. [AHN raster products](https://www.ahn.nl/dataroom) · [BGT traffic island definition](https://geonovum.github.io/IMGeo-objectenhandboek/ondersteunendwegdeel)
+
+
+## Crossing island review
+
+On 27 November 2026, 240 previously flat BGT island footprints within 3 m of a baked same-level crossing were reviewed in 45 georeferenced 2026 PDOK aerial crops. Each crop was compared with the BGT polygon edges and the baked OSM or NDW crossing axes.
+
+| Outcome | Footprints |
+| --- | ---: |
+| Raised curb visible and fitted | 113 |
+| Level crossing surface or painted separator | 17 |
+| Curb or transition unresolved in available evidence | 92 |
+| Raised section visible, with insufficient room for a taper using the mapped crossing | 18 |
+
+The per-footprint record contains the BGT IDs, crossing IDs, dated imagery, and reasons for the level and unresolved decisions. The fitted footprints are spread across 38 locations. The 113 new rises use the configurable 120 mm default. There are zero newly measured rises. Separate caps retain their full height. At shared crossing footprints the bake keeps the crossing open and tapers to the top across the existing nominal 1.5 m run. Existing automatic profile heights and the compact pilot pack are preserved. The full-map asset is now 1,096,503 compressed bytes. [Footprint decisions and evidence](ede-island-crossing-review.json)
+
+```sh
+uv run --with shapely==2.2.0 python -B tools/build-ede-curbs.py --municipal --audit /tmp/ede-curbs-audit.json
+```
+
+
+The automated check samples the width of 131 baked crossing routes near fitted islands. Chrome WebGPU raycasts at Edeseweg, Heelsumseweg, and Rijksweg confirmed the rendered tops and openings matched travel contact within 0.002 mm.
+
+One paired Chrome WebGPU replay used fresh profiles, Fast at 1200 × 720, midday, active traffic, the same three camera views, and 85 frames per view. First playable frame was 32.22 s before and 30.61 s after. Small variations in traffic and streamed detail affect the comparison.
+
+| View | Median draw calls before → after | p95 frame time before → after |
+| --- | ---: | ---: |
+| Edeseweg | 791 → 793 | 33.4 → 33.3 ms |
+| Heelsumseweg | 649 → 648 | 16.7 → 16.7 ms |
+| Rijksweg | 1,112 → 1,095 | 33.3 → 33.4 ms |

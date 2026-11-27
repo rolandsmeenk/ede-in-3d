@@ -3,12 +3,32 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { gunzipSync } = require('node:zlib');
+const { loadModule } = require('./helpers/module.cjs');
 
 const packed = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '../assets', name))));
 const asset = packed('ede-road-surfaces.json.gz');
 const extension = packed('ede-corridor-paving.json.gz');
 const mockedSurfaces = async (url) => new Response(JSON.stringify(
   url.pathname.endsWith('/ede-corridor-paving.json.gz') ? extension : asset));
+
+test('snow on mapped paving and fallback paths removes the dry pavement ambient darkening', async () => {
+  const read = name => readFileSync(join(__dirname, '../js', name), 'utf8');
+  const three = {
+    'three/webgpu': await import('../vendor/three/build/three.webgpu.js'),
+    'three/tsl': await import('../vendor/three/build/three.tsl.js'),
+  };
+  const snow = loadModule(read('ede-snow.js'), { imports: { ...three, './building-collision.js': {} } });
+  const { createParkPavingMaterial, createEdePavingMaterial } = loadModule(read('tsl-materials.js'), { imports: {
+    ...three, './city-config.js': { EDE_DATA: {} }, './tree-seasons.js': {}, './ede-snow.js': snow,
+  } });
+  for (const material of [createParkPavingMaterial(true), createEdePavingMaterial(true), createEdePavingMaterial(true, true)]) {
+    assert.ok(material.snowCoverageNode?.isNode);
+    const ambient = material.aoNode;
+    assert.equal(ambient.method, 'mix');
+    assert.equal(ambient.bNode.value, 1);
+    assert.equal(ambient.cNode, material.snowCoverageNode);
+  }
+});
 
 test('the same Kernhem street keeps its mapped asphalt to fired-brick change', () => {
   const materials = [

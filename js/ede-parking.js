@@ -194,14 +194,14 @@ export function createEdeParking(parent,base,styles,network,data,closed) {
     }
     return false;
   }
-  function tick(fx,fz,clock,jump=false) {
+  function tick(fx,fz,clock,jump=false,activity=null) {
     if (!enabled) return;
     if (jump || needsSync || clock>=next || Math.hypot(fx-x,fz-z)>72) {
       needsSync=false;
       now=Date.now();
       x=fx; z=fz; next=clock+12;
       for (const [id,until] of cooling) if (until<=clock) cooling.delete(id);
-      snapshot=demand.refresh({x,z,radius:RADIUS,now,limit:72,
+      snapshot=demand.refresh({x,z,radius:RADIUS,now,limit:72,activity,
         canManeuver:(space)=>Boolean(access.link(space))});
       linksByEdge.clear();
       unavailable.clear();

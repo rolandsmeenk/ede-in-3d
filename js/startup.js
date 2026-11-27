@@ -1,4 +1,4 @@
-import('./main.js?v=20261127-event-ads')
+import('./main.js?v=20261127-volume-clouds')
   .then(({ initApp }) => initApp())
   .catch((error) => {
     console.error('[startup]', error);

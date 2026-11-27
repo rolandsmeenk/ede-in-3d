@@ -22,7 +22,7 @@ import {
   sqrt,
   If
 } from 'three/tsl';
-import { SkyMesh } from 'three/addons/objects/SkyMesh.js?v=20261127-photo-scenes';
+import { SkyMesh } from 'three/addons/objects/SkyMesh.js?v=20261127-volume-clouds';
 import { SunLight } from 'three/addons/lights/SunLight.js';
 import { SunLightNode } from 'three/addons/lights/SunLightNode.js';
 import { cityUniforms, setPhotoFrost } from './tsl-materials.js';
@@ -30,6 +30,7 @@ import { snowCover } from './ede-snow.js';
 import { directSunFactor, edeSun, livePresetBlend } from './live-sky.js';
 import { edeMoon } from './ede-moon.js';
 import { createPhotoSky } from './ede-photo-sky.js';
+import { createVolumetricClouds } from './ede-clouds.js?v=20261127-volume-clouds';
 import { liveWindowLights, PRESET_WINDOW_LIGHTS } from './ede-window-lights.js';
 
 // Atmospheric sky, environment lighting, sunlight and time-of-day presets.
@@ -146,7 +147,7 @@ function lerpHex(a, b, weight) {
 }
 
 class LightingSystem {
-  constructor(scene, renderer = null) {
+  constructor(scene, renderer = null, cloudSteps = 8) {
     this.scene = scene;
     this.activePresetId = 'golden';
     this.live = false;
@@ -167,10 +168,7 @@ class LightingSystem {
     // which would otherwise clear Cascade 0 when rendering Cascade 1 in SunShadowNode!
     this.scene.background = null;
 
-    // Physical Preetham SkyMesh + Beer-Powder Clouds (from three/addons/objects/SkyMesh.js). Its unit box must contain
-    // the camera wherever it flies over the 1:1 harbour (Manhattan alone is 13.6 km long; it renders at the far plane
-    // whatever its size)
-    // Calibrate raw sky radiance and composite the Moon behind the existing cloud layer.
+    // The skydome combines Preetham scattering with a volume cloud layer and the astronomical Moon.
     this.uSkyExposure = uniform(0.148);
     this.uNightFactor = uniform(0.0);
     this.uNightSkyColor = uniform(new THREE.Color(0x0b1528));
@@ -179,11 +177,18 @@ class LightingSystem {
     this.uMoonSun = uniform(new THREE.Vector3());
     this.uMoonRadius = uniform(0.0045);
     this.uMoonVisibility = uniform(1.0);
+    this.uCloudMoonlight = uniform(0);
+    this.clouds = createVolumetricClouds(cloudSteps, this.uMoonDirection, this.uCloudMoonlight);
     this.photoSky = createPhotoSky();
     this.uPhotoSkyEnabled = uniform(1);
-    this.sky = new SkyMesh((raw, ray, cloudTransmission, extinction, sampleCloudTransmission) => {
-      const sky = mix(raw.mul(this.uSkyExposure), this.uNightSkyColor, this.uNightFactor).toVar();
+    this.sky = new SkyMesh((raw, ray, cloudTransmission, extinction, sampleCloudTransmission, cloudShade) => {
       const alignment = dot(ray, this.uMoonDirection);
+      const nightCloud = this.uNightSkyColor.mul(0.58).add(vec3(0.004, 0.008, 0.015).mul(cloudShade.add(0.36)));
+      const moonHalo = smoothstep(0.65, 1, alignment);
+      const moonScatter = vec3(0.07, 0.095, 0.14).mul(this.uCloudMoonlight)
+        .mul(moonHalo.mul(0.82).add(0.18)).mul(cloudShade.mul(0.70).add(0.30));
+      const night = mix(nightCloud.add(moonScatter), this.uNightSkyColor, cloudTransmission);
+      const sky = mix(raw.mul(this.uSkyExposure), night, this.uNightFactor).toVar();
       If(this.uShowMoon.greaterThan(0).and(ray.y.greaterThan(0)).and(alignment.greaterThan(0.99995)), () => {
         const offset = ray.sub(this.uMoonDirection.mul(alignment)).div(this.uMoonRadius);
         const radiusSquared = dot(offset, offset);
@@ -200,17 +205,14 @@ class LightingSystem {
         if (composite !== sky) sky.assign(composite);
       });
       return sky;
-    });
+    }, this.clouds);
     this.sky.scale.setScalar(200000);
     this.sky.turbidity.value = 8.0;
     this.sky.rayleigh.value = 2.8;
     this.sky.mieCoefficient.value = 0.008;
     this.sky.mieDirectionalG.value = 0.88;
-    this.sky.cloudScale.value = 0.00018;
-    this.sky.cloudSpeed.value = 0.000015;
     this.sky.cloudCoverage.value = 0.36;
     this.sky.cloudDensity.value = 0.38;
-    this.sky.cloudElevation.value = 0.52;
 
     // In reversedDepthBuffer mode ([1..0]), camera.far is z = 0.0 (whereas SkyMesh defaults to z = w)
     if (renderer && renderer.reversedDepthBuffer) {
@@ -289,6 +291,7 @@ class LightingSystem {
     this.sky.showSunDisc.value = 0;
     this.uShowMoon.value = 0;
     this.uPhotoSkyEnabled.value = 0;
+    this.clouds.baking.value = 1;
     this.envScene.add(this.sky);
     this.envRenderTarget = this.pmremGenerator.fromScene(this.envScene, 0, 0.1, 100, {
       renderTarget: this.envRenderTarget
@@ -299,6 +302,7 @@ class LightingSystem {
     this.sky.showSunDisc.value = showDisc;
     this.uShowMoon.value = showMoon;
     this.uPhotoSkyEnabled.value = 1;
+    this.clouds.baking.value = 0;
     this.scene.add(this.sky);
   }
 
@@ -317,6 +321,7 @@ class LightingSystem {
     this.presetSunElevation = sunElevation;
     this.live = false;
     this.uShowMoon.value = 0;
+    this.uCloudMoonlight.value = 0;
     cityUniforms.uWindowLights.value.set(...PRESET_WINDOW_LIGHTS[p.id]);
     this.applyValues(p);
   }
@@ -328,6 +333,9 @@ class LightingSystem {
     this.uMoonSun.value.set(...direction);
     this.uMoonRadius.value = Math.sin(moon.angularRadius);
     this.uShowMoon.value = Number(moon.direction[1] > -this.uMoonRadius.value);
+    const { smoothstep } = THREE.MathUtils;
+    const illuminated = (1 - this.uMoonDirection.value.dot(this.uMoonSun.value)) * 0.5;
+    this.uCloudMoonlight.value = illuminated * smoothstep(moon.direction[1], 0, 0.18) * (1 - smoothstep(elevation, -12, -4));
     cityUniforms.uWindowLights.value.set(...liveWindowLights(date, elevation));
     const blend = livePresetBlend(elevation);
     const { from, to, weight } = blend;
@@ -425,6 +433,7 @@ class LightingSystem {
   }
 
   update(focusPos, weather, timeSeconds) {
+    this.clouds.update(weather?.windX ?? 0, weather?.windZ ?? 0, timeSeconds);
     this.photoSky.update(weather, timeSeconds);
     setPhotoFrost(weather?.frost ?? 0);
     snowCover.value = weather?.snowCover ?? 0;

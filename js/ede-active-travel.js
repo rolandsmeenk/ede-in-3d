@@ -255,7 +255,7 @@ export function buildEdeActiveTravel(data, grade, { walkable = () => true, sidew
           shape.push(footProfile ? footPoint(x, z, footProfile.points) : [x - dz * offset / len, z + dx * offset / len]);
         }
         const properties = { wayId: road.id, layer: road.layer, structure: road.bridge || road.tunnel, mountain,
-          sidewalk: kind === 'sidewalk', exclusive: kind !== 'lane', width, allowed, kind, offset,
+          surface: road.surface, roadKind: road.kind, sidewalk: kind === 'sidewalk', exclusive: kind !== 'lane', width, allowed, kind, offset,
           populationWidth: Math.min(width, 5),
           socialPlace: mode === FOOT && (kind === 'pedestrian' || kind === 'sidewalk') ? road.id + '/' + offset : null };
         let previous = null;

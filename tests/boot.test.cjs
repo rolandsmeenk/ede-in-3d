@@ -78,6 +78,9 @@ test('Custom and Photo scenes expose separate controls and Live is a third mode'
     assert.ok(optionsIn('environment-time').includes(scene.time));
     assert.ok(scene.summary);
   }
+  assert.match(custom, /id="environment-preview" type="datetime-local"/);
+  assert.match(html, /popovertarget="agenda-popover"/);
+  assert.match(html, /id="agenda-list"/);
   const manualWeather = optionsIn('environment-weather');
   assert.ok(manualWeather.includes('default'));
   assert.ok(manualWeather.every((id) => !Object.hasOwn(PHOTO_WEATHER_PRESETS, id)));

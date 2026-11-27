@@ -204,6 +204,12 @@ test('expanded terrain cuts remove lower ground and retain terrain above a cover
   assert.ok(Math.abs(overhead.point.y - 1.375) < 1e-6);
   const colors = overhead.object.geometry.attributes.color.array;
   assert.ok(colors.includes(100) && colors.includes(160), 'new edge vertices keep interpolated aerial colors');
+  const { normal } = overhead.object.geometry.attributes;
+  const { a, b, c } = overhead.face;
+  for (const i of [a, b, c]) {
+    assert.ok(Math.abs(normal.getX(i) + 0.2 / Math.hypot(0.2, 1)) < 1e-6);
+    assert.ok(Math.abs(normal.getY(i) - 1 / Math.hypot(0.2, 1)) < 1e-6);
+  }
 });
 
 test('coarse terrain retains land between many small cuts in one triangle', async () => {

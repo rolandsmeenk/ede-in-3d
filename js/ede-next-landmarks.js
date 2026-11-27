@@ -314,7 +314,9 @@ export function createEderKuil() {
   ]) {
     for (let i = 1; i < path.length; i++) {
       const [x,z] = path[i - 1], [bx,bz] = path[i];
-      batch.solid(drapeEdeSurface(edeStrip({ x,z }, { x: bx,z: bz }, 0.95, 0.046)), 0xa59c87);
+      const strip = edeStrip({ x,z }, { x: bx,z: bz }, 0.95, 0.046);
+      const surface = drapeEdeSurface(strip, false, undefined, false, undefined, undefined, false, true);
+      batch.solid(surface, 0xa59c87, true);
     }
   }
 

@@ -696,7 +696,7 @@ Refresh the rural surveys with `uv run --with pyproj==3.8.0 python -B tools/buil
 
 ### Municipal coverage
 
-The official Ede outline follows Kadaster’s complete 2026 Gemeente Ede polygon (`GM0228`), 318.62 km² in RD New. The playable area extends another 500 m around the municipality, for 361.15 km² in RD New. Walking, cycling, driving and flying share the same outer limit, and an amber frame and label appear while the player is outside Ede. The 2D map shows both boundaries and the road and path network joins to the earlier map through shared OSM node IDs. [Kadaster Bestuurlijke Gebieden](https://www.pdok.nl/ogc-apis/-/article/bestuurlijke-gebieden)
+The official Ede outline follows Kadaster’s complete 2026 Gemeente Ede polygon (`GM0228`), 318.62 km² in RD New. The 500 m travel collar around the municipality brings the main playable area to 361.15 km² in RD New. The Schaarsbergen White Bike racks have a separate map arrival on the existing terrain. Walking, cycling, driving and flying share the travel limits, and an amber frame and label appear while the player is outside Ede. The 2D map shows both boundaries and the road and path network joins to the earlier map through shared OSM node IDs. [Kadaster Bestuurlijke Gebieden](https://www.pdok.nl/ogc-apis/-/article/bestuurlijke-gebieden)
 
 The 2 km scenery buffer contains AHN terrain and measured woodland canopy, covering 491.16 km² including the municipality. The quadtree keeps 61 coarse roots available during camera jumps and streams 5 m detail up to the edge. The playable terrain and BAG collar use the same lossless centimetre samples for terrain and placement. Existing surveyed terrain patches use the Oude Kerk scene frame and 22.54 m NAP datum.
 

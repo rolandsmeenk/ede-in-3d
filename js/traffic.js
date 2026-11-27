@@ -19,6 +19,8 @@ import { parkingPose } from './ede-parking-access.js';
 import { buildEdeBikeParkingSites } from './ede-bike-parking-sites.js';
 import { bikeStyleFor, createBikeParkingState, renderBikeParking } from './ede-bike-parking.js';
 import { createEdeTrips } from './ede-trips.js';
+import { edeActivity } from './ede-activity.js';
+import { hogeVeluweBikeActivity, hogeVeluweBikeReturns, useWhiteBike, whiteBikeOriginWeight, whiteBikeTrack, whiteBikePath } from './ede-white-bike-traffic.js';
 import { createEdeDrivingControls } from './ede-driving-controls.js';
 import { CAR, VAN, BUS, BICYCLE } from './road-access.js?v=20261122-startup';
 import { getEdeGrade, gradeContactHeight, gradeCurbHeightAt, gradeGroundHeightAt, gradeHeightAt, gradeWayAt } from './ede-grade.js';
@@ -47,7 +49,7 @@ import {
   createLoftedBusMaterial
 } from './bus.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { buildEdeBike, EDE_BIKE_FIT, EDE_BIKE_STYLES, EDE_MOUNTAIN_BIKE_STYLE } from './ede-bikes.js';
+import { buildEdeBike, EDE_BIKE_FIT, EDE_BIKE_STYLES, EDE_MOUNTAIN_BIKE_STYLE, EDE_WHITE_BIKE_STYLE } from './ede-bikes.js';
 
 // Cars and buses follow the road graph, obey signals, yield at crossings and react to collisions.
 // Vehicles replenish around the player; pedestrian-system.js manages the nearby walking population.
@@ -508,7 +510,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     Object.assign(bike, { bike: true, halfL: 0.95, mass: 95, slot: i });
     bikes.push(bike);
   }
-  const bikeModels = new Map([...EDE_BIKE_STYLES, EDE_MOUNTAIN_BIKE_STYLE].map(style => {
+  const bikeModels = new Map([...EDE_BIKE_STYLES, EDE_MOUNTAIN_BIKE_STYLE, EDE_WHITE_BIKE_STYLE].map(style => {
     const { body, fork, wheel } = buildEdeBike(style);
     const geometry = mergeGeometries([
       body, fork,
@@ -801,6 +803,10 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
 
   // Revisit the area budget when the camera moves or new directional readings take effect.
   let nearX = Infinity, nearZ = Infinity, nextDemandCheck = 0;
+  let activitySnapshot = null, ambient = null, parkBikeActivity = 0, parkBikeReturns = 0;
+  function activeArea(track) {
+    return ambient?.active(track.ax + track.ux * track.len * .5, track.az + track.uz * track.len * .5) ?? 1;
+  }
   function nearLength(ax, az, dx, dz, len) {
     return localSegmentLength(focusX, focusZ, NEAR_RADIUS, ax, az, dx, dz, len);
   }
@@ -821,7 +827,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     let roadArea = 0, footArea = 0;
     for (const e of nearEdges) {
       if (roadTraffic.isClosed(e) || e.len < 15) continue;
-      const areaPerLane = nearLength(e.sx, e.sz, e.dx, e.dz, e.len) * clamp(e.half, 2.4, 3.5) * roadTraffic.demand(e);
+      const demand = roadTraffic.demand(e, ambient?.road);
+      const areaPerLane = nearLength(e.sx, e.sz, e.dx, e.dz, e.len) *
+        clamp(e.half, 2.4, 3.5) * demand;
       if (!(areaPerLane > 0)) continue;
       const carLanes = e.ambientLanes.length, vanLanes = e.vanLanes.length;
       for (const [kind, pool] of vehicleSpawnPools) {
@@ -836,7 +844,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     }
     for (const track of nearBikes) {
       if (track.noSpawn || track.len < 2) continue;
-      const area = nearLength(track.ax, track.az, track.ux, track.uz, track.len) * clamp(track.width, 1.4, 4.5);
+      const parkDemand = whiteBikeTrack(track) ? parkBikeActivity * whiteBikeOriginWeight(track, parkBikeReturns) : 1;
+      const area = nearLength(track.ax, track.az, track.ux, track.uz, track.len) * clamp(track.width, 1.4, 4.5) * activeArea(track) * parkDemand;
       if (area > 0) bikeSpawns.push({ segment: track, end: (bikeSpawns.at(-1)?.end || 0) + area });
     }
     let trailLength = 0;
@@ -844,19 +853,19 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       if (track.noSpawn || track.len < 2 || !track.links.some(legs => legs.length)) continue;
       const length = nearLength(track.ax, track.az, track.ux, track.uz, track.len);
       if (length <= 0) continue;
-      trailLength += length;
+      trailLength += length * activeArea(track);
       mountainBikeSpawns.push({ segment: track, end: trailLength });
     }
     for (const track of nearFoot || []) {
       if (track.noSpawn) continue;
       const area = nearLength(track.ax, track.az, track.ux, track.uz, track.len) *
-        (track.populationWidth ?? (track.sidewalk ? 1.8 : clamp(track.width, 1, 6)));
+        (track.populationWidth ?? (track.sidewalk ? 1.8 : clamp(track.width, 1, 6))) * activeArea(track);
       if (area > 0) {
         footArea += area;
         footSpawns.push({ segment: track, end: footArea });
       }
     }
-    const activity = Math.min(1, 0.24 + 0.76 * roadTraffic.profile);
+    const activity = ambient?.travel ?? Math.min(1, 0.24 + 0.76 * roadTraffic.profile);
     carTarget = Math.min(NUM_CARS, Math.round(roadArea / 640));
     for (const fleet of cargoFleets) {
       const expected = (vehicleSpawns[fleet.roadProfile].at(-1)?.end ?? 0) / 640;
@@ -2520,11 +2529,14 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     const cruise = t.mountain ? 3.0 + b.v0 * 0.43 : b.v0;
     Object.assign(b, { edge: t, s, dir, cruise, speed: parkedStyle ? 0 : cruise * 0.8, y,
       vx: 0, vz: 0, yawOffset: 0, yawVel: 0, impactTime: 0, bikePath: null });
-    b.destinationTrip = !t.mountain && trips && Math.random() < 0.8 ? trips.active('bike', t, dir, s) : null;
+    const parkBike = !parkedStyle && parkBikeActivity > 0 && whiteBikeTrack(t);
+    const white = parkBike && useWhiteBike(t);
+    b.destinationTrip = parkBike ? trips?.parkBike(t, dir, s, Math.random() < parkBikeReturns)
+      : !t.mountain && trips && Math.random() < 0.8 ? trips.active('bike', t, dir, s) : null;
     if (b.destinationTrip) b.dir = b.destinationTrip.startDir;
     locateBike(b);
     const hub = b.destinationTrip?.hub;
-    b.style = t.mountain ? EDE_MOUNTAIN_BIKE_STYLE.id : parkedStyle ??
+    b.style = t.mountain ? EDE_MOUNTAIN_BIKE_STYLE.id : white ? EDE_WHITE_BIKE_STYLE.id : parkedStyle ??
       bikeStyleFor(hub?.secondary || hub?.id === 'zandlaan-schools' || bikeParking?.secondaryNear(b.x, b.z));
     b.model = bikeModels.get(b.style);
     b.prevX = b.x; b.prevZ = b.z;
@@ -2563,10 +2575,11 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     return false;
   }
 
-  function bikeRoute(track, dir) {
+  function bikeRoute(track, dir, white) {
     const end = dir > 0 ? 1 : 0;
     let next = null, best = -Infinity;
     for (const path of track.links[end]) {
+      if (white && !whiteBikePath(path)) continue;
       const leg = path.at(-1);
       const alignment = (track.ux * leg.track.ux + track.uz * leg.track.uz) * dir * leg.dir;
       const score = alignment + (leg.track.exclusive ? 0.6 : 0) + Math.random() * 0.65;
@@ -2585,16 +2598,21 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
       return step.legs.slice();
     }
     if (step) b.destinationTrip=null;
-    return bikeRoute(b.edge,b.dir);
+    return bikeRoute(b.edge, b.dir, b.style === EDE_WHITE_BIKE_STYLE.id);
   }
 
   function driveBike(b, dt) {
+    if (b.style === EDE_WHITE_BIKE_STYLE.id && parkBikeActivity === 0) { b.edge = null; return; }
     const trip=b.destinationTrip;
     const remaining = trip?.goal.track === b.edge && trip.index === trip.steps.length
       ? (trip.goal.at - b.s) * b.dir : Infinity;
     if (remaining <= .7) {
       trips.finished('bike',trip);
       b.destinationTrip=null;
+      if (trip.hub.parkBike && b.style === EDE_WHITE_BIKE_STYLE.id && !nearView(b.x, b.z, 2, 42, b.y)) {
+        b.edge = null;
+        return;
+      }
       if (trip.hub.bikeParking && !nearView(b.x, b.z, 2, 42, b.y) &&
           bikeParking.park(trip.goal, trip.hub.bikeParking, b.style,
             slot => !nearView(slot.x, slot.z, 2, 42, slot.y))) {
@@ -3270,10 +3288,17 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     }
   }
 
-  function update(dt, elapsed, focusPos = null, playerEntity = null, activeMode = 'car', camera = null, weather = 'dry') {
+  function update(dt, elapsed, focusPos = null, playerEntity = null, activeMode = 'car', camera = null, weather = 'dry', activity = null) {
     clock = elapsed;
     trafficWeather = TRAFFIC_WEATHER[weather];
-    trips?.updateClock(elapsed);
+    if (activity !== activitySnapshot) {
+      activitySnapshot = activity;
+      ambient = pilot.enabled ? edeActivity(activity) : null;
+      parkBikeActivity = hogeVeluweBikeActivity(activity);
+      parkBikeReturns = hogeVeluweBikeReturns(activity);
+      nextDemandCheck = 0;
+    }
+    trips?.updateClock(elapsed, Date.now(), ambient);
     avePhase = signalPhase(elapsed, true);
     stPhase = signalPhase(elapsed, false);
     aveWalk = walkSignal(elapsed, true);
@@ -3306,7 +3331,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     player.halfL = activeMode === 'cargobike' ? 1.34 : activeMode === 'cyclist' ? 0.85 : activeMode === 'person' ? 0.32 : 2.18;
 
     // Departures consume the same free car slots as normal replenishment.
-    parking?.tick(focusX,focusZ,clock,jump);
+    parking?.tick(focusX,focusZ,clock,jump,ambient);
     populate(cars, carPopulation, carTarget, spawnCar, 100, jump);
     for (const { mesh, pool, population, target } of cargoFleets) {
       populate(pool, population, target, spawnVehicle, 100, jump);
@@ -3331,7 +3356,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     if (bikeParking) {
       const moved = jump || Math.hypot(focusX - bikeParkingX, focusZ - bikeParkingZ) >= 24;
       if (moved) { bikeParkingX = focusX; bikeParkingZ = focusZ; }
-      bikeParking.tick(focusX, focusZ, clock, moved);
+      bikeParking.tick(focusX, focusZ, clock, moved, Date.now(), parkBikeActivity, parkBikeReturns);
     }
     populate(bikes, bikePopulation, Math.min(bikeTarget, NUM_BIKES - mountainBikeTarget), spawnBike, 70, jump, isCityCyclist);
     populate(bikes, mountainBikePopulation, mountainBikeTarget, spawnMountainBike, 70, jump, isMountainBiker);

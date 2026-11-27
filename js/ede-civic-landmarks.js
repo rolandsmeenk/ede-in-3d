@@ -515,6 +515,7 @@ export class CivicBatch {
   vertices = [];
   colors = [];
   glossy = [];
+  normalOverrides = [];
   tint = new THREE.Color();
 
   triangle(a, b, c, color, sheen = 0) {
@@ -545,13 +546,17 @@ export class CivicBatch {
     }
   }
 
-  solid(geometry, color) {
+  solid(geometry, color, preserveNormals = false) {
     const position = geometry.getAttribute('position'), index = geometry.index;
+    const normal = preserveNormals && geometry.getAttribute('normal');
+    const preserved = normal && { start: this.vertices.length, normals: [] };
     const points = Array.from({ length: position.count }, (_, i) => [position.getX(i), position.getY(i), position.getZ(i)]);
     for (let i = 0; i < (index?.count ?? position.count); i += 3) {
       const j = index ? [index.getX(i), index.getX(i + 1), index.getX(i + 2)] : [i, i + 1, i + 2];
       this.triangle(points[j[0]], points[j[1]], points[j[2]], color);
+      if (preserved) for (const vertex of j) preserved.normals.push(normal.getX(vertex), normal.getY(vertex), normal.getZ(vertex));
     }
+    if (preserved) this.normalOverrides.push(preserved);
     geometry.dispose();
   }
 
@@ -561,6 +566,7 @@ export class CivicBatch {
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(this.colors, 3));
     geometry.setAttribute('civicGloss', new THREE.Float32BufferAttribute(this.glossy, 1));
     geometry.computeVertexNormals();
+    for (const { start, normals } of this.normalOverrides) geometry.attributes.normal.array.set(normals, start);
     geometry.computeBoundingBox();
     if (passage) carveBagBuildingPassages(geometry, { removeLandmarks: false });
     const material = new THREE.MeshStandardNodeMaterial({ vertexColors: true });

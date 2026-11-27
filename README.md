@@ -79,7 +79,7 @@ Four courts count toward both football and basketball. [Bundled sports inventory
 
 ## See Ede in a different light
 
-Open **Environment** and choose **Live** to follow Ede’s local clock, seasons, weather and Frankeneng water levels. In **Custom**, set the time of day, season and weather yourself. Choose **Photo scenes** to preview a complete scene, then return to **Custom** to restore your settings. [Environment and data sources](docs/simulation.md#environment)
+Open **Environment** and choose **Live** to follow Ede’s local clock, seasons, weather and Frankeneng water levels. In **Custom**, choose presets or enter a date and time in Ede to preview its daylight and activity. Use **Menu → Agenda** to preview an upcoming festivity at its venue. Choose **Photo scenes** to preview a complete scene, then return to **Custom** to restore your settings. [Environment and data sources](docs/simulation.md#environment)
 
 ### Four seasons at Kasteel Hoekelum
 

@@ -8,7 +8,7 @@ function advance() {
   active = waiting.shift();
   const { type, buffer, tile, terrainBounds, boundary, napOrigin } = active;
   try {
-    const context = captureTerrainContext(terrainBounds);
+    const context = captureTerrainContext(terrainBounds, type === 'terrain');
     const fields = [context.terrain, ...context.patches, context.expansion?.field, context.expansion?.detail,
       context.expansion?.overviewField];
     worker.postMessage({ type, buffer, tile, context, boundary: canopyConfigured ? undefined : boundary, napOrigin },
@@ -33,7 +33,7 @@ export function runLandscapeJob(type, buffer, tile, terrainBounds, signal, optio
   if (disabled || typeof Worker === 'undefined' || signal.aborted) return null;
   if (!worker) {
     try {
-      worker = new Worker(new URL('./ede-landscape-worker.js?v=20261126-terrain-clipping', import.meta.url), { type: 'module' });
+      worker = new Worker(new URL('./ede-landscape-worker.js?v=20261127-terrain-normals', import.meta.url), { type: 'module' });
     } catch (error) {
       disabled = true;
       console.warn('[landscape worker] using main-thread meshes:', error);

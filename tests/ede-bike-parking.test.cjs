@@ -4,9 +4,9 @@ const { join } = require('node:path');
 const test = require('node:test');
 const { loadModule } = require('./helpers/module.cjs');
 
-async function parkingModule() {
+async function parkingModule(three = {}) {
   return loadModule(readFileSync(join(__dirname, '../js/ede-bike-parking.js'), 'utf8'), { imports: {
-    'three/webgpu': {},
+    'three/webgpu': three,
     './ede-transit-time.js': await import('../js/ede-transit-time.js'),
     './ede-parking-demand.js': await import('../js/ede-parking-demand.js'),
   } });
@@ -56,4 +56,103 @@ test('parking and departure transfer one bike of the same type and keep state ac
   assert.equal(state.occupant(vacancy, area), null);
   assert.equal(state.stats.arrived, 1);
   assert.equal(state.stats.departed, 2);
+});
+
+test('all nearby De Klomp stands fit in the rack instance buffer', async () => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const { createBikeParkingState, renderBikeParking } = await parkingModule(three);
+  const { buildEdeBikeParkingSites } = await import('../js/ede-bike-parking-sites.js');
+  const sites = buildEdeBikeParkingSites([], { placementAt: () => 0 });
+  const state = createBikeParkingState(sites, () => {}, () => false, () => 0);
+  state.tick(-6682, 6, 0, true);
+  const nearby = state.nearby();
+  assert.deepEqual(Array.from(nearby, area => area.id).sort(), [
+    'veenendaal-de-klomp-noord', 'veenendaal-de-klomp-stationsweg', 'veenendaal-de-klomp-zuid',
+  ]);
+  const parent = new three.Group();
+  renderBikeParking(parent, state, new Map())();
+  const stands = parent.getObjectByName('Ede bicycle parking').children[0];
+  assert.equal(stands.count, 3 * nearby.reduce((total, area) => total + area.slots.length, 0));
+  assert.ok(stands.count <= stands.instanceMatrix.count);
+});
+
+
+test('all six White Bike racks have a map arrival and display the shared fleet', async () => {
+  const { buildEdeBikeParkingSites } = await import('../js/ede-bike-parking-sites.js');
+  const { EDE_WHITE_BIKE_SITES } = await import('../js/ede-white-bike-sites.js');
+  const { containsTravelPoint, containsPlayablePoint, TELEPORT_LOCATIONS } = await import('../js/city-config.js');
+  const { createBikeParkingState } = await parkingModule();
+  const sites = buildEdeBikeParkingSites([], { placementAt: () => 0 }).filter(site => site.kind === 'white-bike');
+  assert.equal(sites.length, 6);
+  const state = createBikeParkingState(sites, () => {}, () => true, () => 0);
+  const epoch = Date.parse('2026-07-18T12:00:00Z');
+  for (const { id, x, z } of EDE_WHITE_BIKE_SITES) {
+    const arrival = TELEPORT_LOCATIONS[id];
+    assert.equal(arrival.focus.x, x);
+    assert.ok(containsTravelPoint(arrival.x, arrival.z));
+    assert.ok(containsTravelPoint(arrival.x - Math.sin(arrival.heading) * 52,
+      arrival.z - Math.cos(arrival.heading) * 52));
+    state.tick(x, z, 0, true, epoch, 0);
+    const area = state.areas.get(id);
+    assert.ok(state.nearby().includes(area));
+    assert.equal(area.occupancy, area.entrance ? .96 : .62);
+    assert.ok([...area.spaces.values()].every(space => space.style === 'white-bike'));
+    assert.ok(area.anchors.size === 0);
+    state.tick(x, z, 0, false, epoch, 1);
+    const daytime = area.occupancy;
+    assert.ok(area.entrance ? daytime < .5 : daytime > .9);
+    state.tick(x, z, 0, false, epoch, 1, 1);
+    assert.ok(area.entrance ? area.occupancy > daytime : area.occupancy < daytime);
+  }
+  const schaarsbergen = TELEPORT_LOCATIONS['white-bike-schaarsbergen'];
+  assert.equal(containsPlayablePoint(schaarsbergen.x, schaarsbergen.z), false);
+});
+
+test('White Bikes use a 75% eligible share and stay on paved routes within the park', async () => {
+  const { hogeVeluweBikeActivity, hogeVeluweBikeReturns, useWhiteBike, whiteBikePath, whiteBikeTrack } = await import('../js/ede-white-bike-traffic.js');
+  const track = { ax: 10700, az: -5780, ux: 1, uz: 0, len: 10, surface: 'asphalt' };
+  const longConnector = { ...track, kind: 'connector', len: 4500 };
+  const connector = { ...track, kind: 'connector', len: 3 };
+  const gravel = { ...track, surface: 'fine_gravel' };
+  const outside = { ...track, ax: 6000, len: 5200 };
+  assert.ok(whiteBikeTrack(track));
+  assert.equal(Array.from({ length: 100 }, (_, i) => useWhiteBike(track, () => i / 100)).filter(Boolean).length, 75);
+  assert.equal(useWhiteBike(outside, () => 0), false);
+  assert.equal(useWhiteBike({ ...track, mountain: true }, () => 0), false);
+  assert.ok(whiteBikePath([{ track: connector }, { track }]));
+  assert.equal(whiteBikePath([{ track: longConnector }, { track }]), false);
+  assert.equal(whiteBikePath([{ track: gravel }]), false);
+  const activity = (date, hour, weekday = 6) => hogeVeluweBikeActivity({ date, minute: hour * 60, weekday });
+  assert.equal(activity('2026-01-17', 8), 0);
+  assert.equal(activity('2026-01-17', 18), 0);
+  assert.equal(activity('2026-07-18', 22), 0);
+  assert.ok(activity('2026-07-18', 13) > activity('2026-07-18', 9));
+  assert.ok(activity('2026-07-18', 13) > activity('2026-07-18', 21));
+  assert.ok(activity('2026-07-18', 13) > activity('2026-07-20', 13, 1));
+  assert.equal(hogeVeluweBikeReturns({ minute: 9 * 60 }), 0);
+  assert.equal(hogeVeluweBikeReturns({ minute: 17 * 60 }), 1);
+});
+
+test('morning park rides aim for the highlights and afternoon rides return to an entrance', async () => {
+  const { EDE_DATA } = await import('../js/ede-geodata.js');
+  const { buildEdeActiveTravel } = await import('../js/ede-active-travel.js');
+  const { createEdeTrips } = await import('../js/ede-trips.js');
+  const { EDE_WHITE_BIKE_SITES } = await import('../js/ede-white-bike-sites.js');
+  const { whiteBikeTrack, whiteBikePath } = await import('../js/ede-white-bike-traffic.js');
+  const activeTravel = buildEdeActiveTravel(EDE_DATA, null);
+  const trips = createEdeTrips({ edges: [], activeTravel }, {}, { places: [], random: () => .39 });
+  let frame = 0;
+  for (const site of EDE_WHITE_BIKE_SITES.filter(site => site.id !== 'white-bike-schaarsbergen')) {
+    const candidates = [];
+    activeTravel.bikes(site.approach.x, site.approach.z, 70, candidates);
+    let route;
+    for (const track of candidates.filter(track => !track.noSpawn && whiteBikeTrack(track))) {
+      trips.updateClock(frame++, Date.parse('2026-07-18T11:00:00Z'), { weekday: 6, minute: site.entrance ? 700 : 970 });
+      route = trips.parkBike(track, track.allowed[0] ? 1 : -1, track.len / 2, !site.entrance);
+      if (route) break;
+    }
+    assert.ok(route, site.id);
+    assert.equal(Boolean(route.hub.entrance), !site.entrance);
+    assert.ok(route.steps.every(step => whiteBikePath(step.legs)));
+  }
 });

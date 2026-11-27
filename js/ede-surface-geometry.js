@@ -1,3 +1,5 @@
+import { sampleTerrain } from './terrain.js?v=20261124-workers';
+
 export const EDE_RENDER_CELL = 750;
 
 export function edeSpatialGroups(items, position = item => item) {
@@ -43,7 +45,27 @@ export function polygonGeometry(THREE, ring, holes = [], y = 0) {
   return geometry;
 }
 
-export function makeSurfaceGeometry(THREE, positions, indices, uv) {
+export function setTerrainSurfaceNormals(THREE, geometry, gridAt, count = geometry.attributes.position.count) {
+  const { position } = geometry.attributes;
+  const normal = geometry.attributes.normal ?? new THREE.BufferAttribute(new Float32Array(position.count * 3), 3);
+  for (let i = 0; i < count; i++) {
+    const x = position.getX(i), z = position.getZ(i);
+    const grid = gridAt(x, z);
+    const half = grid.step / 2;
+    // Sample either side of the vertex so clipped triangles share the same slope.
+    const cx = Math.max(grid.minX, Math.min(grid.maxX, x));
+    const cz = Math.max(grid.minZ, Math.min(grid.maxZ, z));
+    const west = Math.max(grid.minX, cx - half), east = Math.min(grid.maxX, cx + half);
+    const north = Math.max(grid.minZ, cz - half), south = Math.min(grid.maxZ, cz + half);
+    const dx = (sampleTerrain(grid, west, cz) - sampleTerrain(grid, east, cz)) / (east - west);
+    const dz = (sampleTerrain(grid, cx, north) - sampleTerrain(grid, cx, south)) / (south - north);
+    const length = Math.hypot(dx, 1, dz);
+    normal.setXYZ(i, dx / length, 1 / length, dz / length);
+  }
+  geometry.setAttribute('normal', normal);
+}
+
+export function makeSurfaceGeometry(THREE, positions, indices, uv, normalGrid) {
   const geometry = new THREE.BufferGeometry();
   if (!uv) {
     uv = new Float32Array(positions.length / 3 * 2);
@@ -55,7 +77,8 @@ export function makeSurfaceGeometry(THREE, positions, indices, uv) {
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   if (indices) geometry.setIndex(indices);
-  geometry.computeVertexNormals();
+  if (normalGrid) setTerrainSurfaceNormals(THREE, geometry, normalGrid);
+  else geometry.computeVertexNormals();
   return geometry;
 }
 
@@ -86,7 +109,7 @@ export function emitSurface(polygon, positions, terrainHeightAt, lift = 0) {
   }
 }
 
-export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts, vertexLift = false) {
+export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts, vertexLift = false, smoothGround = false) {
   const { getTerrain, getExpansionTerrain, getExpansionTerrainPatch, getTerrainPatch, terrainHeightAt } = terrain;
   const { gradeCuts, localGradeSurface, clipEdeGround } = grade;
   const field = getTerrain();
@@ -235,7 +258,13 @@ export function drapeSurface(THREE, terrain, grade, geometry, cutGrade, wayId, m
     }
   }
   geometry.dispose();
-  const result = makeSurfaceGeometry(THREE, positions);
+  const contains = (grid, x, z) => x >= grid.minX && x <= grid.maxX && z >= grid.minZ && z <= grid.maxZ;
+  const normalGrid = smoothGround && !vertexLift && !local && ((x, z) => {
+    if (!outerField || contains(field, x, z)) return getTerrainPatch(x, z) ?? field;
+    const overview = getExpansionTerrain()?.overviewField;
+    return getExpansionTerrainPatch(x, z) ?? (contains(outerField, x, z) ? outerField : overview ?? outerField);
+  });
+  const result = makeSurfaceGeometry(THREE, positions, undefined, undefined, normalGrid);
   if (source) result.setAttribute(keepAttribute, new THREE.Float32BufferAttribute(attributeValues, source.itemSize));
   return result;
 }

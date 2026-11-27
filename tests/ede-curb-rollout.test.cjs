@@ -8,12 +8,13 @@ const read = name => JSON.parse(gunzipSync(readFileSync(join(__dirname, '../asse
 const packs = ['ede-road-surfaces', 'ede-corridor-paving', 'ede-north-paving', 'ede-fringe-paving', 'ede-terrain-paving'];
 const pilot = read('ede-curbs-v1');
 const map = read('ede-curbs-v2');
+const islandReview = JSON.parse(readFileSync(join(__dirname, '../tools/data/ede-island-crossing-review.json')));
 
 test('municipal curb records use unique ground-level sidewalk and refuge shapes in every relevant paving pack', () => {
   const seen = new Set();
   const shapes = { ...map.flat, ...map.tops };
   assert.equal(map.version, 2);
-  for (const field of ['sites', 'profiles', 'table', 'gradeProfiles', 'tactile', 'driveways', 'paintGaps']) {
+  for (const field of ['sites', 'table', 'gradeProfiles', 'tactile', 'driveways', 'paintGaps']) {
     assert.deepEqual(map[field], pilot[field]);
   }
   for (const [i, name] of packs.entries()) {
@@ -33,6 +34,51 @@ test('municipal curb records use unique ground-level sidewalk and refuge shapes 
     else assert.equal(count, 0);
   }
   assert.equal(seen.size, Object.keys(shapes).length);
+});
+
+test('reviewed municipal islands are raised only where the mapped crossing openings allow it', async () => {
+  const { curbHeightAt, setEdeCurbs } = await import('../js/ede-curbs.js');
+  const known = new Set();
+  const profiles = {};
+  const crossings = new Map(read('ede-street-features').crossings.map(row => [row.id, row]));
+  const paving = new Map(packs.flatMap(name => read(name).surfaces.map(row => [row.id, row])));
+  for (const { raised, level, unresolved } of islandReview.sites) {
+    for (const id of [...raised, ...Object.keys(level), ...Object.keys(unresolved)]) {
+      assert.ok(!known.has(id), id);
+      known.add(id);
+      assert.equal(paving.get(id).layer, 0);
+      assert.equal(paving.get(id).function, 'verkeerseiland');
+    }
+    for (const id of raised) {
+      const caps = map.profiles[id];
+      assert.equal(caps.length, paving.get(id).polygons.length);
+      assert.ok(caps.every(cap => cap.some((y, i) => i % 3 === 1 && y === 0.185)));
+      assert.equal(pilot.profiles[id], undefined);
+      profiles[id] = caps;
+    }
+    for (const id of [...Object.keys(level), ...Object.keys(unresolved)]) {
+      assert.equal(map.profiles[id] ?? map.flat[id] ?? map.tops[id], undefined, id);
+    }
+  }
+  assert.equal(known.size, 240);
+  assert.deepEqual(map.profiles, { ...pilot.profiles, ...profiles });
+  setEdeCurbs({ ...map, profiles });
+  for (const site of islandReview.sites) {
+    if (!site.raised.length) continue;
+    for (const key of site.crossings) {
+      const { ends: [a, b], length } = crossings.get(key);
+      const dx = b[0] - a[0], dz = b[1] - a[1], span = Math.hypot(dx, dz);
+      const halfWidth = length / 2 + 0.25;
+      for (const offset of [-0.85, 0, 0.85]) {
+        for (let i = 0; i <= 16; i++) {
+          const x = a[0] + dx * i / 16 - dz / span * offset * halfWidth;
+          const z = a[1] + dz * i / 16 + dx / span * offset * halfWidth;
+          const height = curbHeightAt(x, z, 0, 0);
+          assert.ok(Math.abs(height - map.roadLift) < 1e-4, `${key} at ${x}, ${z}: ${height}`);
+        }
+      }
+    }
+  }
 });
 
 test('municipal constant and sloped paving use the same values for rendering and travel', async () => {

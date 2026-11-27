@@ -252,6 +252,7 @@ export function createWeatherTransition() {
   };
   return {
     setPhotoEffects(next) { photoTarget = next ?? NO_PHOTO_EFFECTS; },
+    settleRinkIce() { effects.rinkIce = rinkTarget; },
     setReading(reading, temperature = reading?.temperature, rinkIce = reading?.rinkIce ?? 0) {
       target = weatherTargets(reading, temperature);
       const degrees = temperature ?? 0;
@@ -315,6 +316,7 @@ export function createLiveWeather({ onChange, request = fetchWeather, requestAur
   let preset = null;
   let sceneReading = null, sceneTemperature, presetTemperature, presetIce = 0;
   let roadConditions = 'dry';
+  let activityWeather;
   let failed = false;
   let nextFetch = 0;
   let pending;
@@ -367,10 +369,16 @@ export function createLiveWeather({ onChange, request = fetchWeather, requestAur
     refreshPhotoEffects();
     const nextReading = enabled ? active : preset;
     const temperature = enabled ? active?.temperature : presetTemperature;
-    if (nextReading !== sceneReading || temperature !== sceneTemperature) {
+    const weatherAvailable = !enabled || Boolean(nextReading);
+    if (nextReading !== sceneReading || temperature !== sceneTemperature || weatherAvailable !== activityWeather?.weatherAvailable) {
       sceneReading = nextReading;
       sceneTemperature = temperature;
       roadConditions = trafficCondition(sceneReading, sceneTemperature);
+      const weather = trafficCondition(sceneReading, undefined);
+      const rainRate = sceneReading ? (sceneReading.rain + sceneReading.showers) * 3600 / sceneReading.interval : 0;
+      const heavyRain = rainRate >= 2.5 || [56, 57, 66, 67, 95, 96, 99].includes(sceneReading?.code);
+      activityWeather = { weather: heavyRain && weather === 'frost' ? 'rain' : weather === 'dry' ? roadConditions : weather,
+        heavyRain, weatherAvailable };
       transition.setReading(sceneReading, sceneTemperature, enabled ? active?.rinkIce ?? 0 : presetIce);
     }
     const displayed = enabled ? current : null;
@@ -431,15 +439,19 @@ export function createLiveWeather({ onChange, request = fetchWeather, requestAur
       sceneReading = undefined;
       tick();
     },
-    setPreset(id, season) {
+    setPreset(id, season, { preview = false } = {}) {
       preset = Object.hasOwn(weatherPresets, id) ? weatherPresets[id] : null;
       presetTemperature = season === 'winter' ? WINTER_PRESET_TEMPERATURE : 10;
       presetIce = presetRinkIce(season);
-      if (!enabled) tick();
+      if (!enabled) {
+        tick();
+        if (preview) transition.settleRinkIce();
+      }
     },
     get state() { return state; },
     get activeReading() { return active; },
     get trafficCondition() { return roadConditions; },
+    get activityWeather() { return activityWeather; },
     get windReading() { return sceneReading ?? PRESET_WIND; },
     get turbineWind() { return sceneReading?.turbineWind ?? sceneReading ?? PRESET_WIND; }
   };

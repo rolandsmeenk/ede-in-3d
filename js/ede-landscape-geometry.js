@@ -1,5 +1,6 @@
 import * as THREE from '../vendor/three/build/three.core.js';
 import { sampleTerrain } from './terrain.js?v=20261124-workers';
+import { setTerrainSurfaceNormals } from './ede-surface-geometry.js?v=20261127-terrain-normals';
 
 export const SIDE = 51;
 export const CELLS = 50;
@@ -300,6 +301,7 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
 
   // Skirt faces point toward the lower neighbour. Separate vertices keep
   // their normals out of the top surface shading.
+  const topVertexCount = positions.length / 3;
   const perimeter = [
     Array.from({ length: side }, (_, i) => i),
     Array.from({ length: side }, (_, i) => i * side + side - 1),
@@ -353,6 +355,14 @@ export function buildTerrainGeometry(bytes, tile, legacy, field, seamOffset, sid
   geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  // The finest tiles can sample across their borders from the shared heightfield.
+  const sharedGrid = detail ?? (step === field.step && minX >= field.minX && minZ >= field.minZ
+    && maxX <= field.maxX && maxZ <= field.maxZ ? field : null);
+  const normalGrid = sharedGrid ?? {
+    minX, minZ, maxX, maxZ, step, columns: side, rows: side,
+    heights: Float32Array.from({ length: side * side }, (_, i) => positions[i * 3 + 1]),
+  };
+  setTerrainSurfaceNormals(THREE, geometry, () => normalGrid, topVertexCount);
   geometry.computeBoundingSphere();
   return geometry;
 }

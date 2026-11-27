@@ -1,7 +1,10 @@
 import { EDE_DATA } from './ede-geodata.js';
+import { SCHAARSBERGEN_TRAVEL_RING } from './ede-white-bike-sites.js';
 
 export const playableBoundary = EDE_DATA.meta.playableBoundary ?? [];
-export const travelBoundary = EDE_DATA.meta.travelBoundary ?? playableBoundary;
+const baseTravelBoundary = EDE_DATA.meta.travelBoundary ?? playableBoundary;
+export const travelBoundary = EDE_DATA.meta.fullMunicipality
+  ? [...baseTravelBoundary, [SCHAARSBERGEN_TRAVEL_RING]] : baseTravelBoundary;
 const band = z => Math.floor(z / 128);
 const boundsBands = new Map(), ringBands = new Map();
 function indexEdge(bands, edge) {

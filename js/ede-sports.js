@@ -8,6 +8,7 @@ import { drapeEdeSurface, edePoints, edePolygonGeometry, edeSpatialGroups } from
 import { fitSportField, clipSportLine } from './ede-sport-fit.js';
 import { sportLayout } from './ede-sport-layouts.js';
 import { terrainHeightAt } from './terrain.js';
+import { fitPlayableSport } from './ede-sport-activity.js';
 
 const SURFACE_Y = 0.052;
 const PAINT_Y = 0.085;
@@ -222,7 +223,7 @@ function makeMesh(group, batch, material, name, close = false) {
   return geometry.attributes.position.count / 3;
 }
 
-export function buildEdeSports(scene, asset) {
+export function buildEdeSports(scene, asset, { playableFields } = {}) {
   const group = new THREE.Group();
   group.name = 'Ede sports fields';
   const surface = applySnowMaterial(new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.93 }),
@@ -251,6 +252,10 @@ export function buildEdeSports(scene, asset) {
       const sport = layout?.sport;
       const oval = record.sports.includes('ice_skating');
       const isRink = oval || record.id === DE_ZANDING_WINTER_RINK;
+      if (frame && playableFields) {
+        const playable = fitPlayableSport(record.id, frame, polygon, layout, isRink, SURFACE_Y);
+        if (playable) playableFields.push(playable);
+      }
       const tint = SURFACE[record.surface] ?? (oval ? SKATING_OVAL_SURFACE :
         SURFACE[DEFAULT_SURFACE[sport ?? record.sports[0]]] ?? SURFACE.grass);
       collect(isRink ? skating : ground, drapeEdeSurface(edePolygonGeometry(outer, holes, SURFACE_Y), true), tint);

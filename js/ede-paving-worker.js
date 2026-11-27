@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three/build/three.core.js';
 import { mergeGeometries } from '../vendor/three/examples/jsm/utils/BufferGeometryUtils.js?v=20261124-workers';
 import { createTerrainSampler } from './terrain.js?v=20261124-workers';
-import { drapeSurface, edeGeometryGroups, edePoints, polygonGeometry } from './ede-surface-geometry.js';
+import { drapeSurface, edeGeometryGroups, edePoints, polygonGeometry } from './ede-surface-geometry.js?v=20261127-terrain-normals';
 import { curbFaceGeometry, curbTopGeometry } from './ede-curb-geometry.js?v=20261127-curb-concrete';
 import { clipEdeGround, nearestEdeSpan } from './ede-grade-query.js';
 import { nearestRoadInCells } from './ede-road-cell-query.js';
@@ -25,7 +25,7 @@ function pavingGeometry(job, terrain, roads, ground) {
     },
   };
   let geometry = drapeSurface(THREE, terrain, grade, joined, true, job.wayId, Boolean(job.outer),
-    undefined, undefined, ramp);
+    undefined, undefined, ramp, job.smoothGround);
   if (!geometry?.attributes.position.count) return null;
   if (material === 'asphalt') {
     geometry = applyAsphaltLanes(THREE, geometry, segment, layer,

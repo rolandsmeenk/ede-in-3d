@@ -199,7 +199,9 @@ export function edeWaterBanks(rings, bottomY) {
   return surfaceGeometry(positions, indices);
 }
 
-function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y, coarse, waterCuts) {
+function* terrainGridGeometries(grid, y, coarse, waterCuts) {
+  const { columns, rows, minX, minZ, step, heights } = grid;
+  const normalGrid = () => grid;
   const chunk = 64;
   for (let row = 0; row < rows - 1; row += chunk) for (let col = 0; col < columns - 1; col += chunk) {
     const width = Math.min(chunk, columns - 1 - col) + 1;
@@ -222,7 +224,7 @@ function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y,
     const grade = terrainGradeCuts(bounds);
     const cuts = grade.concat(waterCuts?.(bounds) ?? []);
     if (!cuts.length) {
-      yield surfaceGeometry(positions, indices);
+      yield makeSurfaceGeometry(THREE, positions, indices, undefined, normalGrid);
       continue;
     }
     const clipped = grade.length ? [] : Array.from(positions);
@@ -241,7 +243,7 @@ function* terrainGridGeometries({ columns, rows, minX, minZ, step, heights }, y,
         if (clippedIndices) for (let j = start; j < clipped.length / 3; j++) clippedIndices.push(j);
       }
     }
-    yield surfaceGeometry(clipped, clippedIndices);
+    yield makeSurfaceGeometry(THREE, clipped, clippedIndices, undefined, normalGrid);
   }
 }
 
@@ -270,8 +272,8 @@ export function* edeTerrainGeometries(y, waterCuts) {
   yield rim(rows, i => [minX, maxZ - i * step], t => [-border, border - 2 * border * t]);
 }
 
-export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false, keepAttribute, surfaceCuts, vertexLift) {
-  return drapeSurface(THREE, surfaceTerrain, surfaceGrade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts, vertexLift);
+export function drapeEdeSurface(geometry, cutGrade = false, wayId, mappedPavement = false, keepAttribute, surfaceCuts, vertexLift, smoothGround) {
+  return drapeSurface(THREE, surfaceTerrain, surfaceGrade, geometry, cutGrade, wayId, mappedPavement, keepAttribute, surfaceCuts, vertexLift, smoothGround);
 }
 
 export function drapeEdeVertices(geometry) {

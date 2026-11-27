@@ -170,9 +170,12 @@ export function createEdeRoadTraffic(posted = {}, now = Date.now) {
       const state = states.get(edge);
       return state ? Math.min(state.limit, state.temporary) : Infinity;
     },
-    demand: edge => {
+    demand: (edge, fallback = profile) => {
       const state = states.get(edge);
-      return state && smoothed.has(state) ? state.flow : profile;
+      if (!state || !smoothed.has(state)) return fallback;
+      const flow = accepted.get(state)?.flowPerHour;
+      if (Number.isFinite(flow) && flow >= 0) return state.flow;
+      return Math.max(0, fallback + state.flow - profile);
     },
     cruise: (edge, fallback) => {
       const state = states.get(edge);

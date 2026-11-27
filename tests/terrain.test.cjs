@@ -86,6 +86,89 @@ test('the theatre, motorway and cycling patches stitch into the 12 m AHN grid', 
   }
 });
 
+test('the A12 embankment retains smooth slope normals through grade cuts', async ({ mock }) => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const terrain = await import('../js/terrain.js');
+  const grade = await import('../js/ede-grade.js');
+  mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
+  await terrain.loadTerrain();
+  await grade.loadEdeGrade();
+  const [, embankment] = terrain.getTerrainPatches();
+  const source = readFileSync(path.join(__dirname, '../js/ede-geometry.js'), 'utf8')
+    .replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries')
+    + '\nexport { edeTerrainGeometries };';
+  const { edeTerrainGeometries } = loadModule(source, {
+    imports: {
+      'three/webgpu': three, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {},
+      './ede-road-cell-query.js': {}, './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js'),
+      './ede-grade.js': grade,
+    },
+  });
+  let clippedChunk;
+  for (const geometry of edeTerrainGeometries(-0.025)) {
+    geometry.computeBoundingBox();
+    const { min, max } = geometry.boundingBox;
+    if (!geometry.index && min.x === embankment.minX && min.z === embankment.minZ
+        && max.x <= min.x + 64 * embankment.step) {
+      clippedChunk = geometry;
+      break;
+    }
+  }
+  assert.ok(clippedChunk, 'the surveyed embankment chunk contains grade cuts');
+  const { position, normal } = clippedChunk.attributes;
+  const normalsAt = new Map();
+  for (let i = 0; i < position.count; i++) {
+    const key = [position.getX(i), position.getZ(i)].join('/');
+    const vector = [normal.getX(i), normal.getY(i), normal.getZ(i)];
+    if (normalsAt.has(key)) assert.deepEqual(vector, normalsAt.get(key));
+    else normalsAt.set(key, vector);
+  }
+  assert.ok(normalsAt.size < position.count, 'clipped geometry has vertices shared by position');
+  assert.ok([...normalsAt.values()].some(([, y]) => y > 0 && y < 0.95), 'normals retain the slope');
+});
+
+test('De Eder Kuil keeps smooth terrain normals on the paths batched into the theatre model', async ({ mock }) => {
+  const three = await import('../vendor/three/build/three.webgpu.js');
+  const terrain = await import('../js/terrain.js');
+  mock.method(globalThis, 'fetch', async url => new Response(readFileSync(url)));
+  await terrain.loadTerrain();
+  const read = name => readFileSync(path.join(__dirname, '../js', name), 'utf8');
+  const civic = loadModule(read('ede-civic-landmarks.js'), { imports: {
+    'three/webgpu': three, 'three/tsl': await import('../vendor/three/build/three.tsl.js'),
+    './bag3d.js': {}, './ede-grade.js': { buildingPassageOpenings: () => [] }, './ede-geodata.js': {}, './terrain.js': terrain,
+    './ede-wind-props.js': {}, './aerial-colors.js': {}, './ede-facades.js': {}, './ede-facade-material.js': {},
+  } });
+  const geometry = loadModule(read('ede-geometry.js').replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
+    imports: {
+      'three/webgpu': three, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {},
+      './ede-road-cell-query.js': {}, './ede-grade.js': {},
+      './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js'),
+    },
+  });
+  const { createEderKuil } = loadModule(read('ede-next-landmarks.js'), { imports: {
+    'three/webgpu': three, './ede-civic-landmarks.js': civic, './ede-geometry.js': geometry, './terrain.js': terrain,
+    './city-config.js': {}, './ede-next-survey.js': await import('../js/ede-next-survey.js'),
+    './ede-memorial-plaque.js': { createMemorialPlaque: () => new three.Group() },
+  } });
+  const { position, color, normal } = createEderKuil().children[0].geometry.attributes;
+  const [red, green, blue] = new three.Color(0xa59c87).toArray().map(Math.fround);
+  const normalsAt = new Map();
+  let duplicates = 0;
+  for (let i = 0; i < position.count; i++) {
+    if (color.getX(i) !== red || color.getY(i) !== green || color.getZ(i) !== blue) continue;
+    const x = position.getX(i), z = position.getZ(i);
+    assert.ok(Math.abs(position.getY(i) - terrain.terrainHeightAt(x, z) - 0.046) < 0.001);
+    const key = [x, z].join('/');
+    const vector = [normal.getX(i), normal.getY(i), normal.getZ(i)];
+    if (normalsAt.has(key)) {
+      assert.deepEqual(vector, normalsAt.get(key));
+      duplicates++;
+    } else normalsAt.set(key, vector);
+  }
+  assert.ok(duplicates > 0);
+  assert.ok([...normalsAt.values()].some(([, y]) => y > 0 && y < 0.95));
+});
+
 test('draped faces keep their offset across terrain cells and both sides of the diagonal', async () => {
   const { sampleTerrain } = await import('../js/terrain.js');
   const terrain = {
@@ -270,7 +353,13 @@ test('the Ginkelse Heide detail resolves both sand areas with continuous terrain
   };
   const west = tileFor('250_4000_1000'), east = tileFor('250_4250_1000');
   const posWest = west.geometry.getAttribute('position'), posEast = east.geometry.getAttribute('position');
-  for (let row = 0; row <= 200; row++) assert.equal(posWest.getY(row * 201 + 200), posEast.getY(row * 201));
+  const normalWest = west.geometry.attributes.normal, normalEast = east.geometry.attributes.normal;
+  for (let row = 0; row <= 200; row++) {
+    assert.equal(posWest.getY(row * 201 + 200), posEast.getY(row * 201));
+    for (let axis = 0; axis < 3; axis++) {
+      assert.equal(normalWest.getComponent(row * 201 + 200, axis), normalEast.getComponent(row * 201, axis));
+    }
+  }
 
   for (const [x, z, depth] of [[4267.5, 1117.5, 0.28], [4377.5, 1073.75, 0.59]]) {
     const floor = terrain.terrainHeightAt(x, z);
@@ -280,19 +369,29 @@ test('the Ginkelse Heide detail resolves both sand areas with continuous terrain
   }
 
   const source = readFileSync(path.join(root, 'js/ede-geometry.js'), 'utf8');
-  const { drapeEdeSurface } = loadModule(source.replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
+  const { drapeEdeSurface, edePolygonGeometry } = loadModule(source.replace('export function* edeTerrainGeometries', 'function* edeTerrainGeometries'), {
     imports: {
       'three/webgpu': three, './city-config.js': {}, './terrain.js': terrain, './ede-road-surfaces.js': {},
       './ede-road-cell-query.js': {}, './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js'),
       './ede-grade.js': {},
     },
   });
-  const pathGeometry = new three.BufferGeometry();
   const lift = 0.06;
-  pathGeometry.setAttribute('position', new three.Float32BufferAttribute([
-    4245, lift, 1090, 4256, lift, 1091, 4245, lift, 1094,
-  ], 3));
-  const draped = drapeEdeSurface(pathGeometry).getAttribute('position');
+  const pieces = [[{ x: 4245, z: 1090 }, { x: 4256, z: 1091 }, { x: 4245, z: 1094 }]];
+  const pathGeometry = edePolygonGeometry(pieces[0], [], lift);
+  const flat = drapeEdeSurface(pathGeometry.clone());
+  const smooth = drapeEdeSurface(pathGeometry, false, undefined, false, undefined, undefined, false, true);
+  const { position: draped, normal } = smooth.attributes;
+  assert.deepEqual(draped.array, flat.attributes.position.array);
+  assert.notDeepEqual(normal.array, flat.attributes.normal.array);
+  assert.ok(normal.array.every(Number.isFinite));
+  const { buildPavingTile } = await import('../js/ede-paving-worker.js');
+  const { EDE_PAVING_STYLE } = await import('../js/ede-road-surfaces.js');
+  const context = terrain.captureTerrainContext([4245, 1090, 4256, 1094], true);
+  const [tile] = buildPavingTile({ context, roads: new Map(), ground: [], jobs: [
+    { pieces, cuts: [], rise: lift, material: 'mapped', style: EDE_PAVING_STYLE.sand, angle: 0, smoothGround: true },
+  ] });
+  assert.deepEqual(tile.attributes.find(([name]) => name === 'normal')[1], normal.array);
   assert.ok(draped.count > 40);
   for (let i = 0; i < draped.count; i += 3) {
     const mean = fn => (fn(i) + fn(i + 1) + fn(i + 2)) / 3;
