@@ -1,5 +1,12 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const { gunzipSync } = require('node:zlib');
+const { loadModule } = require('./helpers/module.cjs');
+const ambientSource = readFileSync(join(__dirname, '../js/ede-ambient-data.js'), 'utf8')
+  .replace('export async function loadEdeAmbientNoise', 'async function loadEdeAmbientNoise')
+  .replace('import.meta.url', "'https://example.test/js/ede-ambient-data.js'");
 
 function createMockAudioContext(sampleRate = 16000) {
   const started = [];
@@ -72,7 +79,7 @@ test('train and turbine motor voices synthesize non-empty resources and update c
   turbine.dispose();
 });
 
-test('Ede soundscape event buffers and playback work for bells, carillon, crossing, birds and sheep', async () => {
+test('Ede soundscape event buffers and playback work for bells, wildlife, markets and fountains', async () => {
   const { createSynthResources } = await import('../js/audio-synthesis.js');
   const { createEventResources, playEvent } = await import('../js/audio-events.js');
   const ctx = createMockAudioContext();
@@ -80,10 +87,13 @@ test('Ede soundscape event buffers and playback work for bells, carillon, crossi
   const out = ctx.createGain();
 
   assert.ok(rms(resources.crossingBell.getChannelData(0)) > 0.05);
+  assert.ok(resources.crossingBell.duration < 1 / 5, 'each strike leaves room for the next bell pulse');
   assert.ok(rms(resources.churchBell.getChannelData(0)) > 0.05);
   assert.ok(rms(resources.carillonBell.getChannelData(0)) > 0.05);
   assert.equal(resources.birds.length, 3);
   for (const buf of resources.birds) assert.ok(rms(buf.getChannelData(0)) > 0.02);
+  assert.ok(rms(resources.nightjar.getChannelData(0)) > 0.02);
+  assert.ok(rms(resources.fountain.getChannelData(0)) > 0.02);
   assert.equal(resources.sheep.length, 2);
   for (const buf of resources.sheep) assert.ok(rms(buf.getChannelData(0)) > 0.02);
 
@@ -102,10 +112,22 @@ test('Ede soundscape event buffers and playback work for bells, carillon, crossi
   assert.ok(bell.endTime > ctx.currentTime + 3.0);
   bell.dispose(true);
 
-  for (const kind of ['crossingBell', 'bird', 'sheep']) {
+  for (const kind of ['crossingBell', 'bird', 'skylark', 'nightjar', 'sheep', 'market', 'fountain',
+    'reeds', 'pondLap', 'trainApproach', 'trainBrake', 'trainDoors', 'trainDeparture']) {
     ctx.started.length = 0;
     const ev = playEvent(ctx, resources, kind, out, { intensity: 0.6, seed: 3 });
-    assert.equal(ctx.started.length, 1, `${kind} should trigger one buffer`);
+    const expected = kind === 'market' || kind === 'skylark' ? 4 : 1;
+    assert.equal(ctx.started.length, expected, `${kind} should trigger ${expected} audio buffers`);
+    assert.ok(rms(ctx.started[0].buffer.getChannelData(0)) > 0.009);
+    ev.dispose(true);
+  }
+
+  for (const surface of ['klinkers', 'sand', 'timber']) {
+    ctx.started.length = 0;
+    const ev = playEvent(ctx, resources, 'footstep', out, { speed: 1.4, seed: 5, surface });
+    assert.equal(ctx.started.length, 1);
+    assert.ok(resources.footSurfaces[surface].includes(ctx.started[0].buffer));
+    assert.ok(rms(ctx.started[0].buffer.getChannelData(0)) > 0.015);
     ev.dispose(true);
   }
 });
@@ -157,4 +179,60 @@ test('sampleHeathAt and rotorAudioParams behave cleanly across bounds', async ()
 
   const activeMill = rotorAudioParams(20, false);
   assert.ok(activeMill.bladeHz > 0.35 && activeMill.load > 0.15);
+});
+
+
+test('date previews play the selected Amsterdam chime once and preserve quiet hours', async () => {
+  const { createBellScheduler, CARILLON_MOTIFS } = await import('../js/ede-soundscape.js');
+  const listener = { x: 20, y: 2, z: -15 };
+  const scheduler = createBellScheduler();
+  const poll = (iso, preview = true) => scheduler.poll(Date.parse(iso) / 1000, listener, () => 3, preview);
+  assert.deepEqual(poll('2027-01-15T11:05:00Z'), []);
+  const quarter = poll('2027-01-15T11:15:00Z');
+  assert.equal(quarter.length, 1);
+  assert.equal(quarter[0].source.y, 35);
+  assert.equal(quarter[0].options.notes, CARILLON_MOTIFS.quarter);
+  assert.deepEqual(poll('2027-01-15T11:15:00Z'), []);
+  assert.deepEqual(poll('2027-01-15T22:30:00Z'), []);
+  assert.deepEqual(poll('2027-01-15T11:00:00Z', false), []);
+  assert.equal(poll('2027-01-15T11:15:01Z', false).length, 1);
+});
+
+test('mapped footsteps inherit BGT paving holes, OSM boardwalks and heath habitat', async () => {
+  const roadSurfaces = await import('../js/ede-road-surfaces.js');
+  const { createFootstepSampler } = loadModule(ambientSource, {
+    imports: { './ede-road-surfaces.js': roadSurfaces, './city-config.js': { nearestRoads: () => [] } },
+  });
+  const polygon = (...points) => points.flat();
+  const outer = polygon([0, 0], [10, 0], [10, 10], [0, 10]);
+  const hole = polygon([4, 4], [6, 4], [6, 6], [4, 6]);
+  const map = { surfaces: [{ polygons: [[outer, hole]], material: 'brick' }] };
+  const roads = x => x < 0 ? [{ road: { id: 'w1070687304', w: 1.4 }, dist: 0.5 }] : [];
+  const surface = createFootstepSampler((x, z) => z > 15 ? 'dry-heath' : null, () => map, roads);
+  assert.equal(surface(2, 2), 'klinkers');
+  assert.equal(surface(5, 5), 'hard');
+  assert.equal(surface(-1, 0), 'timber');
+  assert.equal(surface(0, 20), 'sand');
+});
+
+test('bundled ambient map distinguishes the Kreelse Plas shore from roads and the Valleilijn', async () => {
+  const { decodeEdeAmbientNoise } = loadModule(ambientSource, {
+    imports: { './ede-road-surfaces.js': {}, './city-config.js': {} },
+  });
+  const bytes = gunzipSync(readFileSync(join(__dirname, '../assets/ede-ambient-noise.bin.gz')));
+  const buffer = Uint8Array.from(bytes).buffer;
+  const sample = decodeEdeAmbientNoise(buffer);
+  const noise = (x, z) => {
+    const values = {};
+    assert.equal(sample(x, z, values), true);
+    return values;
+  };
+  const pond = noise(3223, -410);
+  const centreRail = noise(-247, 317);
+  const urbanRoad = noise(0, 2500);
+  assert.ok(urbanRoad.road > pond.road + 0.3);
+  assert.ok(centreRail.rail > pond.rail + 0.25);
+  assert.equal(sample(0, 12000, {}), false);
+  assert.equal(sample(NaN, 0, {}), false);
+  assert.throws(() => decodeEdeAmbientNoise(buffer.slice(0, 27)), /ambient-noise/);
 });

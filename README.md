@@ -8,7 +8,7 @@ Explore Ede, the Netherlands, in a 3D browser game built around its real streets
 
 ## Find your way around Ede
 
-- **Walk the town centre.** Explore the shops and squares around Grotestraat, see Cultura and Raadhuis Ede, and look for street art at Astrant and the Van Eekelenflat.
+- **Walk the town centre.** Explore the shops and squares around Grotestraat, see Cultura and Raadhuis Ede, and look for street art at Astrant and the Van Eekelenflat. In Walk mode, tap **Binoculars** or press **B** for a closer look.
 - **Cycle or drive across town.** Follow mapped cycle routes, pass buses on local streets, and watch the trains at Ede-Wageningen, Ede Centrum and Lunteren.
 - **Jump to a major area or find a landmark.** Use **Teleport** for areas such as Centrum, Bennekom, Ginkelse Heide and Lunteren. Open **Map** and search for an individual landmark, such as De Eder Kuil, Groot Zonneoord or De Valenberg, then click its pin to teleport.
 

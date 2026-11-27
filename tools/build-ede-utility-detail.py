@@ -17,6 +17,7 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from shapely import STRtree, make_valid, orient_polygons, transform
+from shapely.affinity import rotate, translate
 from shapely.geometry import LineString, Point, Polygon, box, mapping, shape
 
 from ede_gis import Frame, RD, SCENE_NAP_ORIGIN, source_crs, to_rd
@@ -437,6 +438,60 @@ def build(data, candidates, unresolved, frame, areas, review, directory, fetch_r
     return {'version': 1, 'features': features}, report
 
 
+
+def cabinet_hull(feature):
+    x, z = feature['position']
+    width = feature['width'] * 1.06 / 2 + .04
+    depth = feature['depth'] * 1.08 / 2 + .04
+    return translate(rotate(box(-width, -depth, width, depth), -feature['angle'], use_radians=True), x, z)
+
+
+def add_reviewed_cabinets(asset, audit, review, frame, area, obstacles):
+    """Replay the aerial and BGT review without fetching the entire utility inventory."""
+    if review['version'] != 1:
+        raise ValueError('Invalid Liander cabinet review version')
+    prefix = 'liander-cabinet:'
+    features = asset['features']
+    features[:] = [row for row in features if not row['id'].startswith(prefix)]
+    audit['accepted'] = [row for row in audit['accepted'] if not row['id'].startswith(prefix)]
+    occupied = [cabinet_hull(row) if row['type'] == 'electricalCabinet' else Polygon(row['polygon'], row['holes'])
+                for row in features]
+    mural_sites = read_json(ROOT / 'assets/ede-murals/placements-v1.json')['sites']
+    for site in mural_sites:
+        if site['id'] in {'leeuwen', 'edese-vos-cabinet', 'roodborstje-cabinet', 'roos-cabinet'}:
+            west, _, north, east, _, south = site['bounds']
+            occupied.append(box(west, north, east, south).buffer(1))
+    seen = set()
+    added = []
+    for row in review['cabinets']:
+        station = row['lianderId']
+        width, depth, angle = (row[name] for name in ('width', 'depth', 'angle'))
+        ground = row['bgtGround']
+        if (not station.startswith('643:') or not station[4:].isdigit() or station in seen
+                or not .25 <= depth <= width <= 2 or not -math.pi <= angle <= math.pi
+                or not math.dist(row['lianderRd'], row['positionRd']) <= 2
+                or ground['collection'] not in {'begroeidterreindeel', 'ondersteunendwegdeel', 'onbegroeidterreindeel'}
+                or not ground['id'] or not row['aerialEvidence']):
+            raise ValueError(f'Invalid Liander cabinet review for {station}')
+        seen.add(station)
+        position = [round(value, 2) for value in frame.rd_to_scene(*row['positionRd'])]
+        if not area.covers(Point(*position)):
+            continue
+        feature = {'id': f'{prefix}{station}', 'type': 'electricalCabinet', 'position': position, 'width': width,
+                   'depth': depth, 'height': .95, 'angle': angle, 'status': 'observed', 'collidable': True}
+        hull = cabinet_hull(feature)
+        blocked = [name for name, index in obstacles.items() if len(index.query(hull, predicate='intersects'))]
+        if blocked or not area.covers(hull) or any(hull.intersects(other) for other in occupied):
+            raise ValueError(f'Reviewed cabinet {station} conflicts with mapped features: {", ".join(blocked)}')
+        features.append(feature)
+        occupied.append(hull)
+        added.append({**feature, **row, 'reviewDate': review['date'], 'imageryLayers': review['imageryLayers'],
+                      'dimensionsSource': 'aerial-fitted footprint, generic cabinet height'})
+    audit['accepted'].extend(added)
+    audit['lianderCabinetReview'] = {'date': review['date'], **review['sourceCounts'], 'added': len(added)}
+    return len(added)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('snapshot', type=Path)
@@ -451,13 +506,27 @@ def main():
     parser.add_argument('--preserve', type=Path, help='Carry verified utility features forward without changing their geometry')
     parser.add_argument('--preserve-report', type=Path, help='Carry audit provenance for the preserved features')
     parser.add_argument('--evidence', type=Path, default=ROOT / 'tools/data/ede-utility-review.json')
+    parser.add_argument('--cabinet-review', type=Path, default=ROOT / 'tools/data/ede-liander-cabinets.review.json')
+    parser.add_argument('--reviewed-cabinets-only', action='store_true',
+                        help='Update aerial-reviewed Liander cabinets in an existing utility asset and audit')
     parser.add_argument('--asset', type=Path, default=ROOT / 'assets/ede-utility-detail.json.gz')
     parser.add_argument('--report', type=Path, default=ROOT / 'tools/data/ede-utility-detail.audit.json')
     args = parser.parse_args()
-    scene = load_playable_scene() if args.municipality else load_scene()
+    municipality = args.municipality or args.reviewed_cabinets_only
+    scene = load_playable_scene() if municipality else load_scene()
     bounds = scene['meta']['bounds']
     frame = Frame(scene['meta']['lonLatAffine'])
-    area = load_playable_boundary() if args.municipality else box(*bounds)
+    area = load_playable_boundary() if municipality else box(*bounds)
+    cabinet_review = read_json(args.cabinet_review)
+    if args.reviewed_cabinets_only:
+        asset = read_json(args.preserve or args.asset)
+        audit = read_json(args.preserve_report or args.report)
+        added = add_reviewed_cabinets(asset, audit, cabinet_review, frame, area,
+                                      cabinet_clearance(scene, frame, area, args.snapshot))
+        write_json(args.asset, asset)
+        write_json(args.report, audit)
+        print(f'{added} aerial-reviewed Liander cabinets in {args.asset}')
+        return
     if args.fetch:
         snapshot(args.snapshot, frame, bounds, area, args.date, municipality=args.municipality, bag_cache=args.bag_cache)
     data = read_json(args.snapshot / 'utility-sources.json.gz')
@@ -503,13 +572,15 @@ def main():
                 raise ValueError(f"Retained utility {row['id']} is outside the playable area")
         if args.preserve_report:
             previous_audit = {row['id']: row for row in read_json(args.preserve_report)['accepted']}
+    obstacles = cabinet_clearance(scene, frame, area, args.snapshot)
     asset, audit = build(data, candidates, unresolved, frame, area, review, args.snapshot, args.fetch_roofs,
-                         cabinet_clearance(scene, frame, area, args.snapshot), osm_tags, retained)
+                         obstacles, osm_tags, retained)
     asset['features'] = [*retained.values(), *asset['features']]
     audit['accepted'] = [*(previous_audit.get(key, row) for key, row in retained.items()), *audit['accepted']]
     if retained:
         audit['retainedReviewed'] = len(retained)
         audit['retainedAssetSha256'] = sha256(args.preserve.read_bytes()).hexdigest()
+    add_reviewed_cabinets(asset, audit, cabinet_review, frame, area, obstacles)
     audit['snapshotSha256'] = sha256((args.snapshot / 'utility-sources.json.gz').read_bytes()).hexdigest()
     write_json(args.asset, asset)
     write_json(args.report, audit)

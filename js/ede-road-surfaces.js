@@ -113,7 +113,7 @@ export function loadEdeFringePaving() {
 }
 
 export async function loadEdeRoadSurfaces({ north = false, fringe = false } = {}) {
-  const [asset, corridors, northern, exterior, terrainAsset] = await Promise.all([
+  const [asset, corridors, northern, exterior, terrainAsset, ballast] = await Promise.all([
     readSurfaces('ede-road-surfaces.json.gz'),
     readSurfaces('ede-corridor-paving.json.gz', true),
     north ? readSurfaces('ede-north-paving.json.gz', true).catch(error => {
@@ -128,10 +128,15 @@ export async function loadEdeRoadSurfaces({ north = false, fringe = false } = {}
       console.warn('[Ede terrain paving] using mapped road centerlines:', error);
       return null;
     }) : null,
+    readSurfaces('ede-rail-ballast.json.gz', true).catch(error => {
+      console.warn('[Ede ballast] using default shoulder widths:', error);
+      return null;
+    }),
   ]);
   const terrain = corridors && northern && exterior && terrainAsset;
   asset.fringeSurfaces = exterior?.surfaces ?? [];
   asset.terrainSurfaces = terrain?.surfaces ?? [];
+  asset.railFootprints = ballast?.surfaces ?? [];
   for (const extension of [corridors, northern, exterior, terrain]) {
     if (!extension) continue;
     asset.surfaces = asset.surfaces.concat(extension.surfaces);

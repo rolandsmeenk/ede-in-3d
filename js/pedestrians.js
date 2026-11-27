@@ -55,6 +55,7 @@ const BONE = {
 const BONE_COUNT = 15;
 // vec4s per person in the pose buffer: (quaternion) and (translation, scale) per bone, then (seed, female, girth, hair)
 const STRIDE = BONE_COUNT * 2 + 1;
+const KIT_VECTORS = 3; // primary jersey (with enable flag), jersey accent, shorts
 
 // Bind pose (metres, a 1.75 m person standing at the origin facing +Z, +X on their left): legs straight down, arms
 // hanging 8 degrees out from the body
@@ -746,7 +747,7 @@ const qrot = (q, v) => v.add(cross(q.xyz, cross(q.xyz, v).add(v.mul(q.w))).mul(2
  */
 function createPersonMaterial(pose, detail = 1, sportswear = false) {
   const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0 });
-  const base = int(instanceIndex).mul(STRIDE);
+  const base = int(instanceIndex).mul(STRIDE + (sportswear ? KIT_VECTORS : 0));
   const info = pose.element(base.add(STRIDE - 1)); // seed, female, girth, hair
 
   mat.positionNode = Fn(() => {
@@ -786,15 +787,24 @@ function createPersonMaterial(pose, detail = 1, sportswear = false) {
   const lane = (salt) => fract(sin(info.x.add(salt).mul(12.9898)).mul(43758.5453));
   const skinCol = vertexStage(pickColorFromPalette(SKIN_COLORS, lane(17.0))).toVar();
   const hairCol = vertexStage(pickColorFromPalette(HAIR_COLORS, lane(3.0))).toVar();
-  const coatCol = vertexStage(
-    mix(pickColorFromPalette(COAT_COLORS, lane(29.0)), pickColorFromPalette(COAT_COLORS_F, lane(29.0)), female)
-  ).toVar();
-  const shirtCol = vertexStage(pickColorFromPalette(sportswear ? SPORTS_SHIRT_COLORS : SHIRT_COLORS, lane(71.0))).toVar();
-  const legsCol = vertexStage(
-    mix(pickColorFromPalette(LEG_COLORS, lane(47.0)), pickColorFromPalette(LEG_COLORS_F, lane(47.0)), female)
-  ).toVar();
+  let coat = mix(pickColorFromPalette(COAT_COLORS, lane(29.0)), pickColorFromPalette(COAT_COLORS_F, lane(29.0)), female);
+  let shirt = pickColorFromPalette(sportswear ? SPORTS_SHIRT_COLORS : SHIRT_COLORS, lane(71.0));
+  let legs = mix(pickColorFromPalette(LEG_COLORS, lane(47.0)), pickColorFromPalette(LEG_COLORS_F, lane(47.0)), female);
+  const kit = sportswear ? pose.element(base.add(STRIDE)) : null;
+  const jerseyStripe = x => step(0.5, fract(x.mul(11.5).add(0.25)));
+  if (kit) {
+    const accent = pose.element(base.add(STRIDE + 1));
+    const shorts = pose.element(base.add(STRIDE + 2));
+    coat = mix(coat, kit.xyz, kit.w);
+    shirt = mix(shirt, accent.xyz, kit.w);
+    legs = mix(legs, shorts.xyz, kit.w);
+  }
+  const coatCol = vertexStage(coat).toVar();
+  const shirtCol = vertexStage(shirt).toVar();
+  const legsCol = vertexStage(legs).toVar();
   const bald = vertexStage(step(lane(41.0), 0.08).mul(float(1.0).sub(female))).toVar();
-  const tailored = vertexStage(step(0.42, lane(89.0))).toVar();
+  const tailoredStyle = step(0.42, lane(89.0));
+  const tailored = vertexStage(kit ? tailoredStyle.mul(float(1.0).sub(kit.w)) : tailoredStyle).toVar();
   const hemY = vertexStage(mix(mix(0.955, 0.88, female), 1.0, lane(61.0))).toVar();
   const sneaker = vertexStage(step(0.4, lane(5.0))).toVar();
   const upperCol = vertexStage(
@@ -829,7 +839,8 @@ function createPersonMaterial(pose, detail = 1, sportswear = false) {
             .mul(smoothstep(0.035, 0.075, q.z))
             .mul(tailored);
           const neckLine = mix(1.5, 1.49, tailored);
-          const torsoCol = mix(mix(legsCol, mix(coatCol, shirtCol, shirtV), step(hemY, q.y)), skinCol, step(neckLine, q.y));
+          const shirtMask = kit ? mix(shirtV, jerseyStripe(q.x), kit.w) : shirtV;
+          const torsoCol = mix(mix(legsCol, mix(coatCol, shirtCol, shirtMask), step(hemY, q.y)), skinCol, step(neckLine, q.y));
           const sleeveCol = mix(coatCol, cuffCol, smoothstep(0.92, 0.96, extraAttr.z));
           const shoeCol = mix(upperCol, soleCol, step(q.y, 0.022));
           const farCol = mix(
@@ -874,6 +885,7 @@ function createPersonMaterial(pose, detail = 1, sportswear = false) {
     'vPersonLocal'
   );
 
+  const vKitWeight = kit ? varying(vertexStage(kit.w), 'vPersonKitWeight') : null;
   mat.colorNode = Fn(() => {
     const pId = vPartC.w;
     const colA = vPartA.xyz;
@@ -897,8 +909,9 @@ function createPersonMaterial(pose, detail = 1, sportswear = false) {
         .mul(chestFront)
         .mul(isTailored)
         .mul(float(1.0).sub(shirtV));
-      const zip = smoothstep(0.006, 0.0025, abs(q.x)).mul(chestFront).mul(float(1.0).sub(isTailored));
-      const collarBand = smoothstep(1.455, 1.48, q.y).mul(float(1.0).sub(isTailored));
+      const casualCoat = float(1.0).sub(vKitWeight ? max(isTailored, vKitWeight) : isTailored);
+      const zip = smoothstep(0.006, 0.0025, abs(q.x)).mul(chestFront).mul(casualCoat);
+      const collarBand = smoothstep(1.455, 1.48, q.y).mul(casualCoat);
       const neckLine = mix(1.5, 1.49, isTailored);
       const neck = smoothstep(neckLine.sub(0.004), neckLine.add(0.004), q.y);
       const hem = smoothstep(coatHemY.sub(0.004), coatHemY.add(0.004), q.y);
@@ -906,7 +919,7 @@ function createPersonMaterial(pose, detail = 1, sportswear = false) {
       const jacketCol = mix(
         colA.mul(float(1.0).sub(lapel.mul(0.25)).sub(zip.mul(0.4)).sub(collarBand.mul(0.15)).sub(hemShade)),
         colB,
-        shirtV
+        vKitWeight ? mix(shirtV, jerseyStripe(q.x), vKitWeight) : shirtV
       );
       outCol.assign(mix(mix(vPartC.xyz, jacketCol, hem), vPartC.xyz, neck));
     })
@@ -972,10 +985,12 @@ class PersonCrowd {
    */
   constructor(maxCount, { farDistance = 34, castShadow = true, sportswear = false } = {}) {
     this.farDistance = farDistance;
+    this.sportswear = sportswear;
+    this.stride = (STRIDE + (sportswear ? KIT_VECTORS : 0)) * 4;
     this.updates = 0;
     const levels = Number.isFinite(farDistance) ? [1, 0] : [1];
     this.lods = levels.map((detail) => {
-      const pose = attributeArray(maxCount * STRIDE, 'vec4').toReadOnly();
+      const pose = attributeArray(maxCount * (this.stride / 4), 'vec4').toReadOnly();
       const mesh = new THREE.Mesh(buildPersonGeometry(detail), createPersonMaterial(pose, detail, sportswear));
       mesh.name = detail ? 'PeopleNear' : 'PeopleFar';
       mesh.count = 1; // one (degenerate) person until warm-up finishes, so the pipelines compile up front
@@ -992,10 +1007,17 @@ class PersonCrowd {
     for (const l of this.lods) l.count = 0;
   }
 
-  add(rig, distance = 0) {
+  add(rig, distance = 0, kit) {
     const l = this.lods.length > 1 && distance > this.farDistance ? this.lods[1] : this.lods[0];
     if (l.count >= l.max) return;
-    l.pose.value.array.set(rig.pose, l.count * STRIDE * 4);
+    const offset = l.count * this.stride;
+    const data = l.pose.value.array;
+    data.set(rig.pose, offset);
+    if (this.sportswear) {
+      const kitOffset = offset + STRIDE * 4;
+      if (kit) data.set(kit, kitOffset);
+      else data.fill(0, kitOffset, offset + this.stride);
+    }
     l.count++;
   }
 
@@ -1006,9 +1028,9 @@ class PersonCrowd {
         if (!hideEmpty) {
           if (!l.hasZero) {
             const attr = l.pose.value;
-            attr.array.fill(0, 0, STRIDE * 4);
+            attr.array.fill(0, 0, this.stride);
             attr.clearUpdateRanges();
-            attr.addUpdateRange(0, STRIDE * 4);
+            attr.addUpdateRange(0, this.stride);
             attr.needsUpdate = true;
             l.hasZero = true;
           }
@@ -1025,7 +1047,7 @@ class PersonCrowd {
       l.mesh.visible = true;
       const attr = l.pose.value;
       attr.clearUpdateRanges();
-      attr.addUpdateRange(0, l.count * STRIDE * 4);
+      attr.addUpdateRange(0, l.count * this.stride);
       attr.needsUpdate = true;
     }
   }

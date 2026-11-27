@@ -12,6 +12,15 @@ The venue shells use the 20 November 2026 3DBAG LoD 2.2 snapshot. Each retains t
 | Sporthal ’t Riet and Dick’s Inn, Laan der Verenigde Naties 84–86 | One BAG shell contains the hall and café. The model distinguishes the hall, the lower curved café frontage and the rooftop solar array. Glazing and sign placement are approximate. [Hall operator](https://sportservicedevallei.nl/locatie/sporthal-t-riet/) · [Café](https://www.dicksinn.nl/) · [RietZon array](https://valleienergie.nl/gerealiseerde-projecten/) |
 | Wielervereniging Ede, Horsterweg 5 | The club photo shows the dark timber Finhouse building, white glazing, rail and plaza. The start marking is a schematic cue by the club terrace. [Clubhouse](https://www.wvede.nl/clubhuis) · [Parcours and medal plaza](https://www.wvede.nl/parcours) |
 
+## Covered football stands
+
+The modeled seating is reachable on foot and the roof footprints feed the game's rain and snow shelter checks. DTS ’35 uses the roof over the existing modeled seats.
+
+| Stand | Seats and survey |
+| --- | --- |
+| Blauw Geel ’55, Sportpark Peppelensteeg | The existing canopy faces the west touchline of field 1. The 2025 PDOK orthophoto fixes the 20.3 × 4.6 m roof and the 2026 orthophoto confirms the canopy remains present. AHN puts the roof approximately 4.7–5.2 m above ground. Club photos show the blue and yellow seating in five rows. The club confirms 158 seats. Row totals and individual seat positions are approximate. [Club seat count](https://www.blauwgeel55.nl/1/1122/-jouw-eigen-tribunestoel-bij-blauw-geel-55/) · [Club frontage photo](https://www.blauwgeel55.nl/1/1143/vernieuwde-tribune-klaar/) · [Seating close-up](https://www.ededoet.nl/images/attachments/10295.image.jpg) · [AHN](https://www.ahn.nl/) |
+| VV Lunteren, Sportpark De Wormshoef | The 33.2 m roof and rear footprint come from 3DBAG building `0228100000016704`, replacing OSM building `w271849505` on the west side of A veld. The pitch-facing edge is approximately 4.84 m above surveyed ground. The 2022 upgrade installed 300 yellow and black seats. The scene fits these to five rows in two blocks and uses an approximate booth and rear annex. [3DBAG survey](https://api.3dbag.nl/collections/pand/items/NL.IMBAG.Pand.0228100000016704) · [Club photos and description](https://www.vvlunteren.nl/292/36/vv-lunteren-versterkt-het-geel-zwarte-gevoel/) · [Seat installer](https://stadionreclame.com/vvlunteren) |
+
 ## WVEde paved circuit
 
 The 2016 and 2021 PDOK aerials resolve both paved strips and both hairpins. The 2026 imagery confirms the retained route. The separate permanent ribbon measures 878 m between the two hairpins. The event organizer reports a 1.2 km race lap that also uses Tesqua's existing parking area. This model traces the visible permanent pavement. The documented asphalt and pavers are represented with the existing asphalt and paver materials. The assignment of materials across the wooded stretches is inferred from the club photograph and the visible return strip. [WVEde parcours](https://www.wvede.nl/parcours) · [2026 Ronde van Ede](https://rondevanede.nl/evenement/mkbtr-ronde-van-ede/)

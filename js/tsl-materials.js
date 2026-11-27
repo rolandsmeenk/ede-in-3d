@@ -67,7 +67,7 @@ import {
   waterAt
 } from './city-config.js';
 import { heatherBloom, treeSeasonNodes } from './tree-seasons.js';
-import { applySnowMaterial, snowBuildup, snowCover, surfaceSkyExposure, waterSnowCover } from './ede-snow.js';
+import { applySnowMaterial, iceSnowRetention, snowBuildup, snowCover, surfaceSkyExposure, waterSnowCover } from './ede-snow.js';
 
 // Procedural city materials: facades and interiors, vegetation, roads, water and lighting effects.
 
@@ -1607,6 +1607,85 @@ function createParkPavingMaterial(aerial = false) {
   return mat;
 }
 
+let ballastTexture;
+function getBallastTexture() {
+  if (ballastTexture) return ballastTexture;
+  const size = 256, cells = 24;
+  let seed = 5217;
+  const random = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+  const stones = Array.from({ length: cells * cells }, () => ({
+    x: 0.16 + random() * 0.68, z: 0.16 + random() * 0.68, tone: random(), angle: random() * Math.PI * 2
+  }));
+  const pixels = new Uint8Array(size * size);
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) {
+      const x = (i + 0.5) * cells / size, z = (j + 0.5) * cells / size;
+      const column = Math.floor(x), row = Math.floor(z);
+      let first = Infinity, second = Infinity, nearest, px, pz;
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const u = column + dx, v = row + dz;
+          const stone = stones[((v + cells) % cells) * cells + (u + cells) % cells];
+          const a = x - u - stone.x, b = z - v - stone.z;
+          const distance = a * a + b * b;
+          if (distance < first) {
+            second = first;
+            first = distance;
+            nearest = stone;
+            px = a;
+            pz = b;
+          } else {
+            second = Math.min(second, distance);
+          }
+        }
+      }
+      const gap = THREE.MathUtils.smoothstep(second - first, 0.025, 0.16);
+      const facet = px * Math.cos(nearest.angle) + pz * Math.sin(nearest.angle) > 0.06 ? 0.14 : 0;
+      pixels[j * size + i] = Math.round(255 * (0.17 + gap * (0.22 + 0.40 * nearest.tone + facet)));
+    }
+  }
+  ballastTexture = new THREE.DataTexture(pixels, size, size, THREE.RedFormat);
+  ballastTexture.wrapS = ballastTexture.wrapT = THREE.RepeatWrapping;
+  ballastTexture.magFilter = THREE.LinearFilter;
+  ballastTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  ballastTexture.generateMipmaps = true;
+  ballastTexture.anisotropy = 8;
+  ballastTexture.needsUpdate = true;
+  return ballastTexture;
+}
+
+export function createEdeRailBallastMaterial(width) {
+  const maskSize = 64;
+  const mask = new Uint8Array(maskSize ** 2);
+  const smooth = THREE.MathUtils.smoothstep;
+  for (let y = 0; y < maskSize; y++) {
+    const length = Math.abs((y + 0.5) / maskSize - 0.5);
+    const sleeper = 1 - smooth(length, 0.12, 0.23);
+    for (let x = 0; x < maskSize; x++) {
+      const across = Math.abs(((x + 0.5) / maskSize - 0.5) * width);
+      mask[y * maskSize + x] = Math.round(255 * sleeper * (1 - smooth(across, 1.18, 1.28)));
+    }
+  }
+  const sleeperMask = new THREE.DataTexture(mask, maskSize, maskSize, THREE.RedFormat);
+  sleeperMask.wrapT = THREE.RepeatWrapping;
+  sleeperMask.magFilter = THREE.LinearFilter;
+  sleeperMask.minFilter = THREE.LinearMipmapLinearFilter;
+  sleeperMask.generateMipmaps = true;
+  sleeperMask.anisotropy = 8;
+  sleeperMask.needsUpdate = true;
+  const sleepers = texture(sleeperMask).r;
+  // The tile's 24 cells span 0.96 m, giving a nominal 40 mm stone size.
+  const grit = texture(getBallastTexture(), positionWorld.xz.div(0.96)).r;
+  const weathering = noise2D(positionWorld.xz.mul(0.7)).mul(0.17).add(0.9);
+  const ballast = new THREE.MeshStandardNodeMaterial({ roughness: 0.94 });
+  ballast.colorNode = mix(mix(color(0x3b3936), color(0x8e8981), grit).mul(weathering), color(0x504943), sleepers);
+  ballast.normalNode = bumpNormal(grit.mul(sleepers.oneMinus()).mul(0.008));
+  return ballast;
+}
+
 function createEdePavingMaterial(aerial = false, grade = false) {
   const mat = new THREE.MeshStandardNodeMaterial({ metalness: 0, roughness: 0.86 });
   mat.name = 'Ede non-asphalt paving';
@@ -2692,7 +2771,7 @@ function createWaterMaterial() {
   mat.normalNode = cameraViewMatrix.transformDirection(waterNormal);
 
   // GGX alpha ≈ RMS slope of the unresolved waves (Beckmann m), roughness = sqrt(alpha); murkier ponds a touch duller
-  mat.roughnessNode = mix(clamp(pow(variance, 0.25).add(pond.mul(0.05)), 0.08, 0.65), 0.17, ice);
+  mat.roughnessNode = mix(clamp(pow(variance, 0.25).add(pond.mul(0.05)), 0.08, 0.65), 0.065, ice);
 
   const viewDir = normalize(cameraPosition.sub(positionWorld));
   const fresnel = pow(float(1.0).sub(clamp(dot(waterNormal, viewDir), 0.0, 1.0)), 5.0).mul(0.98).add(0.02);
@@ -2704,8 +2783,8 @@ function createWaterMaterial() {
     const body = mix(color(0x162d2c), color(0x2e3f36), smoothstep(0.25, 0.85, silt));
     const lake = mix(color(0x24321f), color(0x33402a), silt);
     const crestTint = smoothstep(0.6, 2.4, waves.w).mul(0.35).add(1.0);
-    const iceTint = mix(color(0x375565), color(0x608494), silt);
-    return mix(mix(body, lake, pond).mul(crestTint), iceTint, ice);
+    // Clear ice gets its dark colour from the water beneath it.
+    return mix(body, lake, pond).mul(mix(crestTint, 0.42, ice));
   })();
 
   // Night: nearby Ede facades and quay lamps, reflected along the same wave
@@ -2762,7 +2841,7 @@ function createWaterMaterial() {
         const brightness = mix(float(0.85), float(0.65), lake).mul(bankVisible);
 
         // Footprint on the facades (m): unresolved slopes tilt the reflection ±2σ, laterally foreshortened at grazing views
-        const sigma2 = sqrt(variance).mul(2.0);
+        const sigma2 = sqrt(variance).mul(liquid).mul(2.0);
         const fwH = tHit.mul(fwTanEl).add(abs(tanEl).mul(fwPSum));
         const fwU = fwPSum.add(tHit.mul(fwDirSum));
         const sV = tHit.mul(sigma2).add(fwH).add(0.5).toVar();
@@ -2800,10 +2879,11 @@ function createWaterMaterial() {
         emit.assign(city.mul(brightness).mul(treeline).mul(fresnel).mul(weight));
       });
     });
-    return emit.mul(liquid);
+    return emit;
   })();
 
-  return EDE_DATA ? applySnowMaterial(mat, { shelter: true, exposure: ice, cover: waterSnowCover }) : mat;
+  return EDE_DATA ? applySnowMaterial(mat, { shelter: true, exposure: ice, cover: waterSnowCover,
+    retention: iceSnowRetention() }) : mat;
 }
 
 /**

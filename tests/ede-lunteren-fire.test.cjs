@@ -43,6 +43,10 @@ test('Lunteren fire station keeps its surveyed silhouette, grounded collider and
   assert.equal(trim.userData.nearDetail, true);
   assert.equal(trim.castShadow, false);
   for (const detail of [shell, trim]) assert.ok(detail.geometry.attributes.position.array.every(Number.isFinite));
+  const grid = trim.geometry.getAttribute('civicWindowGrid');
+  const garage = Array.from({ length: grid.count }, (_, index) => index).filter(index => grid.getX(index) === 6);
+  assert.equal(garage.length, 6, 'the six garage panes share a single quad');
+  assert.ok(garage.every(index => grid.getY(index) === 1 && grid.getZ(index) > 0));
   const glass = new three.Color(0x3d5157);
   const { array } = trim.geometry.attributes.color;
   assert.ok(array.some((r, i) => i % 3 === 0 && Math.abs(r - glass.r) < 1e-7 &&

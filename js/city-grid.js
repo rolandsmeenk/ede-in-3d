@@ -1,6 +1,5 @@
 import * as THREE from 'three/webgpu';
 import { SCHAARSBERGEN_RACK_PAD } from './ede-white-bike-sites.js';
-import { color, mix, texture } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ISLAND_BOUNDS, blockAt, containsPlayablePoint, EDE_DATA, nearestRoads, pointInPoly, waterAt } from './city-config.js';
 import {
@@ -11,14 +10,16 @@ import {
   createWaterMaterial,
   createParkLawnMaterial,
   createEdeGroundMaterial,
-  createParkPavingMaterial
+  createParkPavingMaterial,
+  createEdeRailBallastMaterial
 } from './tsl-materials.js';
 import { LANDMARK_EXCLUSIONS, BERGHAIN_TREE_SITES } from './landmarks.js';
 import { edePoints, edeBounds, edePolygonGeometry, edeStrip, edeRailStrip, edeRoadSegments, edeRoadCells, edeGeometryGroups, edeTerrainGeometries, edeWaterBanks, edeSurfaceCuts, indexEdeSurfaceCuts, drapeEdeSurface, drapeEdeVertices } from './ede-geometry.js';
 import { captureTerrainContext, getExpansionTerrain, getTerrain, terrainHeightAt } from './terrain.js';
 import { FRANKENENG_GAUGES, resolveFrankenengLevels } from './ede-water-levels.js';
 import { SCENE_NAP_ORIGIN } from './ede-scene-coordinates.js';
-import { getRailCorridors, gradeCuts, gradeWayAt, localGradeSurface, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_TOP, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, RAIL_TOP } from './ede-grade.js';
+import { getRailCorridors, gradeCuts, gradeSections, gradeWayAt, localGradeSurface, nearbyRailHeightAt, railHeightAt, RAIL_BALLAST_WIDTH, RAIL_TOP } from './ede-grade.js';
+import { buildRailBallastGeometry, indexBallastFootprints } from './ede-rail-ballast.js';
 import { edeTreeSite, woodlandTreeSpecies } from './ede-tree-data.js?v=20261122-safari-cache';
 import { REEMST_TREES } from './ede-reemst-landmark-survey.js';
 import { LUNTEREN_STRUCTURES } from './ede-lunteren-survey.js';
@@ -29,7 +30,7 @@ import { createPavingWorker } from './ede-paving-client.js';
 import { captureGroundColor } from './ede-aerial-sampling.js';
 import { curbGeometryFor, curbTactileFor } from './ede-curbs.js';
 import { curbBoxGeometry, curbFaceGeometry, curbTopGeometry } from './ede-curb-geometry.js';
-import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, osmRoadMaterial } from './ede-road-surfaces.js';
+import { EDE_PAVING_STYLE, getEdeRoadSurfaces, hasEdeMappedSurface, isEdeTrafficPavement, osmRoadMaterial } from './ede-road-surfaces.js';
 import { EDE_MTB_WAYS } from './ede-active-travel.js';
 
 // Four BGT stems fall inside the surveyed WVEde return. Place them on its south verge.
@@ -594,44 +595,33 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   }
   pavementIndex.clear();
   pavementBySegment.clear();
-  const ballastWidth = RAIL_BALLAST_WIDTH;
-  const maskSize = 64;
-  const mask = new Uint8Array(maskSize ** 2);
-  const { smoothstep } = THREE.MathUtils;
-  for (let y = 0; y < maskSize; y++) {
-    const phase = Math.abs((y + 0.5) / maskSize - 0.5);
-    const sleeper = 1 - smoothstep(phase, 0.12, 0.23);
-    for (let x = 0; x < maskSize; x++) {
-      const across = Math.abs(((x + 0.5) / maskSize - 0.5) * ballastWidth);
-      mask[y * maskSize + x] = Math.round(255 * sleeper * (1 - smoothstep(across, 1.18, 1.28)));
-    }
-  }
-  // Repeat along the track without wrapping the ballast edges across its width.
-  const sleeperMask = new THREE.DataTexture(mask, maskSize, maskSize, THREE.RedFormat);
-  sleeperMask.wrapT = THREE.RepeatWrapping;
-  sleeperMask.magFilter = THREE.LinearFilter;
-  sleeperMask.minFilter = THREE.LinearMipmapLinearFilter;
-  sleeperMask.generateMipmaps = true;
-  sleeperMask.anisotropy = 8;
-  sleeperMask.needsUpdate = true;
-  const ballastMat = new THREE.MeshStandardNodeMaterial({ roughness: 0.94 });
-  ballastMat.colorNode = mix(color(0x6c6054), color(0x3f3730), texture(sleeperMask).r);
+  const ballastMat = createEdeRailBallastMaterial(RAIL_BALLAST_WIDTH);
+  const footprintAt = indexBallastFootprints(surveyedPaving.railFootprints ?? []);
   const railMat = new THREE.MeshStandardNodeMaterial({ color: 0xb5ada0, metalness: 0.35, roughness: 0.47 });
-  let railWays = 0;
+  let railWays = 0, mappedBallastSections = 0;
   const railCorridors = getRailCorridors();
   for (const railway of EDE_DATA.railways || []) {
     if (railway.tunnel || railway.pts.length < 4) continue;
     const fitted = railCorridors.get(railway.id);
-    if (fitted) {
-      for (let i = 0; i < fitted.sections.length; i += 48) {
-        const sections = fitted.sections.slice(i, i + 48);
-        collect(edeRailStrip(sections, ballastWidth / 2, RAIL_BALLAST_TOP), ballastMat);
-        for (const side of [-1, 1]) collect(edeRailStrip(sections, 0.045, RAIL_TOP, side * 1.435 / 2), railMat);
+    const points = fitted ? null : edePoints(railway.pts);
+    const sections = fitted?.sections ?? gradeSections({
+      width: RAIL_BALLAST_WIDTH,
+      points: points.map(({ x, z }) => [x, z, railHeightAt(railway.id, x, z) ?? terrainHeightAt(x, z)])
+    });
+    for (let i = 0; i < sections.length; i += 48) {
+      const chunk = sections.slice(i, i + 48);
+      const bed = buildRailBallastGeometry(chunk, railway.layer ?? 0,
+        railway.bridge, footprintAt, terrainHeightAt, isEdeTrafficPavement);
+      mappedBallastSections += bed.userData.mappedSections;
+      collect(bed, ballastMat);
+      if (fitted) {
+        for (const side of [-1, 1]) collect(edeRailStrip(chunk, 0.045, RAIL_TOP, side * 1.435 / 2), railMat);
       }
+    }
+    if (fitted) {
       railWays++;
       continue;
     }
-    const points = edePoints(railway.pts);
     let distance = 0;
     for (let i = 1; i < points.length; i++) {
       const a = points[i - 1], b = points[i];
@@ -658,15 +648,6 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
         return geometry;
       };
 
-      // The ballast sits below the road surface at level crossings.
-      const bed = trackStrip(ballastWidth / 2, RAIL_BALLAST_TOP);
-      const positions = bed.getAttribute('position'), coordinates = bed.getAttribute('uv');
-      for (let j = 0; j < positions.count; j++) {
-        const dx = positions.getX(j) - a.x, dz = positions.getZ(j) - a.z;
-        coordinates.setXY(j, (-dx * uz + dz * ux) / ballastWidth + 0.5,
-          (distance + dx * ux + dz * uz) / RAIL_SLEEPER_SPACING + 0.5);
-      }
-      collect(bed, ballastMat);
       for (const side of [-1, 1]) collect(trackStrip(0.045, RAIL_TOP, side * 1.435 / 2), railMat);
       distance += length;
     }
@@ -738,7 +719,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
     if (fill !== undefined && hash(gx, gz, extra ? 8 : 4) > fill) return;
     if (LANDMARK_EXCLUSIONS.some(b => x > b.minX - 4 && x < b.maxX + 4 && z > b.minZ - 4 && z < b.maxZ + 4)) return;
     if (nearestRoads(x, z, 20).some(q => q.dist < q.road.w / 2 + 3)) return;
-    if (extra && nearbyRailHeightAt(x, z, 5) !== undefined) return;
+    if (nearbyRailHeightAt(x, z, 5) !== undefined) return;
     const block = blockAt(x, z);
     if (block && !block.park && !block.sidewalk) return;
     const h = hash(gx, gz, extra ? 7 : 3);
@@ -862,7 +843,7 @@ function buildCityGrid(scene, treeInventory, landCover, canopyDensity, replacedP
   streetSiteKeys.clear();
   fringeSurfaces.clear();
 
-  group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, railways: railWays, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, northernWoodlandTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
+  group.userData = { city: 'Ede', source: 'OpenStreetMap', terrain: terrain ? 'PDOK AHN' : null, roads: roadSegments.length, railways: railWays, mappedBallastSections, treeInventory: treeInventory?.length || 0, mappedTrees: mappedTreeCount, landmarkTrees, northernWoodlandTrees, proceduralWoodlandTrees: parkTreeSites.length - mappedTreeCount - landmarkTrees,
     mappedPavingCount, clippedPedestrianPieces, clippedSidewalkPieces, curbRuns, flatPonds, junctionClippedCurbs: true, junctionClippedSidewalks: true };
   scene.add(group);
   return { group, sidewalks, footprints, highwayLanes: [], colliders, pavingTiles, shorelineCuts,

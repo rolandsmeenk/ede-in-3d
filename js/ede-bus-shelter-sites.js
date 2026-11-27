@@ -55,7 +55,7 @@ export const EDE_BUS_SHELTER_SITES = [
   {"id":"NL:Q:40612053","name":"Schaapsweg/Veenderweg","town":"Ede","lon":5.6616271,"lat":52.0433288,"bearing":238.0,"ad":true,"bench":true,"green":false},
   {"id":"NL:Q:40612055","name":"Ganzeweide","town":"Ede","lon":5.6565262,"lat":52.0410306,"bearing":251.0,"ad":true,"bench":true,"green":false},
   {"id":"NL:Q:40612056","name":"Ganzeweide","town":"Ede","lon":5.6569198,"lat":52.0410477,"bearing":71.0,"ad":true,"bench":true,"green":false},
-  {"id":"NL:Q:40612059","name":"Mariendaal","town":"Ede","lon":5.6429982,"lat":52.0406833,"bearing":255.0,"ad":true,"bench":true,"green":false},
+  {"id":"NL:Q:40612059","name":"Mariendaal","town":"Ede","lon":5.6429982,"lat":52.0406833,"bearing":255.0,"ad":true,"bench":true,"green":false,"along":3.4},
   {"id":"NL:Q:40612060","name":"Mariendaal","town":"Ede","lon":5.6418882,"lat":52.0402722,"bearing":75.0,"ad":true,"bench":true,"green":false},
   {"id":"NL:Q:40612061","name":"Durendaal","town":"Ede","lon":5.6377138,"lat":52.0392206,"bearing":266.0,"ad":true,"bench":true,"green":false},
   {"id":"NL:Q:40612063","name":"Middelbeek","town":"Ede","lon":5.6328804,"lat":52.0402105,"bearing":282.0,"ad":true,"bench":true,"green":false},

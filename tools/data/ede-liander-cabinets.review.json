@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "date": "2026-11-27",
+  "imageryLayers": [
+    "2026_orthoHR",
+    "2025_orthoHR"
+  ],
+  "sourceCounts": {
+    "lianderKast": 171,
+    "matchesToExistingElectricalCabinets": 2,
+    "directBgtMatchRadiusM": 12,
+    "reviewedAerialCrops": 169
+  },
+  "cabinets": [
+    {
+      "lianderId": "643:1666",
+      "lianderRd": [
+        172138.5150000006,
+        450096.1739999987
+      ],
+      "positionRd": [
+        172138.52,
+        450096.17
+      ],
+      "width": 0.5,
+      "depth": 0.4,
+      "angle": -0.004,
+      "aerialBoundsRd": [
+        172132.12,
+        450089.77,
+        172144.92,
+        450102.57
+      ],
+      "bgtGround": {
+        "id": "G0228.fe246f568753d6d6e0400a0a35020533",
+        "collection": "onbegroeidterreindeel",
+        "function": null,
+        "material": "betonstraatstenen"
+      },
+      "aerialEvidence": "A small gray rectangular top sits on the paved apron in both years. A second object closer to the lane is separate."
+    },
+    {
+      "lianderId": "643:12199",
+      "lianderRd": [
+        169349.27199999988,
+        448170.6799999997
+      ],
+      "positionRd": [
+        169349.47,
+        448170.48
+      ],
+      "width": 0.5,
+      "depth": 0.35,
+      "angle": -1.3817,
+      "aerialBoundsRd": [
+        169342.87,
+        448164.28,
+        169355.67,
+        448177.08
+      ],
+      "bgtGround": {
+        "id": "G0228.fe246f550747d6d6e0400a0a35020533",
+        "collection": "ondersteunendwegdeel",
+        "function": "berm",
+        "material": "gras- en kruidachtigen"
+      },
+      "aerialEvidence": "The light rectangular top and oblique shadow persist on grass beside the fence in both years."
+    },
+    {
+      "lianderId": "643:32935",
+      "lianderRd": [
+        169299.02299999818,
+        455509.5390000008
+      ],
+      "positionRd": [
+        169298.62,
+        455509.14
+      ],
+      "width": 0.5,
+      "depth": 0.4,
+      "angle": -0.0072,
+      "aerialBoundsRd": [
+        169292.62,
+        455503.14,
+        169305.42,
+        455515.94
+      ],
+      "bgtGround": {
+        "id": "L0002.dc50dd17b2fb44b3a9a00bd046bb39f9",
+        "collection": "ondersteunendwegdeel",
+        "function": "berm",
+        "material": "groenvoorziening"
+      },
+      "aerialEvidence": "Compact light top and short dark shadow persist on the verge above the path in both years."
+    },
+    {
+      "lianderId": "643:34214",
+      "lianderRd": [
+        172894.90199999884,
+        449869.8209999986
+      ],
+      "positionRd": [
+        172895.15,
+        449869.72
+      ],
+      "width": 0.5,
+      "depth": 0.4,
+      "angle": -1.0363,
+      "aerialBoundsRd": [
+        172888.5,
+        449863.42,
+        172901.3,
+        449876.22
+      ],
+      "bgtGround": {
+        "id": "G0228.fe246f2d8f47d6d6e0400a0a35020533",
+        "collection": "begroeidterreindeel",
+        "function": null,
+        "material": "heesters"
+      },
+      "aerialEvidence": "Small pale rectangular top appears in the narrow shrub verge in both years. The footpath is alongside the verge."
+    },
+    {
+      "lianderId": "643:36237",
+      "lianderRd": [
+        174734.83900000155,
+        451010.2650000006
+      ],
+      "positionRd": [
+        174734.89,
+        451010.57
+      ],
+      "width": 0.85,
+      "depth": 0.5,
+      "angle": -1.9049,
+      "aerialBoundsRd": [
+        174728.44,
+        451003.87,
+        174741.24,
+        451016.67
+      ],
+      "bgtGround": {
+        "id": "G0228.e6542abd98554ed0aa8d845a0579e437",
+        "collection": "ondersteunendwegdeel",
+        "function": "berm",
+        "material": "gras- en kruidachtigen"
+      },
+      "aerialEvidence": "A pale freestanding rectangular lid is visible beside the crossing in both years, with the shadow on the verge side."
+    },
+    {
+      "lianderId": "643:67693",
+      "lianderRd": [
+        173072.1790000014,
+        450000.9600000009
+      ],
+      "positionRd": [
+        173072.53,
+        450000.56
+      ],
+      "width": 0.6,
+      "depth": 0.45,
+      "angle": -0.0012,
+      "aerialBoundsRd": [
+        173065.78,
+        449994.56,
+        173078.58,
+        450007.36
+      ],
+      "bgtGround": {
+        "id": "G0228.fe246f2d93b0d6d6e0400a0a35020533",
+        "collection": "begroeidterreindeel",
+        "function": null,
+        "material": "gras- en kruidachtigen"
+      },
+      "aerialEvidence": "The light rectangular cap remains in the grassy verge at the bend in both years."
+    }
+  ]
+}

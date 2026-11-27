@@ -12,7 +12,16 @@ import { getTerrain, terrainHeightAt } from './terrain.js';
 const CELL = 180;
 const ROAD_REACH = 14;
 const STEEL = 0x68747b, GALVANIZED = 0xafb8b9, WOOD = 0x785335;
-const FOLIAGE = [0x4d673b, 0x4d633e, 0x51693e, 0x435c37];
+const PLANT_HEIGHTS = {
+  heesters: 0.60,
+  struiken: 0.72,
+  struikrozen: 0.60,
+  bosplantsoen: 0.85,
+  'gras- en kruidachtigen': 0.24,
+  planten: 0.33,
+  bodembedekkers: 0.16,
+};
+const FOLIAGE_TINTS = [0xf4f0e8, 0xe8ede0, 0xf1f5e9, 0xe9f1e8];
 const BARRIERS = {
   hedge: { width: 0.85, height: 1.1, color: 0x405d2e },
   fence: { width: 0.10, height: 1.2, color: 0x56605a, spacing: 2.5 },
@@ -90,6 +99,7 @@ export async function loadEdeDetail({
     bgt && bgtStage === 'all' && municipal && 'municipal',
     bgt && bgtStage === 'all' && parcels && 'parcel', utilities && 'utility'].filter(Boolean);
   const assetUrl = (source, extension) => new URL(`../assets/${files[source]}.${extension}`, import.meta.url);
+  const extensions = { bgt: 'json.gz?v=20261127-planting-types', parcel: 'json.gz?v=20261121-map' };
   let nbdTexture, parcelTiles;
   const replacedBgt = new Set();
   const fullBgt = bgt && bgtStage === 'all';
@@ -97,7 +107,7 @@ export async function loadEdeDetail({
   const fringeLand = fullBgt && fringe ? loadLandCover('ede-fringe-land.bin.gz') : null;
   const assets = await Promise.all(requests.map(async source => {
     try {
-      const asset = await (await readPacked(assetUrl(source, source === 'parcel' ? 'json.gz?v=20261121-map' : 'json.gz'))).json();
+      const asset = await (await readPacked(assetUrl(source, extensions[source] ?? 'json.gz'))).json();
       if (asset.version !== 1 || !Array.isArray(asset.features)) throw new Error('invalid asset format');
       if (source === 'municipal' || source === 'parcel') {
         if (!Array.isArray(asset.replaces) || asset.replaces.some(id => typeof id !== 'string')) {
@@ -248,6 +258,112 @@ function buildMarkerAtlas(labels) {
   return { cells, texture };
 }
 
+function plantingGeometry(kind) {
+  const positions = [], indices = [], colors = [];
+  const color = new THREE.Color();
+
+  function vertex(x, y, z, tint, shade = 1) {
+    positions.push(x, y, z);
+    color.setHex(tint).multiplyScalar(shade);
+    colors.push(color.r, color.g, color.b);
+    return positions.length / 3 - 1;
+  }
+
+  function leaf(x, y, z, turn, length, rise, halfWidth, tint) {
+    const cos = Math.cos(turn), sin = Math.sin(turn);
+    const point = (along, up, across, shade) => vertex(
+      x + cos * along - sin * across, y + up, z + sin * along + cos * across, tint, shade);
+    const base = point(0, 0, 0, 0.65);
+    const left = point(length * 0.48, rise * 0.56, -halfWidth, 0.88);
+    const fold = point(length * 0.53, rise * 0.66 + halfWidth * 0.6, 0, 1);
+    const right = point(length * 0.58, rise * 0.60, halfWidth * 0.9, 0.78);
+    const tip = point(length, rise, 0, 0.93);
+    indices.push(base, fold, left, base, right, fold, fold, tip, left, fold, right, tip);
+  }
+
+  function crown(x, y, z, turn, radius, height, tint) {
+    const top = vertex(x - radius * 0.16, y + height * 0.52, z + radius * 0.13, tint, 1.03);
+    const bottom = vertex(x, Math.max(0, y - height * 0.56), z, tint, 0.55);
+    const ring = (yaw, spread, low, high, shade) => Array.from({ length: 5 }, (_, i) => {
+      const theta = yaw + i * Math.PI * 0.4;
+      const edge = radius * spread * (0.77 + (i * 3 % 5) * 0.058);
+      return vertex(x + Math.cos(theta) * edge, Math.max(0, y + height * (i % 2 ? high : low)),
+        z + Math.sin(theta) * edge, tint, shade + (i * 7 % 5) * 0.04);
+    });
+    const rim = ring(turn, 1, -0.37, -0.08, 0.63);
+    const shoulders = ring(turn + 0.22, 0.74, 0.26, 0.45, 0.83);
+    rim.forEach((point, i) => {
+      const next = (i + 1) % rim.length;
+      indices.push(bottom, point, rim[next], point, shoulders[i], rim[next],
+        rim[next], shoulders[i], shoulders[next], top, shoulders[next], shoulders[i]);
+    });
+  }
+
+  function stem(x, y, z) {
+    const top = vertex(x, y, z, 0x81714e);
+    const base = [0, 2.1, 4.2].map(turn => vertex(x * 0.64 + Math.cos(turn) * 0.027, 0,
+      z * 0.64 + Math.sin(turn) * 0.027, 0x655439));
+    base.forEach((point, i) => indices.push(top, point, base[(i + 1) % base.length]));
+  }
+
+  switch (kind) {
+    case 'heesters':
+    case 'struiken':
+    case 'struikrozen':
+    case 'bosplantsoen': {
+      const scrub = kind === 'struiken', woodland = kind === 'bosplantsoen', rose = kind === 'struikrozen';
+      if (!woodland) crown(0, 0.21, 0, 0.2, scrub ? 0.25 : 0.34, 0.43, 0x4b6338);
+      for (let i = 0; i < 3; i++) {
+        const turn = i * 2.4;
+        const spread = woodland ? 0.19 : 0.20 + (i % 2) * 0.036;
+        const x = Math.cos(turn) * spread, z = Math.sin(turn) * spread;
+        const y = (woodland ? 0.65 : scrub ? 0.39 : 0.35) + i * 0.095;
+        const radius = woodland ? 0.18 + (2 - i) * 0.035 : 0.19 + (i % 2) * 0.03;
+        const tint = woodland ? [0x536342, 0x5f7047, 0x67764b][i]
+          : scrub ? [0x626c46, 0x657547, 0x79804d][i] : [0x4f683b, 0x617a43, 0x6a8049][i];
+        stem(x, y, z);
+        crown(x, y, z, turn + 0.4, radius, scrub || woodland ? 0.31 : 0.36, tint);
+        leaf(x, y + 0.03, z, turn + 0.12, radius * 1.39, 0.07 + i * 0.035, 0.041, 0x718748);
+        leaf(x, y + 0.15, z, turn + 1.12 + i * 0.37, radius * 0.96, 0.14 + i * 0.026, 0.037, 0x82934e);
+        leaf(x, y - 0.07, z, turn - 0.78 + i * 0.31, radius * 1.23, -0.12 + i * 0.035, 0.047, 0x526e3e);
+        if (rose) {
+          for (let petal = 0; petal < 4; petal++) {
+            leaf(x - radius * 0.18, y + 0.20, z + radius * 0.12, turn + petal * Math.PI / 2,
+              0.057, 0.034, 0.027, i % 2 ? 0xc88489 : 0xaf6f79);
+          }
+        }
+      }
+      break;
+    }
+    case 'gras- en kruidachtigen':
+      for (let i = 0; i < 8; i++) {
+        const turn = i * 2.4;
+        leaf(Math.cos(turn) * 0.10, 0, Math.sin(turn) * 0.10, turn,
+          0.16 + (i % 3) * 0.10, 0.57 + ((i * 7) % 8) * 0.061, i % 3 ? 0.024 : 0.055,
+          i % 2 ? 0x738044 : 0x697740);
+      }
+      break;
+    case 'planten':
+    case 'bodembedekkers': {
+      const mat = kind === 'bodembedekkers';
+      for (let i = 0; i < 10; i++) {
+        const turn = i * 2.4, x = Math.cos(turn) * 0.14, z = Math.sin(turn) * 0.14;
+        const direction = turn + (i % 2 ? 0.53 : -0.43) + (mat && i % 3 === 0 ? Math.PI : 0);
+        leaf(x, 0, z, direction,
+          0.23 + (i % 3) * 0.048, mat ? 0.49 + (i % 3) * 0.12 : 0.49 + (i % 4) * 0.17,
+          mat ? 0.14 : 0.085 + (i % 3) * 0.018, mat ? 0x566e41 : i % 2 ? 0x667e49 : 0x728b4b);
+      }
+      break;
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function detailResources() {
   const material = applySnowMaterial(new THREE.MeshStandardNodeMaterial({ roughness: 0.83 }), { shelter: true });
   const surface = applySnowMaterial(new THREE.MeshStandardNodeMaterial({
@@ -255,15 +371,9 @@ function detailResources() {
   }), { shelter: true });
   const glass = new THREE.MeshStandardNodeMaterial({ color: 0x78a9a2, roughness: 0.32, transparent: true, opacity: 0.42, depthWrite: false });
   const box = new THREE.BoxGeometry(1, 1, 1);
-  const leaf = new THREE.IcosahedronGeometry(0.5, 1);
-  const leafPosition = leaf.getAttribute('position');
-  for (let i = 0; i < leafPosition.count; i++) {
-    const x = leafPosition.getX(i), y = leafPosition.getY(i), z = leafPosition.getZ(i);
-    const ripple = 1 + 0.11 * Math.sin(x * 16 + y * 25) * Math.cos(z * 21);
-    leafPosition.setXYZ(i, x * ripple, y * ripple, z * ripple);
-  }
   const shapes = { box, glass: box, pole: new THREE.CylinderGeometry(0.5, 0.5, 1, 6), round: new THREE.CylinderGeometry(0.5, 0.5, 1, 10),
-    leaf, tuft: new THREE.IcosahedronGeometry(0.5) };
+    tuft: new THREE.IcosahedronGeometry(0.5) };
+  for (const kind of Object.keys(PLANT_HEIGHTS)) shapes[kind] = plantingGeometry(kind);
   return { material, surface, glass, shapes };
 }
 
@@ -914,9 +1024,12 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       case 'shrub': case 'groundCover': {
         const shrub = feature.type === 'shrub';
         const variant = (Math.round(x * 10) * 23 ^ Math.round(z * 10) * 29) & 15;
+        const kind = Object.hasOwn(PLANT_HEIGHTS, feature.plantingType) ? feature.plantingType
+          : shrub ? 'heesters' : 'bodembedekkers';
         const w = dimension(feature.width, shrub ? 0.75 : 0.55);
-        const h = dimension(feature.height, shrub ? 0.6 : 0.24) * (0.85 + variant / 50);
-        part(w, h, w * 0.85, 0, h * 0.39, 0, FOLIAGE[variant & 3], shrub ? 'leaf' : 'tuft');
+        const h = dimension(feature.height, PLANT_HEIGHTS[kind]) * (0.85 + variant / 50);
+        instance(feature.source, kind, x, y, z, w, h, w * 0.85, angle + variant * Math.PI / 8,
+          FOLIAGE_TINTS[variant & 3], detailRange(false) ?? (shrub ? 190 : 130));
         break;
       }
       case 'hectometre': {
@@ -964,6 +1077,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
   for (const target of batches.values()) {
     const { kind, source, range } = target;
     const signFace = kind === 'sign' || kind === 'directionalSign';
+    const planting = Object.hasOwn(PLANT_HEIGHTS, kind);
     let mesh;
     if (target.strokes) {
       if (!target.strokes.start.length) continue;
@@ -972,7 +1086,7 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
       stats.triangles += mesh.geometry.instanceCount * 2;
     } else if (target.instances.length) {
       const geometry = shapes[kind];
-      mesh = new THREE.InstancedMesh(geometry, kind === 'glass' ? glass : material, target.instances.length);
+      mesh = new THREE.InstancedMesh(geometry, kind === 'glass' ? glass : planting ? surface : material, target.instances.length);
       target.instances.forEach(([x, y, z, sx, sy, sz, angle, paint], index) => {
         dummy.position.set(x, y, z); dummy.scale.set(sx, sy, sz);
         if (typeof angle === 'number') dummy.rotation.set(0, angle, 0);
@@ -1007,10 +1121,11 @@ export function buildEdeDetail(scene, features = [], { deckProfiles, mappedLamps
     mesh.name = `${source.toUpperCase()} detail ${kind}`;
     mesh.receiveShadow = !signFace && kind !== 'glass';
     mesh.userData.cullDistance = range ?? (kind === 'utilityShell' ? 0 : kind === 'inset' ? 65 : kind === 'tuft' ? 130
-      : kind === 'leaf' ? 190 : source === 'utility' ? 320 : source === 'parcel' ? 220 : source === 'bgt' ? 310 : 700);
-    const pipeline = pipelines.get(kind);
+      : source === 'utility' ? 320 : source === 'parcel' ? 220 : source === 'bgt' ? 310 : 700);
+    const pipelineKind = planting ? 'planting' : kind;
+    const pipeline = pipelines.get(pipelineKind);
     if (pipeline) mesh.userData.sharesPipelineWith = pipeline;
-    else pipelines.set(kind, mesh);
+    else pipelines.set(pipelineKind, mesh);
     group.add(mesh);
   }
   stats.chunks = group.children.length;

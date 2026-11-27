@@ -18,6 +18,7 @@ BAG_API = 'https://api.3dbag.nl/collections/pand/items/NL.IMBAG.Pand.'
 
 # Site names, streets, the exact replacement identifiers, and the facade type.
 SITES = [
+    ('leeuwenhorst', 'Leeuwenhorst · Slotlaan', 'Veldhuizen', 'Leeuwenhorst', 'leeuwenhorst', [('0228100000071622', 'w421608706')]),
     ('mariendaal', 'Veldzicht · Mariëndaal', 'Veldhuizen', 'Mariëndaal', 'large', [('0228100000059678', 'w272136026')]),
     ('langenhorst', 'Langenhorstflat', 'Veldhuizen', 'Langenhorst', 'langenhorst', [('0228100000043230', 'w272135506')]),
     ('valkestein-west', 'Valkestein · West', 'Veldhuizen', 'Valkestein', 'point', [('0228100000034643', 'w271546092')]),
@@ -115,6 +116,7 @@ def long_axis(ring):
 # The Willem Marislaan car park exposes the existing east-wall artwork.
 # The Bosbeshof footpath approaches the terrace tower from the southeast.
 VIEWPOINTS = {
+    'leeuwenhorst': dict(x=-2046.0, z=251.13),
     'groot-derxsgoed': dict(x=-932, z=2261),
     # Both points frame the main façade from pedestrian space between the trees.
     'mariendaal': dict(x=-1983.0, z=684.2),
@@ -165,6 +167,8 @@ def main():
                           height=round(height, 2), focusHeight=min(13, round(height * 0.35, 1)), approach=approach,
                           osmId=sources[0][1], annexOsmIds=[osm for _, osm in sources[1:]],
                           bagIds=[bag for bag, _ in sources if bag]))
+        if style == 'leeuwenhorst':
+            sites[-1]['hideOnMap'] = True
         lines.append(f"  '{key}': [")
         for part in shells:
             lines.append('    {')

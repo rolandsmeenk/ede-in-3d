@@ -1,4 +1,4 @@
-import { CivicBatch, civicSigns, facePanel, makeGroup, polygonNormal, wallColliders, wallExtent } from './ede-civic-landmarks.js';
+import { CivicBatch, civicSigns, facePanel, faceWindow, makeGroup, polygonNormal, wallColliders, wallExtent } from './ede-civic-landmarks.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 
 export function surveyPanel(wall, u, v, lo, hi, color, offset = 0.034, sheen = 0) {
@@ -39,16 +39,10 @@ export function surveyWindow(wall, u, v, lo, hi, {
 } = {}) {
   if (!surveyOpeningFits(wall, u, v, lo, hi)) return false;
   const rim = Math.min(0.055, (v - u) / 8, (hi - lo) / 8);
-  surveyPanel(wall, u, v, lo, hi, frame, 0.035);
-  surveyPanel(wall, u + rim, v - rim, lo + rim, hi - rim, color, 0.044, 0.75);
-  for (let i = 1; i < columns; i++) {
-    const x = u + (v - u) * i / columns;
-    surveyPanel(wall, x - rim / 2, x + rim / 2, lo, hi, frame, 0.051);
-  }
-  for (let i = 1; i < rows; i++) {
-    const y = lo + (hi - lo) * i / rows;
-    surveyPanel(wall, u, v, y - rim / 2, y + rim / 2, frame, 0.051);
-  }
+  const { trim, a, b, normal, width } = wall;
+  faceWindow(trim, a, b, normal, u / width, v / width, lo, hi, {
+    color, frame, columns, rows, border: [rim, rim],
+  });
   return true;
 }
 
@@ -58,7 +52,7 @@ export function surveyLabel(wall, u, v, lo, hi, text, color, textColor) {
 }
 
 export function createSurveyLandmark(site, buildings, decorate, finish) {
-  const shell = new CivicBatch(), trim = new CivicBatch(), colliders = [], platforms = [], labels = [];
+  const shell = new CivicBatch(), trim = new CivicBatch(), colliders = [], platforms = [], labels = [], weatherCovers = [];
   const anchored = getTerrain();
   for (const [buildingIndex, building] of buildings.entries()) {
     const { ground: base, points, faces, wallColor, roofColor, outline } = building;
@@ -97,7 +91,7 @@ export function createSurveyLandmark(site, buildings, decorate, finish) {
           y, a.z + (b.z - a.z) * (u / width) + normal.z * offset,
         ];
         color = decorate?.({
-          building, buildingIndex, faceIndex, rings, normal, a, b, width, low, high, base, point, shell, trim, labels,
+          building, buildingIndex, faceIndex, rings, normal, a, b, width, low, high, base, point, shell, trim, labels, weatherCovers,
         }) ?? wallColor;
         if (nearGround && !outline?.length) {
           colliders.push(...wallColliders(a, b, Math.min(foundation(a.x, a.z), foundation(b.x, b.z)), high));
@@ -111,6 +105,7 @@ export function createSurveyLandmark(site, buildings, decorate, finish) {
   const group = makeGroup(site.name, shell, colliders);
   finish?.({ group, trim, labels, colliders, platforms });
   if (platforms.length) group.userData.platforms = platforms;
+  if (weatherCovers.length) group.userData.weatherCovers = weatherCovers;
   if (trim.vertices.length) {
     const detail = trim.mesh();
     detail.userData.nearDetail = true;

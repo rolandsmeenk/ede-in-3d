@@ -459,6 +459,39 @@ test('PersonCrowd keeps 1 warm-up instance for 2 updates, then hides empty LODs 
   assert.equal(crowd.meshes[1].count, 0);
 });
 
+test('sports kits color the shirt and shorts in both crowd LODs and clear when instances are reused', () => {
+  const crowd = new PersonCrowd(4, { sportswear: true });
+  const rig = { pose: new Float32Array(STRIDE * 4) };
+  const kit = [0, 0, 1, 1, 1, 1, 1, 0, 0.25, 0, 0, 0];
+  const draw = (lod, part, x, y) => {
+    shaderState.attrs.position = [x, y, 0.08];
+    shaderState.attrs.skin = [0, 0, 0, part];
+    shaderState.attrs.extra = [0, 0, 0.5];
+    shaderState.varyingSnapshots.clear();
+    return lod.mesh.material.colorNode.eval();
+  };
+
+  crowd.begin();
+  crowd.add(rig, 0, kit);
+  crowd.add(rig, 50, kit);
+  crowd.end();
+  for (const lod of crowd.lods) {
+    assert.deepEqual(draw(lod, 0, 0, 1.4), [0, 0, 1]);
+    const stripe = draw(lod, 0, 0.055, 1.4);
+    assert.ok(stripe[0] >= 0.9 && stripe[0] === stripe[1] && stripe[1] === stripe[2]);
+    assert.deepEqual(draw(lod, 1, 0.13, 0.7), [0.25, 0, 0]);
+  }
+
+  crowd.begin();
+  crowd.add(rig, 0);
+  crowd.add(rig, 50);
+  crowd.end();
+  for (const lod of crowd.lods) {
+    assert.ok(lod.pose.value.array.slice(STRIDE * 4).every(channel => channel === 0));
+    assert.notDeepEqual(draw(lod, 0, 0, 1.4), [0, 0, 1]);
+  }
+});
+
 test('buildPersonGeometry assigns constant partId across every triangle so flat/interpolated part varyings never bleed', () => {
   for (const detail of [1, 0]) {
     const geo = buildPersonGeometry(detail);
@@ -641,7 +674,7 @@ test('renderPed skips hidden rig updates beyond 50m while preserving <=50m foots
   assert.equal(farVisible.drawn, 1);
 });
 
-test('poseCharacters skips stationary inactive cyclist IK/uploads and culls parked characters beyond 320m', () => {
+test('only the active pedestrian or cyclist updates their character pose', () => {
   const noopTarget = { addEventListener() {} };
   const { ThirdPersonControllerManager } = loadModule(controllersSource, {
     globals: { window: noopTarget, document: { ...noopTarget, hidden: false } },
@@ -704,34 +737,19 @@ test('poseCharacters skips stationary inactive cyclist IK/uploads and culls park
   const car = { type: 'car', position: { x: 3.6, y: 0, z: 0 }, carState: { value: { x: 0, w: 0 } } };
   controller.entities = { person, cyclist, car };
 
-  // Within 320m: person updates every frame, stationary inactive cyclist poses once then skips IK & uploads
-  for (let i = 0; i < 5; i++) controller.poseCharacters(1 / 60, { x: 0, y: 2, z: 0 });
-  assert.equal(personUpdates, 5);
-  assert.equal(bikeRides, 1, 'stationary parked cyclist solves ride IK only once');
+  controller.poseCharacter(1 / 60);
+  assert.equal(personUpdates, 0);
+  assert.equal(bikeRides, 0);
+
+  controller.activeMode = 'cyclist';
+  controller.poseCharacter(1 / 60);
+  assert.equal(personUpdates, 0);
+  assert.equal(bikeRides, 1);
   assert.equal(cyclist.riderCrowd.adds, 1);
 
-  // Move focus > 320m away (e.g. One WTC at z = 4000): warm-up finishes, then both stop updating & hide crowds
-  for (let i = 0; i < 6; i++) controller.poseCharacters(1 / 60, { x: 0, y: 2, z: 4000 });
-  assert.equal(person.mesh.visible, false);
-  assert.equal(person.rig.placed, false);
-  assert.equal(cyclist.helmet.visible, false);
-  assert.equal(cyclist.mesh.visible, true, 'cyclist root stays visible so its child SpotLight stays in scene lights');
-
-  const endsBeforeIdle = person.crowd.ends + cyclist.riderCrowd.ends;
-  for (let i = 0; i < 10; i++) controller.poseCharacters(1 / 60, { x: 0, y: 2, z: 4000 });
-  assert.equal(person.crowd.ends + cyclist.riderCrowd.ends, endsBeforeIdle, 'zero crowd calls while parked >320m away');
-  assert.equal(personUpdates, 5);
+  controller.activeMode = 'person';
+  controller.poseCharacter(1 / 60);
+  assert.equal(personUpdates, 1);
+  assert.equal(person.crowd.adds, 1);
   assert.equal(bikeRides, 1);
-
-  // Switching mode to cyclist immediately restores visibility & poses even when camera has not caught up yet
-  controller.setMode('cyclist');
-  controller.poseCharacters(1 / 60, { x: 0, y: 2, z: 4000 });
-  assert.equal(cyclist.helmet.visible, true);
-  assert.equal(bikeRides, 2);
-
-  // Returning within 320m restores the sidewalk pedestrian immediately
-  controller.setMode('car');
-  controller.poseCharacters(1 / 60, { x: 0, y: 2, z: 10 });
-  assert.equal(person.mesh.visible, true);
-  assert.equal(personUpdates, 6);
 });

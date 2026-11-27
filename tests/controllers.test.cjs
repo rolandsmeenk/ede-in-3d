@@ -235,15 +235,11 @@ test('cargo bike wheels spin for their own radii and steering moves the fork, ba
   controller.resolveHorizontalCollision = () => {};
   controller.keys.forward = true;
   controller.keys.left = true;
-  controller.setMode('cyclist');
-  assert.equal(controller.getActiveEntity(), cyclist);
   controller.updateCyclist(0.1, cyclist, 'cyclist');
   const cyclistDistance = cyclist.speed * 0.1;
   assert.ok(Math.abs(cyclist.frontWheel.rotation.x - cyclistDistance / 0.35) < 1e-10);
   assert.ok(Math.abs(cyclist.rearWheel.rotation.x - cyclistDistance / 0.35) < 1e-10);
 
-  controller.setMode('cargobike');
-  assert.equal(controller.getActiveEntity(), cargoBike);
   controller.updateCyclist(0.1, cargoBike, 'cargobike');
   const distance = cargoBike.speed * 0.1;
   assert.ok(Math.abs(cargoBike.frontWheel.rotation.x - distance / cargoBike.frontWheelRadius) < 1e-10);
@@ -252,7 +248,6 @@ test('cargo bike wheels spin for their own radii and steering moves the fork, ba
   assert.equal(cargoBike.frontSteerPivot.rotation.y, 0.34);
   assert.equal(cargoBike.handlebarPivot.rotation.y, 0.34);
   assert.equal(cargoBike.bikeFrame.steerAngle, 0.34);
-  assert.equal(cyclist.frontWheel.rotation.x, cyclistDistance / 0.35, 'switching bikes leaves the parked cyclist state intact');
 });
 
 function carDynamicsHarness(motion = {}) {
@@ -340,12 +335,6 @@ test('player brake and reverse lamps follow braking and backward travel', () => 
     sim.advance(1 / 60);
     assert.equal(sim.car.carState.value.x, brake, `brake at speed ${speed}, input ${input}`);
     assert.equal(sim.car.carState.value.w, reverse, `reverse at speed ${speed}, input ${input}`);
-    sim.controller.entities.person = {};
-    sim.controller.setMode('person');
-    assert.equal(sim.car.carState.value.x, -1, 'leaving the taxi switches off its lamps');
-    assert.equal(sim.car.carState.value.w, 0, 'the parked car no longer shows reverse lights');
-    sim.controller.setMode('car');
-    assert.equal(sim.car.carState.value.x, 0, 'getting back in restores the driving light state');
   }
 });
 
@@ -487,7 +476,7 @@ function teleportHarness(mode, colliders = [], shore = () => ({ westX: -500, eas
     crankPivot: { rotation: { x: 0 } }, pedals: [],
     verticalSpeed: -8, pitchAngle: 0.2, rollAngle: -0.2, tiltPivot: pivot(),
     rig: { reset(...args) { this.resetArgs = args; } },
-    crowd: { begin() {}, add() {}, end() {} }
+    crowd: { meshes: [{ visible: true }], begin() {}, add() {}, end() {} }
   };
   controller.activeMode = mode;
   controller.entities = { [mode]: ent };
@@ -523,6 +512,17 @@ for (const mode of ['person', 'car', 'cyclist', 'cargobike']) {
     assert.equal(ent.position.y, terrainHeightAt(ent.position.x, ent.position.z) + offset);
   });
 }
+
+test('binoculars limit pedestrian movement to walking pace until lowered', () => {
+  const { controller, ent } = teleportHarness('person', [], undefined, () => 0);
+  controller.teleportActiveTo(30, 20, 0);
+  controller.keys.forward = true;
+  for (let i = 0; i < 60; i++) controller.updatePerson(1 / 60, true);
+  assert.equal(ent.speed, 1.5);
+  assert.ok(ent.position.z > 20);
+  for (let i = 0; i < 120; i++) controller.updatePerson(1 / 60);
+  assert.equal(ent.speed, 8.2);
+});
 
 test('pedestrian jumps keep the same height above uphill and downhill terrain', () => {
   function jump(slope) {
@@ -844,7 +844,7 @@ test('walking and helicopter movement and arrivals use the municipal outline and
   ]];
   const boundarySource = readFileSync(join(__dirname, '../js/ede-playable-boundary.js'), 'utf8');
   const { containsPlayablePoint, constrainToPlayableArea } = loadModule(boundarySource, {
-    imports: { './ede-geodata.js': { EDE_DATA: { meta: { playableBoundary, baseBounds: [-200, -200, 200, 200] } } } }
+    imports: { './ede-white-bike-sites.js': {}, './ede-geodata.js': { EDE_DATA: { meta: { playableBoundary, baseBounds: [-200, -200, 200, 200] } } } }
   });
   assert.equal(containsPlayablePoint(0, -75), false, 'a core rectangle must not hide a boundary hole');
   assert.equal(containsPlayablePoint(0, 100), false, 'a core rectangle must not hide a concavity');
@@ -871,7 +871,7 @@ test('every mode can enter the 500 m collar and is constrained at its outer edge
   const travelBoundary = [[[-1000, -1000, 1000, -1000, 1000, 1000, -1000, 1000]]];
   const boundarySource = readFileSync(join(__dirname, '../js/ede-playable-boundary.js'), 'utf8');
   const { containsPlayablePoint, containsTravelPoint, constrainToTravelArea } = loadModule(boundarySource, {
-    imports: { './ede-geodata.js': { EDE_DATA: { meta: { playableBoundary, travelBoundary } } } }
+    imports: { './ede-white-bike-sites.js': {}, './ede-geodata.js': { EDE_DATA: { meta: { playableBoundary, travelBoundary } } } }
   });
   for (const mode of ['person', 'car', 'cyclist', 'cargobike', 'helicopter']) {
     const { controller, ent } = teleportHarness(mode, [], undefined, undefined, undefined,
@@ -908,44 +908,79 @@ test('failed or invalid teleports keep the current position and stop the player 
   assert.deepEqual({ ...controller.teleportActiveTo(NaN, Infinity) }, { x: 400, z: 400 });
 });
 
-test('successive mode teleports keep parked players out of the arrival and default chase view', () => {
-  const { controller, ent: car } = teleportHarness('car');
+test('switching modes replaces the active model at the current location and heading', () => {
+  const { controller, ent: car } = teleportHarness('car', [
+    { minX: 32, maxX: 40, minZ: 34, maxZ: 49, maxY: 42 },
+    { minX: 140, maxX: 145, minZ: 34, maxZ: 49, maxY: 90 }
+  ], undefined, () => 10);
   const person = teleportHarness('person').ent;
   const cyclist = teleportHarness('cyclist').ent;
-  const cargobike = teleportHarness('cargobike').ent;
-  controller.entities = { car, person, cyclist, cargobike };
-  person.position.x = 300;
-  cyclist.position.x = 200;
-  cargobike.position.x = 350;
-  const heading = Math.PI / 2; // The first radial candidate is +X: its rear camera would sit on the parked car.
-  assert.deepEqual({ ...controller.teleportActiveTo(0, 0, heading) }, { x: 0, z: 0 });
-  const arrivals = [car];
-  const radii = { car: 2.4, person: 0.48, cyclist: 1.0, cargobike: 1.45 };
-  for (const mode of ['person', 'cyclist', 'cargobike']) {
-    controller.activeMode = mode;
-    const ent = controller.entities[mode];
-    const actual = controller.teleportActiveTo(0, 0, heading);
-    assert.notDeepEqual({ ...actual }, { x: 0, z: 0 });
-    for (const parked of arrivals) {
-      const dx = parked.position.x - actual.x, dz = parked.position.z - actual.z;
-      const cameraBack = Math.cos(0.09) * ent.chaseDistance;
-      const along = Math.max(0, Math.min(cameraBack, -dx));
-      assert.ok(Math.hypot(dx, dz) > radii[parked.type] + radii[mode], 'player bodies must not overlap');
-      assert.ok(Math.hypot(dx + along, dz) > radii[parked.type] + 0.5, 'the complete default chase corridor must be clear');
-    }
-    assert.deepEqual([car.position.x, car.position.z], [0, 0], 'switching modes leaves the parked car in place');
-    arrivals.push(ent);
+  delete cyclist.crowd;
+  cyclist.helmet = { visible: false };
+  cyclist.riderCrowd = { meshes: [{ visible: false }] };
+  const helicopter = teleportHarness('helicopter').ent;
+  controller.entities = { car, person, cyclist, helicopter };
+  for (const entity of [person, cyclist, helicopter]) entity.mesh.visible = false;
+  person.crowd.meshes[0].visible = false;
+
+  controller.teleportActiveTo(28, 41, 0.6);
+  for (const mode of ['person', 'cyclist', 'helicopter', 'car']) {
+    const previous = controller.getActiveEntity();
+    controller.setMode(mode);
+    const current = controller.getActiveEntity();
+    assert.equal(current.type, mode);
+    assert.deepEqual([current.position.x, current.position.z, current.heading], [28, 41, 0.6]);
+    const y = mode === 'person' ? 10.22 : mode === 'helicopter' ? 57 : 10;
+    assert.deepEqual([current.mesh.position.x, current.mesh.position.y, current.mesh.position.z], [28, y, 41]);
+    assert.equal(current.position.y, y);
+    assert.equal(current.speed, 0);
+    assert.equal(current.mesh.visible, true);
+    assert.equal(previous.mesh.visible, false);
+    assert.equal(person.crowd.meshes[0].visible, mode === 'person');
+    assert.equal(cyclist.riderCrowd.meshes[0].visible, mode === 'cyclist');
+    assert.equal(cyclist.helmet.visible, mode === 'cyclist');
   }
+  car.speed = 8;
+  controller.setMode('car');
+  assert.equal(car.speed, 8, 'selecting the current mode leaves its movement alone');
 });
 
-test('player clearance respects altitude and permits a ground arrival under an airborne helicopter', () => {
-  const { controller, ent } = teleportHarness('person');
-  const helicopter = teleportHarness('helicopter').ent;
-  helicopter.position.x = helicopter.position.z = 0;
-  helicopter.position.y = 120;
+test('switching to helicopter clears a nearby hill by 15 metres', () => {
+  const terrainHeightAt = (x, z) => 10 + Math.max(0, 25 - Math.hypot(x - 50, z));
+  const { controller } = teleportHarness('car', [], undefined, terrainHeightAt);
+  const { ent: helicopter } = teleportHarness('helicopter');
   controller.entities.helicopter = helicopter;
-  assert.deepEqual({ ...controller.teleportActiveTo(0, 0) }, { x: 0, z: 0 });
-  assert.equal(ent.position.y, 0.22);
-  helicopter.position.y = 1;
-  assert.notDeepEqual({ ...controller.teleportActiveTo(0, 0) }, { x: 0, z: 0 }, 'a helicopter parked at street level must be avoided');
+  controller.teleportActiveTo(0, 0, 0);
+
+  controller.setMode('helicopter');
+
+  assert.deepEqual([helicopter.position.x, helicopter.position.y, helicopter.position.z], [0, 50, 0]);
+});
+
+test('walking starts directly below an airborne helicopter at the same coordinates', () => {
+  const { controller, ent: helicopter } = teleportHarness('helicopter');
+  const person = teleportHarness('person').ent;
+  controller.entities.person = person;
+  controller.teleportActiveTo(0, 0, 0, 120);
+  controller.setMode('person');
+  assert.deepEqual([person.position.x, person.position.y, person.position.z], [0, 0.22, 0]);
+  assert.equal(helicopter.mesh.visible, false);
+});
+
+test('the chosen bike sets its forward speed cap and all bikes back up at walking speed', () => {
+  for (const [style, kmh] of [['omafiets', 30], ['transportfiets', 28], ['ebike', 35], ['fatbike', 35], ['cargobike', 16]]) {
+    const mode = style === 'cargobike' ? 'cargobike' : 'cyclist';
+    const { controller, ent } = teleportHarness(mode);
+    ent.bikeStyle = style;
+    controller.resolveHorizontalCollision = () => {};
+    ent.speed = 0;
+    controller.keys.forward = true;
+    for (let i = 0; i < 600; i++) controller.updateCyclist(1 / 60, ent);
+    assert.equal(Math.round(ent.speed * 3.6), kmh, style);
+    assert.equal(Math.round(controller.getBikeTopSpeedKmh()), kmh);
+    controller.keys.forward = false;
+    controller.keys.backward = true;
+    for (let i = 0; i < 600; i++) controller.updateCyclist(1 / 60, ent);
+    assert.equal(ent.speed, -1.2, style);
+  }
 });

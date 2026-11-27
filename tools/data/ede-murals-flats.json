@@ -80,8 +80,7 @@
       "https://streetartcities.com/markers/004d575f-1765-4788-8f16-8aa43023c7c4",
       "https://www.atlasvanede.nl/mooi-ede/cultuur/street-art/grote-projecten"
     ],
-    "notes": "South end at Groenendaal facing Heyendaal. Published height is approximately 30 m. The surveyed wall is 28.48 m, with about 26.2 m of artwork above the unpainted plinth in the reference. Placement follows the surveyed wall. Paint-only extract from the Atlas van Ede reference. Foreground branches are masked. The paint plane is reconciled with the streamed 3DBAG wall by runtime raycast.",
-    "fallbackBuilding": "w272136058",
+    "notes": "South end at Groenendaal facing Heyendaal. Published height is approximately 30 m. The surveyed wall is 28.48 m, with about 26.2 m of artwork above the unpainted plinth in the reference. Placement follows the surveyed wall. The Atlas van Ede reference supplies the full span. The owner photograph of 27 November 2026 restores the lower paint previously hidden by foliage. Small upper-left gaps from foreground branches are filled with AI-assisted inpainting. The modeled paint plane sits 0.125 m in front of the surveyed wall, clearing the shared end-wall trim.",
     "verificationPositions": [
       [
         -1951,
@@ -98,46 +97,24 @@
         "texture": "flats/bellefleur.webp",
         "corners": [
           [
-            -1963.606,
+            -1963.41,
             -6.24,
-            576.106
+            576.602
           ],
           [
-            -1953.947,
+            -1953.743,
             -6.24,
-            572.055
+            572.538
           ],
           [
-            -1953.947,
+            -1953.743,
             19.92,
-            572.055
+            572.538
           ],
           [
-            -1963.606,
+            -1963.41,
             19.92,
-            576.106
-          ]
-        ],
-        "fallbackCorners": [
-          [
-            -1964.154,
-            -6.24,
-            577.021
-          ],
-          [
-            -1953.744,
-            -6.24,
-            572.628
-          ],
-          [
-            -1953.744,
-            19.92,
-            572.628
-          ],
-          [
-            -1964.154,
-            19.92,
-            577.021
+            576.602
           ]
         ]
       }
@@ -237,12 +214,12 @@
     "id": "slotlaan-nean",
     "name": "Somewhere in the Woods · Vanenburg",
     "artist": "Nean",
-    "referenceDate": "2024-10-12",
+    "referenceDate": "2026-11-27 owner photograph",
     "sources": [
       "https://streetartcities.com/cities/ede/markers/0dcca48a-8087-40e4-ab2d-2021cb340704",
       "https://xon.nu/nieuws/vier-nieuwe-muurschilderijen-wordt-ede-streetart-hoofdstad-van-gelderland/"
     ],
-    "notes": "Northwest apartment block in road order, Vanenburg east-facing end. Fit ends below the roof trim and above the ground planting. Paint-only extract from the Street Art Cities reference. Foreground shrubs and the object in front of the lower artwork are masked. The paint plane is reconciled with the streamed 3DBAG wall by runtime raycast.",
+    "notes": "Northwest apartment block in road order, Vanenburg east-facing end. Rectified from the owner photograph of 27 November 2026, including the visible MADELIEF lettering. The aligned 2024 photograph supplies some paint behind the foreground hedge. The remaining hedge and foreground cabinet areas are masked. The streamed and fallback paint planes retain the surveyed wall fit.",
     "fallbackBuilding": "w272136478",
     "verificationPositions": [
       [
@@ -315,14 +292,14 @@
     "id": "slotlaan-vaaf",
     "name": "Slotlaan · Sterkenburg",
     "artist": "VAAF",
-    "referenceDate": "2025-06-20",
+    "referenceDate": "2026-11-27 owner photograph",
     "sources": [
       "https://streetartcities.com/cities/ede/markers/a17a9ca5-09b9-40fd-b2c6-8f8017e98d14",
       "https://xon.nu/nieuws/vier-nieuwe-muurschilderijen-wordt-ede-streetart-hoofdstad-van-gelderland/",
       "https://wonenincaldese.wordpress.com/2025/06/",
       "https://wonenincaldese.wordpress.com/wp-content/uploads/2025/06/20250620_112831.jpg"
     ],
-    "notes": "Northeast Sterkenburg end facing south. Paint-only extract of the photo from June 2025. Leaves, the foreground tree trunk and the hedge are masked. Dappled illumination in the visible paint is present in the source. Artwork by VAAF. Photo reference from Wonen in Caldese. The streamed end has non-coplanar triangles. The decal follows the catalogue wall plane which clears both faces. Depth to the rendered surface varies by location.",
+    "notes": "Northeast Sterkenburg end facing south. Rectified from the owner photograph of 27 November 2026. The composition and painted door are visible in even light. AI-assisted inpainting extends the paint into the narrow hedge-obscured strip along the base. The streamed end has non-coplanar triangles. The decal follows the catalogue wall plane that clears both faces.",
     "fallbackBuilding": "w272136366",
     "verificationPositions": [
       [
@@ -395,14 +372,14 @@
     "id": "slotlaan-nina",
     "name": "Ermine in Wintercoat and a Squirrel · Pollenstein",
     "artist": "Nina Valkhoff",
-    "referenceDate": "2025-06-20",
+    "referenceDate": "2026-11-27 owner photograph",
     "sources": [
       "https://streetartcities.com/cities/ede/markers/9452e4c2-5fe6-461d-a351-29de0bd79002",
       "https://xon.nu/nieuws/vier-nieuwe-muurschilderijen-wordt-ede-streetart-hoofdstad-van-gelderland/",
       "https://wonenincaldese.wordpress.com/2025/06/",
       "https://wonenincaldese.wordpress.com/wp-content/uploads/2025/06/20250620_112002.jpg"
     ],
-    "notes": "Southwest apartment block in road order, Pollenstein north-facing end. The full-width brown plinth and any ground-floor openings remain uncovered. The streamed wall is about 0.28 m north of the wall catalogue line. The rendered panel follows the in-game 3DBAG plane measured by raycast. Photographic paint extract. All three visible windows and foreground leaves are masked.",
+    "notes": "Southwest apartment block in road order, Pollenstein north-facing end. Rectified from the owner photograph of 27 November 2026. The photo supplied the upper paint and the exact three window masks. The full-width brown plinth and any ground-floor openings remain uncovered. The rendered panel follows the measured 3DBAG wall plane.",
     "fallbackBuilding": "w271548522",
     "verificationPositions": [
       [
@@ -475,15 +452,14 @@
     "id": "slotlaan-jolene",
     "name": "Fox · Weerdestein",
     "artist": "Kitsune Jolene",
-    "referenceDate": "2024-10-12",
+    "referenceDate": "2026-11-27 owner photograph",
     "sources": [
       "https://streetartcities.com/cities/ede/markers/5edf5c3c-2f2d-457a-a0e7-461adcdd756b",
       "https://xon.nu/nieuws/vier-nieuwe-muurschilderijen-wordt-ede-streetart-hoofdstad-van-gelderland/",
       "https://wonenincaldese.wordpress.com/2025/06/",
       "https://wonenincaldese.wordpress.com/wp-content/uploads/2025/06/2eef8bc7-1098-4641-9e97-529b924deb1e_thumb728.jpg"
     ],
-    "notes": "Southeast Weerdestein end facing west. Photo shows two foxes. The rectified crop masks glazing, foreground leaves and the missing top and bottom spans. Exact extent remains unverified in those portions. Full artwork identified from the Wonen in Caldese reference and close-up from Street Art Cities. The source was published June 2025 and gives no capture date. The paint plane is reconciled with the streamed 3DBAG wall by runtime raycast.",
-    "fallbackBuilding": "w271550192",
+    "notes": "The full painted span is fitted to the surveyed Weerdestein end wall using the owner photograph of 27 November 2026. The windows and garage doors are modeled in the wall, and the photo texture masks the three glazed openings. AI-assisted inpainting restores the small foliage gap at the bottom edge.",
     "verificationPositions": [
       [
         -1606,
@@ -496,57 +472,29 @@
     ],
     "surfaces": [
       {
-        "anchor": "BAG 0228100000008042 / LoD 2.2 wall -1592.14,151.87,-1588.07,161.73,0.00",
-        "texture": "flats/slotlaan-vanenburg.webp",
+        "anchor": "BAG 0228100000008042 / LoD 2.2 west end wall",
+        "texture": "flats/weerdestein.webp",
         "corners": [
           [
-            -1592.086,
-            -6.26,
-            152.02
+            -1592.159,
+            -4.96,
+            151.878
           ],
           [
-            -1588.142,
-            -6.26,
-            161.587
+            -1588.089,
+            -4.96,
+            161.738
           ],
           [
-            -1588.144,
-            3.46,
-            161.588
+            -1588.089,
+            3.5,
+            161.738
           ],
           [
-            -1592.087,
-            3.46,
-            152.021
+            -1592.159,
+            3.5,
+            151.878
           ]
-        ],
-        "fallbackCorners": [
-          [
-            -1592.268,
-            -6.26,
-            152.14
-          ],
-          [
-            -1588.388,
-            -6.26,
-            161.646
-          ],
-          [
-            -1588.388,
-            3.46,
-            161.646
-          ],
-          [
-            -1592.268,
-            3.46,
-            152.14
-          ]
-        ],
-        "uv": [
-          0.508301,
-          0.008301,
-          0.991699,
-          0.491699
         ]
       }
     ]

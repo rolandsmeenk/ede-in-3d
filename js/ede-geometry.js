@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { EDE_DATA } from './city-config.js';
-import { getExpansionTerrain, getExpansionTerrainPatch, getTerrain, getTerrainPatch, getTerrainPatches, terrainHeightAt } from './terrain.js';
+import { getExpansionTerrain, getExpansionTerrainPatch, getTerrain, getTerrainPatch, getTerrainPatches, terrainHeightAt, TERRAIN_RIM_EDGE } from './terrain.js';
 import { hasEdeMappedSurface, isEdeTrafficPavement } from './ede-road-surfaces.js';
 import { clipEdeGround, gradeCuts, localGradeSurface, RAIL_BALLAST_WIDTH, RAIL_SLEEPER_SPACING, terrainGradeCuts } from './ede-grade.js';
 
@@ -254,7 +254,7 @@ export function* edeTerrainGeometries(y, waterCuts) {
   for (const patch of getTerrainPatches()) yield* terrainGridGeometries(patch, y, false, waterCuts);
   if (getExpansionTerrain()) return;
   // Continue the measured edges into coarse distant scenery.
-  const border = 16000;
+  const border = TERRAIN_RIM_EDGE;
   const rim = (n, sample, outside) => {
     const positions = [], indices = [];
     for (let i = 0; i < n; i++) {

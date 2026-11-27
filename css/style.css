@@ -127,6 +127,20 @@ kbd {
   cursor: grabbing;
 }
 
+#binoculars-mask {
+  --lens-radius: min(30vw, 43vh);
+  --lens-offset: calc(var(--lens-radius) * 0.64);
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  background: #080a0c;
+  mask-image:
+    radial-gradient(circle var(--lens-radius) at calc(50% - var(--lens-offset)) 50%, transparent 82%, #0003 89%, #000b 96%, #000 103%),
+    radial-gradient(circle var(--lens-radius) at calc(50% + var(--lens-offset)) 50%, transparent 82%, #0003 89%, #000b 96%, #000 103%);
+  mask-composite: intersect;
+}
+
 /* Soft scrims behind the HUD: keep small type legible over a bright midday street */
 body::before,
 body::after {
@@ -167,13 +181,23 @@ body::after {
    Loading screen
    ------------------------------------------------------------------------------------------------------------------ */
 #loading-overlay {
+  --loader-map-position: max(12px, calc(50vw - 530px)) 46%;
+  --loader-map-height: min(75vh, 640px);
+  --loader-glow-position: 73% 43%;
   position: fixed;
   inset: 0;
   z-index: 100;
   display: grid;
-  place-items: center;
-  background: radial-gradient(120% 90% at 50% 38%, #1b1e24 0%, #0c0d10 55%, #060607 100%);
-  transition: opacity 0.6s ease, visibility 0.6s ease;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: clamp(16px, 4vh, 40px);
+  overflow: hidden;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  /* Natural Earth coastline with the bundled PDOK Gemeente Ede boundary. */
+  background:
+    url('../assets/loading-netherlands.webp?v=20261127-flevoland') var(--loader-map-position) / auto var(--loader-map-height) no-repeat,
+    radial-gradient(ellipse at var(--loader-glow-position), #313c33, #151a19 52%, #0b0e10);
+  transition: opacity 0.45s ease, visibility 0.45s ease;
 }
 
 #loading-overlay.hidden {
@@ -183,32 +207,127 @@ body::after {
 }
 
 .loader {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr);
   align-items: center;
-  text-align: center;
-  animation: rise-in 0.8s var(--ease-out) both;
+  gap: clamp(20px, 4vw, 64px);
+  width: min(100%, 1120px);
+  margin: auto;
 }
 
-.ede-logo.loader-logo {
-  width: 68px;
-  height: 68px;
-  margin-bottom: 22px;
-  padding: 6px;
+.loader-heading {
+  position: relative;
+  z-index: 1;
+  animation: rise-in 0.6s var(--ease-out) both;
 }
 
 .loader-title {
-  font-size: 34px;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  font-size: clamp(72px, 13vw, 168px);
+  font-weight: 740;
+  letter-spacing: -0.08em;
+  line-height: 0.9;
+}
+
+.loader-subtitle {
+  margin-top: clamp(12px, 1.7vw, 22px);
+  color: #e5dbca;
+  font-size: clamp(16px, 2vw, 24px);
+  line-height: 1.4;
+}
+
+.loader-gallery {
+  position: relative;
+  justify-self: center;
+  width: 100%;
+  max-width: 84vh;
+  aspect-ratio: 1.4;
+  pointer-events: none;
+}
+
+.loader-postcard {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 76%;
+  padding: clamp(5px, 0.85vw, 11px);
+  border-radius: 3px;
+  background: #f5eddc;
+  box-shadow: 0 12px 28px #0008, 0 1px 3px #0008;
+  transform: translate(-50%, -50%) translate(var(--card-x), var(--card-y)) rotate(var(--card-angle));
+  animation: postcard-arrive 720ms var(--ease-out) both;
+}
+
+.loader-postcard img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.loader-postcard figcaption {
+  padding: clamp(5px, 0.85vw, 12px) 2px 1px;
+  color: #344639;
+  font: italic clamp(12px, 1.65vw, 24px) / 1.15 Georgia, serif;
+  text-align: center;
+}
+
+.loader-postcard[data-position="0"] {
+  --card-x: -15%;
+  --card-y: -17%;
+  --card-angle: -10deg;
+  --fly-x: -80vw;
+  --fly-y: -20vh;
+  --fly-angle: -25deg;
+}
+
+.loader-postcard[data-position="1"] {
+  --card-x: 15%;
+  --card-y: -18%;
+  --card-angle: 13deg;
+  --fly-x: 68vw;
+  --fly-y: -38vh;
+  --fly-angle: 35deg;
+}
+
+.loader-postcard[data-position="2"] {
+  --card-x: -14%;
+  --card-y: 18%;
+  --card-angle: -8deg;
+  --fly-x: -65vw;
+  --fly-y: 40vh;
+  --fly-angle: -29deg;
+}
+
+.loader-postcard[data-position="3"] {
+  --card-x: 7%;
+  --card-y: 10%;
+  --card-angle: 6deg;
+  --fly-x: 65vw;
+  --fly-y: 42vh;
+  --fly-angle: 27deg;
+}
+
+@keyframes postcard-arrive {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--fly-x), var(--fly-y)) rotate(var(--fly-angle)) scale(0.84);
+  }
+  35% { opacity: 1; }
+  80% {
+    transform: translate(-50%, -50%) translate(var(--card-x), var(--card-y)) rotate(calc(var(--card-angle) + 2deg)) scale(1.02);
+  }
+  to { opacity: 1; }
+}
+
+.loader-state {
+  justify-self: center;
+  width: min(100%, 320px);
+  text-align: center;
 }
 
 .loader-track {
   position: relative;
-  width: 240px;
   height: 3px;
-  margin: 26px 0 14px;
+  margin-bottom: 12px;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
@@ -224,7 +343,7 @@ body::after {
   transition: transform 0.3s ease;
 }
 
-/* While the city is being built (main thread busy) the bar sweeps on the compositor; it fills once shaders compile */
+/* The sweep runs on the compositor while the main thread builds the city. */
 .loader-track.is-indeterminate .loader-fill {
   width: 35%;
   transform: translateX(-100%);
@@ -234,13 +353,16 @@ body::after {
 }
 
 #loading-status {
-  font-size: 12.5px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text-2);
 }
 
 #loading-overlay.has-error .loader-track {
   visibility: hidden;
+}
+
+#loading-overlay.has-error .loader-fill {
+  animation: none;
 }
 
 #loading-retry {
@@ -249,7 +371,7 @@ body::after {
   border: 1px solid currentColor;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-1);
+  color: var(--text);
   font: inherit;
   cursor: pointer;
 }
@@ -257,6 +379,72 @@ body::after {
 @keyframes loader-sweep {
   from { transform: translateX(-100%); }
   to { transform: translateX(290%); }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  #loading-overlay {
+    --loader-map-position: center;
+    --loader-map-height: min(52dvh, 440px, calc(118vw - 32px));
+    --loader-glow-position: 50% 43%;
+    gap: 16px;
+    padding-bottom: max(clamp(24px, 6dvh, 56px), env(safe-area-inset-bottom));
+  }
+
+  .loader {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: calc(50dvh - max(24px, env(safe-area-inset-top))) minmax(0, 1fr);
+    gap: 0;
+    max-width: 440px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .loader-heading {
+    align-self: end;
+    margin-bottom: clamp(48px, 10.5dvh, 110px);
+  }
+
+  .loader-title {
+    font-size: clamp(54px, 20vw, 84px);
+  }
+
+  .loader-subtitle {
+    margin-top: 10px;
+  }
+
+  .loader-gallery {
+    align-self: start;
+    max-width: min(35dvh, 315px, calc(50dvh - 62px - max(28px, env(safe-area-inset-bottom))));
+    margin-top: clamp(42px, 7dvh, 70px);
+  }
+
+  .loader-postcard[data-position="0"] {
+    --card-x: -8%;
+    --card-angle: -5deg;
+  }
+
+  .loader-postcard[data-position="0"],
+  .loader-postcard[data-position="1"] {
+    --card-y: -9%;
+    --fly-y: 32dvh;
+  }
+
+  .loader-postcard[data-position="2"] {
+    --card-y: 10%;
+  }
+
+  .loader-state {
+    width: min(100%, 220px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-postcard { animation: none; }
+
+  .loader-track.is-indeterminate .loader-fill {
+    animation: none;
+    transform: translateX(92%);
+  }
 }
 
 @keyframes rise-in {
@@ -423,7 +611,15 @@ body.hud-minimized .toolbar > :not(#btn-toggle-hud) {
   background: var(--divider);
 }
 
-#btn-crossing-debug[hidden] { display: none; }
+#btn-crossing-debug[hidden],
+#btn-binoculars[hidden] { display: none; }
+
+#btn-binoculars[aria-pressed="true"] {
+  background: var(--taxi);
+  color: var(--taxi-ink);
+}
+
+body.touch-enabled #btn-binoculars { min-height: 44px; }
 
 #time-live-clock {
   font-size: 13px;
@@ -1209,6 +1405,34 @@ body[data-mode='helicopter'] .gauge-alt {
   font-size: 11px;
 }
 
+.fullmap-route-controls {
+  position: absolute;
+  top: calc(100% + 40px);
+  left: 0;
+  max-width: 100%;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+
+.fullmap-route-controls select,
+.fullmap-route-controls button {
+  min-height: 32px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fullmap-route-controls select { min-width: 0; color-scheme: dark; }
+.fullmap-route-controls button { white-space: nowrap; background: rgba(255, 255, 255, 0.1); }
+.fullmap-route-controls button:hover { background: rgba(255, 255, 255, 0.2); }
+
 .fullmap-modal:not(.hidden) .fullmap-header,
 .fullmap-modal:not(.hidden) .map-controls,
 .fullmap-modal:not(.hidden) .fullmap-footer {
@@ -1388,14 +1612,12 @@ body[data-mode='helicopter'] .gauge-alt {
   box-shadow: 0 0 0 2px #0b0f14, 0 0 0 3px rgba(255, 255, 255, 0.35);
 }
 
-.gps-swatch,
 .bridge-swatch {
   width: 16px;
   height: 4px;
   border-radius: 2px;
 }
 
-.gps-swatch { background: var(--taxi); }
 .bridge-swatch { background: var(--highway); }
 
 .legend-counts {

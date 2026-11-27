@@ -6,6 +6,8 @@ import { EDE_PAVING_STYLE } from './ede-road-surfaces.js';
 import { createEdePavingMaterial, createRoadSurfaceMaterial } from './tsl-materials.js';
 import { WVEDE_BRICK_SECTION, WVEDE_CIRCUIT, WVEDE_START_LINE_INDEX } from './ede-wvede-circuit-survey.js';
 import { terrainHeightAt } from './terrain.js';
+import { createSportStand, standWeatherCover } from './ede-sport-stands.js';
+import { EDE_SPORT_STAND_SITES } from './ede-sport-stand-sites.js';
 
 const white = 0xdadbd4, metal = 0x666e6b, charcoal = 0x343d3c, glass = 0x3c5258;
 const dtsBlue = 0x2861a1, net = 0x657b69;
@@ -40,6 +42,7 @@ function shoe(batch, { point, high, width }, from, to, depth, color, y = high - 
   batch.quad(a, b, c, d, color);
   batch.quad(d, c, b, a, color);
   batch.quad(d, c, point(width * to, y - 0.23, front), point(width * from, y - 0.23, front), color);
+  return [a, b, c, d];
 }
 
 function wallDetails(id, wall) {
@@ -145,7 +148,8 @@ function grandstand(wall) {
     trim.quad(point(v,y,depth), point(u,y,depth), point(u,h,depth), point(v,h,depth), color);
   };
   solid(0, width, base, floor, 2.76, 0xad8c70);
-  shoe(trim, wall, 0, 1, 2.89, 0x404850, roof);
+  const roofCorners = shoe(trim, wall, 0, 1, 2.89, 0x404850, roof);
+  wall.weatherCovers.push(standWeatherCover(roofCorners));
   for (let i = 0; i <= 7; i++) {
     const u = i * width / 7;
     bar(trim, point(u, floor, 2.72), point(u, roof - 0.18, 2.72), 0.095, dtsBlue);
@@ -417,7 +421,10 @@ const finishDetails = {
   wvede: wvedeStart,
 };
 
-export const SPORT_LANDMARK_FACTORIES = Object.fromEntries(EDE_SPORT_LANDMARKS.map(({ id }) => [
-  id, (_footprints, site) => createSurveyLandmark(site, SPORT_LANDMARK_SURVEYS[id],
-    wall => wallDetails(id, wall), finishDetails[id]),
-]));
+export const SPORT_LANDMARK_FACTORIES = Object.fromEntries([
+  ...EDE_SPORT_LANDMARKS.map(({ id }) => [
+    id, (_footprints, site) => createSurveyLandmark(site, SPORT_LANDMARK_SURVEYS[id],
+      wall => wallDetails(id, wall), finishDetails[id]),
+  ]),
+  ...EDE_SPORT_STAND_SITES.map(({ id }) => [id, createSportStand]),
+]);

@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { attribute, mix } from 'three/tsl';
+import { attribute, clamp, floor, fract, fwidth, mix } from 'three/tsl';
 import { carveBagBuildingPassages } from './bag3d.js';
 import { buildingPassageOpenings } from './ede-grade.js';
 import { EDE_DATA } from './ede-geodata.js';
@@ -510,12 +510,43 @@ export function polygonNormal(points) {
   return normal.normalize();
 }
 
+// Integrate the pane over a screen pixel so narrow frames and muntins converge to their average colour.
+function paneCoverage(position, border, repeat, gap) {
+  const halfPixel = fwidth(position).mul(0.5).max(0.00005).toVar();
+  const lo = position.sub(halfPixel).max(0).toVar();
+  const hi = position.add(halfPixel).min(1).toVar();
+  const count = repeat.max(1);
+  const pane = gap.mul(-2).add(1).toVar();
+  const integral = t => floor(t).mul(pane).add(clamp(fract(t).sub(gap), 0, pane));
+  const start = clamp(lo, border, border.oneMinus()).mul(count);
+  const end = clamp(hi, border, border.oneMinus()).mul(count);
+  return clamp(integral(end).sub(integral(start)).div(hi.sub(lo).max(0.00005).mul(count)), 0, 1);
+}
+
+function civicMaterial(windows) {
+  const material = new THREE.MeshStandardNodeMaterial({ vertexColors: !windows });
+  const sheen = attribute('civicGloss', 'float');
+  if (windows) {
+    const opening = attribute('civicWindow', 'vec4');
+    const grid = attribute('civicWindowGrid', 'vec4');
+    const glass = paneCoverage(opening.x, opening.z, grid.x, grid.z)
+      .mul(paneCoverage(opening.y, opening.w, grid.y, grid.w));
+    const frame = glass.oneMinus().mul(grid.x.min(1)).toVar();
+    material.colorNode = mix(attribute('color', 'vec3'), attribute('civicWindowFrame', 'vec3'), frame);
+    material.roughnessNode = mix(0.86, 0.26, sheen.mul(frame.oneMinus()));
+  } else {
+    material.roughnessNode = mix(0.86, 0.26, sheen);
+  }
+  return material;
+}
+
 export class CivicBatch {
   geometry = new THREE.BufferGeometry();
   vertices = [];
   colors = [];
   glossy = [];
   normalOverrides = [];
+  windows = [];
   tint = new THREE.Color();
 
   triangle(a, b, c, color, sheen = 0) {
@@ -529,6 +560,22 @@ export class CivicBatch {
   quad(a, b, c, d, color, sheen = 0) {
     this.triangle(a, b, c, color, sheen);
     this.triangle(a, c, d, color, sheen);
+  }
+
+  window(a, b, c, d, { color, frame, columns = 1, rows = 1, border, mullions = border, sheen = 0.75 }) {
+    const start = this.vertices.length / 3;
+    const width = Math.hypot(b[0] - a[0], b[2] - a[2]);
+    const height = d[1] - a[1];
+    const repeats = [Math.max(1, columns), Math.max(1, rows)];
+    const size = [width, height];
+    this.quad(a, b, c, d, color, sheen);
+    this.tint.set(frame);
+    this.windows.push({
+      start,
+      border: border.map((value, axis) => Math.min(0.5, value / size[axis])),
+      grid: [...repeats, ...mullions.map((value, axis) => Math.min(0.5, value * repeats[axis] / (2 * size[axis])))],
+      frame: this.tint.toArray(),
+    });
   }
 
   polygon(rings, color) {
@@ -569,9 +616,22 @@ export class CivicBatch {
     for (const { start, normals } of this.normalOverrides) geometry.attributes.normal.array.set(normals, start);
     geometry.computeBoundingBox();
     if (passage) carveBagBuildingPassages(geometry, { removeLandmarks: false });
-    const material = new THREE.MeshStandardNodeMaterial({ vertexColors: true });
-    material.roughnessNode = mix(0.86, 0.26, attribute('civicGloss', 'float'));
-    const mesh = new THREE.Mesh(geometry, material);
+    if (this.windows.length) {
+      // Keep the three window attributes in one GPU vertex buffer for materials that also use masonry UVs.
+      const stride = 11;
+      const data = new Float32Array(this.vertices.length / 3 * stride);
+      const corners = [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]];
+      for (const { start, border, grid, frame } of this.windows) {
+        for (const [i, corner] of corners.entries()) {
+          data.set([...corner, ...border, ...grid, ...frame], (start + i) * stride);
+        }
+      }
+      const attributes = new THREE.InterleavedBuffer(data, stride);
+      geometry.setAttribute('civicWindow', new THREE.InterleavedBufferAttribute(attributes, 4, 0));
+      geometry.setAttribute('civicWindowGrid', new THREE.InterleavedBufferAttribute(attributes, 4, 4));
+      geometry.setAttribute('civicWindowFrame', new THREE.InterleavedBufferAttribute(attributes, 3, 8));
+    }
+    const mesh = new THREE.Mesh(geometry, civicMaterial(this.windows.length > 0));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     return mesh;
@@ -602,6 +662,20 @@ function edgeQuad(batch, a, b, lo, hi, color, sheen = 0) {
   batch.quad([a.x, lo, a.z], [b.x, lo, b.z], [b.x, hi, b.z], [a.x, hi, a.z], color, sheen);
 }
 
+export function roofSlice(ring, height, above) {
+  const result = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const aIn = above ? a[1] >= height : a[1] <= height;
+    const bIn = above ? b[1] >= height : b[1] <= height;
+    if (aIn) result.push(a);
+    if (aIn === bIn) continue;
+    const t = (height - a[1]) / (b[1] - a[1]);
+    result.push([a[0] + (b[0] - a[0]) * t, height, a[2] + (b[2] - a[2]) * t]);
+  }
+  return result;
+}
+
 export function offsetEdge(a, b, normal, offset) {
   return [a, b].map(p => ({ x: p.x + normal.x * offset, z: p.z + normal.z * offset }));
 }
@@ -610,6 +684,13 @@ export function facePanel(batch, a, b, n, u, v, lo, hi, color, offset = 0.02, sh
   const [p, q] = offsetEdge(along(a, b, u), along(a, b, v), n, offset);
   if (-(q.z - p.z) * n.x + (q.x - p.x) * n.z < 0) edgeQuad(batch, q, p, lo, hi, color, sheen);
   else edgeQuad(batch, p, q, lo, hi, color, sheen);
+}
+
+export function faceWindow(batch, a, b, normal, u, v, lo, hi, style, offset = 0.044) {
+  if (!(v > u && hi > lo)) return;
+  let [p, q] = offsetEdge(along(a, b, u), along(a, b, v), normal, offset);
+  if (-(q.z - p.z) * normal.x + (q.x - p.x) * normal.z < 0) [p, q] = [q, p];
+  batch.window([p.x, lo, p.z], [q.x, lo, q.z], [q.x, hi, q.z], [p.x, hi, p.z], style);
 }
 
 export function wallExtent(points, normal) {
@@ -875,8 +956,51 @@ export function civicSigns(labels, { wide = false } = {}) {
   return new THREE.Mesh(positions, new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.88 }));
 }
 
+function culturaMosaic(walls) {
+  if (!walls.length || typeof document === 'undefined') return null;
+  const columns = 9, rows = 13, cell = 16, gutter = 4;
+  const panelWidth = columns * cell, stride = panelWidth + 2 * gutter;
+  const canvas = document.createElement('canvas');
+  canvas.width = walls.length * stride;
+  canvas.height = rows * cell;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#333a3b';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const positions = [], uvs = [], indices = [];
+
+  for (const [index, { c, d, normal, ground, segment }] of walls.entries()) {
+    const start = index * stride + gutter;
+    for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
+      const tint = civicMosaic[(col * 47 + row * row + segment * 7 + row * segment * 3) % civicMosaic.length];
+      ctx.fillStyle = '#' + tint.toString(16).padStart(6, '0');
+      ctx.fillRect(start + col * cell, canvas.height - (row + 0.95) * cell, cell * 0.95, cell * 0.95);
+    }
+    const [left, right] = offsetEdge(c, d, normal, 0.027);
+    const first = positions.length / 3;
+    positions.push(right.x, ground, right.z, left.x, ground, left.z,
+      left.x, arcade, left.z, right.x, arcade, right.z);
+    const u = start / canvas.width, v = (start + panelWidth) / canvas.width;
+    uvs.push(v, 0, u, 0, u, 1, v, 1);
+    indices.push(first, first + 1, first + 2, first, first + 2, first + 3);
+  }
+
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.minFilter = THREE.LinearMipmapLinearFilter;
+  map.anisotropy = 4;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardNodeMaterial({ map, roughness: 0.86 }));
+  mesh.name = 'Cultura arcade mosaic';
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 function culturaRotunda(batch, colliders) {
-  const divisions = 18, radius = culturaRadius - 2.10, signs = [];
+  const divisions = 18, radius = culturaRadius - 2.10, signs = [], mosaic = [];
   const banners = [
     ['BIBLIOTHEEK', '#273e72'], ['KUNSTENCENTRUM', '#653964'], ['THEATER', '#a13a3a'],
     ['FILMHUIS', '#b06d36'], ['GALERIE', '#654375'], ['ERFGOED', '#395777'],
@@ -917,11 +1041,7 @@ function culturaRotunda(batch, colliders) {
     edgeQuad(batch, d, c, ground, arcade, dark);
     colliders.push(...wallColliders(c, d, ground, arcade, 0.22));
     if (i >= 1 && i <= 6) {
-      for (let row = 0; row < 13; row++) for (let col = 0; col < 9; col++) {
-        const bottom = ground + (arcade - ground) * row / 13, top = ground + (arcade - ground) * (row + 0.95) / 13;
-        facePanel(batch, c, d, normal, col / 9, (col + 0.95) / 9, bottom, top,
-          civicMosaic[(col * 47 + row * row + i * 7 + row * i * 3) % civicMosaic.length], 0.027);
-      }
+      mosaic.push({ c, d, normal, ground, segment: i });
     } else {
       for (let col = 0; col < 2; col++) facePanel(batch, c, d, normal,
         (col + 0.032) / 2, (col + 0.967) / 2, ground + 0.22, arcade - 0.18, i % 3 ? 0x42686d : 0x527f86, 0.05, 1);
@@ -930,7 +1050,7 @@ function culturaRotunda(batch, colliders) {
   }
   signs.push({ text: 'WELKOM', color: '#35302a', a: arc(-2.33, radius + 0.17), b: arc(-2.02, radius + 0.17),
     lo: 0.04, hi: 0.53 });
-  return civicSigns(signs);
+  return [civicSigns(signs), culturaMosaic(mosaic)].filter(Boolean);
 }
 
 function detailCulturaFront(mesh, baseY) {
@@ -1002,12 +1122,11 @@ export function createCultura() {
       }
     }
   }
-  const signs = culturaRotunda(batch, colliders);
+  const arcadeDetails = culturaRotunda(batch, colliders);
   const group = makeGroup('Cultura', batch, colliders);
   const frontage = south.mesh();
   frontage.name = 'Cultura Brouwerstraat façades';
   detailCulturaFront(frontage, points[0][1]);
-  group.add(frontage);
-  if (signs) group.add(signs);
+  group.add(frontage, ...arcadeDetails);
   return group;
 }

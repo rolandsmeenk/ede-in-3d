@@ -149,6 +149,7 @@ export async function loadTerrain({ expanded = false, compact = false } = {}) {
 
 export const getTerrain = () => terrain;
 export const getExpansionTerrain = () => expansion;
+export const TERRAIN_RIM_EDGE = 16000;
 
 function coversBounds(field, [w, n, e, s]) {
   return field.minX <= w && field.minZ <= n && field.maxX >= e && field.maxZ >= s;
@@ -202,6 +203,36 @@ export function terrainHeightAt(x, z, context) {
     return sampleTerrain(sampler, x, z) + expansionSeamOffset(x, z, town, field);
   }
   return sampleTerrain(getTerrainPatch(x, z, localPatches) ?? town, x, z);
+}
+
+export function terrainRimHeightAt(grid, x, z, heightAt = (x, z) => sampleTerrain(grid, x, z)) {
+  const { minX, maxX, minZ, maxZ, columns, rows, minY, step } = grid;
+  const edge = TERRAIN_RIM_EDGE;
+  function side(t, along, start, count, edgeHeightAt) {
+    if (t <= 0 || t > 1) return undefined;
+    const inner = 1 - t;
+    const first = start * inner - edge * t;
+    const stride = step * inner + 2 * edge * t / (count - 1);
+    const alongIndex = (along - first) / stride;
+    if (alongIndex < 0 || alongIndex > count - 1) return undefined;
+    const index = Math.min(count - 2, Math.floor(alongIndex));
+    const here = edgeHeightAt(start + index * step), next = edgeHeightAt(start + (index + 1) * step);
+    // The diagonal joins the next inner point to the current outer point.
+    const weight = Math.min(inner, (alongIndex - index) * stride / step);
+    return here * inner + (next - here) * weight + minY * t;
+  }
+  return side((minZ - z) / (minZ + edge), x, minX, columns, u => heightAt(u, minZ)) ??
+    side((x - maxX) / (edge - maxX), z, minZ, rows, u => heightAt(maxX, u)) ??
+    side((z - maxZ) / (edge - maxZ), -x, -maxX, columns, u => heightAt(-u, maxZ)) ??
+    side((minX - x) / (minX + edge), -z, -maxZ, rows, u => heightAt(minX, -u));
+}
+
+export function renderedTerrainHeightAt(x, z) {
+  if (terrain && !expansion && !coversBounds(terrain, [x, z, x, z])) {
+    const rim = terrainRimHeightAt(terrain, x, z, terrainHeightAt);
+    if (rim !== undefined) return rim;
+  }
+  return terrainHeightAt(x, z);
 }
 
 function cropTerrain(field, [west, north, east, south], smoothGround) {

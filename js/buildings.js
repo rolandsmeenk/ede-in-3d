@@ -48,6 +48,7 @@ import { GEO } from './nyc-geodata.js';
 import { pavedPlazaRects, parkTreeSites, sidewalkBlocks } from './city-grid.js';
 import { edePoints, edeBounds, edePolygonGeometry, nearestEdeRoad, edeSpatialGroups, EDE_RENDER_CELL } from './ede-geometry.js';
 import { createShopSigns } from './shop-signs.js';
+import { isGrotestraatPilotShop } from './ede-grotestraat-sites.js';
 import { solidWallSpans } from './passages.js';
 import { buildingPassageOpenings } from './ede-grade.js';
 import { terrainHeightAt } from './terrain.js';
@@ -63,7 +64,7 @@ import { windowLightKey } from './ede-window-lights.js';
 const muralWallSeats = new Map([
   ['w271377146', [-7.60, 37.05]], ['w272136058', [-8.32, 28.48]],
   ['w272136478', [-8.32, 11.66]], ['w272136366', [-8.12, 11.64]],
-  ['w271548522', [-8.03, 11.20]], ['w271550192', [-7.48, 11.20]],
+  ['w271548522', [-8.03, 11.20]],
   ['w271604288', [-1.25, 4.24]],
 ]);
 const surveyedBuildingBases = new Map(EDE_BUILDING_BASES.map(({ osmId, y }) => [osmId, y]));
@@ -2965,7 +2966,7 @@ function buildCityBlocks(scene, { bag = false, streamBag = false, corridorFacade
   update(0, 62, true);
 
   if (EDE_DATA) {
-    const shopSigns = createShopSigns(EDE_DATA.buildings || [], bag ? undefined : buildingGrounds);
+    const shopSigns = createShopSigns(EDE_DATA.buildings || [], bag ? undefined : buildingGrounds, isGrotestraatPilotShop);
     buildingGrounds.clear();
     if (shopSigns) group.add(shopSigns);
   }

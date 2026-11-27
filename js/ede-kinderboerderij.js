@@ -1,7 +1,7 @@
 import { Float32BufferAttribute } from 'three/webgpu';
 import { attribute, mix, texture, uv, vertexColor } from 'three/tsl';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
-import { CivicBatch, along, civicSigns, facePanel, makeGroup, offsetEdge, polygonNormal, wallExtent } from './ede-civic-landmarks.js';
+import { CivicBatch, along, civicSigns, facePanel, makeGroup, offsetEdge, polygonNormal, roofSlice, wallExtent } from './ede-civic-landmarks.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 
 const brick = 0x8d5944, timber = 0x373633, green = 0x233b30, cream = 0xd0c3a4;
@@ -84,20 +84,6 @@ function farm(name, buildings) {
 }
 
 // Clip horizontal tile courses against the surveyed roof edges and dormers.
-function roofSlice(ring, height, above) {
-  const result = [];
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i], b = ring[(i + 1) % ring.length];
-    const aIn = above ? a[1] >= height : a[1] <= height;
-    const bIn = above ? b[1] >= height : b[1] <= height;
-    if (aIn) result.push(a);
-    if (aIn === bIn) continue;
-    const t = (height - a[1]) / (b[1] - a[1]);
-    result.push([a[0] + (b[0] - a[0]) * t, height, a[2] + (b[2] - a[2]) * t]);
-  }
-  return result;
-}
-
 function roofSurface(shell, details, rings, roofColor, thatchLine, normal) {
   const ring = rings[0];
   const low = Math.min(...ring.map(p => p[1])), high = Math.max(...ring.map(p => p[1]));

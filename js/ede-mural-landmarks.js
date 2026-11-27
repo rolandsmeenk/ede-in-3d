@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { CivicBatch, faceWindow } from './ede-civic-landmarks.js';
 
 function buildingBatch() {
   const parts = [];
@@ -90,7 +91,7 @@ export function createAstrant() {
 
 export function createPegasusFlat() {
   const group = new THREE.Group();
-  const batch = buildingBatch();
+  const batch = buildingBatch(), windows = new CivicBatch();
   const brick = 0x8f6662, concrete = 0xd7d1c3, rail = 0x677a82, salmon = 0xb56c5c;
   batch.box(0, 18.36, 0, 11.58, 37.48, 104.2, brick);
   batch.box(0, 36.94, 0, 11.75, 0.4, 104.4, 0x3f4140);
@@ -112,14 +113,17 @@ export function createPegasusFlat() {
       for (let bay = 0; bay < 24; bay++) {
         const z = 49.0 - bay * 4.26;
         batch.facade(x + 0.014 * side, y + 1.36, z, 3.08, 1.99, side, concrete);
-        batch.facade(x + 0.027 * side, y + 1.46, z, 2.80, 1.64, side,
-          glass[(bay + floor * 3 + (side === 1 ? 2 : 0)) % glass.length]);
-        batch.facade(x + 0.037 * side, y + 1.46, z, 0.06, 1.64, side, concrete);
+        faceWindow(windows, { x, z: z - 1.4 }, { x, z: z + 1.4 }, { x: side, z: 0 }, 0, 1, y + 0.64, y + 2.28, {
+          color: glass[(bay + floor * 3 + (side === 1 ? 2 : 0)) % glass.length],
+          frame: concrete, columns: 2, border: [0, 0], mullions: [0.06, 0], sheen: 0,
+        }, 0.027);
       }
     }
     batch.facade(13.34, 2.75 + floor * 2.87, -14.2, 3.1, 1.69, 1, glass[(floor + 1) % glass.length]);
   }
 
-  group.add(batch.mesh());
+  const glazing = windows.mesh();
+  glazing.castShadow = false;
+  group.add(batch.mesh(), glazing);
   return group;
 }

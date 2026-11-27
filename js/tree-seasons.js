@@ -50,7 +50,7 @@ const smoothStep = (a, b, day) => {
   return t * t * (3 - 2 * t);
 };
 
-// The sheepfold mesh shares this single fleece morph weight with the season clock.
+// The two flocks share this fleece weight with the season clock.
 export const sheepFleeceInfluences = [0];
 
 function sheepFleeceAt(day, year) {

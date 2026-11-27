@@ -6,6 +6,7 @@ import { getEdeGrade, gradeDeckAt, gradeSections, nearbyRailHeightAt } from './e
 import { terrainHeightAt } from './terrain.js';
 import { createMemorialPlaque } from './ede-memorial-plaque.js';
 import { addClockDetails, clockFace } from './ede-clock-model.js';
+import { buildEdeStationBay } from './ede-station-bay.js';
 
 const TIMBER = 0xc89356;
 const STEEL = 0x40464a;
@@ -30,7 +31,7 @@ const point = ([x, z], y) => new THREE.Vector3(x, y, z);
 const midpoint = (a, b) => a.clone().lerp(b, 0.5);
 const spread = (a, b, c, i, j, n) => a.clone().lerp(b, i / n).addScaledVector(c.clone().sub(a), j / n);
 
-export function createEdeStationLandmark() {
+export function createEdeStationLandmark(platforms) {
   const group = new THREE.Group();
   group.name = 'Station Ede-Wageningen';
   const solid = [], colors = [], skylights = [];
@@ -268,6 +269,12 @@ export function createEdeStationLandmark() {
   glazing.opacityNode = mix(0.62, 1, glazing.snowCoverageNode);
   group.add(new THREE.Mesh(roofGlass, glazing));
   if (typeof document !== 'undefined') group.add(stationSign());
+  const bay = buildEdeStationBay(platforms);
+  if (bay) {
+    group.add(bay.group);
+    colliders.push(...bay.colliders);
+    group.userData.departureDisplay = bay.display;
+  }
   const memorial = stationMemorial();
   if (memorial) group.add(memorial);
   group.userData.colliders = colliders;

@@ -2,13 +2,12 @@ import * as THREE from 'three/webgpu';
 import { CivicBatch, makeGroup } from './ede-civic-landmarks.js';
 import { EDE_SKYLINE_LANDMARKS, SKYLINE_SHELLS } from './ede-skyline-survey.js';
 import { createSurveyLandmark, surveyOpeningFits, surveyPanel, surveyWindow } from './ede-survey-landmark.js';
+import { surveyedWindowBatch, surveyPanelTexture, texturedSurveyPanel } from './ede-survey-panel-texture.js';
 import { getTerrain, terrainHeightAt } from './terrain.js';
 
 const concrete = 0xbcb6a9;
 const glazing = [0x405258, 0x4c5f62, 0x52636a, 0x627172];
 const galleryColors = {
-  mariendaal: [0xcfc7b4, 0xa79d84, 0x7b6253],
-  langenhorst: [0xd6d4c7, 0xb6b5ac, 0x71817b],
   'valkestein-west': [0xc8beb0, 0xa6a7a2, 0x716961],
   'valkestein-midden': [0xc8bca8, 0x9fa5a3, 0x735f51],
   'valkestein-oost': [0xcdc1ad, 0xaab0ae, 0x755f52],
@@ -21,12 +20,154 @@ const galleryColors = {
   stroombergflat: [0xbbb4a2, 0xa6a196, 0x8f6859],
   merlijnflat: [0xbab3a6, 0xa8a097, 0xa07562],
 };
-const steniColors = [0xcfccbc, 0xaab2a4, 0x7f9992, 0xb1a24e, 0xad7759, 0x88928f];
-
 function surveyedBox(batch, wall, u, y, offset, width, height, depth, color) {
   const [x, , z] = wall.point(u, y, offset);
   const heading = -Math.atan2(wall.b.z - wall.a.z, wall.b.x - wall.a.x);
   batch.solid(new THREE.BoxGeometry(width, height, depth).rotateY(heading).translate(x, y, z), color);
+}
+
+const groenendaalFacade = { floors: 9, base: 3.0, brick: 0x63504b, slab: 0xb77e75, rail: 0x72939a };
+const photographedFlats = {
+  mariendaal: { floors: 14, base: 3.3, roof: 34.65, brick: 0x684f49, slab: 0xb98a83, rail: 0xbfc9cc },
+  'groenendaal-noord': { ...groenendaalFacade, roof: 19.98 },
+  'groenendaal-zuid': { ...groenendaalFacade, roof: 20.25 },
+  langenhorst: { floors: 13, base: 2.9, roof: 30.74, brick: 0x615753, slab: 0xa6aaa7, rail: 0x819496 },
+};
+
+function groenendaalStairCladding(wall) {
+  const { shell, width, base, high, normal, point } = wall;
+  const colors = [0xa3b7bc, 0x7f9c9a, 0x9c665f, 0xa9775b, 0xb78d76, 0x988a83, 0xb5abab];
+  const step = 1.46, slope = 0.72;
+  const bottom = base + 0.12, top = high - 0.13;
+  for (let row = -4; bottom + row * step < top; row++) {
+    let from = 0.03;
+    for (let tile = 0; from < width - 0.03; tile++) {
+      const hash = Math.abs(row * 71 + tile * 29 + 11) % 37;
+      const to = Math.min(width - 0.03, from + 1.2 + (hash % 6) * 0.43);
+      const lo = bottom + row * step;
+      let polygon = [[from, lo + from * slope], [to, lo + to * slope],
+        [to, lo + to * slope + step], [from, lo + from * slope + step]];
+      for (const [edge, sign] of [[bottom, 1], [top, -1]]) {
+        polygon = polygon.flatMap((p, i, ring) => {
+          const q = ring[(i + 1) % ring.length];
+          const inside = (p[1] - edge) * sign >= 0, nextInside = (q[1] - edge) * sign >= 0;
+          const crossing = inside === nextInside ? [] : [[p[0] + (q[0] - p[0]) * (edge - p[1]) / (q[1] - p[1]), edge]];
+          return inside ? [p, ...crossing] : crossing;
+        });
+      }
+      if (polygon.length > 2) shell.polygon([polygon.map(([u, y]) => point(u, y, 0.028))], colors[hash % colors.length]);
+      from = to;
+    }
+  }
+  if (normal.x < 0.7) {
+    const u = width * (normal.z > 0 ? 0.24 : 0.63);
+    for (let y = base + 2.25; y + 1 < high - 0.5; y += 2.80) {
+      surveyWindow(wall, u, u + 1.05, y, y + 0.77, { frame: 0xb9babb, color: 0x40535a, columns: 2 });
+    }
+  }
+  return colors[0];
+}
+
+function langenhorstEnd(wall, surfaces) {
+  const { shell, width, base, high } = wall;
+  const colors = ['#9baebf', '#798995', '#475561', '#3c4b57', '#8da0ad', '#699554'];
+  const bottom = base + 2.9, top = high - 0.19, inset = 0.12;
+  const span = width - 2 * inset;
+  const rows = 71, textureWidth = 512, textureHeight = 1024;
+  const map = surveyPanelTexture(textureWidth, textureHeight, ctx => {
+    const pxPerMetre = textureWidth / span, rowPixels = textureHeight / rows;
+    const seamPixels = 0.014 * textureHeight / (top - bottom);
+    ctx.fillStyle = '#374650';
+    ctx.fillRect(0, 0, textureWidth, textureHeight);
+    for (let row = 0; row < rows; row++) {
+      let from = 0;
+      for (let tile = 0; from < span; tile++) {
+        const hash = (row * 31 + tile * 43 + row * tile * 17) % 67;
+        const to = Math.min(span, from + 0.68 + (hash % 6) * 0.39);
+        ctx.fillStyle = colors[hash < 4 ? 5 : hash % 5];
+        ctx.fillRect(from * pxPerMetre, textureHeight - (row + 1) * rowPixels + seamPixels,
+          Math.max(0, to - from - 0.018) * pxPerMetre, rowPixels - seamPixels);
+        from = to;
+      }
+    }
+  });
+  const material = new THREE.MeshStandardNodeMaterial({ map, roughness: 0.86 });
+  const cladding = texturedSurveyPanel(wall, inset, width - inset, bottom, top, material);
+  cladding.name = 'Langenhorst panel cladding';
+  surfaces.push(cladding);
+  surveyedBox(shell, wall, width / 2, high - 0.14, 0.18, width + 0.10, 0.23, 0.42, 0x3b4448);
+  for (const fraction of [0.31, 0.67]) {
+    const door = width * fraction;
+    surveyPanel(wall, door, door + 0.98, base + 0.08, base + 2.14, 0x365858);
+    surveyPanel(wall, door, door + 0.98, base + 2.14, base + 2.39, 0xa3a9a3);
+    surveyWindow(wall, door + 0.14, door + 0.84, base + 0.98, base + 1.93,
+      { frame: 0xa3a9a3, color: 0x364748 });
+  }
+  return 0x374650;
+}
+
+function photographedFacade(wall, site, photo, surfaces, windows) {
+  const { shell, trim, width, base, low, high, normal } = wall;
+  const groenendaal = site.id.startsWith('groenendaal-');
+  const langenhorst = site.id === 'langenhorst';
+  const plinth = base + photo.base;
+  const { roof } = photo;
+  const pitch = (roof - plinth - 0.35) / photo.floors;
+  const mainWall = high >= roof - 0.2;
+  const longFace = langenhorst ? Math.abs(normal.z) > 0.7 : Math.abs(normal.x) > 0.7;
+  const onShell = { ...wall, trim: shell };
+  const panel = (from, to, lo, hi, color) => surveyPanel(onShell, from, to, lo, hi, color);
+  if (groenendaal && high > roof + 2 && low <= base + 0.1 && width > 3) {
+    return groenendaalStairCladding(wall);
+  }
+  if (langenhorst && !longFace && width > 14 && mainWall) return langenhorstEnd(wall, surfaces);
+  if (!mainWall || width < 8 || high > roof + 2) return photo.brick;
+
+  panel(0.04, width - 0.04, high - 0.26, high - 0.035, photo.slab);
+  if (low <= base + 0.1) panel(0.05, width - 0.05, base + 0.04, plinth, photo.brick);
+  if (!longFace) {
+    for (let course = 0; course < photo.floors; course++) {
+      const floor = plinth + course * pitch;
+      panel(0.03, width - 0.03, floor - 0.13, floor + 0.02, 0xc2c3be);
+    }
+    surveyedBox(trim, wall, width * (normal.z > 0 ? 0.13 : 0.85), (plinth + high - 0.48) / 2, 0.065,
+      0.10, high - 0.48 - plinth, 0.09, 0x845759);
+    return photo.brick;
+  }
+
+  const recessed = langenhorst && normal.z < 0;
+  const depth = recessed ? 0.72 : 1.20;
+  const bays = Math.max(1, Math.round(width / (groenendaal ? 4.9 : 4.25)));
+  const bay = width / bays;
+  const rail = groenendaal && normal.x < 0 ? 0x98a5a0 : photo.rail;
+  const slabThickness = 0.24;
+  for (let course = 0; course < photo.floors; course++) {
+    const floor = plinth + course * pitch;
+    if (!surveyOpeningFits(wall, 0.12, width - 0.12, floor + 0.05, floor + 1.03)) continue;
+    const fascia = groenendaal && normal.x > 0 && course >= 4 ? 0xafbcb9 : photo.slab;
+    surveyedBox(shell, wall, width / 2, floor, depth / 2, width - 0.10, slabThickness, depth, photo.slab);
+    surveyPanel(onShell, 0.05, width - 0.05, floor + slabThickness / 2, floor + 0.39, fascia, depth);
+    surveyPanel(onShell, 0.05, width - 0.05, floor + 0.39, floor + 0.93, rail, depth, 0.48);
+    surveyPanel(onShell, 0.05, width - 0.05, floor + 0.92, floor + 0.97, 0x4e5c58, depth + 0.022);
+    for (let i = 0; i < bays; i++) {
+      const u = bay * i;
+      const from = u + bay * 0.07, to = u + bay * 0.81, lo = floor + 0.22, hi = floor + pitch - 0.28;
+      if (surveyOpeningFits(wall, from, to, lo, hi)) windows.add(wall, from, to, lo, hi, (i + course * 3) % glazing.length);
+      if (groenendaal) {
+        surveyPanel(wall, u + bay * 0.81, u + bay * 0.96, floor + 0.13, floor + pitch - 0.28,
+          normal.x > 0 ? 0xa5766d : 0xc6b7a4);
+      }
+      surveyPanel(wall, u + bay * 0.98, u + bay * 0.98 + 0.03, floor + 0.39, floor + 0.92, 0xa3adab, depth + 0.014);
+    }
+  }
+  if (groenendaal && low <= base + 0.1) {
+    for (let u = 0.6; u + 2 < width; u += 8.4) {
+      surveyWindow(wall, u + 1.0, Math.min(u + 6.0, width - 0.15), plinth - 0.69, plinth - 0.25,
+        { color: 0x404948, frame: 0x7b7f77, columns: 3 });
+      surveyPanel(wall, u, u + 0.89, base + 0.10, base + 2.25, normal.x > 0 ? 0x9b5962 : 0x79746a, 0.041);
+    }
+  }
+  return groenendaal ? 0x9e8a78 : photo.brick;
 }
 
 function housingFacade(wall, site) {
@@ -35,12 +176,12 @@ function housingFacade(wall, site) {
   const pointBlock = site.style === 'point';
   const longFace = width > (pointBlock ? 7.3 : 13.2);
   const plinth = base + 2.45;
-  const pitch = site.style === 'langenhorst' ? 2.83 : 2.78;
+  const pitch = 2.78;
   const tint = high < plinth + 0.08 ? accent : body;
   if (!longFace && !pointBlock) return tint;
   if (low > base + 7 || high < plinth + 2.2) return tint;
 
-  const balconySide = pointBlock || (site.id === 'mariendaal' ? normal.x < 0 : Math.abs(b.x - a.x) > Math.abs(b.z - a.z) ? normal.z > 0 : normal.x > 0);
+  const balconySide = pointBlock || (Math.abs(b.x - a.x) > Math.abs(b.z - a.z) ? normal.z > 0 : normal.x > 0);
   const bayCount = Math.max(1, Math.round(width / (pointBlock ? 3.7 : 4.35)));
   const bay = width / bayCount;
   if (bay < 1.2) return tint;
@@ -57,14 +198,13 @@ function housingFacade(wall, site) {
     }
     for (let i = 0; i < bayCount; i++) {
       const u = bay * i;
-      const colored = site.style === 'langenhorst' ? steniColors[(i + Math.floor(course / 3) * 3) % steniColors.length] : accent;
       surveyWindow(wall, u + bay * 0.12, u + bay * (balconySide ? 0.83 : 0.70), floor + (balconySide ? 0.53 : 0.80),
         floor + 2.20, { color: glazing[(i + course * 3) % glazing.length], frame: 0xd3cec0, columns: 2 });
       if (balconySide) {
-        surveyPanel(wall, u + bay * 0.89, u + bay * 0.96, floor + 0.97, floor + 2.20, colored, 0.041);
+        surveyPanel(wall, u + bay * 0.89, u + bay * 0.96, floor + 0.97, floor + 2.20, accent, 0.041);
         surveyPanel(wall, u + bay * 0.95, u + bay * 0.97, floor + 0.11, floor + 0.92, deck, (pointBlock ? 0.78 : 0.63) + 0.024);
       } else {
-        surveyPanel(wall, u + bay * 0.74, u + bay * 0.93, floor + 0.62, floor + 2.28, colored, 0.038);
+        surveyPanel(wall, u + bay * 0.74, u + bay * 0.93, floor + 0.62, floor + 2.28, accent, 0.038);
       }
     }
   }
@@ -78,11 +218,104 @@ function housingFacade(wall, site) {
 
 function housing(site) {
   const shells = SKYLINE_SHELLS[site.id].map(part => ({ ...part, wallColor: concrete, roofColor: 0x5c5d5c }));
-  const model = createSurveyLandmark(site, shells, wall => housingFacade(wall, site));
+  const photo = photographedFlats[site.id];
+  const surfaces = [];
+  const windows = photo && surveyedWindowBatch({ columns: 3, frame: '#c1bdb0',
+    glazing: glazing.map(color => `#${color.toString(16).padStart(6, '0')}`) });
+  const model = createSurveyLandmark(site, shells, photo
+    ? wall => photographedFacade(wall, site, photo, surfaces, windows)
+    : wall => housingFacade(wall, site));
+  for (const surface of surfaces) model.add(surface);
+  if (windows) model.add(windows.mesh());
   for (const mesh of model.children) {
     if (mesh.userData.nearDetail) mesh.userData.nearDetail = 240;
   }
   return model;
+}
+
+const leeuwenhorstBrick = 0xb08356;
+const leeuwenhorstStoreys = 7, leeuwenhorstPitch = 2.94;
+const leeuwenhorstBalcony = { from: 0.57, to: 4.40, depth: 1.62 };
+
+function leeuwenhorst(site) {
+  const [original] = SKYLINE_SHELLS[site.id];
+  const { ground: base } = original;
+  const points = [...original.points], faces = [...original.faces];
+  const balconyFace = 44;
+  const [ax, , az] = points[faces[balconyFace][1][0]];
+  const [bx, , bz] = points[faces[balconyFace][1][2]];
+  const width = Math.hypot(bx - ax, bz - az);
+  const dx = (bx - ax) / width, dz = (bz - az) / width;
+  const { from, to, depth } = leeuwenhorstBalcony;
+  const balconyOpening = (floor) => {
+    const lo = base + 0.98 + floor * leeuwenhorstPitch;
+    return [lo, lo + 2.45];
+  };
+  const holes = [];
+  for (let floor = 0; floor < leeuwenhorstStoreys; floor++) {
+    const [lo, hi] = balconyOpening(floor);
+    const start = points.length;
+    for (const [u, y] of [[from, lo], [from, hi], [to, hi], [to, lo]]) {
+      points.push([ax + u * dx, y, az + u * dz]);
+    }
+    holes.push([start, start + 1, start + 2, start + 3]);
+  }
+  faces[balconyFace] = [...faces[balconyFace], ...holes];
+  const shells = [{ ...original, points, faces, wallColor: leeuwenhorstBrick, roofColor: 0x5d5d54 }];
+  return createSurveyLandmark(site, shells, wall => {
+    const { faceIndex, point, shell, width, high, normal } = wall;
+    const onShell = { ...wall, trim: shell };
+    if (faceIndex === balconyFace) {
+      for (let floor = 0; floor < leeuwenhorstStoreys; floor++) {
+        const [lo, hi] = balconyOpening(floor);
+        const cabin = [
+          [from, lo], [to, lo], [to, hi], [from, hi],
+        ];
+        for (let side = 0; side < cabin.length; side++) {
+          const p = cabin[side], q = cabin[(side + 1) % cabin.length];
+          shell.polygon([[point(...p), point(...q), point(...q, -depth), point(...p, -depth)]], side % 2 ? 0x97867a : 0x706c67);
+        }
+        surveyPanel(onShell, from, to, lo, hi, 0x655e57, -depth);
+        surveyPanel(wall, from + 0.16, to - 0.12, lo + 0.10, hi - 0.30, glazing[floor % glazing.length], -depth + 0.03, 0.7);
+        if (floor > 0) {
+          surveyPanel(onShell, from, to, lo, lo + 0.24, 0xb4aaa0, 0.035);
+          surveyPanel(onShell, from + 0.055, to - 0.055, lo + 0.25, lo + 0.95, 0x839190, 0.032, 0.55);
+          surveyPanel(wall, from, to, lo + 0.93, lo + 0.98, 0x68726d, 0.047);
+          for (let u = from + 0.08; u < to; u += 0.98) {
+            surveyPanel(wall, u, u + 0.035, lo + 0.28, lo + 0.93, 0x7e8885, 0.047);
+          }
+        }
+      }
+    }
+    if (faceIndex === 45 || faceIndex === 51) {
+      const windowCenters = [
+        [6.33, 8.10, 10.58, 14.08, 17.10], [6.62, 9.17, 11.26, 12.97, 16.25],
+        [6.34, 9.13, 10.62, 14.22, 16.37], [6.65, 7.86, 10.76, 12.90, 17.15],
+        [6.34, 9.15, 11.46, 14.24, 17.03], [6.77, 9.16, 10.90, 13.27, 16.34],
+        [6.36, 8.52, 10.92, 14.48, 17.15],
+      ];
+      const origin = (wall.a.x - ax) * dx + (wall.a.z - az) * dz;
+      for (const [floor, centers] of windowCenters.entries()) {
+        for (const [i, center] of centers.entries()) {
+          const half = i % 2 ? 0.46 : 0.29;
+          const u = center - origin, lo = base + 0.37 + floor * leeuwenhorstPitch;
+          surveyWindow(wall, u - half, u + half, lo, lo + 2.30,
+            { frame: 0x494746, color: glazing[(floor + i * 3) % glazing.length], rows: 2 });
+        }
+      }
+    } else if (faceIndex !== balconyFace && width > 4.6 && high > base + 20 && normal.z < 0.9) {
+      const bays = Math.round(width / 3.4);
+      for (let floor = 0; floor < leeuwenhorstStoreys; floor++) {
+        const lo = base + 0.37 + floor * leeuwenhorstPitch;
+        for (let bay = 0; bay < bays; bay++) {
+          const u = (bay + 0.5) * width / bays;
+          surveyWindow(wall, u - 0.46, u + 0.46, lo, lo + 2.14,
+            { frame: 0x494746, color: glazing[(floor + bay) % glazing.length], rows: 2 });
+        }
+      }
+    }
+    return high < base + 4 ? 0x675b4e : leeuwenhorstBrick;
+  });
 }
 
 const timber = 0x966e4f, limestone = 0xa79c89, mullion = 0x5d584c;
@@ -209,7 +442,7 @@ function mill(site) {
   return model;
 }
 
-const byStyle = { terraces: proeftuin, mill };
+const byStyle = { terraces: proeftuin, leeuwenhorst, mill };
 export const EDE_SKYLINE_LANDMARK_FACTORIES = Object.fromEntries(EDE_SKYLINE_LANDMARKS.map(site => {
   const build = byStyle[site.style] ?? housing;
   return [site.id, (_footprints, site) => build(site)];

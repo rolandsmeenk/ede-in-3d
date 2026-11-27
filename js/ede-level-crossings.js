@@ -4,34 +4,46 @@ import { EDE_DATA } from './ede-geodata.js';
 import { terrainHeightAt } from './terrain.js';
 import { TRAIN_CONSISTS, trainCarOffset, trainModel } from './ede-train-traffic.js';
 
-const WARNING = 21, LIGHTS_ONLY = 5, LOWER = 12, RAISE = 4, CLEAR = 2;
+const WARNING = 21, PRE_WARNING = 5, LOWER = 12, RAISE = 6, CLEAR = 2;
 const MAX_STOP_DISTANCE = 75;
 const clamp01 = value => Math.max(0, Math.min(1, value));
 
 function makeEquipment(group) {
   const metal = new THREE.MeshStandardNodeMaterial({ color: 0xa0a39f, roughness: 0.7 });
-  const white = new THREE.MeshStandardNodeMaterial({ color: 0xf6efdc });
-  const stripes = new THREE.MeshStandardNodeMaterial({ vertexColors: true });
+  const paint = new THREE.MeshStandardNodeMaterial({ vertexColors: true });
   const black = new THREE.MeshStandardNodeMaterial({ color: 0x25282b });
   const dark = new THREE.MeshStandardNodeMaterial({ color: 0x5b151a });
   const lit = new THREE.MeshStandardNodeMaterial({ color: 0xff3425, emissive: 0xff180d, emissiveIntensity: 1.5 });
-  const mast = new THREE.BoxGeometry(0.12, 2.6, 0.12);
-  const head = new THREE.BoxGeometry(0.72, 0.31, 0.22);
-  const cross = new THREE.BoxGeometry(0.62, 0.105, 0.04);
+  const mast = new THREE.CylinderGeometry(0.055, 0.055, 1, 10);
+  const bracket = new THREE.BoxGeometry(0.65, 0.07, 0.10);
+  const housing = new THREE.CylinderGeometry(0.138, 0.138, 0.115, 14).rotateX(Math.PI / 2);
+  const hood = new THREE.CylinderGeometry(0.122, 0.122, 0.15, 8, 1, true, Math.PI / 2, Math.PI).rotateX(Math.PI / 2);
   const lamp = new THREE.SphereGeometry(0.103, 10, 6).scale(1, 1, 0.35);
-  const caseGeometry = new THREE.BoxGeometry(0.31, 0.90, 0.33);
-  const box = new THREE.BoxGeometry(1, 0.12, 0.083, 8, 1, 1);
-  const armGeometry = box.toNonIndexed().translate(0.5, 0, 0);
-  box.dispose();
-  const positions = armGeometry.attributes.position;
-  const colors = new Float32Array(positions.count * 3);
-  const paint = [new THREE.Color(0xc72b31), new THREE.Color(0xf6efdc)];
-  for (let i = 0; i < positions.count; i += 3) {
-    const x = (positions.getX(i) + positions.getX(i + 1) + positions.getX(i + 2)) / 3;
-    const color = paint[Math.min(7, Math.floor(x * 8)) % 2];
-    for (let j = 0; j < 3; j++) color.toArray(colors, (i + j) * 3);
+  const bell = new THREE.CylinderGeometry(0.0875, 0.0875, 0.11, 12).rotateX(Math.PI / 2);
+  const caseGeometry = new THREE.BoxGeometry(0.37, 0.94, 0.39);
+  const counterweight = new THREE.BoxGeometry(0.24, 0.16, 0.19);
+  const skirtRail = new THREE.BoxGeometry(1, 0.035, 0.035);
+  const skirtDrop = 0.64;
+  const skirtPicket = new THREE.BoxGeometry(0.025, skirtDrop, 0.025).translate(0, -skirtDrop / 2, 0);
+  const red = new THREE.Color(0xc72b31), white = new THREE.Color(0xf6efdc);
+
+  function paintedBox(length, height, depth, palette) {
+    const box = new THREE.BoxGeometry(length, height, depth, palette.length, 1, 1);
+    const geometry = box.toNonIndexed();
+    box.dispose();
+    const positions = geometry.attributes.position;
+    const colors = new Float32Array(positions.count * 3);
+    for (let i = 0; i < positions.count; i += 3) {
+      const x = (positions.getX(i) + positions.getX(i + 1) + positions.getX(i + 2)) / 3;
+      const section = Math.min(palette.length - 1, Math.floor((x / length + 0.5) * palette.length));
+      for (let j = 0; j < 3; j++) palette[Math.max(0, section)].toArray(colors, (i + j) * 3);
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return geometry;
   }
-  armGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const armGeometry = paintedBox(1, 0.12, 0.083, [red, white, red, white, red, white, red, white, red]).translate(0.5, 0, 0);
+  const crossBlade = paintedBox(1.2, 0.13, 0.03, [red, white, white, white, red]);
 
   function mesh(parent, geometry, material, x, y, z) {
     const piece = new THREE.Mesh(geometry, material);
@@ -40,10 +52,11 @@ function makeEquipment(group) {
     return piece;
   }
 
-  return function equipment(approach, side, halfBarrier) {
+  return function equipment(approach, type, trackCount, stationGate) {
     const pole = new THREE.Group();
-    pole.name = 'Crossing signal and barrier';
-    const { x, z, dx, dz, y, width, back, heading } = approach;
+    pole.name = `Crossing ${type}`;
+    const { state, x, z, dx, dz, y, width, back, heading, side, modes } = approach;
+    const compact = type === 'AHOB-MINI';
     const roadside = width / 2 + 0.65;
     const px = x + (-dz * roadside - dx * back) * side;
     const pz = z + (dx * roadside - dz * back) * side;
@@ -51,23 +64,70 @@ function makeEquipment(group) {
     pole.rotation.y = heading + (side < 0 ? Math.PI : 0);
     group.add(pole);
 
-    mesh(pole, mast, metal, 0, 1.3, 0);
-    mesh(pole, caseGeometry, metal, 0.08, 0.45, -0.04);
-    mesh(pole, head, black, 0, 1.9, -0.055);
-    for (const tilt of [-0.55, 0.55]) mesh(pole, cross, white, 0, 2.4, -0.06).rotation.z = tilt;
-    const lamps = [-0.20, 0.20].map(offset => mesh(pole, lamp, dark, offset, 1.9, -0.18));
+    const postHeight = stationGate ? 1.55 : compact ? 2.46 : 2.87;
+    mesh(pole, mast, metal, 0, postHeight / 2, 0).scale.y = postHeight;
+    mesh(pole, caseGeometry, metal, 0.08, 0.47, 0.07).scale.z = compact ? 0.75 : 1;
+    const sounder = mesh(pole, bell, black, 0, postHeight - 0.10, 0.11);
+    sounder.name = 'Crossing bell';
+    state.bells.push(sounder.getWorldPosition(new THREE.Vector3()));
+
+    const lamps = [];
+    if (!stationGate) {
+      const lampHeight = compact ? 1.69 : 1.9;
+      mesh(pole, bracket, metal, 0, lampHeight, -0.045);
+      for (const x of [-0.20, 0.20]) {
+        mesh(pole, housing, black, x, lampHeight, -0.12);
+        mesh(pole, hood, black, x, lampHeight, -0.23);
+        const lens = mesh(pole, lamp, dark, x, lampHeight, -0.19);
+        lens.name = 'Crossing red lamp';
+        lamps.push(lens);
+      }
+      const crossbuck = new THREE.Group();
+      crossbuck.name = trackCount > 1 ? 'J13 crossbuck' : 'J12 crossbuck';
+      crossbuck.position.set(0, postHeight - 0.22, -0.09);
+      pole.add(crossbuck);
+      for (const height of trackCount > 1 ? [0, -0.30] : [0]) {
+        for (const tilt of [-0.48, 0.48]) {
+          mesh(crossbuck, crossBlade, paint, 0, height, tilt < 0 ? 0 : -0.032).rotation.z = tilt;
+        }
+      }
+    }
+
     const arm = new THREE.Group();
-    arm.position.set(0.08, 0.99, 0.075);
+    arm.name = 'Crossing boom';
+    arm.position.set(0.08, 1.01, 0.075);
     pole.add(arm);
-    const length = halfBarrier ? roadside : width + 0.45;
-    mesh(arm, armGeometry, stripes, 0, 0, 0).scale.x = length;
-    arm.rotation.z = Math.PI / 2;
-    return (amount, flash) => {
-      arm.rotation.z = (1 - amount) * Math.PI / 2;
+    const length = (modes.has('motor') && type !== 'AOB' ? width / 2 : width) + 0.65 - arm.position.x;
+    const beam = mesh(arm, armGeometry, paint, 0, 0, 0);
+    beam.name = 'Crossing boom beam';
+    beam.scale.set(length, compact ? 0.82 : 1, 1);
+    mesh(arm, counterweight, metal, -0.13, 0, 0);
+
+    const pickets = [];
+    let lowerRail, skirtCenter;
+    if (stationGate) {
+      // The hinged skirt folds alongside the boom as it rises.
+      const start = 0.35, end = length - 0.18;
+      skirtCenter = (start + end) / 2;
+      lowerRail = mesh(arm, skirtRail, metal, skirtCenter, 0, 0);
+      lowerRail.name = 'Crossing skirt rail';
+      lowerRail.scale.x = end - start;
+      for (let i = 0; i < 6; i++) pickets.push(mesh(arm, skirtPicket, metal, start + (end - start) * i / 5, 0, 0));
+    }
+
+    const setEquipment = (amount, flash) => {
+      const angle = (1 - amount) * Math.PI / 2;
+      arm.rotation.z = angle;
+      if (lowerRail) {
+        lowerRail.position.x = skirtCenter - Math.sin(angle) * skirtDrop;
+        lowerRail.position.y = -Math.cos(angle) * skirtDrop;
+        for (const picket of pickets) picket.rotation.z = -angle;
+      }
       arm.updateMatrixWorld(true);
-      lamps[0].material = flash === 0 ? lit : dark;
-      lamps[1].material = flash === 1 ? lit : dark;
+      for (let i = 0; i < lamps.length; i++) lamps[i].material = flash === i ? lit : dark;
     };
+    setEquipment(0, -1);
+    return setEquipment;
   };
 }
 
@@ -91,12 +151,13 @@ export function createEdeLevelCrossings(scene, trainSystem) {
 
   for (const site of sites) {
     if (site.kind !== 'level' || !site.evidence?.public) continue;
-    const state = { id: site.id, phase: 'open', arm: 0, flash: -1, warningAt: null, releaseAt: -Infinity, equipment: [], x: 0, y: 0, z: 0 };
-    let sumX = 0, sumY = 0, sumZ = 0, sumCount = 0;
+    const state = { id: site.id, phase: 'open', arm: 0, flash: -1, warningAt: null, releaseAt: -Infinity, equipment: [], bells: [] };
     const controls = Array.isArray(site.controls) ? site.controls : [site.controls];
     for (const control of controls) {
       if (!['AHOB', 'AHOB-MINI', 'AOB'].includes(control?.type)) continue;
-      const { x, z, heading, width, roadWayIds, trackSpan } = control;
+      const { x, z, heading, width, roadWayIds, trackSpan, type, railWayIds } = control;
+      // The independently mapped Boslaan path has red lights, unlike a station overpad.
+      const stationGate = type === 'AOB' && !site.evidence.osmNode;
       const profiles = site.profiles.filter(profile => profile.wayIds.some(id => roadWayIds.includes(id)));
       const modes = new Set(profiles.flatMap(profile => profile.modes));
       const dx = Math.sin(heading), dz = Math.cos(heading);
@@ -106,10 +167,9 @@ export function createEdeLevelCrossings(scene, trainSystem) {
       for (const side of [-1, 1]) {
         const sx = x - side * dx * back, sz = z - side * dz * back;
         const y = roadWayIds.map(id => gradeWayAt(id, sx, sz, width / 2)).find(Boolean)?.y ?? terrainHeightAt(sx, sz);
-        sumX += sx; sumY += y; sumZ += sz; sumCount++;
         const approach = { state, x, z, dx, dz, width, back, y, heading, side, modes };
         approaches.push(approach);
-        state.equipment.push(buildEquipment(approach, side, modes.has('motor')));
+        state.equipment.push(buildEquipment(approach, type, railWayIds.length, stationGate));
       }
       // Short crossings can end before the barrier. Keep their connected surface approaches in the lookup.
       for (const id of roadWayIds) {
@@ -125,11 +185,6 @@ export function createEdeLevelCrossings(scene, trainSystem) {
         if (!byWay.has(id)) byWay.set(id, []);
         byWay.get(id).push(...approaches);
       }
-    }
-    if (sumCount > 0) {
-      state.x = sumX / sumCount;
-      state.y = sumY / sumCount + 2.0;
-      state.z = sumZ / sumCount;
     }
     crossings.push(state);
 
@@ -197,12 +252,12 @@ export function createEdeLevelCrossings(scene, trainSystem) {
       const oldArm = state.arm, oldFlash = state.flash;
       if (state.demand) {
         if (state.warningAt === null) state.warningAt = at;
-        if (state.phase === 'opening' && state.arm > 0) state.warningAt = at - LIGHTS_ONLY - state.arm * LOWER;
-        if (state.occupied) state.warningAt = Math.min(state.warningAt, at - LIGHTS_ONLY - LOWER);
+        if (state.phase === 'opening' && state.arm > 0) state.warningAt = at - PRE_WARNING - state.arm * LOWER;
+        if (state.occupied) state.warningAt = Math.min(state.warningAt, at - PRE_WARNING - LOWER);
         state.releaseAt = at + CLEAR;
       }
       if (state.warningAt !== null && at < state.releaseAt) {
-        const amount = clamp01((at - state.warningAt - LIGHTS_ONLY) / LOWER);
+        const amount = clamp01((at - state.warningAt - PRE_WARNING) / LOWER);
         state.arm = Math.max(state.arm, amount);
         state.phase = state.arm === 1 ? 'closed' : state.arm > 0 ? 'closing' : 'warning';
       } else {

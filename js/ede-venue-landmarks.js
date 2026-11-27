@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, mix, step, texture, uv, vertexColor } from 'three/tsl';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
 import { terrainHeightAt } from './terrain.js';
-import { CivicBatch, civicSigns, polygonNormal, wallExtent } from './ede-civic-landmarks.js';
+import { CivicBatch, civicSigns, faceWindow, polygonNormal, wallExtent } from './ede-civic-landmarks.js';
 import { REEHORST, BUITENZORG, JOHANNUS } from './ede-venue-survey.js';
 
 const glass = 0x30454e, pale = 0xdcd7c7, brass = 0x947039, shutter = 0x23332d;
@@ -77,13 +77,10 @@ function opening(batch, trim, frame, spec) {
     for (let i = 2; i < rim.length - 1; i++) trim.quad(rim[i], rim[i + 1], innerRim[i + 1], innerRim[i], edgeColor);
   } else panel(trim, frame, x0 - border, x1 + border, spec.hi - border, spec.hi + border, edgeColor, 0.04);
   const cols = spec.cols ?? 2, rows = spec.rows ?? 2;
-  for (let i = 1; i < cols; i++) {
-    const u = x0 + spec.width * i / cols;
-    panel(trim, frame, u - 0.025, u + 0.025, spec.lo, borderAt, edgeColor, -0.03);
-  }
-  for (let i = 1; i < rows; i++) {
-    const y = spec.lo + (borderAt - spec.lo) * i / rows;
-    panel(trim, frame, x0, x1, y - 0.025, y + 0.025, edgeColor, -0.03);
+  if (cols > 1 || rows > 1) {
+    faceWindow(trim, frame.a, frame.b, frame.normal, x0 / frame.width, x1 / frame.width, spec.lo, borderAt, {
+      color: material, frame: edgeColor, columns: cols, rows, border: [0, 0], mullions: [0.05, 0.05], sheen: 0,
+    }, -depth + 0.006);
   }
   if (spec.shutters) {
     panel(trim, frame, x0 - spec.width * 0.42, x0 - 0.075, spec.lo, borderAt, shutter, 0.055);

@@ -1,4 +1,5 @@
 import { setControlRate } from './audio-synthesis.js';
+import { createValleilijnCueBuffers } from './ede-valleilijn-arrival.js';
 
 const TAU = Math.PI * 2;
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -36,16 +37,19 @@ function makeBuffer(ctx, duration, synthesize, peak = 0.6) {
   return buffer;
 }
 
-function footstep(ctx, seed) {
+function footstep(ctx, seed, surface) {
   const random = randomSource(seed);
+  const sand = surface === 'sand', timber = surface === 'timber', klinkers = surface === 'klinkers';
   const soleTime = 0.024 + random() * 0.035;
   const scuffTime = soleTime + 0.025 + random() * 0.025;
-  const contacts = Array.from({ length: 5 }, () => ({
-    time: random() * 0.10, decay: 170 + random() * 300, level: 0.025 + random() * 0.075
+  const contacts = Array.from({ length: sand ? 11 : 5 }, () => ({
+    time: random() * (sand ? 0.15 : 0.1), decay: 170 + random() * 300, level: 0.025 + random() * 0.075
   }));
-  const coefficients = [180, 1050, 4600].map((frequency) => 1 - Math.exp(-TAU * frequency / ctx.sampleRate));
+  const coefficients = [180, timber ? 650 : 1050, klinkers ? 5500 : 4600]
+    .map(frequency => 1 - Math.exp(-TAU * frequency / ctx.sampleRate));
+  const plank = 133 + 37 * random();
   const bands = [0, 0, 0];
-  return makeBuffer(ctx, 0.23, (t) => {
+  return makeBuffer(ctx, sand ? 0.27 : 0.23, (t) => {
     const noise = random() * 2 - 1;
     for (let i = 0; i < bands.length; i++) bands[i] += (noise - bands[i]) * coefficients[i];
     const body = bands[1] - bands[0], grit = bands[2] - bands[1];
@@ -53,14 +57,20 @@ function footstep(ctx, seed) {
     const sole = Math.max(0, t - soleTime);
     const roll = (1 - Math.exp(-sole * 1100)) * Math.exp(-sole * 58);
     const scuff = Math.max(0, t - scuffTime);
-    const drag = (1 - Math.exp(-scuff * 130)) * Math.exp(-scuff * 38);
+    const drag = (1 - Math.exp(-scuff * 130)) * Math.exp(-scuff * (sand ? 23 : 38));
     let fragments = 0;
     for (const contact of contacts) {
       if (t > contact.time) fragments += Math.exp(-(t - contact.time) * contact.decay) * contact.level;
     }
-    // Short, differently coloured heel and sole contacts, followed by irregular concrete grit. No pitched kick.
-    return (bands[0] * 0.25 + body * 0.9 + grit * 0.55) * heel
-      + (bands[0] * 0.3 + body * 0.65 + grit * 0.15) * roll
+    if (sand) return body * (heel * 0.31 + roll * 0.26) + grit * (heel * 0.44 + drag * 0.64 + fragments * 1.4);
+    if (timber) {
+      const board = Math.sin(TAU * plank * t) * Math.exp(-t * 42) +
+        Math.sin(TAU * plank * 2.34 * t) * Math.exp(-t * 57) * 0.29;
+      return body * (heel * 0.77 + roll * 0.47) + grit * heel * 0.23 + board * 0.20;
+    }
+    // Hard paving is shorter and sharper. Fired bricks add a bright secondary contact.
+    return (bands[0] * 0.25 + body * 0.9 + grit * (klinkers ? 0.89 : 0.55)) * heel
+      + (bands[0] * 0.3 + body * 0.65 + grit * (klinkers ? 0.37 : 0.15)) * roll
       + (grit * 0.22 + (noise - bands[2]) * 0.035) * drag + grit * fragments;
   }, 0.55);
 }
@@ -299,12 +309,12 @@ function signal(ctx, walk) {
   }, 0.45);
 }
 
-// ProRail AHOB metallic crossing bell: crisp hammer impact + bright inharmonic ring.
+// A short mechanical NS-style strike for the five-strikes-per-second crossing alarm.
 function crossingBell(ctx) {
   const random = randomSource(173);
   const base = 1175;
-  const partials = [[1, 1.0, 6.2], [2.71, 0.48, 9.5], [5.18, 0.22, 16], [7.85, 0.09, 24]];
-  return makeBuffer(ctx, 0.44, (t) => {
+  const partials = [[1, 1.0, 17], [2.71, 0.48, 23], [5.18, 0.22, 32], [7.85, 0.09, 42]];
+  return makeBuffer(ctx, 0.18, (t) => {
     const strike = Math.exp(-t * 320) * (random() * 2 - 1) * 0.28;
     let tone = 0;
     for (const [ratio, amp, decay] of partials) {
@@ -369,6 +379,17 @@ function birdCall(ctx, variant) {
   }, 0.48);
 }
 
+function nightjarChurr(ctx) {
+  const duration = 3.6;
+  return makeBuffer(ctx, duration, t => {
+    const pulse = Math.sin(TAU * (26 * t + 0.28 * Math.sin(TAU * 0.33 * t)));
+    const register = smoothstep((t - 1.45) / 0.08) - smoothstep((t - 2.65) / 0.08);
+    const phase = TAU * (1190 * t + 24 * (Math.max(0, t - 1.45) - Math.max(0, t - 2.65)));
+    const tone = Math.sin(phase) + (0.34 + 0.15 * register) * Math.sin(2 * phase);
+    return tone * (0.22 + 0.78 * Math.max(0, pulse)) * smoothstep(t / 0.18) * smoothstep((duration - t) / 0.23);
+  }, 0.42);
+}
+
 // Gentle nasal sheep bleat for the Edese Schaapskudden at Ginkelse Heide and De Kreel.
 function sheepBleat(ctx, pitch, seed) {
   const random = randomSource(seed);
@@ -393,6 +414,63 @@ function sheepBleat(ctx, pitch, seed) {
   }, 0.46);
 }
 
+function fountainSplashes(ctx) {
+  const random = randomSource(1923);
+  const duration = 2.24;
+  const bursts = Array.from({ length: 31 }, (_, i) => ({
+    time: (i + random() * 0.75) * duration / 31,
+    level: 0.12 + 0.43 * random(),
+    decay: 23 + 50 * random(),
+  }));
+  const slow = 1 - Math.exp(-TAU * 430 / ctx.sampleRate);
+  const fast = 1 - Math.exp(-TAU * 4800 / ctx.sampleRate);
+  let low = 0, high = 0, first = 0;
+  return makeBuffer(ctx, duration, (t) => {
+    const noise = random() * 2 - 1;
+    low += (noise - low) * slow;
+    high += (noise - high) * fast;
+    let spray = 0;
+    while (first < bursts.length && bursts[first].time + 0.23 < t) first++;
+    for (let i = first; i < bursts.length && bursts[i].time <= t; i++) {
+      const { time, level, decay } = bursts[i];
+      const age = t - time;
+      spray += level * (1 - Math.exp(-age * 650)) * Math.exp(-age * decay);
+    }
+    const edge = smoothstep(t / 0.13) * smoothstep((duration - t) / 0.16);
+    return edge * ((high - low) * (0.11 + spray) + (noise - high) * spray * 0.19 + low * spray * 0.27);
+  }, 0.54);
+}
+
+function shoreline(ctx, kind) {
+  const reeds = kind === 'reeds';
+  const random = randomSource(reeds ? 1772 : 2081);
+  const duration = reeds ? 3.8 : 4.4;
+  const speed = reeds ? 850 : 140;
+  let body = 0, high = 0;
+  const bodyFilter = 1 - Math.exp(-TAU * speed / ctx.sampleRate);
+  const highFilter = 1 - Math.exp(-TAU * (reeds ? 3800 : 2250) / ctx.sampleRate);
+  const pulses = Array.from({ length: reeds ? 16 : 11 }, () => ({
+    time: random() * duration, decay: (reeds ? 11 : 32) + random() * 35,
+    level: random() * (reeds ? 0.34 : 0.66),
+  }));
+  return makeBuffer(ctx, duration, t => {
+    const noise = 2 * random() - 1;
+    body += (noise - body) * bodyFilter;
+    high += (noise - high) * highFilter;
+    let texture = 0;
+    for (const { time, decay, level } of pulses) {
+      const age = t - time;
+      if (age > 0) texture += level * (1 - Math.exp(-age * (reeds ? 74 : 220))) * Math.exp(-age * decay);
+    }
+    const fade = smoothstep(t / 0.21) * smoothstep((duration - t) / 0.5);
+    const wave = Math.pow(Math.max(0, Math.sin(TAU * t * 0.73 + Math.sin(t * 2) * 0.32)), 2);
+    const gust = 0.17 + 0.28 * smoothstep(0.5 + 0.5 * Math.sin(t * 3.3));
+    return fade * (reeds
+      ? (high - body) * (gust + texture) + (noise - high) * texture * 0.25
+      : body * (0.19 + wave * 0.8) + (high - body) * (0.09 + wave * 0.11 + texture));
+  }, 0.53);
+}
+
 export function createEventResources(ctx, resources) {
   const speakers = [
     { pitch: 99, formants: 0.88, breath: 0.06 }, { pitch: 119, formants: 0.94, breath: 0.10 },
@@ -401,7 +479,10 @@ export function createEventResources(ctx, resources) {
   ];
   return {
     ...resources,
-    footsteps: Array.from({ length: 8 }, (_, i) => footstep(ctx, i + 1)),
+    footsteps: Array.from({ length: 8 }, (_, i) => footstep(ctx, i + 1, 'hard')),
+    footSurfaces: Object.fromEntries(['klinkers', 'sand', 'timber'].map((surface, j) =>
+      [surface, Array.from({ length: 5 }, (_, i) => footstep(ctx, 32 + j * 5 + i, surface))])),
+    trainCues: createValleilijnCueBuffers(ctx, makeBuffer, randomSource),
     syllables: speakers.map((speaker, voice) => Array.from({ length: 4 }, (_, i) => speechFragment(ctx, speaker, i + voice * 4 + 20))),
     horns: [0.22, 0.37, 0.55].map((duration, i) => horn(ctx, duration, 17 + i)),
     bells: [0, 1, 2].map((i) => bicycleBell(ctx, 2300 + i * 150, 61 + i)),
@@ -411,12 +492,17 @@ export function createEventResources(ctx, resources) {
       debris: Array.from({ length: 3 }, (_, i) => crashDebris(ctx, i + 501))
     },
     gusts: gustBuffer(ctx),
+    fountain: fountainSplashes(ctx),
+    pondLap: shoreline(ctx, 'pondLap'),
+    reeds: shoreline(ctx, 'reeds'),
     signalTick: signal(ctx, false),
     signalWalk: signal(ctx, true),
     crossingBell: crossingBell(ctx),
     churchBell: bronzeBell(ctx, 220, 2.8, 811),
-    carillonBell: bronzeBell(ctx, 523.25, 1.55, 823),
+    // The archive sample has prominent tuned partials about 17 cents below A440.
+    carillonBell: bronzeBell(ctx, 616.0, 2.2, 823),
     birds: [0, 1, 2].map((i) => birdCall(ctx, i)),
+    nightjar: nightjarChurr(ctx),
     sheep: [175, 205].map((pitch, i) => sheepBleat(ctx, pitch, 911 + i))
   };
 }
@@ -427,7 +513,9 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
   const intensity = clamp(finite(options.intensity, 1));
   const levels = {
     footstep: 0.22, talk: 0.065, horn: 0.23, bell: 0.2, signal: 0.13, crash: 0.35,
-    crossingBell: 0.28, churchBell: 0.68, carillon: 0.62, bird: 0.14, sheep: 0.16
+    crossingBell: 0.28, churchBell: 0.68, carillon: 0.62, bird: 0.14, skylark: 0.18, nightjar: 0.15, sheep: 0.16,
+    market: 0.10, fountain: 0.19, pondLap: 0.17, reeds: 0.15,
+    trainApproach: 0.27, trainBrake: 0.30, trainDoors: 0.32, trainDeparture: 0.29
   };
   if (!Object.hasOwn(levels, kind) || intensity === 0) return { endTime: start, dispose() {} };
   const gain = ctx.createGain();
@@ -480,7 +568,12 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
 
   if (kind === 'footstep') {
     const speed = clamp(Math.abs(finite(options.speed)) / 8);
-    play(resources.footsteps[Math.floor(random() * resources.footsteps.length)], start, 0.9 + random() * 0.17 + speed * 0.13);
+    const steps = resources.footSurfaces[options.surface] ?? resources.footsteps;
+    play(steps[Math.floor(random() * steps.length)], start, 0.9 + random() * 0.17 + speed * 0.13);
+  } else if (resources.trainCues?.[kind]) {
+    play(resources.trainCues[kind], start);
+  } else if (kind === 'pondLap' || kind === 'reeds') {
+    play(resources[kind], start, 0.93 + random() * 0.15);
   } else if (kind === 'talk') {
     const identity = randomSource(finite(options.voiceSeed, finite(options.seed, 1)));
     const voice = resources.syllables[Math.floor(identity() * resources.syllables.length)];
@@ -494,6 +587,16 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
       when = end + 0.065 + random() * 0.13;
       variant = (variant + 1 + Math.floor(random() * (voice.length - 1))) % voice.length;
     }
+  } else if (kind === 'market') {
+    const voices = resources.syllables;
+    const offset = Math.floor(random() * voices.length);
+    for (let i = 0; i < 4; i++) {
+      const voice = voices[(offset + i) % voices.length];
+      const fragment = voice[Math.floor(random() * voice.length)];
+      play(fragment, start + i * 0.34 + random() * 0.18, 0.89 + random() * 0.16, 0.34 + random() * 0.31);
+    }
+  } else if (kind === 'fountain') {
+    play(resources.fountain, start, 0.88 + random() * 0.24);
   } else if (kind === 'horn') {
     play(resources.horns[Math.floor(random() * resources.horns.length)], start, 0.94 + random() * 0.12);
   } else if (kind === 'bell') {
@@ -532,6 +635,12 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
       ? Math.abs(options.variant) % resources.birds.length
       : Math.floor(random() * resources.birds.length);
     play(resources.birds[variant], start, 0.93 + random() * 0.14);
+  } else if (kind === 'skylark') {
+    for (let i = 0; i < 4; i++) {
+      play(resources.birds[0], start + i * 0.68, 0.94 + random() * 0.14, 0.88 + random() * 0.12);
+    }
+  } else if (kind === 'nightjar') {
+    play(resources.nightjar, start, 0.98 + random() * 0.04);
   } else if (kind === 'sheep') {
     const variant = Math.floor(random() * resources.sheep.length);
     play(resources.sheep[variant], start, 0.92 + random() * 0.16);
@@ -594,20 +703,29 @@ export function createWindVoice(ctx, resources, output) {
     modulation.gain.value = 0;
     noise.connect(highpass).connect(lowpass).connect(air).connect(modulation).connect(pan).connect(master);
     highpass.connect(rumbleFilter).connect(rumble).connect(modulation);
+    const railFilter = ctx.createBiquadFilter();
+    setControlRate(railFilter.frequency, railFilter.Q);
+    railFilter.type = 'bandpass';
+    railFilter.frequency.value = 920;
+    railFilter.Q.value = 0.75;
+    const rail = ctx.createGain();
+    rail.gain.value = 0;
+    highpass.connect(railFilter).connect(rail).connect(modulation);
     gust.connect(modulation.gain);
     channels.push({
       air: smoothParameter(air.gain, 0.6),
       rumble: smoothParameter(rumble.gain, 1),
+      rail: smoothParameter(rail.gain, 1),
       cutoff: smoothParameter(lowpass.frequency, 0.8, 1)
     });
     sources.push(noise, gust);
-    nodes.push(noise, highpass, lowpass, air, rumbleFilter, rumble, pan, gust, modulation);
+    nodes.push(noise, highpass, lowpass, air, rumbleFilter, rumble, railFilter, rail, pan, gust, modulation);
     for (const source of [noise, gust]) source.onended = () => { if (--remaining === 0) disconnect(); };
     noise.start(ctx.currentTime, i * resources.noise.duration * 0.43);
     gust.start(ctx.currentTime, i * resources.gusts.duration * 0.37);
   }
   return {
-    update({ speed = 0, altitude = 0, night = 0, traffic = 0, enclosure = 0 } = {}, now = ctx.currentTime) {
+    update({ speed = 0, altitude = 0, night = 0, traffic = 0, road = 0, rail = 0, enclosure = 0 } = {}, now = ctx.currentTime) {
       if (disposed) return;
       now = Math.max(ctx.currentTime, finite(now, ctx.currentTime));
       const motion = clamp(Math.abs(finite(speed)) / 55);
@@ -618,7 +736,9 @@ export function createWindVoice(ctx, resources, output) {
         // Walls shelter ambient wind; the rush from riding or flying still follows the player's motion.
         channel.air((0.010 * shelter + motion * 0.012 + exposure * 0.015) * quiet, now);
         channel.cutoff(1550 + motion * 700 + exposure * 850, now);
-        channel.rumble((0.003 + clamp(traffic) * 0.020) * quiet * (1 - exposure * 0.5), now);
+        const remote = quiet * (1 - exposure * 0.5) * (1 - enclosure * 0.46);
+        channel.rumble((0.003 + Math.max(clamp(traffic) * 0.020, clamp(road) * 0.018)) * remote, now);
+        channel.rail(clamp(rail) * 0.009 * remote, now);
       }
     },
     dispose(immediate = false) {

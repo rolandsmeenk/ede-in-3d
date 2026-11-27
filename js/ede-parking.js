@@ -170,7 +170,7 @@ export function createEdeParking(parent,base,styles,network,data,closed) {
   const access=createParkingAccess(network,data.aisles);
   const tiles=parkedTiles(parent,base,styles);
   const active=new Set(), counters=new Map(), linksByEdge=new Map(), cooling=new Map();
-  let x=Infinity,z=Infinity, next=0, snapshot=EMPTY, now=0, needsSync=true;
+  let x=Infinity,z=Infinity, next=0, snapshot=EMPTY, now=0, needsSync=true, closedArea=null;
   let enabled=new URLSearchParams(window.location.search).get('parking')!=='off';
   let nextArrival=0, nextDeparture=0, departures=[];
   const unavailable=new Set();
@@ -194,14 +194,15 @@ export function createEdeParking(parent,base,styles,network,data,closed) {
     }
     return false;
   }
-  function tick(fx,fz,clock,jump=false,activity=null) {
+  function tick(fx,fz,clock,jump=false,activity=null,marketArea=null) {
     if (!enabled) return;
-    if (jump || needsSync || clock>=next || Math.hypot(fx-x,fz-z)>72) {
+    if (jump || needsSync || marketArea!==closedArea || clock>=next || Math.hypot(fx-x,fz-z)>72) {
+      closedArea=marketArea;
       needsSync=false;
       now=Date.now();
       x=fx; z=fz; next=clock+12;
       for (const [id,until] of cooling) if (until<=clock) cooling.delete(id);
-      snapshot=demand.refresh({x,z,radius:RADIUS,now,limit:72,activity,
+      snapshot=demand.refresh({x,z,radius:RADIUS,now,limit:72,activity,closedArea,
         canManeuver:(space)=>Boolean(access.link(space))});
       linksByEdge.clear();
       unavailable.clear();

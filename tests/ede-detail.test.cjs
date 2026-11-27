@@ -66,6 +66,53 @@ test('street detail honors gate gaps, surveyed levels, and polygon holes', async
   assert.equal(colliders[2].minYAt(1, 5), 2);
 });
 
+test('BGT planting types use distinct instanced foliage with ground-level bases', async () => {
+  const { buildEdeDetail, THREE } = await fixture({ gradeProfileAt: () => null });
+  const kinds = ['heesters', 'struiken', 'struikrozen', 'bosplantsoen', 'gras- en kruidachtigen', 'planten', 'bodembedekkers'];
+  const rows = kinds.map((plantingType, i) => ({
+    id: plantingType, source: 'bgt', type: i < 4 ? 'shrub' : 'groundCover', position: [2 * i, 0], plantingType,
+  }));
+  const { group, stats, colliders } = buildEdeDetail(new THREE.Scene(), [
+    ...rows,
+    { id: 'legacy-shrub', source: 'bgt', type: 'shrub', position: [0, 2], collidable: true },
+    { id: 'legacy-cover', source: 'bgt', type: 'groundCover', position: [2, 2] },
+    { id: 'unknown-cover', source: 'bgt', type: 'groundCover', position: [4, 2], plantingType: 'unknown' },
+  ]);
+  assert.equal(stats.instances, 10);
+  assert.equal(stats.unresolved.length, 0);
+  assert.equal(colliders.length, 0);
+  const meshes = kinds.map(kind => group.getObjectByName(`BGT detail ${kind}`));
+  assert.equal(meshes[0].count, 2);
+  assert.equal(meshes[6].count, 3);
+  assert.equal(new Set(meshes.map(mesh => mesh.geometry)).size, kinds.length);
+
+  const bounds = meshes.map((mesh, i) => {
+    assert.ok(mesh.isInstancedMesh && mesh.material.vertexColors);
+    assert.equal(mesh.userData.cullDistance, i < 4 ? 190 : 130);
+    const { geometry } = mesh;
+    geometry.computeBoundingBox();
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+    const box = geometry.boundingBox.clone().applyMatrix4(matrix);
+    assert.ok(Math.abs(box.min.y - 2) < 0.02);
+    assert.ok(box.max.x - box.min.x < (i < 4 ? 1 : 0.75));
+    return box;
+  });
+  assert.ok(bounds[3].max.y > bounds[0].max.y);
+  assert.ok(bounds[4].max.y > bounds[6].max.y);
+  assert.ok(bounds[5].max.y > bounds[6].max.y);
+  assert.ok(meshes[0].geometry.index.count > meshes[4].geometry.index.count);
+  assert.ok(meshes[2].geometry.index.count > meshes[0].geometry.index.count);
+  for (const index of [0, 2]) {
+    const { position, color } = meshes[index].geometry.attributes;
+    assert.ok(Array.from({ length: position.count }, (_, i) => i)
+      .some(i => position.getY(i) === 0 && color.getX(i) > color.getY(i)));
+  }
+  const petalColors = meshes[2].geometry.getAttribute('color');
+  assert.ok(Array.from({ length: petalColors.count }, (_, i) => i)
+    .some(i => petalColors.getX(i) > petalColors.getY(i) && petalColors.getZ(i) > petalColors.getY(i)));
+});
+
 test('parcel styles use tiled close detail and keep inferred boundaries decorative', async () => {
   const { buildEdeDetail, THREE } = await fixture({ gradeProfileAt: () => null });
   const fence = { source: 'parcel', type: 'fence', level: 0, collidable: true };
@@ -128,13 +175,20 @@ test('utility replacements are registered only after valid exterior geometry is 
   const result = buildEdeDetail(new THREE.Scene(), [
     { id: 'confirmed', source, type, polygon, height, baseY, roofRise: 0.7, bagId: '0123', osmId: 'w21', door: [0, 0.5] },
     { id: 'broken', source, type, polygon: [[0, 0]], height, baseY, bagId: '0124', osmId: 'w22' },
-    { id: 'cabinet', type: 'electricalCabinet', source, position: [8, 5], height: 1.2, width: 0.5, depth: 0.3 },
+    { id: 'cabinet', type: 'electricalCabinet', source, position: [8, 5], height: 1.2,
+      width: 0.5, depth: 0.3, angle: Math.PI / 4, collidable: true },
   ]);
   assert.deepEqual([...result.group.userData.replacements.bag], ['0123']);
   assert.deepEqual([...result.group.userData.replacements.osm], ['w21']);
   assert.equal(result.stats.utility, 2);
   assert.equal(result.stats.unresolved[0].id, 'broken');
   assert.equal(result.colliders[0].maxYAt(1, 1), 5.45);
+  const cabinet = result.colliders.find(collider => collider.kind === 'municipal-furniture');
+  assert.equal(cabinet.obb.cx, 8);
+  assert.equal(cabinet.obb.cz, 5);
+  assert.equal(cabinet.obb.hx, 0.25);
+  assert.equal(cabinet.obb.hz, 0.15);
+  assert.equal(cabinet.obb.sn, Math.sin(Math.PI / 4));
   const shell = result.group.getObjectByName('UTILITY detail utilityShell');
   shell.geometry.computeBoundingBox();
   assert.equal(shell.userData.cullDistance, 0);
@@ -297,6 +351,7 @@ test('offline detail loading accepts packed and already decoded responses', asyn
   const { loadEdeDetail } = await fixture({}, async url => {
     const name = path.basename(url.pathname);
     requested.push(name);
+    if (name === 'ede-bgt-detail.json.gz') assert.equal(url.searchParams.get('v'), '20261127-planting-types');
     const asset = JSON.stringify({ version: 1, features: [{ id: name }] });
     return new Response(name.includes('bgt') ? gzipSync(asset) : asset);
   });

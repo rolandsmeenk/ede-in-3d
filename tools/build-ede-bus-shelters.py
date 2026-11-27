@@ -33,6 +33,9 @@ def main():
                              lon=round(point['x'], 7), lat=round(point['y'], 7), bearing=bearing,
                              ad=props['qf_shelterpublicity'] == 'true', bench=props['qf_seatavailable'] == 'true',
                              green=props['qea_greenstop'] == 'true' or town == 'Ede' and name in GREEN_ROOF_STOPS)
+    # The aerial roof is west of the Roodborstje cabinet at the Mariendaal stop.
+    if 'NL:Q:40612059' in rows:
+        rows['NL:Q:40612059']['along'] = 3.4
     target = Path(__file__).resolve().parents[1] / 'js/ede-bus-shelter-sites.js'
     records = ',\n'.join('  ' + json.dumps(row, ensure_ascii=False, separators=(',', ':'))
                          for _, row in sorted(rows.items()))

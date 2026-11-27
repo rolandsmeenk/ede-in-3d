@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { attribute, cameraPosition, color, float, Fn, fwidth, If, length, max, min, mix, mx_noise_float,
+import { attribute, cameraPosition, float, Fn, fwidth, If, length, max, min, mix, mx_noise_float,
   positionWorld, smoothstep, uniform } from 'three/tsl';
 import { transparentEffectMRT } from './tsl-materials.js';
-import { applySnowMaterial, rinkSnowCover, snowCover, surfaceSnowCoverage } from './ede-snow.js';
+import { applySnowMaterial, iceSnowRetention, rinkSnowCover, snowCover, surfaceSnowCoverage } from './ede-snow.js';
 import { polygonContains } from './building-collision.js';
 import { drapeEdeSurface, edePoints, edePolygonGeometry, edeSpatialGroups } from './ede-geometry.js';
 import { fitSportField, clipSportLine } from './ede-sport-fit.js';
@@ -26,11 +26,13 @@ const rinkIce = smoothstep(-0.07, 0.07, rinkIceCover.sub(mix(0.08, 0.92, rinkFro
 
 function makeRinkMaterial() {
   const material = new THREE.MeshStandardNodeMaterial();
-  const ice = mix(color(0x5b8499), color(0xb5cfd8), rinkFrost);
-  material.colorNode = mix(attribute('color', 'vec3'), ice, rinkIce);
-  material.roughnessNode = mix(0.90, 0.17, rinkIce);
+  const ground = attribute('color', 'vec3');
+  const ice = ground.mul(mix(0.065, 0.12, rinkFrost));
+  material.colorNode = mix(ground, ice, rinkIce);
+  material.roughnessNode = mix(0.90, 0.08, rinkIce);
   material.iceCoverageNode = rinkIce;
-  return applySnowMaterial(material, { shelter: true, cover: mix(snowCover, rinkSnowCover, rinkIce) });
+  return applySnowMaterial(material, { shelter: true, cover: mix(snowCover, rinkSnowCover, rinkIce),
+    retention: mix(1, iceSnowRetention(), rinkIce) });
 }
 const WHITE = 0xf3f1df;
 const STEEL = 0x555e5b;

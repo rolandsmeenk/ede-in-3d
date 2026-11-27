@@ -290,7 +290,31 @@ export function createEdeTrainTraffic(timetable, tracks, { predictionSeconds = 3
     }
   }
 
-  return { acceptSnapshot, prepare, position, advance, forecast, upcoming, progress, get plans() { return plans; } };
+  function nextValleilijnDepartures(at) {
+    const rows = [];
+    const current = new Map(plans.map(plan => [plan.key, plan]));
+    for (const entry of schedule.entries(at)) {
+      const { trip } = entry, stop = trip.stops[0];
+      if (trip.route !== 'rs34' || stop.station !== 'ede-wageningen') continue;
+      const update = updates.get(entry.key);
+      if (update?.cancelled && validTime(update.timestamp, at, KEEP_FOR)) continue;
+      const live = validTime(update?.timestamp, at, UPDATE_AGE);
+      const change = live && update.stops.findLast(row =>
+        row.sequence != null ? row.sequence === stop.sequence : row.stopId === stop.stopId);
+      if (change?.skipped) continue;
+      const plan = current.get(entry.key), anchor = plan?.anchors[0];
+      const scheduled = entry.epoch + stop.departure;
+      const departure = anchor?.station === stop.station ? anchor.departure :
+        change?.departure ?? scheduled + (change?.departureDelay ?? (live ? update.delay : 0) ?? 0);
+      const platform = anchor?.platform ?? change?.platform ?? stop.platform;
+      if (departure < at || departure > at + 2 * 3600 || !/^1[ab]?$/i.test(platform)) continue;
+      rows.push({ departure, scheduled, platform, live });
+    }
+    return rows.sort((a, b) => a.departure - b.departure).slice(0, 2);
+  }
+
+  return { acceptSnapshot, prepare, position, advance, forecast, upcoming, nextValleilijnDepartures,
+    progress, get plans() { return plans; } };
 }
 
 export function watchEdeTrains(traffic) {

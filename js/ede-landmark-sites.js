@@ -6,6 +6,7 @@ import { EDE_PUBLIC_LANDMARKS } from './ede-public-survey.js';
 import { MARNIX_COLLEGE_SITE } from './ede-marnix-survey.js';
 import { EDE_SCHOOL_LANDMARKS } from './ede-school-survey.js';
 import { EDE_SPORT_LANDMARKS } from './ede-sport-landmark-survey.js';
+import { EDE_SPORT_STAND_SITES } from './ede-sport-stand-sites.js';
 import { EDE_AMSTERDAMSEWEG_LANDMARKS } from './ede-amsterdamseweg-survey.js';
 import { EDE_NIJVERHEIDPLEIN_LANDMARKS } from './ede-nijverheidplein-survey.js';
 import { EDE_STATIONSWEG_LANDMARKS } from './ede-stationsweg-survey.js';
@@ -222,6 +223,7 @@ export const EDE_MODELED_LANDMARKS = [
   MARNIX_COLLEGE_SITE,
   ...EDE_SCHOOL_LANDMARKS,
   ...EDE_SPORT_LANDMARKS,
+  ...EDE_SPORT_STAND_SITES,
   ...EDE_AMSTERDAMSEWEG_LANDMARKS,
   ...EDE_NIJVERHEIDPLEIN_LANDMARKS,
   ...EDE_STATIONSWEG_LANDMARKS,
@@ -250,6 +252,9 @@ export const EDE_MODELED_LANDMARKS = [
   ...EDE_GINKEL_LANDMARKS,
   ...EDE_ZONNEOORD_LANDMARKS,
   ...EDE_SKYLINE_LANDMARKS,
+  { id: 'weerdestein-fox', name: 'Weerdestein · Fox mural', district: 'Veldhuizen', road: 'Weerdestein',
+    osmId: 'w271550192', bagIds: ['0228100000008042'], x: -1590.1, z: 156.8, height: 11.2, focusHeight: 5.8,
+    approach: { x: -1609, z: 151 }, worldSpace: true },
   ...EDE_CENTRE_SKYLINE_LANDMARKS,
   ...EDE_INDUSTRIAL_SKYLINE_LANDMARKS,
   ...EDE_MAST_SITES.filter(site => !site.north || EDE_DATA.meta.north),

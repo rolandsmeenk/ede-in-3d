@@ -26,17 +26,21 @@ class Instances extends Mesh {
   instanceMatrix = {};
   setMatrixAt() {}
 }
+class Color {
+  constructor(hex) { this.r = hex >> 16; this.g = (hex >> 8) & 255; this.b = hex & 255; }
+}
+const athleteKits = [];
 class Crowd {
   meshes = [];
-  begin() { this.count = 0; }
-  add() { this.count++; assert.ok(this.count <= 12); }
+  begin() { this.count = 0; athleteKits.length = 0; }
+  add(_rig, _distance, kit) { this.count++; assert.ok(this.count <= 12); athleteKits.push(kit); }
   end() {}
 }
 class Rig { update() {} solve() {} skate() {} }
 const { fitPlayableSport, scheduledSport, createEdeSportActivity } = loadModule(read('ede-sport-activity'), {
   imports: {
     'three/webgpu': {
-      Group: Object3D, Mesh, Vector3: Object3D, MeshStandardMaterial: Object3D,
+      Group: Object3D, Mesh, Vector3: Object3D, MeshStandardMaterial: Object3D, Color,
       InstancedMesh: Instances, BoxGeometry: Object3D, Object3D,
       TorusGeometry: Object3D, CylinderGeometry: Object3D, IcosahedronGeometry: Object3D,
     },
@@ -110,6 +114,42 @@ test('camera-local slots cap active venues and keep them through the exit margin
   assert.deepEqual(Array.from(sim.activeVenues), active);
   update(221);
   assert.equal(sim.activeVenues.length, 0);
+});
+
+test('club pitches dress home players together and use contrasting opposition colors', () => {
+  const dts = playable.find(([field]) => field.id === 'w618016978')[0];
+  const publicPitch = playable.find(([field]) => field.id === 'w1015673535')[0];
+  const day = { ...weekday, date: '2027-06-12', weekday: 6, minute: 840 };
+  const sim = createEdeSportActivity(new Object3D(), [dts, publicPitch]);
+
+  sim.update(1 / 60, dts, day);
+  assert.equal(athleteKits.length, 6);
+  const home = athleteKits[0], away = athleteKits[3];
+  assert.deepEqual(Array.from(home.slice(0, 7)), [37, 88, 166, 1, 244, 242, 232]);
+  assert.deepEqual(Array.from(away.slice(0, 4)), [231, 113, 37, 1]);
+  assert.deepEqual(athleteKits, [home, home, home, away, home, away]);
+
+  sim.update(1 / 60, dts, { ...day, weather: 'rain' });
+  assert.deepEqual(athleteKits, [home, home, home, away]);
+
+  const publicDay = [weekday, day].find(activity => scheduledSport(publicPitch, activity, {}, false));
+  assert.ok(publicDay);
+  sim.update(1 / 60, publicPitch, publicDay);
+  assert.ok(sim.athleteCount > 0);
+  assert.ok(athleteKits.every(kit => kit === undefined));
+});
+
+test('shared grounds update the home kit when the simulated date changes', () => {
+  const shared = playable.find(([field]) => field.id === 'w670236921')[0];
+  const sim = createEdeSportActivity(new Object3D(), [shared]);
+  const days = ['2027-06-12', '2027-06-13'].map((date, i) => ({ ...weekday, date, weekday: i === 0 ? 6 : 0, minute: 840 }));
+
+  const shirts = days.map(day => {
+    sim.update(1 / 60, shared, day);
+    assert.equal(sim.activeVenues[0], shared);
+    return Array.from(athleteKits[0].slice(0, 3)).join(',');
+  });
+  assert.deepEqual(shirts.sort(), ['197,47,56', '231,113,37']);
 });
 
 test('light rain reduces football and running attendance, while heavy rain empties the venue', () => {

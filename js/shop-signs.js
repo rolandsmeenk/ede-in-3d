@@ -112,7 +112,7 @@ function drawAtlas(labels) {
   return { tex, rows };
 }
 
-export function createShopSigns(buildings, buildingGrounds) {
+export function createShopSigns(buildings, buildingGrounds, hasCustomFront = () => false) {
   const rings = [];
   for (const b of buildings) {
     if (!b.ring || b.ring.length < 6 || b.part) continue;
@@ -129,16 +129,17 @@ export function createShopSigns(buildings, buildingGrounds) {
 
   // Reuse one atlas cell for identical text and colours, including repeated branches.
   const labels = new Map();
-  const sites = EDE_SHOPS.filter(([name]) => !CUSTOM_STOREFRONTS.has(name)).map(([name, x, z]) => {
-    const local = Object.hasOwn(LOCAL_SIGN_COLORS, name) ? LOCAL_SIGN_COLORS[name] : null;
-    const useLocal = local && Math.hypot(x - local[0], z - local[1]) < 20;
-    const [bg, fg] = useLocal ? local.slice(2)
-      : Object.hasOwn(BRANDS, name) ? BRANDS[name] : MUTED[hashName(name) % MUTED.length];
-    const key = `${name}/${bg}/${fg}`;
-    if (!labels.has(key)) labels.set(key, { name, bg, fg, count: 0 });
-    labels.get(key).count++;
-    return { name, x, z, key };
-  });
+  const sites = EDE_SHOPS.filter(([name, x, z]) => !CUSTOM_STOREFRONTS.has(name) && !hasCustomFront(name, x, z))
+    .map(([name, x, z]) => {
+      const local = Object.hasOwn(LOCAL_SIGN_COLORS, name) ? LOCAL_SIGN_COLORS[name] : null;
+      const useLocal = local && Math.hypot(x - local[0], z - local[1]) < 20;
+      const [bg, fg] = useLocal ? local.slice(2)
+        : Object.hasOwn(BRANDS, name) ? BRANDS[name] : MUTED[hashName(name) % MUTED.length];
+      const key = `${name}/${bg}/${fg}`;
+      if (!labels.has(key)) labels.set(key, { name, bg, fg, count: 0 });
+      labels.get(key).count++;
+      return { name, x, z, key };
+    });
   const keys = [...labels.keys()].sort((a, b) => labels.get(b).count - labels.get(a).count).slice(0, MAX_NAMES);
   if (!keys.length) return null;
   const cellOf = new Map(keys.map((key, i) => [key, i]));

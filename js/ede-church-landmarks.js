@@ -878,8 +878,13 @@ function windowBand(batch, wall, u, width, lo, hi, { columns = 2, rows = 3, tint
   rect(batch, wall, u, width + 0.14, lo - 0.06, hi + 0.065, border, depth);
   const cell = width / columns, rise = (hi - lo) / rows;
   for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) {
-    rect(batch, wall, u - width / 2 + (i + 0.5) * cell, cell - 0.036,
-      lo + j * rise + 0.018, lo + (j + 1) * rise - 0.018, tint[(i + j * 2) % tint.length], depth + 0.025, 1);
+    const left = u - width / 2 + i * cell, right = left + cell;
+    const bottom = lo + j * rise, top = bottom + rise;
+    const front = depth + 0.025;
+    batch.window(point(wall, right, bottom, front), point(wall, left, bottom, front),
+      point(wall, left, top, front), point(wall, right, top, front), {
+        color: tint[(i + j * 2) % tint.length], frame: border, border: [0.018, 0.018], sheen: 1,
+      });
   }
   rect(batch, wall, u, width + 0.24, lo - 0.115, lo - 0.035, trim, depth + 0.08);
 }
@@ -993,8 +998,11 @@ function church(name, survey, style, details) {
   mesh.geometry.setAttribute('churchMasonry', new THREE.Float32BufferAttribute(
     Float32Array.from({ length: position.count }, (_, i) => masonry[i] ?? 0), 1));
   masonryTexture ??= createFacadeSurfaceTexture().texture;
-  mesh.material.colorNode = vertexColor().mul(mix(1, texture(masonryTexture, uv()).r.mul(0.83).add(0.31),
-    attribute('churchMasonry', 'float')));
+  const tint = mesh.material.colorNode;
+  const masonryTint = mix(1, texture(masonryTexture, uv()).r.mul(0.83).add(0.31),
+    attribute('churchMasonry', 'float'));
+  // Window coverage materials supply their own vertex tint instead of using the automatic tint.
+  mesh.material.colorNode = (tint ? tint.mul(tint) : vertexColor()).mul(masonryTint);
   return group;
 }
 

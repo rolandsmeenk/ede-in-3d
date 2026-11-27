@@ -8,11 +8,6 @@ export const EDE_BELL_TOWERS = Object.freeze([
   { id: 'alexanderkerk-bennekom', name: 'Oude of Sint-Alexanderkerk', x: 333.31, z: 5339.9, belfryHeight: 19, pitch: 0.96, carillon: false, range: 500 },
 ]);
 
-export const EDE_SHEEPFOLDS = Object.freeze([
-  { id: 'schaapskooi-ginkelse-heide', x: 4337.48, z: 1071.32, range: 135 },
-  { id: 'schaapskooi-de-kreel', x: 3327, z: 75, range: 120 },
-]);
-
 export const EDE_WINDMILLS = Object.freeze([
   { id: 'concordiamolen', x: -390.65, z: -101.70, hubHeight: 16, range: 95 },
   { id: 'keetmolen', x: -77.55, z: 1808.7, hubHeight: 15, range: 95 },
@@ -21,34 +16,13 @@ export const EDE_WINDMILLS = Object.freeze([
   { id: 'walderveense-molen', x: -8098.45, z: -7414.7, hubHeight: 13, range: 95 },
 ]);
 
-// Traditional Dutch-style carillon voorslag motifs (semitones relative to C5).
+// Original simulation phrases in E-flat. The oscillator tuning is fitted to the Oude Kerk recording.
+const notes = sequence => sequence.map(([semitone, offset, gain = 0.87]) => ({ semitone, offset, gain }));
 export const CARILLON_MOTIFS = Object.freeze({
-  quarter: [
-    { semitone: 4, offset: 0.0, gain: 0.85 },
-    { semitone: 2, offset: 0.52, gain: 0.82 },
-    { semitone: 0, offset: 1.04, gain: 0.88 },
-    { semitone: -5, offset: 1.56, gain: 0.92 },
-  ],
-  half: [
-    { semitone: 0, offset: 0.0, gain: 0.84 },
-    { semitone: 4, offset: 0.50, gain: 0.86 },
-    { semitone: 2, offset: 1.00, gain: 0.84 },
-    { semitone: -5, offset: 1.50, gain: 0.90 },
-    { semitone: 0, offset: 2.35, gain: 0.86 },
-    { semitone: 2, offset: 2.85, gain: 0.88 },
-    { semitone: 4, offset: 3.35, gain: 0.92 },
-    { semitone: 0, offset: 3.85, gain: 0.96 },
-  ],
-  hour: [
-    { semitone: 7, offset: 0.0, gain: 0.88 },
-    { semitone: 4, offset: 0.48, gain: 0.84 },
-    { semitone: 5, offset: 0.96, gain: 0.86 },
-    { semitone: 2, offset: 1.44, gain: 0.84 },
-    { semitone: 4, offset: 2.18, gain: 0.88 },
-    { semitone: 2, offset: 2.66, gain: 0.85 },
-    { semitone: 0, offset: 3.14, gain: 0.90 },
-    { semitone: -5, offset: 3.62, gain: 0.95 },
-  ],
+  quarter: notes([[0, 0], [5, 0.46], [7, 0.94], [12, 1.52, 0.9]]),
+  half: notes([[12, 0], [7, 0.46], [5, 0.92], [0, 1.48], [3, 2.26], [5, 2.66], [7, 3.10], [0, 3.7, 0.96]]),
+  hour: notes([[12, 0], [10, 0.43], [7, 0.88], [5, 1.46], [3, 2.12], [7, 2.54],
+    [5, 2.98], [-5, 3.68, 0.46], [0, 3.68, 0.95]]),
 });
 
 // Dutch municipal bell quiet hours: silent between 23:00 and 07:00 local time.
@@ -91,16 +65,14 @@ export function createBellScheduler(towers = EDE_BELL_TOWERS) {
     reset() {
       lastSlot = null;
     },
-    poll(epochSeconds, listener, terrainHeightAt) {
+    poll(epochSeconds, listener, terrainHeightAt, preview = false) {
       const clock = localClock(epochSeconds);
       const slot = Math.floor(clock.seconds / 900);
-      const slotKey = `${clock.date}:${slot}`;
-      if (lastSlot === null) {
-        lastSlot = slotKey;
-        return [];
-      }
+      const slotKey = preview ? `preview:${epochSeconds}` : `live:${clock.date}:${slot}`;
       if (slotKey === lastSlot) return [];
+      const enteringLive = !preview && (lastSlot === null || lastSlot.startsWith('preview:'));
       lastSlot = slotKey;
+      if (enteringLive || (preview && clock.seconds % 900 >= 60)) return [];
 
       const hour = Math.floor(clock.seconds / 3600) % 24;
       if (isBellQuietHour(hour)) return [];

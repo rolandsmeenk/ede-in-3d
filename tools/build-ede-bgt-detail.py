@@ -88,6 +88,10 @@ STATION_FRONT = (-25, 2065, 245, 2190)
 # The south-entrance illustration shows a tower attachment and slim front columns.
 # These fitted pads approximate the supports within the mapped roof overhangs.
 STATION_SUPPORT_PADS = {'G0228.4a117f153d1842c2a12559eca57dc532': ((185, 2153), (198, 2158), (222, 2161))}
+PLANTING_TYPES = {
+    'heesters': 'shrub', 'struiken': 'shrub', 'struikrozen': 'shrub', 'bosplantsoen': 'shrub',
+    'planten': 'groundCover', 'bodembedekkers': 'groundCover', 'gras- en kruidachtigen': 'groundCover',
+}
 LAND_CLASSES = {'woodland': 1, 'heath': 2, 'grass': 3, 'plantingBed': 4, 'courtyard': 5}
 WALK_PATHS = {'footway', 'cycleway', 'path', 'pedestrian', 'steps', 'bridleway', 'track'}
 GATE_TAGS = 'gate|lift_gate|swing_gate|kissing_gate|entrance|cycle_barrier'
@@ -210,6 +214,11 @@ def read_records(directory, sites, day, town=False):
             yield collection, identity, feature
 
 
+def planting_type(properties):
+    return next((properties[key] for key in ('plus_fysiek_voorkomen', 'fysiek_voorkomen')
+                 if properties.get(key) in PLANTING_TYPES), None)
+
+
 def classify(collection, prop):
     tag = prop.get('plus_type') or prop.get('type')
     if collection.startswith('vegetatieobject') and tag == 'haag':
@@ -227,11 +236,7 @@ def classify(collection, prop):
     if collection == 'paal' and tag in {'afsluitpaal', 'poller'}:
         return 'bollard'
     if collection == 'begroeidterreindeel':
-        detail = prop.get('plus_fysiek_voorkomen') or prop.get('fysiek_voorkomen')
-        if detail in {'heesters', 'struiken'}:
-            return 'shrub'
-        if detail in {'planten', 'bodembedekkers', 'gras- en kruidachtigen'}:
-            return 'groundCover'
+        return PLANTING_TYPES.get(planting_type(prop))
     if collection == 'ondersteunendwaterdeel' or collection == 'waterdeel' and tag != 'greppel, droge sloot':
         return 'waterEdge'
     return None
@@ -384,12 +389,15 @@ def line_coordinates(line):
     return [p for i, p in enumerate(points) if i == 0 or p != points[i-1]]
 
 
-def points_on_planting(geometry, kind, avoidance, trees):
-    spacing, maximum = (2.2, 6) if kind == 'shrub' else (3.6, 3)
+def points_on_planting(geometry, category, avoidance, trees):
+    shrub = PLANTING_TYPES[category] == 'shrub'
+    spacing, maximum = (2.2, 6) if shrub else (3.6, 3)
+    if category == 'bosplantsoen':
+        spacing, maximum = 4.4, 3
     for polygon in parts(geometry.difference(avoidance), 'Polygon'):
-        if polygon.area < (.6 if kind == 'shrub' else 1.2):
+        if polygon.area < (.6 if shrub else 1.2):
             continue
-        usable = polygon.buffer(-(.22 if kind == 'shrub' else .12))
+        usable = polygon.buffer(-(.22 if shrub else .12))
         if usable.is_empty:
             continue
         x0, z0, x1, z1 = usable.bounds
@@ -716,7 +724,7 @@ def land_class(collection, properties):
             return 'heath'
         if tag in {'grasland agrarisch', 'grasland overig', 'gras- en kruidachtigen'}:
             return 'grass'
-        if tag in {'heesters', 'struiken', 'planten', 'bodembedekkers'}:
+        if tag in PLANTING_TYPES:
             return 'plantingBed'
     return None
 
@@ -852,7 +860,9 @@ def bake(directory, sites, scene, day, town=False, boundary=None, exterior=False
         elif kind in {'groundCover', 'shrub'}:
             water = BGT['nearby_union'](water_tree, geometry, .15)
             avoidance = union_all([route_clear.buffer(.45), old_assets.buffer(.3), water.buffer(.15)], grid_size=.01)
-            placement = list(points_on_planting(geometry, kind, avoidance, trees))
+            category = planting_type(prop)
+            placement = [{**point, 'plantingType': category}
+                         for point in points_on_planting(geometry, category, avoidance, trees)]
         elif kind in {'gutter', 'drain'}:
             placement = list(linear_detail(geometry, kind))
         elif kind in {'canopy', 'landing', 'steps'}:

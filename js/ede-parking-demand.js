@@ -171,6 +171,7 @@ export class ParkingDemand {
     this.overrides = new Map();
     this.pending = new Map();
     this.activity = null;
+    this.closedArea = null;
     for (const facility of facilities) {
       const areaId = facility.areaId ?? facility.id;
       const zone = this.zones.get(areaId);
@@ -259,7 +260,7 @@ export class ParkingDemand {
     const rules = area.facility?.rules ?? area.rules;
     if (rules?.open24h) profile.open = true;
     const reading = this.readings.get(area.facility?.id);
-    if (isClosed(area, context.time)) {
+    if (area.id === this.closedArea || isClosed(area, context.time)) {
       profile = {fraction: 0, source: 'closed', survey: null, open: false};
     } else if (reading && context.now >= reading.observedAt) {
       const exact = reading.occupied / reading.capacity;
@@ -311,8 +312,9 @@ export class ParkingDemand {
     return slot ? this.spaceState(slot, this.context(now)) : null;
   }
 
-  refresh({x, z, radius, now = Date.now(), limit = 12, canManeuver, activity = null}) {
+  refresh({x, z, radius, now = Date.now(), limit = 12, canManeuver, activity = null, closedArea = null}) {
     this.activity = activity;
+    this.closedArea = closedArea;
     const context = this.context(now);
     const states = [];
     const arrivals = [];

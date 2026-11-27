@@ -91,6 +91,25 @@ function splitRing(ring) {
   return points;
 }
 
+function renderedPlatformHeight(geometry, fallback) {
+  const positions = geometry.attributes.position.array, indices = geometry.index.array;
+  return (x, z) => {
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i] * 3, b = indices[i + 1] * 3, c = indices[i + 2] * 3;
+      const ax = positions[a], az = positions[a + 2];
+      const bx = positions[b] - ax, bz = positions[b + 2] - az, cx = positions[c] - ax, cz = positions[c + 2] - az;
+      const determinant = bx * cz - bz * cx;
+      if (Math.abs(determinant) < 1e-8) continue;
+      const dx = x - ax, dz = z - az;
+      const v = (dx * cz - dz * cx) / determinant, w = (bx * dz - bz * dx) / determinant;
+      if (v >= -0.00001 && w >= -0.00001 && v + w <= 1.00001) {
+        return (1 - v - w) * positions[a + 1] + v * positions[b + 1] + w * positions[c + 1];
+      }
+    }
+    return fallback(x, z);
+  };
+}
+
 async function loadBridgeMaterials() {
   const response = await fetch(new URL('../assets/ede-bridge-materials.json', import.meta.url));
   if (!response.ok) throw new Error(`IMWA bridge material request failed: ${response.status}`);
@@ -202,7 +221,8 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
     collect(kind, geometry, midpoint.x, midpoint.z, target);
   }
 
-  function slab(kind, rings, surface, base, { solid = true, underside = false, side = kind, undersideMaterial = kind, localHeight = false } = {}) {
+  function slab(kind, rings, surface, base, { solid = true, underside = false, side = kind, undersideMaterial = kind,
+    localHeight = false, topGeometry } = {}) {
     const [outer, ...holes] = rings;
     const edges = rings.map(splitRing);
     function cap(material, height, flipped) {
@@ -217,6 +237,7 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
       }
       const position = geometry.getAttribute('position');
       for (let i = 0; i < position.count; i++) position.setY(i, height(position.getX(i), position.getZ(i)));
+      if (!flipped) topGeometry?.(geometry);
       const { x, z } = outer[0];
       collect(material, geometry, x, z);
     }
@@ -402,12 +423,14 @@ export async function buildEdeBgtWorld(scene, gradeSurfaceAt = () => undefined) 
           const deck = layer > 0 ? gradeSurfaceAt(px, pz, 'deck') : undefined;
           return Number.isFinite(deck) ? deck + 0.28 : terrainHeightAt(px, pz) + 0.78;
         };
-        platforms.push({ id: ids[0], outer, holes, height: surface });
+        const platform = { id: ids[0], outer, holes, height: surface };
+        platforms.push(platform);
+        const topGeometry = geometry => { platform.renderedHeight = renderedPlatformHeight(geometry, surface); };
         if (layer > 0) {
           slab(kind, form, surface, (px, pz) => surface(px, pz) - 0.24,
-            { side: 'platformEdge', underside: true, localHeight: true });
+            { side: 'platformEdge', underside: true, localHeight: true, topGeometry });
         } else {
-          slab(kind, form, surface, belowGround, { solid: false, side: 'platformEdge' });
+          slab(kind, form, surface, belowGround, { solid: false, side: 'platformEdge', topGeometry });
           const top = Math.min(...outer.map(p => surface(p.x, p.z))) - 0.08;
           if (top > ground + 0.1) addCollider(outer, holes, ground - 0.25, top, kind);
         }

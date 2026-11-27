@@ -56,3 +56,16 @@ uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 \
 uv run --offline --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 \
   python -B tools/build-ede-utility-detail.py /tmp/ede-utility-review --date 2026-11-21
 ```
+
+## Liander cabinet review
+
+On 27 November 2026, the Liander low-voltage station layer returned 171 points classified as `Kast` within GM0228. Two station points matched existing BGT electrical cabinets within 12 m. The remaining 169 points were checked in 2026 aerial crops. Six new locations showed distinct cabinet-sized rectangles in both 2025 and 2026. Current ground-level BGT polygons confirm the grass verges, shrub bed or paved apron at the photographed footprints. The dated site review records each ground feature and both imagery layers. The selected points are within 0.6 m of their Liander source positions. [Liander electrical data, CC BY 4.0](https://www.arcgis.com/home/item.html?id=11b7bcf1b78b4462b91db0dff234cf78) · [PDOK BGT](https://api.pdok.nl/kadaster/bgt/ogc/v1/collections) · [Beeldmateriaal and PDOK imagery, CC BY 4.0](https://www.pdok.nl/ogc-webservices/-/article/pdok-luchtfoto-rgb-open-) · [Site review](ede-liander-cabinets.review.json)
+
+The game uses the fitted footprint and orientation with its standard cabinet height. The clearance check includes mapped traffic, paths, boarding areas, buildings, water, the existing cabinets and custom painted cabinets. The utility asset now holds 83 houses and 28 cabinets. The six additions have BGT ground identifiers and Liander cabinet identifiers. [Placement audit](ede-utility-detail.audit.json)
+
+Replay the cabinet review against the existing utility asset and audit. This command uses the municipal boundary and the checked-in review.
+
+```sh
+uv run --python 3.12 --with 'shapely>=2.1' --with pyproj==3.8.0 \
+  python -B tools/build-ede-utility-detail.py /tmp/ede-liander-cabinets --reviewed-cabinets-only
+```

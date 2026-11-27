@@ -279,16 +279,17 @@ class CityAudioSources {
       for (let i = 0; i < list.length; i++) {
         const crossing = list[i];
         if (crossing.phase !== 'warning' && crossing.phase !== 'closing' && crossing.phase !== 'closed') continue;
-        const d2 = this.distanceSq(crossing.x, crossing.y, crossing.z);
-        if (!Number.isFinite(d2) || d2 > CROSSING_RANGE * CROSSING_RANGE) continue;
-        const item = this.crossings.take(d2);
-        if (!item) continue;
-        item.id = crossing;
-        item.x = crossing.x;
-        item.y = crossing.y;
-        item.z = crossing.z;
-        item.phase = crossing.phase;
-        item.seed = seedAt(12000 + i);
+        for (const [index, bell] of crossing.bells.entries()) {
+          const d2 = this.distanceSq(bell.x, bell.y, bell.z);
+          if (!Number.isFinite(d2) || d2 > CROSSING_RANGE * CROSSING_RANGE) continue;
+          const item = this.crossings.take(d2);
+          if (!item) continue;
+          item.id = bell;
+          item.x = bell.x;
+          item.y = bell.y;
+          item.z = bell.z;
+          item.seed = seedAt(12000 + i * 8 + index);
+        }
       }
     }
 

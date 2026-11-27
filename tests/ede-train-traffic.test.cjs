@@ -135,3 +135,46 @@ test('a matching overnight service keeps its service date and unknown GPS retire
   traffic.prepare(at + 10);
   assert.equal(traffic.plans.filter(plan => plan.fix?.number === '99999999').length, 0);
 });
+
+test('Valleilijn departure board follows the next timetable services, delay, platform and cancellation', async () => {
+  const { traffic, serviceEpoch } = await setup();
+  const rr = localTrips.filter(trip => trip.operator === 'RRReis' && trip.stops[0].station === wag)
+    .sort((a, b) => a.stops[0].departure - b.stops[0].departure)[0];
+  const stop = rr.stops[0], scheduled = serviceEpoch(date) + stop.departure, at = scheduled - 50;
+  traffic.prepare(at);
+  assert.equal(traffic.nextValleilijnDepartures(at)[0].departure, scheduled);
+  const record = { operator: rr.operator, number: rr.number, serviceDate: date, timestamp: at,
+    stops: [{ sequence: stop.sequence, departure: scheduled + 180, platform: '1b' }] };
+  traffic.acceptSnapshot({ version: 1, updates: [record] }, at);
+  const changed = traffic.nextValleilijnDepartures(at).find(row => row.scheduled === scheduled);
+  assert.deepEqual(changed, { scheduled, departure: scheduled + 180, platform: '1b', live: true });
+  traffic.acceptSnapshot({ version: 1, updates: [{ ...record, timestamp: at + 1, cancelled: true }] }, at + 1);
+  assert.ok(traffic.nextValleilijnDepartures(at + 1).every(row => row.scheduled !== scheduled));
+});
+
+test('Ede Centrum cues play in order from the stopping consist, once per phase', async () => {
+  const { createValleilijnArrivalSounds } = await import('../js/ede-valleilijn-arrival.js');
+  const { traffic, serviceEpoch, key, current } = await setup();
+  const rr = localTrips.find(trip => trip.operator === 'RRReis' && trip.direction === 1);
+  const arrival = serviceEpoch(date) + findStop(rr, centrum).arrival;
+  traffic.prepare(arrival - 65);
+  const plan = current(rr, arrival);
+  const stop = plan.path.stops[centrum];
+  const { x, y, z } = plan.path.sample(stop.distance);
+  const audible = { x: x + 4, y: y + 1.55, z: z + 5 };
+  const poll = createValleilijnArrivalSounds();
+  const events = [];
+  for (let elapsed = -65; elapsed < 70; elapsed += 0.25) {
+    const at = arrival + elapsed;
+    traffic.advance(0.25, at);
+    const train = traffic.progress.get(key(rr));
+    if (!train) continue;
+    poll([train], at, { ...audible, x: x + 300 }, () => assert.fail('Arrival cues leaked away from Ede Centrum'));
+    poll([train], at, audible, (kind, source) => {
+      assert.ok(Number.isFinite(source.x) && Number.isFinite(source.y) && Number.isFinite(source.z));
+      events.push(kind);
+      return true;
+    });
+  }
+  assert.deepEqual(events, ['trainApproach', 'trainBrake', 'trainDoors', 'trainDeparture']);
+});

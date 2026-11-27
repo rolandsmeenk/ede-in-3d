@@ -10,7 +10,8 @@ const mapImports = {
   './nyc-geodata.js': { GEO: {} }, './city-config.js': {
     ROADS: [], ISLAND_BOUNDS, WATERFRONT_PIERS: [], EAST_RIVER_BRIDGES: [], OUTER_BRIDGES: []
   },
-  './ede-coverage.js': { edeCoverage: null }
+  './ede-coverage.js': { edeCoverage: null },
+  './ede-recreation-route-data.js': loadModule(readFileSync(join(__dirname, '../js/ede-recreation-route-data.js'), 'utf8'))
 };
 
 test('surveyed building courtyards remain holes in the map footprint layer', () => {

@@ -104,6 +104,32 @@ test('follow cameras clear higher ground at the camera position, including durin
   close(camera.currentPos.y, 30.55);
 });
 
+test('binoculars only raise on foot and keep their aim while walking', () => {
+  const h = cameraHarness();
+  assert.equal(h.camera.setCameraPreset('binoculars', true), false);
+  assert.equal(h.camera.activePresetId, 'chase');
+
+  h.entity.type = 'person';
+  h.entity.speed = 1.5;
+  assert.equal(h.camera.setCameraPreset('binoculars', true), true);
+  assert.equal(h.camera.getActivePreset().name, 'Binoculars');
+  assert.equal(h.camera.camera.fov, 16);
+  h.pointer(h.canvas, 'pointerdown', 1, 20);
+  h.pointer(h.canvas, 'pointermove', 1, 120);
+  h.pointer(h.canvas, 'pointerup', 1, 120);
+  const aim = h.camera.orbitYawOffset;
+  h.camera.update(5, 5);
+  close(h.camera.orbitYawOffset, aim);
+  close(h.camera.currentPos.y, 1.68);
+
+  const movingAim = h.camera.currentLookAt.x;
+  h.entity.speed = 0;
+  h.camera.update(1 / 60, 5);
+  assert.notEqual(h.camera.currentLookAt.x, movingAim);
+  h.camera.setCameraPreset('chase', true);
+  assert.equal(h.camera.camera.fov, 56);
+});
+
 test('scenic camera and target offsets are relative to their own ground elevations', () => {
   const terrainHeightAt = (x, z) => 20 + x * 0.025 + z * 0.05;
   const { camera } = cameraHarness(undefined, terrainHeightAt);

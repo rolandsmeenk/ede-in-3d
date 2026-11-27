@@ -20,6 +20,7 @@ import { buildEdeBikeParkingSites } from './ede-bike-parking-sites.js';
 import { bikeStyleFor, createBikeParkingState, renderBikeParking } from './ede-bike-parking.js';
 import { createEdeTrips } from './ede-trips.js';
 import { edeActivity } from './ede-activity.js';
+import { edeMarketParkingArea } from './ede-market-schedule.js';
 import { hogeVeluweBikeActivity, hogeVeluweBikeReturns, useWhiteBike, whiteBikeOriginWeight, whiteBikeTrack, whiteBikePath } from './ede-white-bike-traffic.js';
 import { createEdeDrivingControls } from './ede-driving-controls.js';
 import { CAR, VAN, BUS, BICYCLE } from './road-access.js?v=20261122-startup';
@@ -341,7 +342,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     };
   }
   const bodyMeshes = Object.values(bodies).flatMap((b) => [b.near, b.far]);
-  let parking;
+  let parking, marketParkingArea;
   if (parkingData) {
     try {
       parking=createEdeParking(group,bodies.sedan.far,fleetStyles.sedan,network,parkingData,edge=>roadTraffic.isClosed(edge));
@@ -2399,7 +2400,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     const trip=v.parkingTrip, incoming=trip.token.kind==='arrival';
     const path=incoming?trip.link.arrival:trip.link.departure;
     const finish=incoming?trip.link.entrance:trip.link.exit;
-    if (clock>=trip.expires || (!incoming && roadTraffic.isClosed(finish.edge))) {
+    if (clock>=trip.expires || trip.token.areaId===marketParkingArea || (!incoming && roadTraffic.isClosed(finish.edge))) {
       parking.cancel(v,clock);
       v.edge=null;
       return;
@@ -3294,6 +3295,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     if (activity !== activitySnapshot) {
       activitySnapshot = activity;
       ambient = pilot.enabled ? edeActivity(activity) : null;
+      marketParkingArea = edeMarketParkingArea(activity);
       parkBikeActivity = hogeVeluweBikeActivity(activity);
       parkBikeReturns = hogeVeluweBikeReturns(activity);
       nextDemandCheck = 0;
@@ -3331,7 +3333,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections, b
     player.halfL = activeMode === 'cargobike' ? 1.34 : activeMode === 'cyclist' ? 0.85 : activeMode === 'person' ? 0.32 : 2.18;
 
     // Departures consume the same free car slots as normal replenishment.
-    parking?.tick(focusX,focusZ,clock,jump,ambient);
+    parking?.tick(focusX,focusZ,clock,jump,ambient,marketParkingArea);
     populate(cars, carPopulation, carTarget, spawnCar, 100, jump);
     for (const { mesh, pool, population, target } of cargoFleets) {
       populate(pool, population, target, spawnVehicle, 100, jump);

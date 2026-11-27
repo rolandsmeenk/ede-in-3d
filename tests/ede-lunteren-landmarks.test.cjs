@@ -80,6 +80,13 @@ test('Lunteren models are grounded, batched, and replace only the surveyed footp
       for (const pole of poles) assert.ok(Math.abs(pole.minY - platform.slope[0][2]) < 0.06);
     }
     if (site.id === 'middelpunt-van-nederland') {
+      const rock = model.getObjectByName('Middelpunt inscription boulder');
+      const rockBounds = new three.Box3().setFromObject(rock);
+      const [rx, rz] = survey.LUNTEREN_STRUCTURES.middelpuntStone;
+      const ground = terrain.terrainHeightAt(rx, rz);
+      assert.ok(rock.geometry.index && rock.geometry.attributes.uv);
+      assert.ok(rockBounds.min.y < ground && rockBounds.min.y > ground - 0.06);
+      assert.ok(model.userData.colliders.some(collider => hits(collider, rx, ground + 0.7, rz)));
       assert.equal(model.userData.platforms.length, 6);
       for (const platform of model.userData.platforms) {
         for (const { x, z } of platform.outer) {

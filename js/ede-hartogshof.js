@@ -1,5 +1,5 @@
 import { attribute, mix, normalWorld, positionWorld, texture, vec2, vertexColor } from 'three/tsl';
-import { CivicBatch, facePanel, makeGroup, wallColliders, addLandmarkLod } from './ede-civic-landmarks.js';
+import { CivicBatch, facePanel, faceWindow, makeGroup, wallColliders, addLandmarkLod } from './ede-civic-landmarks.js';
 import { createFacadeSurfaceTexture } from './ede-facade-material.js';
 import { HARTOGSHOF_COS, HARTOGSHOF_FOOTPRINTS, HARTOGSHOF_SIN, HARTOGSHOF_WINGS, hartogshofPoint } from './ede-hartogshof-survey.js';
 import { terrainHeightAt } from './terrain.js';
@@ -84,15 +84,14 @@ function wallBatch(shell, trim, a, b, width, normal, from, top, y0, levels, styl
         panel(lo, hi, bottom, ceiling, brick);
       }
       const glazingPlane = inset ? -inset : 0.024;
-      panel(s, e, sill, head, FRAME, glazingPlane);
-      panel(s + 0.055, e - 0.055, sill + 0.055, head - 0.055, GLAZING[(i + row * 3) % GLAZING.length], glazingPlane + 0.015, 0.78);
+      faceWindow(shell, a, b, normal, s / width, e / width, sill, head, {
+        color: GLAZING[(i + row * 3) % GLAZING.length], frame: FRAME,
+        columns: 2, border: [0.055, 0.055], mullions: [0.058, 0], sheen: 0.78,
+      }, glazingPlane + 0.015);
       if (loggia) {
         panel(s, e, sill + 0.12, sill + 0.92, 0x6f7c76, -0.06, 0.53);
         panel(s, e, sill + 0.91, sill + 0.96, FRAME, -0.05);
       }
-      const center = (s + e) / (2 * width);
-      facePanel(trim, a, b, normal, center - 0.029 / width, center + 0.029 / width,
-        sill, head, FRAME, glazingPlane + 0.026);
     }
   }
   if (style === 'penthouse') {
@@ -233,7 +232,9 @@ export function createHartogshof(footprints = HARTOGSHOF_FOOTPRINTS) {
   const alongWall = positionWorld.x.mul(normalWorld.z).sub(positionWorld.z.mul(normalWorld.x));
   const brick = texture(masonryTexture, vec2(alongWall.div(1.04), positionWorld.y.div(0.64))).r;
   const masonry = normalWorld.y.abs().lessThan(0.25).and(attribute('civicGloss', 'float').lessThan(0.1));
-  group.children[0].material.colorNode = vertexColor().mul(mix(1, brick.mul(0.22).add(0.80), masonry.toFloat()));
+  const material = group.children[0].material;
+  const tint = material.colorNode;
+  material.colorNode = (tint ? tint.mul(tint) : vertexColor()).mul(mix(1, brick.mul(0.22).add(0.80), masonry.toFloat()));
 
   const details = trim.mesh();
   details.castShadow = false;

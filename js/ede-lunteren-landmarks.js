@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { CivicBatch, along, civicSigns, makeGroup, polygonNormal, wallColliders } from './ede-civic-landmarks.js';
+import { CivicBatch, along, makeGroup, polygonNormal, wallColliders } from './ede-civic-landmarks.js';
 import { createSurveyLandmark, surveyLabel, surveyOpeningFits, surveyPanel, surveyWindow } from './ede-survey-landmark.js';
 import { LUNTEREN_STRUCTURES as structures, LUNTEREN_SURVEYS as surveys } from './ede-lunteren-survey.js';
 import { EDE_NORTH_RAIL } from './ede-north-rail-data.js';
@@ -573,6 +573,112 @@ function ironAgeFarm(_, site) {
   return group;
 }
 
+function middelpuntStoneTexture() {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  const width = canvas.width = 1024, height = canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(width, height);
+  const hash = (x, y) => {
+    const bits = Math.imul(x + 71, 374761393) ^ Math.imul(y + 29, 668265263);
+    return (Math.imul(bits ^ (bits >>> 13), 1274126177) >>> 0) / 4294967296;
+  };
+  const fade = t => t * t * (3 - 2 * t);
+  const noise = (x, y, size) => {
+    const ix = Math.floor(x / size), iy = Math.floor(y / size);
+    const next = (ix + 1) % (width / size);
+    const fx = fade((x % size) / size), fy = fade((y % size) / size);
+    const top = THREE.MathUtils.lerp(hash(ix, iy), hash(next, iy), fx);
+    const bottom = THREE.MathUtils.lerp(hash(ix, iy + 1), hash(next, iy + 1), fx);
+    return THREE.MathUtils.lerp(top, bottom, fy);
+  };
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const coarse = noise(x, y, 64) - 0.5;
+    const mineral = noise(x, y, 16) - 0.5;
+    const grain = noise(x, y, 4) - 0.5;
+    const shade = 127 + 28 * coarse + 26 * mineral + 34 * grain + 29 * (hash(x, y) - 0.5);
+    const i = (y * width + x) * 4;
+    image.data[i] = shade + 5;
+    image.data[i + 1] = shade + 3;
+    image.data[i + 2] = shade - 5;
+    image.data[i + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+
+  // The front of the rounded stone is at u = 1/4.
+  ctx.translate(width / 4, 0);
+  ctx.lineCap = 'round';
+  const fissures = [
+    [12, [[-91, 405], [-77, 380], [-61, 363], [-54, 346], [-38, 325], [-30, 303]]],
+    [8, [[-53, 427], [-43, 402], [-26, 380], [-19, 356], [-7, 336]]],
+    [7, [[59, 303], [54, 330], [58, 349], [50, 365], [47, 389]]],
+    [6, [[-86, 164], [-68, 154], [-52, 152], [-41, 142]]],
+  ];
+  for (const [width, points] of fissures) {
+    ctx.beginPath();
+    ctx.moveTo(...points[0]);
+    for (const [x, y] of points.slice(1)) ctx.lineTo(x, y);
+    ctx.filter = 'blur(2px)';
+    ctx.strokeStyle = '#514e4370';
+    ctx.lineWidth = width;
+    ctx.stroke();
+    ctx.filter = 'blur(0.55px)';
+    ctx.strokeStyle = '#514d438c';
+    ctx.lineWidth = Math.max(1, width * 0.20);
+    ctx.stroke();
+  }
+  ctx.filter = 'none';
+  ctx.font = '30px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const [text, y, maxWidth] of [['MIDDELPUNT', 147, 137], ['VAN', 183, 42], ['NEDERLAND', 222, 131]]) {
+    ctx.fillStyle = '#e4dfca94';
+    ctx.fillText(text, 0, y + 1.7, maxWidth);
+    ctx.fillStyle = '#3b382fe0';
+    ctx.fillText(text, 0, y, maxWidth);
+  }
+
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 4;
+  return map;
+}
+
+function middelpuntBoulder(x, y, z, facing) {
+  const geometry = new THREE.SphereGeometry(1, 80, 48);
+  const vertices = geometry.attributes.position;
+  const uv = geometry.attributes.uv;
+  const rounded = value => Math.sign(value) * Math.abs(value) ** 0.77;
+  for (let i = 0; i < vertices.count; i++) {
+    const nx = vertices.getX(i), ny = vertices.getY(i), nz = vertices.getZ(i);
+    const height = (ny + 1) * 0.5;
+    const circle = Math.hypot(nx, nz) || 1;
+    const relief = 0.024 * Math.sin(8 * nx + 2 * ny) * Math.cos(7 * nz - 3 * ny)
+      + 0.013 * Math.sin(16 * nx + 11 * ny + 3 * nz);
+    const radius = Math.max(0, 1 - ny * ny) ** 0.36 * (1 + relief);
+    const side = (0.74 - 0.12 * height) * radius * rounded(nx / circle)
+      + 0.23 * height * height - 0.065 * (1 - height);
+    const depth = (0.54 - 0.055 * height) * radius * rounded(nz / circle);
+    const rise = Math.max(-0.035, 0.61 + ny * 0.65 + 0.019 * nx + 0.018 * Math.sin(10 * nx + 4 * nz));
+    vertices.setXYZ(i, side, rise, depth);
+    const u = uv.getX(i);
+    const frontEdge = THREE.MathUtils.smoothstep(Math.abs(u - 0.25), 0.12, 0.23);
+    const frontU = 0.25 + (side - 0.08) / 4.4;
+    uv.setXY(i, THREE.MathUtils.lerp(frontU, u, frontEdge), (rise + 0.04) / 1.34);
+  }
+  geometry.computeVertexNormals();
+  const map = middelpuntStoneTexture();
+  const material = new THREE.MeshStandardNodeMaterial({
+    color: map ? 0xffffff : 0x928f82, map, bumpMap: map, bumpScale: 0.019, roughness: 0.94,
+  });
+  const rock = new THREE.Mesh(geometry, material);
+  rock.name = 'Middelpunt inscription boulder';
+  rock.position.set(x, y, z);
+  rock.rotation.y = facing;
+  rock.castShadow = rock.receiveShadow = true;
+  return rock;
+}
+
 function middelpunt(_, site) {
   const shape = new CivicBatch(), colliders = [], platforms = [];
   const [cx, cz] = structures.middelpuntRing;
@@ -626,21 +732,7 @@ function middelpunt(_, site) {
   const [sx, sz] = structures.middelpuntStone;
   const stoneY = terrainHeightAt(sx, sz);
   const facing = Math.atan2(site.approach.x - sx, site.approach.z - sz);
-  const engraved = (u, y, depth) => [sx + Math.cos(facing) * u + Math.sin(facing) * depth, stoneY + y,
-    sz - Math.sin(facing) * u + Math.cos(facing) * depth];
-  const profile = [[-0.94, 0.12], [-0.89, 0.63], [-0.58, 0.98], [-0.08, 1.19],
-    [0.47, 1.12], [0.83, 0.84], [1.02, 0.42], [0.83, 0.04], [0.41, -0.12], [-0.58, -0.08]];
-  const rim = profile.map(([x, y]) => engraved(x, y, 0.06));
-  const face = profile.map(([x, y]) => engraved(x * 0.81, y * 0.87 + 0.038, 0.56));
-  const back = profile.map(([x, y]) => engraved(x * 0.72, y * 0.90 + 0.035, -0.57));
-  shape.polygon([[...face].reverse()], 0x928778);
-  shape.polygon([back], 0x7b746a);
-  for (let i = 0; i < profile.length; i++) {
-    const next = (i + 1) % profile.length;
-    shape.quad(face[i], face[next], rim[next], rim[i], i < 5 ? 0x9f9281 : 0x83796d);
-    shape.quad(rim[i], rim[next], back[next], back[i], i < 5 ? 0x887d71 : 0x7e7767);
-  }
-  colliders.push(outlineCollider(horizontalRing(sx, sz, 0.81, 8), stoneY, stoneY + 1.19));
+  colliders.push(outlineCollider(horizontalRing(sx, sz, 0.74, 12), stoneY, stoneY + 1.26));
 
   for (const [[x, z], width, height, depth, color] of [
     [structures.middelpuntBoulders[0], 1.55, 0.88, 1.25, 0x77756a],
@@ -672,20 +764,7 @@ function middelpunt(_, site) {
 
   const group = makeGroup(site.name, shape, colliders);
   group.userData.platforms = platforms;
-  const sign = civicSigns([
-    ['MIDDELPUNT', 1.04, 0.71, 0.81],
-    ['VAN', 0.31, 0.59, 0.68],
-    ['NEDERLAND', 1.02, 0.45, 0.55],
-  ].map(([text, width, lo, hi]) => {
-    const [ax, , az] = engraved(width / 2, lo, 0.562), [bx, , bz] = engraved(-width / 2, lo, 0.562);
-    return { text, a: { x: ax, z: az }, b: { x: bx, z: bz },
-      lo: stoneY + lo, hi: stoneY + hi, color: 'transparent', textColor: '#40372e' };
-  }), { wide: true });
-  if (sign) {
-    sign.material.alphaTest = 0.45;
-    sign.userData.nearDetail = 30;
-    group.add(sign);
-  }
+  group.add(middelpuntBoulder(sx, stoneY, sz, facing));
   return group;
 }
 

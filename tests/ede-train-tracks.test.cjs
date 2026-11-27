@@ -214,6 +214,44 @@ test('the whole rail network stays continuous and the Valleilijn mesh follows th
   geometry.dispose();
 });
 
+test('rail ballast follows mapped edges and holes with sloped toes clear of pavement', async () => {
+  const { loadModule } = require('./helpers/module.cjs');
+  const THREE = await import('../vendor/three/build/three.webgpu.js');
+  const gradeAPI = await import('../js/ede-grade.js');
+  const source = await readFile(path.join(__dirname, '../js/ede-rail-ballast.js'), 'utf8');
+  const { indexBallastFootprints, buildRailBallastGeometry } = loadModule(source, { imports: {
+    'three/webgpu': THREE, './ede-grade.js': gradeAPI,
+    './ede-road-surfaces.js': await import('../js/ede-road-surfaces.js'),
+    './ede-surface-geometry.js': await import('../js/ede-surface-geometry.js'),
+  } });
+  const track = { width: gradeAPI.RAIL_BALLAST_WIDTH, points: [[0, 0, 1], [3, 0, 1], [6, 0, 1]] };
+  const sections = gradeAPI.gradeSections(track);
+  const footprintAt = indexBallastFootprints([{ layer: 0, polygons: [[
+    [-1, -2.45, 7, -2.45, 7, 2.7, -1, 2.7],
+    [2, 2.2, 4, 2.2, 4, 2.6, 2, 2.6],
+  ]] }]);
+  const geometry = buildRailBallastGeometry(sections, 0, false, footprintAt, () => 0.75, x => x >= 5);
+  const v = geometry.getAttribute('position');
+  const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-5, `${actual} vs ${expected}`);
+  assert.equal(v.count, 12, 'adjacent sections share their row');
+  assert.equal(geometry.userData.mappedSections, 1);
+  near(v.getZ(0), -2.45);
+  near(v.getZ(7), 2.2);
+  near(v.getY(7), 0.735);
+  near(v.getY(6), 1 + gradeAPI.RAIL_BALLAST_TOP);
+  near(v.getZ(8), v.getZ(9));
+  near(v.getZ(10), v.getZ(11));
+  geometry.dispose();
+
+  const fallback = buildRailBallastGeometry(sections, 1, false, footprintAt, () => 0.75, () => false);
+  assert.equal(fallback.userData.mappedSections, 0);
+  near(fallback.getAttribute('position').getZ(0), -1.97);
+  fallback.dispose();
+  const bridge = buildRailBallastGeometry(sections, 0, true, footprintAt, () => -4, () => false);
+  near(bridge.getAttribute('position').getZ(0), -1.45);
+  bridge.dispose();
+});
+
 test('live observations honor bearing, platform and a previous connected path', async () => {
   const { paths, match } = await getTracks();
   const west = paths.find(path => path.id === 'main-3-west');

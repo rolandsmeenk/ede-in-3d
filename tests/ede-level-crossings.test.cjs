@@ -57,11 +57,13 @@ test('a scheduled RS34 closes Telefoonweg for road users until the last carriage
     y: -1.6, dx, dz, wayId: point.roadWayIds[0] };
   const seen = new Set(), flashes = new Set();
   let checkedBeforeNose = false, checkedAfterCenter = false;
+  let openingFrames = 0;
   for (let i = 0; i <= 560; i++) {
     const at = pass - 35 + i / 10;
     traffic.advance(0.1, at);
     crossings.update(0.1, at);
     seen.add(state.phase);
+    if (state.phase === 'opening') openingFrames++;
     if (state.phase === 'warning') {
       flashes.add(state.flash);
       for (const mode of ['motor', 'bike', 'foot']) {
@@ -85,11 +87,44 @@ test('a scheduled RS34 closes Telefoonweg for road users until the last carriage
     }
   }
   assert.deepEqual([...seen], ['open', 'warning', 'closing', 'closed', 'opening']);
+  assert.ok(openingFrames >= 59 && openingFrames <= 60, 'booms take six seconds to rise');
   assert.deepEqual([...flashes].sort(), [0, 1]);
   assert.equal(state.phase, 'open');
   assert.equal(state.flash, -1);
   assert.equal(crossings.stopDistance({ ...query, mode: 'motor' }), Infinity);
   assert.ok(checkedBeforeNose && checkedAfterCenter);
+});
+
+test('mapped road and foot crossings use distinct Dutch hardware and local bells', async () => {
+  const { build } = await setup();
+  const { CityAudioSources } = await import('../js/audio-sources.js');
+  const levelCrossings = build({});
+  const { group, crossings } = levelCrossings;
+  const road = group.children.find(pole => pole.name === 'Crossing AHOB' && pole.getObjectByName('J13 crossbuck'));
+  const mini = group.children.find(pole => pole.name === 'Crossing AHOB-MINI');
+  const station = group.children.find(pole => pole.getObjectByName('Crossing skirt rail'));
+  const litFootpath = group.children.find(pole => pole.name === 'Crossing AOB' && pole.getObjectByName('Crossing red lamp'));
+  assert.equal(road.getObjectByName('J13 crossbuck').children.length, 4);
+  assert.equal(mini.getObjectByName('J12 crossbuck').children.length, 2);
+  assert.ok(mini.getObjectByName('Crossing red lamp').position.y < road.getObjectByName('Crossing red lamp').position.y);
+  assert.equal(station.name, 'Crossing AOB');
+  assert.equal(station.getObjectByName('Crossing red lamp'), undefined);
+  assert.equal(litFootpath.getObjectByName('Crossing skirt rail'), undefined);
+
+  const state = crossings.find(crossing => crossing.id === 'north-level-crossing-357');
+  const bellPosition = station.getObjectByName('Crossing bell').getWorldPosition(state.bells[0].clone());
+  assert.ok(state.bells.some(bell => bell.distanceTo(bellPosition) < 1e-8));
+  const audio = new CityAudioSources({
+    controllerManager: { entities: {}, getActiveEntity: () => ({ type: 'person', rig: { speed: 0 } }) },
+    trafficSystem: { cars: [], buses: [], peds: [] }, highwayTraffic: { cars: [] },
+    streetDetails: { audioSignals: [] }, windmills: [], levelCrossings
+  });
+  state.phase = 'warning';
+  const nearby = audio.collect(bellPosition, 0).crossings;
+  assert.equal(nearby.length, 2);
+  assert.ok(nearby[0].id.distanceTo(bellPosition) < 1e-8);
+  state.phase = 'opening';
+  assert.equal(audio.collect(bellPosition, 0).crossings.length, 0);
 });
 
 test('Dwarsweg stays closed when a second train approaches from the opposite direction', async () => {

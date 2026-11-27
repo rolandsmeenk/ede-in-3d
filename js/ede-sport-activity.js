@@ -10,10 +10,40 @@ const MAX_VENUES = 2;
 const MAX_ATHLETES = 12;
 const FOOTBALL_PASSERS = [0, 1, 2, 3, 1];
 const FOOTBALL_RECEIVERS = [1, 2, -1, 1, 0];
-const FULL_DRILL_PASSERS = [0, 4, 1, 5, 2, 3, 1];
-const FULL_DRILL_RECEIVERS = [4, 1, 5, 2, -1, 1, 0];
-const SMALL_DRILL_PASSERS = [0, 1, 2, 1];
-const SMALL_DRILL_RECEIVERS = [1, 2, -1, 0];
+const FULL_DRILL_PASSERS = [0, 4, 1, 2, 3, 1];
+const FULL_DRILL_RECEIVERS = [4, 1, 2, -1, 1, 0];
+const SMALL_DRILL_PASSERS = [0, 1, 2];
+const SMALL_DRILL_RECEIVERS = [1, -1, 0];
+
+// Each kit is [jersey, shorts, stripe, opposition jersey]. Shared pitches rotate home clubs.
+const WHITE = 0xf4f2e8;
+const NAVY = 0x20304f;
+const ORANGE = 0xe77125;
+const VICTORIA = [ORANGE, 0x214691, ORANGE, NAVY];
+const JEUGD = [0xc52f38, WHITE, WHITE, NAVY];
+const HOME_KITS = new Map([
+  [['w252692194', 'w656912221', 'w1015679891', 'w618016977', 'w618016978', 'w618016979', 'w618016980', 'w618016981'],
+    [[0x2558a6, 0x244681, WHITE, ORANGE]]], // DTS '35 Ede
+  [['w583838461', 'w583838462', 'w583838463', 'w583838464', 'w583838465', 'w583838466'],
+    [[0xf3cb29, 0x244986, 0xf3cb29, NAVY]]], // Blauw Geel '55
+  [['w670224851', 'w670224852'], [[0xc32838, 0x25252c, WHITE, NAVY]]], // KSV Fortissimo
+  [['w113726379', 'w1223801301', 'w670236918', 'w670236919', 'w670236920', 'w670236921'], [VICTORIA, JEUGD]],
+  [['w863811167', 'w863811168', 'w863811169', 'w863811171', 'w863811172', 'w863811173', 'w863811174',
+    'w1320333937', 'w1320333938', 'w1320333939', 'w887072740'], [[0xc12635, WHITE, WHITE, NAVY]]], // VV Bennekom
+  [['w1444551350', 'w1444551351', 'w1444551352', 'w1444551353'],
+    [[0xf3ca28, 0x23242a, 0xf3ca28, NAVY]]], // VV Lunteren
+  [['w459848241', 'w459848242', 'w459848243', 'w459848244'], [[0xc12739, WHITE, WHITE, NAVY]]], // Advendo '57
+  [['w1321923608', 'w1321923609', 'w1321923610', 'w1443799378'], [[0x26804a, WHITE, 0x26804a, WHITE]]], // SDS '55
+  [['w403174693', 'w403174939', 'w403174940'], [[WHITE, 0x234c8b, WHITE, ORANGE]]], // SV Otterlo
+  [['w882882107', 'w882882108', 'w882882109'], [[0xc22c37, 0x25252c, 0xc22c37, NAVY]]], // SV Harskamp
+].flatMap(([pitches, kits]) => pitches.map(id => [id, kits])));
+
+function kitBuffer(jersey, shorts, accent = jersey) {
+  const shirt = new THREE.Color(jersey);
+  const stripe = new THREE.Color(accent);
+  const legs = new THREE.Color(shorts);
+  return new Float32Array([shirt.r, shirt.g, shirt.b, 1, stripe.r, stripe.g, stripe.b, 0, legs.r, legs.g, legs.b, 0]);
+}
 
 const mix = (a, b, t) => a + (b - a) * t;
 const between = (a, b, t) => [mix(a[0], b[0], t), mix(a[1], b[1], t)];
@@ -205,7 +235,7 @@ export function createEdeSportActivity(scene, fields) {
   let nearby = [], nearX = Infinity, nearZ = Infinity;
   let athleteCount = 0;
 
-  function updateAthlete(slot, i, position, heading, dt, camera, pose = null) {
+  function updateAthlete(slot, i, position, heading, dt, camera, pose = null, kit) {
     const { rigs, field } = slot;
     const rig = rigs[i], [x, z] = position;
     if (pose?.skate) {
@@ -219,7 +249,7 @@ export function createEdeSportActivity(scene, fields) {
       if (pose) rig.solve(null, pose);
     }
     athleteCount++;
-    crowd.add(rig, Math.hypot(camera.x - x, camera.z - z));
+    crowd.add(rig, Math.hypot(camera.x - x, camera.z - z), kit);
   }
 
   function drawPlay(slot, dt, camera, raining) {
@@ -244,13 +274,15 @@ export function createEdeSportActivity(scene, fields) {
 
     const phase = tennis ? t / 1.75 : t / 2.55;
     const play = Math.floor(phase), progress = phase % 1;
+    const keeper = count > 3 ? 3 : 2;
     const hitters = count === 6 ? FULL_DRILL_PASSERS : count > 3 ? FOOTBALL_PASSERS : SMALL_DRILL_PASSERS;
     const receivers = count === 6 ? FULL_DRILL_RECEIVERS : count > 3 ? FOOTBALL_RECEIVERS : SMALL_DRILL_RECEIVERS;
     const drill = play % hitters.length;
     const hitter = tennis ? play % 2 : hitters[drill];
     const receiver = tennis ? 1 - hitter : receivers[drill];
     const shot = receiver === -1;
-    const positionAt = (i, p) => between(...field.players[i], (1 + Math.sin(p * (tennis ? Math.PI : 1.72) + i * 1.8)) / 2);
+    const positionAt = (i, p) => between(...field.players[football && i === keeper ? 3 : i],
+      (1 + Math.sin(p * (tennis ? Math.PI : 1.72) + i * 1.8)) / 2);
     const windUp = tennis ? 0 : 0.20;
     const flight = Math.min(1, Math.max(0, (progress - windUp) / (tennis ? 1 : shot ? 0.60 : 0.8)));
     for (let i = 0; i < count; i++) positions[i] = positionAt(i, phase);
@@ -258,7 +290,7 @@ export function createEdeSportActivity(scene, fields) {
     const to = shot ? field.target : positionAt(receiver, play + 1);
     // The keeper retrieves the shot between drills.
     const [x, z] = shot && flight >= 1
-      ? between(to, positionAt(count > 3 ? 3 : 1, play + 1), (progress - 0.8) / 0.2)
+      ? between(to, positionAt(keeper, play + 1), (progress - 0.8) / 0.2)
       : between(from, to, flight);
     let lift = 0;
     if (tennis) {
@@ -278,7 +310,8 @@ export function createEdeSportActivity(scene, fields) {
       pose.skate = false;
       pose.swing = tennis ? (i === hitter ? Math.exp(-Math.pow(progress / 0.14, 2)) : 0) : null;
       pose.kick = football && i === hitter ? Math.exp(-Math.pow((progress - windUp) / 0.09, 2)) : 0;
-      updateAthlete(slot, i, positions[i], heading, dt, camera, pose);
+      const kit = i === keeper || i === 5 ? slot.awayKit : slot.homeKit;
+      updateAthlete(slot, i, positions[i], heading, dt, camera, pose, kit);
       if (tennis) {
         const racket = rackets[i];
         racket.position.copy(pose.hand);
@@ -314,6 +347,7 @@ export function createEdeSportActivity(scene, fields) {
         if (slot.field || !candidates[i]) continue;
         slot.field = candidates[i++].field;
         slot.t = (stringHash(slot.field.id + activity.date) % 1000) * 0.1;
+        slot.kitDate = null;
         for (const rig of slot.rigs) rig.placed = false;
       }
     }
@@ -322,6 +356,16 @@ export function createEdeSportActivity(scene, fields) {
     skateBlades.count = 0;
     for (const slot of slots) {
       if (slot.field) {
+        if (slot.kitDate !== activity.date) {
+          slot.kitDate = activity.date;
+          slot.homeKit = slot.awayKit = undefined;
+          const kits = slot.field.sport === 'football' ? HOME_KITS.get(slot.field.id) : null;
+          if (kits) {
+            const [jersey, shorts, accent, away] = kits[stringHash(slot.field.id + activity.date) % kits.length];
+            slot.homeKit = kitBuffer(jersey, shorts, accent);
+            slot.awayKit = kitBuffer(away, away === NAVY ? WHITE : NAVY);
+          }
+        }
         slot.t += Math.min(0.1, Math.max(0, dt));
         drawPlay(slot, dt, camera, activity.weather === 'rain' || effects.raining);
       } else {

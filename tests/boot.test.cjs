@@ -92,11 +92,11 @@ test('a failed entry import stops the loading spinner and offers a retry', async
   const failure = new SyntaxError('missing exported binding');
   let logged, reloads = 0, retry;
   const elements = {
-    'loading-status': { textContent: 'Loading city code and data...' },
+    'loading-status': { textContent: 'Getting Ede ready…' },
     'loading-overlay': { classList: new Set() },
     'loading-retry': { hidden: true, addEventListener: (event, handler) => { if (event === 'click') retry = handler; } }
   };
-  await vm.runInNewContext(startup.replace(/^import\(/, 'loadModule('), {
+  await vm.runInNewContext(startup.replace(/\bimport\(/, 'loadModule('), {
     loadModule: () => Promise.reject(failure),
     console: { error: (_label, error) => { logged = error; } },
     document: { getElementById: id => elements[id] },
@@ -108,4 +108,77 @@ test('a failed entry import stops the loading spinner and offers a retry', async
   assert.equal(elements['loading-retry'].hidden, false);
   retry();
   assert.equal(reloads, 1);
+});
+
+test('postcards pause for the loading screen and arrive decoded at three-second intervals', async () => {
+  const vm = require('node:vm');
+  const startup = readFileSync(join(__dirname, '../js/startup.js'), 'utf8');
+  const cards = [];
+  const gallery = {
+    append(card) { cards.push(card); },
+    get childElementCount() { return cards.length; },
+    get firstElementChild() { return { remove: () => cards.shift() }; }
+  };
+  let decodeFirstCard, finishGame, nextArrival;
+  let introFinished = false;
+  const firstImageReady = new Promise(resolve => { decodeFirstCard = resolve; });
+  const game = new Promise(resolve => { finishGame = resolve; });
+  const startupResult = vm.runInNewContext(startup.replace(/\bimport\(/, 'loadModule('), {
+    loadModule: async () => ({ initApp: () => game }),
+    Image: class {
+      decode() { return this.src.endsWith('/oude-kerk-sunbeams.webp') ? firstImageReady : Promise.resolve(); }
+    },
+    document: {
+      getElementById: id => id === 'loading-postcards' ? gallery : undefined,
+      createElement: () => ({ dataset: {}, append(...children) { this.children = children; } }),
+    },
+    setTimeout(callback, delay) {
+      assert.equal(delay, introFinished ? 3000 : 1100);
+      nextArrival = callback;
+      return callback;
+    },
+    clearTimeout(callback) { if (callback === nextArrival) nextArrival = undefined; }
+  });
+
+  await new Promise(setImmediate);
+  assert.equal(cards.length, 0);
+  const introduceFirstCard = nextArrival;
+  nextArrival = undefined;
+  introFinished = true;
+  introduceFirstCard();
+  await new Promise(setImmediate);
+  assert.equal(cards.length, 0);
+  assert.equal(nextArrival, undefined);
+  decodeFirstCard();
+  await new Promise(setImmediate);
+  assert.equal(cards.length, 1);
+  const seen = [];
+  const arrivals = 12;
+  for (let i = 0; i < arrivals; i++) {
+    const { children: [image, caption], dataset } = cards.at(-1);
+    assert.ok(readFileSync(join(__dirname, '..', image.src)).length);
+    assert.ok(image.alt);
+    assert.equal(caption.lang, 'nl');
+    assert.match(caption.textContent, /!$/);
+    assert.equal(dataset.position, i % 4);
+    assert.equal(cards.length, Math.min(i + 1, 4));
+    seen.push(image.src);
+    if (i < arrivals - 1) {
+      const arrive = nextArrival;
+      nextArrival = undefined;
+      arrive();
+      await new Promise(setImmediate);
+    }
+  }
+  assert.deepEqual(seen.slice(0, 6).map(path => path.split('/').at(-1)), [
+    'oude-kerk-sunbeams.webp', 'ede-wageningen-storm.webp', 'ede-overview-rainbow.webp',
+    'middelpunt-stone.webp', 'hoekelum-snowfall.webp', 'huis-kernhem-mist.webp',
+  ]);
+  assert.equal(seen[0], seen[6]);
+  assert.equal(seen[3], seen[9]);
+  assert.deepEqual(seen.filter(file => file.includes('hoekelum')), ['./assets/loading-postcards/hoekelum-snowfall.webp']);
+
+  finishGame();
+  await startupResult;
+  assert.equal(nextArrival, undefined);
 });

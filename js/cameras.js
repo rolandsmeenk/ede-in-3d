@@ -33,6 +33,8 @@ const CAMERA_PRESETS = [
   { id: 'drone',       name: 'Auto-Director Aerial',     short: 'Director',    category: 'scenic', fov: 50 }
 ];
 
+const BINOCULARS = { id: 'binoculars', name: 'Binoculars', category: 'follow', fov: 16 };
+
 class CameraSystem {
   constructor(domElement, controllerManager) {
     this.domElement = domElement;
@@ -96,14 +98,15 @@ class CameraSystem {
       pointer.x = e.clientX;
       pointer.y = e.clientY;
 
-      if (pair) {
+      if (pair && this.activePresetId !== BINOCULARS.id) {
         const distance = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y);
         if (previousDistance > 1 && distance > 1) {
           this.zoomMultiplier = Math.max(0.45, Math.min(2.4, this.zoomMultiplier * previousDistance / distance));
         }
-      } else {
-        this.orbitYawOffset -= dx * 0.0065;
-        this.orbitPitchOffset = Math.max(-0.32, Math.min(0.68, this.orbitPitchOffset + dy * 0.005));
+      } else if (!pair) {
+        const sensitivity = this.activePresetId === BINOCULARS.id ? 0.3 : 1;
+        this.orbitYawOffset -= dx * 0.0065 * sensitivity;
+        this.orbitPitchOffset = Math.max(-0.32, Math.min(0.68, this.orbitPitchOffset + dy * 0.005 * sensitivity));
       }
       this.userOrbitTimer = 4.0;
     });
@@ -127,29 +130,34 @@ class CameraSystem {
 
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
+      if (this.activePresetId === BINOCULARS.id) return;
       this.zoomMultiplier = Math.max(0.45, Math.min(2.4, this.zoomMultiplier + e.deltaY * 0.001));
     }, { passive: false });
   }
 
   setCameraPreset(presetId, snapImmediately = false) {
-    const preset = CAMERA_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
+    const preset = presetId === BINOCULARS.id && this.controllerManager.getActiveEntity().type === 'person'
+      ? BINOCULARS : CAMERA_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return false;
     this.activePresetId = preset.id;
     this.camera.fov = preset.fov;
     this.camera.updateProjectionMatrix();
     if (snapImmediately) {
       this.initialized = false;
     }
+    return true;
   }
 
   applyGamepadInput(lookX, lookY, zoom, dt) {
     if (!(dt > 0) || !Number.isFinite(dt)) return;
-    if (this.activePresetId !== 'chase' && this.activePresetId !== 'pov') return;
-    // POV uses the orbit angles, but only chase renders a zoomed camera distance.
+    const binoculars = this.activePresetId === BINOCULARS.id;
+    if (!binoculars && this.activePresetId !== 'chase' && this.activePresetId !== 'pov') return;
+    // First-person views use the orbit angles. Chase also adjusts the camera distance.
     if (this.activePresetId !== 'chase') zoom = 0;
     if (!lookX && !lookY && !zoom) return;
-    this.orbitYawOffset -= lookX * 2.0 * dt;
-    this.orbitPitchOffset = Math.max(-0.32, Math.min(0.68, this.orbitPitchOffset + lookY * 1.25 * dt));
+    const sensitivity = binoculars ? 0.3 : 1;
+    this.orbitYawOffset -= lookX * 2.0 * dt * sensitivity;
+    this.orbitPitchOffset = Math.max(-0.32, Math.min(0.68, this.orbitPitchOffset + lookY * 1.25 * dt * sensitivity));
     this.zoomMultiplier = Math.max(0.45, Math.min(2.4, this.zoomMultiplier + zoom * 0.9 * dt));
     this.userOrbitTimer = 4.0;
   }
@@ -176,6 +184,7 @@ class CameraSystem {
   }
 
   getActivePreset() {
+    if (this.activePresetId === BINOCULARS.id) return BINOCULARS;
     return CAMERA_PRESETS.find((p) => p.id === this.activePresetId) || CAMERA_PRESETS[0];
   }
 
@@ -188,12 +197,13 @@ class CameraSystem {
     const entity = this.controllerManager.getActiveEntity();
     const desiredPos = this._desiredPos;
     const desiredLook = this._desiredLook;
+    const binoculars = this.activePresetId === BINOCULARS.id;
 
     if (this.userOrbitTimer > 0 && !this.isDragging) {
       this.userOrbitTimer = Math.max(0, this.userOrbitTimer - dt);
     }
 
-    if (!this.isDragging && this.userOrbitTimer <= 0 && Math.abs(entity.speed) > 0.5) {
+    if (!binoculars && !this.isDragging && this.userOrbitTimer <= 0 && Math.abs(entity.speed) > 0.5) {
       this.orbitYawOffset -= Math.round(this.orbitYawOffset / (Math.PI * 2)) * (Math.PI * 2);
       this.orbitYawOffset += (0.0 - this.orbitYawOffset) * (1 - Math.exp(-dt * 2.2));
     }
@@ -257,6 +267,7 @@ class CameraSystem {
         break;
       }
 
+      case 'binoculars':
       case 'pov': {
         let fwdOffset = 0.35;
         let eyeY = 1.68;
@@ -279,10 +290,12 @@ class CameraSystem {
           entity.position.y + eyeY,
           entity.position.z + Math.cos(entity.heading) * fwdOffset
         );
+        const sway = binoculars ? Math.min(Math.abs(entity.speed), 1.5) : 0;
+        const yaw = totalYaw + Math.sin(elapsed * 8) * sway * 0.002;
         desiredLook.set(
-          entity.position.x + Math.sin(totalYaw) * 40.0,
-          entity.position.y + eyeY + Math.sin(-this.orbitPitchOffset) * 18.0 + 1.5,
-          entity.position.z + Math.cos(totalYaw) * 40.0
+          entity.position.x + Math.sin(yaw) * 40,
+          entity.position.y + eyeY + Math.sin(-this.orbitPitchOffset) * 18 + 1.5 + Math.sin(elapsed * 16) * sway * 0.08,
+          entity.position.z + Math.cos(yaw) * 40
         );
         break;
       }
@@ -319,7 +332,7 @@ class CameraSystem {
       const clearance = this.activePresetId === 'chase' ? 0.65 : 0.55;
       constrainEdeCamera(entity, desiredPos, clearance);
     }
-    if (!this.initialized || this.activePresetId === 'pov') {
+    if (!this.initialized || this.activePresetId === 'pov' || binoculars) {
       this.currentPos.copy(desiredPos);
       this.currentLookAt.copy(desiredLook);
       this.initialized = true;

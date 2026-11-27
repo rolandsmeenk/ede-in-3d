@@ -259,5 +259,280 @@
         ]
       }
     ]
+  },
+  {
+    "id": "pollenstein-transformer",
+    "name": "Pollenstein 108B · Painted transformer",
+    "artist": "VAAF (signed front)",
+    "sources": [
+      "https://www.vaaf.nl/about"
+    ],
+    "referenceDate": "2026-11-27 owner photographs",
+    "reach": 120,
+    "notes": "Three faces traced from overlapping owner photographs of BAG 0228100000070096. The rear wall is unobserved. AI-assisted inpainting restores the narrow hedge-obscured edge of the east paint crop.",
+    "verificationPositions": [
+      [
+        -1715,
+        198
+      ],
+      [
+        -1705,
+        194
+      ]
+    ],
+    "surfaces": [
+      {
+        "anchor": "BAG 0228100000070096 / west face",
+        "texture": "structures/veldhuizen-utilities.webp",
+        "corners": [
+          [
+            -1716.519,
+            -8.2,
+            189.108
+          ],
+          [
+            -1715.219,
+            -8.2,
+            192.208
+          ],
+          [
+            -1715.219,
+            -5.58,
+            192.208
+          ],
+          [
+            -1716.519,
+            -5.58,
+            189.108
+          ]
+        ],
+        "uv": [
+          0.008301,
+          0.650568,
+          0.383301,
+          0.990341
+        ]
+      },
+      {
+        "anchor": "BAG 0228100000070096 / south face",
+        "texture": "structures/veldhuizen-utilities.webp",
+        "corners": [
+          [
+            -1715.192,
+            -8.2,
+            192.219
+          ],
+          [
+            -1710.292,
+            -8.2,
+            190.219
+          ],
+          [
+            -1710.292,
+            -5.58,
+            190.219
+          ],
+          [
+            -1715.192,
+            -5.58,
+            192.219
+          ]
+        ],
+        "uv": [
+          0.39209,
+          0.650568,
+          0.986816,
+          0.990341
+        ]
+      },
+      {
+        "anchor": "BAG 0228100000070096 / east face",
+        "texture": "structures/veldhuizen-utilities.webp",
+        "corners": [
+          [
+            -1710.281,
+            -8.2,
+            190.192
+          ],
+          [
+            -1711.581,
+            -8.2,
+            187.092
+          ],
+          [
+            -1711.581,
+            -5.58,
+            187.092
+          ],
+          [
+            -1710.281,
+            -5.58,
+            190.192
+          ]
+        ],
+        "uv": [
+          0.008301,
+          0.300568,
+          0.383301,
+          0.640341
+        ]
+      }
+    ]
+  },
+  {
+    "id": "edese-vos-cabinet",
+    "name": "Edese vos · Kastelenlaan and Heyendaal",
+    "artist": "Vincent William (Combolution)",
+    "sources": [
+      "https://edesevos.nl/graffiti-kunstenaar-van-astrant-vereeuwigt-edese-vos/",
+      "https://www.combolution.com/realisme/"
+    ],
+    "referenceDate": "2026-11-27 owner photographs",
+    "reach": 120,
+    "notes": "Paint spans three cabinet sections. The cabinet bank is fitted to the photographed vegetated verge west of the cycleway. The left edge is cropped by the photo and foliage at the base is masked.",
+    "verificationPositions": [
+      [
+        -1930,
+        568
+      ]
+    ],
+    "surfaces": [
+      {
+        "anchor": "Heyendaal north-facing cabinet bank",
+        "texture": "structures/veldhuizen-utilities.webp",
+        "corners": [
+          [
+            -1929.594,
+            -8.48,
+            573.48
+          ],
+          [
+            -1933.824,
+            -8.48,
+            572.25
+          ],
+          [
+            -1933.824,
+            -7.28,
+            572.25
+          ],
+          [
+            -1929.594,
+            -7.28,
+            573.48
+          ]
+        ],
+        "uv": [
+          0.39209,
+          0.485795,
+          0.885254,
+          0.640341
+        ]
+      }
+    ]
+  },
+  {
+    "id": "roodborstje-cabinet",
+    "name": "Roodborstje · Groenendaal",
+    "artist": "Vincent William (Combolution)",
+    "sources": [
+      "https://edesevos.nl/graffiti-kunstenaar-van-astrant-vereeuwigt-edese-vos/",
+      "https://www.combolution.com/realisme/"
+    ],
+    "referenceDate": "2026-11-27 owner photographs",
+    "reach": 120,
+    "notes": "Two views of the cabinet whose roof is visible in the PDOK 2026 aerial on the verge beside the bus shelter. Height is fitted from the photos.",
+    "verificationPositions": [
+      [
+        -1948.9,
+        589
+      ]
+    ],
+    "surfaces": [
+      {
+        "anchor": "Groenendaal south-facing cabinet",
+        "texture": "structures/veldhuizen-utilities.webp",
+        "corners": [
+          [
+            -1951.362,
+            -8.53,
+            588.189
+          ],
+          [
+            -1949.912,
+            -8.53,
+            587.579
+          ],
+          [
+            -1949.912,
+            -7.19,
+            587.579
+          ],
+          [
+            -1951.362,
+            -7.19,
+            588.189
+          ]
+        ],
+        "uv": [
+          0.008301,
+          0.009659,
+          0.29541,
+          0.289205
+        ]
+      }
+    ]
+  },
+  {
+    "id": "roos-cabinet",
+    "name": "Roos · Mariëndaal",
+    "artist": "Vincent William (Combolution)",
+    "sources": [
+      "https://edesevos.nl/graffiti-kunstenaar-van-astrant-vereeuwigt-edese-vos/",
+      "https://www.combolution.com/realisme/"
+    ],
+    "referenceDate": "2026-11-27 owner photographs",
+    "reach": 120,
+    "notes": "Two views of the cabinet across Heyendaal. The cabinet sits behind the south footpath. Footprint and height are photo fits.",
+    "verificationPositions": [
+      [
+        -1945.5,
+        596
+      ]
+    ],
+    "surfaces": [
+      {
+        "anchor": "Mariëndaal north-facing cabinet",
+        "texture": "structures/veldhuizen-utilities.webp",
+        "corners": [
+          [
+            -1942.468,
+            -8.31,
+            606.711
+          ],
+          [
+            -1943.918,
+            -8.31,
+            607.331
+          ],
+          [
+            -1943.918,
+            -6.97,
+            607.331
+          ],
+          [
+            -1942.468,
+            -6.97,
+            606.711
+          ]
+        ],
+        "uv": [
+          0.304199,
+          0.009659,
+          0.591309,
+          0.289205
+        ]
+      }
+    ]
   }
 ]

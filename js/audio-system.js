@@ -3,9 +3,11 @@ import { createEventResources, playEvent, createWindVoice } from './audio-events
 import { CityAudioSources } from './audio-sources.js?v=20261126-soundscape';
 import { CityAcoustics } from './audio-acoustics.js';
 import { terrainHeightAt } from './terrain.js';
-import { EDE_BELL_TOWERS, EDE_SHEEPFOLDS, CARILLON_MOTIFS, createBellScheduler, sampleHeathAt } from './ede-soundscape.js';
+import { EDE_BELL_TOWERS, CARILLON_MOTIFS, createBellScheduler, sampleHeathAt } from './ede-soundscape.js';
+import { createFootstepSampler, KREELSE_PLAS_SOUNDS, loadEdeAmbientNoise } from './ede-ambient-data.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const CROSSING_BELL_INTERVAL = 1 / 5;
 const smooth = (param, value, now, time = 0.035, immediate = false) => {
   param.cancelScheduledValues(now);
   if (immediate) param.setValueAtTime(value, now);
@@ -84,9 +86,9 @@ class CityAudioSystem {
     this.sources = new CityAudioSources(simulation);
     this.acoustics = new CityAcoustics(simulation.controllerManager);
     this.heath = simulation.heath || null;
+    this.footSurfaceAt = createFootstepSampler(simulation.habitatAt);
     this.bellScheduler = createBellScheduler();
     this.nextBird = 0;
-    this.nextSheep = 0;
     this.natureSequence = 0;
     this.onStateChange = onStateChange;
     this.context = null;
@@ -106,13 +108,14 @@ class CityAudioSystem {
     this.haveListener = false;
     this.accumulator = 0;
     this.lastHorn = -Infinity;
+    this.lastPlayerBell = -Infinity;
     this.collisionPairs = new WeakMap();
     this.collisionSequence = 0;
     this.collisionSystems = [simulation.controllerManager, simulation.trafficSystem];
     this.onCollision = (impact) => this.crash(impact);
     for (const system of this.collisionSystems) system.setCollisionListener?.(this.onCollision);
     this.motorParams = { speed: 0, load: 0, verticalSpeed: 0, doppler: 1, seed: 0 };
-    this.windParams = { speed: 0, altitude: 0, night: 0, traffic: 0, enclosure: 0 };
+    this.windParams = { speed: 0, altitude: 0, night: 0, traffic: 0, road: 0, rail: 0, enclosure: 0 };
     this.footPosition = { x: 0, y: 0, z: 0, seed: 0 };
     this.onGesture = (event) => {
       if (event.type === 'keydown' && (event.repeat || event.metaKey || event.ctrlKey || /INPUT|TEXTAREA|SELECT/.test(event.target?.tagName))) return;
@@ -179,6 +182,9 @@ class CityAudioSystem {
     this.reflectionFilter.Q.value = 0.5;
     this.reflections.connect(this.reverb).connect(this.reflectionFilter).connect(this.mix);
     this.wind = createWindVoice(context, this.resources, this.mix);
+    loadEdeAmbientNoise().then(sample => { this.noiseAt = sample; }).catch(error => {
+      console.warn('[audio] using simulated road and rail ambience:', error.message);
+    });
     context.onstatechange = () => this.onStateChange();
   }
 
@@ -214,9 +220,9 @@ class CityAudioSystem {
     this.collisionPairs = new WeakMap();
     this.haveListener = false;
     this.accumulator = 0;
+    this.pendingPlayerSignal = null;
     this.bellScheduler.reset();
     this.nextBird = 0;
-    this.nextSheep = 0;
     if (this.master) {
       this.master.gain.cancelScheduledValues(this.context.currentTime);
       this.master.gain.setValueAtTime(0, this.context.currentTime);
@@ -353,11 +359,12 @@ class CityAudioSystem {
     const emitter = new SpatialEmitter(this.context, this.mix, this.reflections, this.acoustics,
       ref, kind === 'talk' ? 1.5 : 0, kind === 'horn');
     const towerBell = kind === 'carillon' || kind === 'churchBell';
-    // Do not fade away the first few milliseconds of a crash or bell strike, and do not let a tower's own collider muffle its belfry.
-    emitter.update(source, this.listener, now, range, true, crash || towerBell, towerBell);
+    // Keep the attack of each strike and let tower bells ring clear of their own building.
+    emitter.update(source, this.listener, now, range, true, crash || towerBell || kind === 'crossingBell', towerBell);
     const when = options.delay ? Math.max(now, options.when ?? now) + options.delay : options.when;
     const voice = playEvent(this.context, this.resources, kind, emitter.input, { seed: source.seed, ...options, ...(when !== undefined ? { when } : null) });
-    this.events.push({ kind, voice, emitter, id: source.id, range, severity, position: { ...source }, noObstruction: towerBell, follow: kind === 'talk' || kind === 'horn' || kind === 'bell' });
+    this.events.push({ kind, voice, emitter, id: source.id, range, severity, position: { ...source }, noObstruction: towerBell, follow: options.follow || kind === 'talk' || kind === 'horn' || kind === 'bell',
+      wildlife: options.wildlife, clockChime: options.clockChime });
     return true;
   }
 
@@ -406,11 +413,20 @@ class CityAudioSystem {
     return true;
   }
 
-  honk(entity) {
-    if (!this.ready || !this.enabled || this.context?.state !== 'running' || entity?.type !== 'car') return;
+  soundPlayerSignal(entity) {
+    if (!this.ready || !this.enabled || !this.supported || this.disposed || document.hidden) return;
+    const bell = entity?.type === 'cyclist' || entity?.type === 'cargobike';
+    if (!bell && entity?.type !== 'car') return;
+    if (!this.haveListener || this.context?.state !== 'running') {
+      this.pendingPlayerSignal = entity;
+      return;
+    }
     const now = this.context.currentTime;
-    if (now - this.lastHorn < 0.8) return;
-    if (this.emit('horn', { id: entity, ...entity.position, heading: entity.heading, seed: 4 }, { intensity: 0.7 })) this.lastHorn = now;
+    const lastSignal = bell ? 'lastPlayerBell' : 'lastHorn';
+    if (now - this[lastSignal] < (bell ? 0.25 : 0.8)) return;
+    const { x, y, z } = entity.position;
+    if (this.emit(bell ? 'bell' : 'horn', { id: entity, x, y: y + (bell ? 1 : 0.7), z, heading: entity.heading, seed: 4 },
+      { intensity: 0.7, priority: bell })) this[lastSignal] = now;
   }
 
   chimeCarillon(motif = 'hour') {
@@ -476,10 +492,20 @@ class CityAudioSystem {
     smooth(this.reflections.gain, 0.02 + enclosure * 0.22, now, 0.4);
     smooth(this.reflectionFilter.frequency, 2400 + enclosure * 3400, now, 0.4);
     smooth(this.master.gain, 0.65, now, 0.12);
+    if (this.pendingPlayerSignal) {
+      const entity = this.pendingPlayerSignal;
+      this.pendingPlayerSignal = null;
+      if (entity === this.sources.controllers.getActiveEntity()) this.soundPlayerSignal(entity);
+    }
     const sources = this.sources.collect(this.listener, elapsed, environment);
+    const wildlife = environment?.wildlifeSources;
+    const market = environment?.market;
+    const bellPreviewTime = environment?.bellPreviewTime ?? null;
+    const bellPreviewChanged = this.bellPreviewTime !== bellPreviewTime;
+    this.bellPreviewTime = bellPreviewTime;
     for (let i = this.events.length - 1; i >= 0; i--) {
       const event = this.events[i];
-      if (now >= event.voice.endTime) {
+      if (now >= event.voice.endTime || (bellPreviewChanged && event.clockChime)) {
         this.removeEvent(i);
       } else {
         const pair = event.position.conversation;
@@ -487,7 +513,11 @@ class CityAudioSystem {
           event.voice.dispose();
           event.follow = false; // Fade at the old position if the meeting ended or a pedestrian was recycled.
         }
-        const source = event.follow && (sources.motors.find(s => s.id === event.id) || sources.people.find(s => s.id === event.id));
+        const source = event.wildlife
+          ? wildlife?.find(s => s.id === event.id)
+          : event.follow && (sources.motors.find(s => s.id === event.id) || sources.people.find(s => s.id === event.id));
+        if ((event.wildlife && !source) ||
+            ((event.kind === 'market' || event.kind === 'fountain') && market?.id !== event.id)) event.voice.dispose();
         if (source) Object.assign(event.position, source);
         else if ((event.kind === 'horn' || event.kind === 'bell') && event.id.edge) {
           // Collision horns can belong to traffic outside the nearest motor voices.
@@ -501,6 +531,20 @@ class CityAudioSystem {
     }
     this.updatePool(this.motors, sources.motors, this.limits.motors, now, dt);
     this.updatePool(this.sirens, sources.sirens, this.limits.sirens, now, dt, true);
+    this.sources.trainSystem?.pollArrivalSounds?.(this.listener, (kind, source, options) => this.emit(kind, source, options));
+    if (market) {
+      const state = this.state(market, now);
+      if (now >= (state.marketSound ?? 0)) {
+        const fountain = market.kind === 'fountain';
+        const seed = ++this.natureSequence + market.seed;
+        if (this.emit(market.kind, market, { range: fountain ? 34 : 49,
+          ref: fountain ? 5 : 9, intensity: market.intensity, seed })) {
+          state.marketSound = now + (fountain ? 1.95 : 2.35) + 0.36 * (Math.sin(seed * 14.7) + 1);
+        } else {
+          state.marketSound = now + 0.4;
+        }
+      }
+    }
     for (const source of sources.people) {
       const state = this.state(source, now);
       const moved = Math.hypot(source.x - state.x, source.z - state.z);
@@ -516,7 +560,8 @@ class CityAudioSystem {
             position.z = foot ? source.rightZ : source.leftZ;
             position.seed = source.seed;
             this.emit('footstep', position, { intensity: source.speed > 3 ? 0.65 : 0.4,
-              seed: source.seed + state.stepSequence++, speed: source.speed });
+              seed: source.seed + state.stepSequence++, speed: source.speed,
+              surface: this.footSurfaceAt(position.x, position.z) });
           }
         }
       }
@@ -545,21 +590,37 @@ class CityAudioSystem {
     }
     for (const source of sources.crossings) {
       const state = this.state(source, now);
-      if (state.crossingBell === undefined || now > state.crossingBell + 1.5) state.crossingBell = now;
+      if (state.crossingBell === undefined || now > state.crossingBell) state.crossingBell = now;
       if (now + 0.12 >= state.crossingBell) {
         const when = Math.max(now, state.crossingBell);
-        this.emit('crossingBell', source, { intensity: 0.72, when });
-        state.crossingBell = when + 0.48;
+        this.emit('crossingBell', source, { intensity: 0.64, when });
+        state.crossingBell = when + CROSSING_BELL_INTERVAL;
       }
     }
-    const chimes = this.bellScheduler.poll(Date.now() / 1000, this.listener, terrainHeightAt);
+    const chimes = this.bellScheduler.poll((bellPreviewTime ?? Date.now()) / 1000,
+      this.listener, terrainHeightAt, bellPreviewTime !== null);
     for (const chime of chimes) {
-      this.emit(chime.kind, chime.source, { ...chime.options, range: chime.range, ref: chime.ref });
+      this.emit(chime.kind, chime.source, { ...chime.options, range: chime.range, ref: chime.ref, clockChime: true });
     }
     const altitude = Math.max(0, position.y - terrainHeightAt(position.x, position.z));
+    for (const shore of altitude < 28 ? KREELSE_PLAS_SOUNDS : []) {
+      const { x, z, height, range, ref, kind, seed } = shore;
+      if (Math.hypot(x - position.x, z - position.z) >= range) continue;
+      const source = { id: shore, x, z, y: terrainHeightAt(x, z) + height, seed };
+      const state = this.state(source, now);
+      if (now < (state.shoreSound ?? 0)) continue;
+      const breeze = clamp((environment?.windSpeed ?? 11) / 40, 0, 1);
+      const intensity = kind === 'reeds' ? 0.31 + breeze * 0.53 : 0.55 + breeze * 0.19;
+      const variation = ++this.natureSequence;
+      if (this.emit(kind, source, { range, ref, intensity, seed: variation + seed })) {
+        state.shoreSound = now + 3.4 + (0.5 + 0.5 * Math.sin(variation * 4.7)) * 1.2;
+      } else {
+        state.shoreSound = now + 0.8;
+      }
+    }
     if (!night && altitude < 65 && enclosure < 0.35 && sources.traffic < 0.25 && now >= this.nextBird) {
       const heathness = sampleHeathAt(this.heath, position.x, position.z);
-      if (heathness > 0.25 || (enclosure < 0.12 && sources.traffic < 0.08)) {
+      if (heathness <= 0.25 && enclosure < 0.12 && sources.traffic < 0.08) {
         const seq = ++this.natureSequence;
         const hash = Math.sin(seq * 91.3 + position.x * 0.03) * 43758.5453;
         const r1 = hash - Math.floor(hash);
@@ -568,30 +629,26 @@ class CityAudioSystem {
         const dist = 14 + r2 * 18;
         const bx = position.x + Math.cos(angle) * dist;
         const bz = position.z + Math.sin(angle) * dist;
-        const by = terrainHeightAt(bx, bz) + (heathness > 0.25 ? 7 : 9);
-        const variant = heathness > 0.25 ? (r1 < 0.7 ? 0 : 1) : (r1 < 0.65 ? 1 : 2);
+        const by = terrainHeightAt(bx, bz) + 9;
         this.emit('bird', { id: this.heath || position, x: bx, y: by, z: bz, seed: seq },
-          { variant, intensity: heathness > 0.25 ? 0.65 : 0.52 });
+          { variant: r1 < 0.65 ? 1 : 2, intensity: 0.52 });
         this.nextBird = now + 5.0 + r2 * 8.0;
       } else {
         this.nextBird = now + 2.5;
       }
     }
-    if (!night && altitude < 55 && now >= this.nextSheep) {
-      let heard = false;
-      for (const fold of EDE_SHEEPFOLDS) {
-        const dx = fold.x - position.x, dz = fold.z - position.z;
-        if (dx * dx + dz * dz > fold.range * fold.range) continue;
-        const seq = ++this.natureSequence;
-        const angle = (Math.sin(seq * 63.1) * 0.5 + 0.5) * Math.PI * 2;
-        const sx = fold.x + Math.cos(angle) * 8;
-        const sz = fold.z + Math.sin(angle) * 8;
-        this.emit('sheep', { id: fold, x: sx, y: terrainHeightAt(sx, sz) + 0.9, z: sz, seed: seq }, { intensity: 0.58 });
-        this.nextSheep = now + 7.5 + (Math.sin(seq * 29.3) * 0.5 + 0.5) * 10.5;
-        heard = true;
-        break;
+    for (const source of wildlife ?? []) {
+      const state = this.state(source, now);
+      if (now < (state.natureCall ?? 0)) continue;
+      const { kind, range } = source;
+      const seed = ++this.natureSequence;
+      const intensity = kind === 'sheep' ? 0.58 : 0.78;
+      const ref = kind === 'nightjar' ? 17 : kind === 'skylark' ? 13 : 7;
+      if (this.emit(kind, source, { wildlife: true, range, ref, intensity, seed })) {
+        state.natureCall = now + (kind === 'nightjar' ? 12 : 7.5) + (Math.sin(seed * 29.3) * 0.5 + 0.5) * 9;
+      } else {
+        state.natureCall = now + 2.5;
       }
-      if (!heard) this.nextSheep = now + 2.5;
     }
     for (const source of sources.motors) {
       if (source.player || source.kind === 'helicopter' || source.kind === 'cyclist' || source.kind === 'train' || source.kind === 'turbine') continue;
@@ -604,7 +661,9 @@ class CityAudioSystem {
         }
       }
     }
-    Object.assign(this.windParams, { speed: Math.min(sources.motion, 50), altitude: Math.max(0, position.y - terrainHeightAt(position.x, position.z)), traffic: sources.traffic, night: night ? 1 : 0, enclosure });
+    Object.assign(this.windParams, { speed: Math.min(sources.motion, 50), altitude, traffic: sources.traffic,
+      road: 0, rail: 0, night: night ? 1 : 0, enclosure });
+    this.noiseAt?.(position.x, position.z, this.windParams);
     this.wind.update(this.windParams, now);
   }
 

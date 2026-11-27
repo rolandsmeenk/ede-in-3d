@@ -151,7 +151,12 @@ test('preset and map teleports share arrival resets and mark the resolved landin
     TELEPORT_LOCATIONS,
     terrainHeightAt: () => 4,
     controllerManager: {
-      teleportActiveTo: (...args) => { calls.push(['teleport', ...args]); return landed; }
+      activeMode: 'car',
+      teleportActiveTo(...args) {
+        calls.push(['teleport', ...args]);
+        this.activeMode = args[4];
+        return landed;
+      }
     },
     touchControls: { reset: () => calls.push(['touch']) },
     gamepadControls: { reset: () => calls.push(['gamepad']) },
@@ -159,6 +164,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
       resetForTeleport: (focus) => calls.push(focus ? ['camera', focus.x, focus.y, focus.z] : ['camera'])
     },
     selectCamera: (...args) => calls.push(['selectCamera', ...args]),
+    selectMode: (mode) => calls.push(['selectMode', mode]),
     lightingSystem: { activePresetId: 'golden' },
     audioSystem: { chimeCarillon: motif => chimes.push(motif) },
     setTimeout(callback, delay) {
@@ -169,7 +175,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
     cityBlocks: { allBlocks: [] },
     trafficSystem: {},
     NYCMapSystem: class {
-      constructor(options) { this.onTeleport = options.onTeleport; map = this; }
+      constructor(options) { this.onTeleport = options.onTeleport; this.onWalkStart = options.onWalkStart; map = this; }
     },
     teleportButtons: Object.keys(TELEPORT_LOCATIONS).map((key) => ({
       getAttribute: () => key,
@@ -184,7 +190,7 @@ test('preset and map teleports share arrival resets and mark the resolved landin
     const focus = point.focus;
     const camera = focus ? ['camera', focus.x, focus.height + 4, focus.z] : ['camera'];
     assert.deepEqual(calls, [
-      ['teleport', point.x, point.z, point.heading, null], ['touch'], ['gamepad'], camera, ['selectCamera', 'chase', true]
+      ['teleport', point.x, point.z, point.heading, null, 'car'], ['touch'], ['gamepad'], camera, ['selectCamera', 'chase', true]
     ]);
     assert.equal(map.waypoint.x, landed.x);
     assert.equal(map.waypoint.z, landed.z);
@@ -200,5 +206,8 @@ test('preset and map teleports share arrival resets and mark the resolved landin
   assert.equal(map.waypoint.name, `${landed.x}, ${landed.z}`);
   calls.length = 0;
   map.onTeleport(100, 200, 1.5, -7);
-  assert.deepEqual(calls[0], ['teleport', 100, 200, 1.5, -7], 'layered teleports pass the requested altitude');
+  assert.deepEqual(calls[0], ['teleport', 100, 200, 1.5, -7, 'car'], 'layered teleports pass the requested altitude');
+  calls.length = 0;
+  map.onWalkStart(100, 200, 1.5);
+  assert.deepEqual(calls.slice(0, 2), [['teleport', 100, 200, 1.5, null, 'person'], ['selectMode', 'person']]);
 });

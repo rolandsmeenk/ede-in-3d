@@ -1,5 +1,7 @@
 import { GEO } from './nyc-geodata.js';
 import { edeCoverage } from './ede-coverage.js';
+import { DOESBURGERMOLENPAD, DOESBURGERMOLENPAD_LENGTH, EDE_CYCLE_LINKS,
+  EDE_CYCLE_JUNCTIONS } from './ede-recreation-route-data.js';
 import {
   ROADS,
   BLOCKS,
@@ -54,12 +56,13 @@ const MAX_ZOOM = 3.0; // single lots
 const LANDMARK_PIN_ZOOM = 0.055;
 const LOCAL_DETAIL_ZOOM = 0.08;
 const BUILDING_FOOTPRINT_ZOOM = 0.18;
+const WALK_COLOR = '#e898ad', CYCLE_COLOR = '#7ae0b5';
 const OVERVIEW_ROAD_KINDS = /^(?:trunk|primary|secondary|tertiary)(?:_link)?$/;
 const RADAR_SCALE = 0.32; // radar pixels per metre on the ground (zooms out with altitude)
 const GRID_BEARING = (GEO.frame && GEO.frame.bearingDeg) ?? 0; // Ede axes follow true north
 
 // Map palette, shared by the radar & the atlas (in step with css/style.css): graphite ground with the streets a shade
-// lighter than the blocks they run between, muted parks & water; a taxi-yellow GPS route, white landmarks & player,
+// lighter than the blocks they run between, muted parks & water, white landmarks & player,
 // cyan search hits and amber highways
 const MAP = {
   water: '#0a1118',
@@ -89,7 +92,6 @@ const MAP = {
   highway: '#b27a35',
   bridge: '#c08a3e',
   railway: '#a6a8ad',
-  route: '#ffc21a',
   search: '#5fd0ff',
   halo: 'rgba(8, 11, 15, 0.9)'
 };
@@ -662,48 +664,10 @@ function getEdeMapRoute(x0,z0,x1,z1){
   ];
 }
 
-// GPS route from the player to the waypoint, along the grid (x first, then z): taxi yellow on a dark casing
-function drawRoute(ctx, x0, y0, x1, y1, width, points=null) {
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  if (points) {
-    if (points.length < 2) return;
-    ctx.moveTo(points[0].x, points[0].z);
-    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].z);
-  } else {
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y0);
-    ctx.lineTo(x1, y1);
-  }
-  ctx.strokeStyle = MAP.halo;
-  ctx.lineWidth = width + 3;
-  ctx.stroke();
-  ctx.strokeStyle = MAP.route;
-  ctx.lineWidth = width;
-  ctx.stroke();
-}
-
-// Waypoint: a taxi-yellow target
-function drawWaypoint(ctx, x, y, r) {
-  ctx.fillStyle = MAP.halo;
-  ctx.beginPath();
-  ctx.arc(x, y, r + 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = MAP.route;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = MAP.halo;
-  ctx.beginPath();
-  ctx.arc(x, y, r * 0.38, 0, Math.PI * 2);
-  ctx.fill();
-}
-
 const overlaps = (boxes, b) => boxes.some((o) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
 
 class NYCMapSystem {
-  constructor({ controllerManager, cameraSystem, trafficSystem, allBlocks = [], onTeleport, onLandmark, onToggle }) {
+  constructor({ controllerManager, cameraSystem, trafficSystem, allBlocks = [], onTeleport, onLandmark, onToggle, onWalkStart }) {
     this.controllerManager = controllerManager;
     this.cameraSystem = cameraSystem;
     this.trafficSystem = trafficSystem;
@@ -711,6 +675,8 @@ class NYCMapSystem {
     this.onTeleport = onTeleport;
     this.onLandmark = onLandmark;
     this.onToggle = onToggle;
+    this.onWalkStart = onWalkStart;
+    this.recreationMode = '';
 
     this.miniCanvas = document.getElementById('minimap-canvas');
     this.miniCtx = this.miniCanvas ? this.miniCanvas.getContext('2d') : null;
@@ -775,6 +741,35 @@ class NYCMapSystem {
     const zoomOutBtn = document.getElementById('map-zoom-out');
     const centerPlayerBtn = document.getElementById('map-center-player');
     const fullIslandBtn = document.getElementById('map-view-all');
+    const routeSelect = document.getElementById('fullmap-route-mode');
+    const walkStart = document.getElementById('fullmap-walk-start');
+    if (routeSelect && walkStart) {
+      routeSelect.options[1].textContent = `Doesburgermolenpad · ${(DOESBURGERMOLENPAD_LENGTH / 1000).toFixed(1)} km`;
+      routeSelect.value = this.recreationMode;
+      routeSelect.addEventListener('change', () => {
+        this.recreationMode = routeSelect.value;
+        walkStart.hidden = this.recreationMode !== 'walk';
+        if (this.elHoverInfo && this.recreationMode) {
+          this.elHoverInfo.textContent = this.recreationMode === 'walk'
+            ? 'Follow the pink loop from Kernhem'
+            : 'Follow green links between numbered junctions';
+        }
+        this.miniCache = null;
+        if (this.recreationMode) {
+          const b = boundsOf(this.recreationMode === 'walk' ? DOESBURGERMOLENPAD : EDE_CYCLE_LINKS.flat());
+          const { w, h } = this.fullSize();
+          this.viewCenterX = (b.minX + b.maxX) * 0.5;
+          this.viewCenterZ = (b.minZ + b.maxZ) * 0.5;
+          this.viewZoom = Math.min(w / ((b.maxX - b.minX) * 1.22 + 1), h / ((b.maxZ - b.minZ) * 1.22 + 1));
+        }
+        this.renderFullMap();
+      });
+      walkStart.addEventListener('click', () => {
+        const [x, z, nextX, nextZ] = DOESBURGERMOLENPAD;
+        this.onWalkStart?.(x, z, Math.atan2(nextX - x, nextZ - z));
+        this.toggleFullMap(false);
+      });
+    }
 
     if (miniCard) {
       miniCard.addEventListener('click', () => this.toggleFullMap(true));
@@ -1440,6 +1435,7 @@ class NYCMapSystem {
       if (!this.exteriorRequested && playableBoundsCovered &&
           !playableBoundsCovered(cv.minX, cv.minZ, cv.maxX, cv.maxZ)) this.loadExteriorContext();
       this.drawWorld(c.ctx, cv, true);
+      this.drawRecreationOverlay(c.ctx, cv, true);
       cv.screen(c.ctx);
       this.drawRoadLabels(c.ctx, cv, { fontPx: 9.5, maxLabels: 28, sameNameGap: 180 });
     }
@@ -1468,15 +1464,6 @@ class NYCMapSystem {
           ctx.fillRect(cx - 1, cy - 1, 2, 2);
         }
       }
-    }
-
-    // GPS route to the active waypoint
-    if (this.waypoint) {
-      const wx = toX(this.waypoint.x);
-      const wy = toY(this.waypoint.z);
-      const route=getEdeMapRoute(px,pz,this.waypoint.x,this.waypoint.z);
-      drawRoute(ctx, 0, 0, wx, wy, 3,route&&route.map(p=>({x:toX(p.x),z:toY(p.z)})));
-      drawWaypoint(ctx, wx, wy, 4.5);
     }
 
     // Landmark blips
@@ -1524,6 +1511,61 @@ class NYCMapSystem {
   // =========================================================================
   // 2. FULL EDE INTERACTIVE STREET MAP ([M])
   // =========================================================================
+  drawRecreationOverlay(ctx, view, mini = false) {
+    if (!this.recreationMode) return;
+    const walking = this.recreationMode === 'walk';
+    if (!this.recreationPaths) {
+      const walk = new Path2D(), cycle = new Path2D();
+      addLine(walk, DOESBURGERMOLENPAD);
+      for (const link of EDE_CYCLE_LINKS) addLine(cycle, link);
+      this.recreationPaths = { walk, cycle };
+    }
+    const path = this.recreationPaths[this.recreationMode];
+    const tint = walking ? WALK_COLOR : CYCLE_COLOR;
+    const width = walking ? 4 : 2.6;
+    ctx.save();
+    view.world(ctx);
+    ctx.lineJoin = ctx.lineCap = 'round';
+    ctx.strokeStyle = MAP.halo;
+    ctx.lineWidth = (width + 2) / view.s;
+    ctx.stroke(path);
+    ctx.strokeStyle = tint;
+    ctx.lineWidth = width / view.s;
+    ctx.stroke(path);
+
+    const pins = walking ? [['Kernhem', ...DOESBURGERMOLENPAD.slice(0, 2)]] : EDE_CYCLE_JUNCTIONS;
+    const pinSize = walking || mini ? 5.5 : 9;
+    const drawn = [];
+    view.screen(ctx);
+    ctx.font = `700 10px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const [label, x, z] of pins) {
+      const lx = view.toX(x), lz = view.toY(z);
+      if (Math.abs(lx) > view.w * 0.5 + 10 || Math.abs(lz) > view.h * 0.5 + 10 ||
+          drawn.some(([px, pz]) => Math.hypot(px - lx, pz - lz) < 2 * pinSize + 3)) continue;
+      drawn.push([lx, lz]);
+      ctx.beginPath();
+      ctx.arc(lx, lz, pinSize, 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = MAP.halo;
+      ctx.fillStyle = tint;
+      ctx.stroke();
+      ctx.fill();
+      if (!walking) {
+        ctx.fillStyle = MAP.water;
+        ctx.font = `700 ${mini ? 7 : 10}px ${FONT}`;
+        ctx.fillText(label, lx, lz + 0.5);
+      } else if (!mini) {
+        ctx.strokeStyle = MAP.halo;
+        ctx.lineWidth = 3;
+        ctx.strokeText(label, lx, lz - 15);
+        ctx.fillText(label, lx, lz - 15);
+      }
+    }
+    ctx.restore();
+  }
+
   renderFullMap() {
     if (!this.fullCtx || !this.fullCanvas || !this.isFullMapOpen) return;
     const ctx = this.fullCtx;
@@ -1542,7 +1584,7 @@ class NYCMapSystem {
 
     // Ground layers, names & landmark pins: re-rendered only when the view, the search or the buildings change
     const fp = v.s >= BUILDING_FOOTPRINT_ZOOM ? footprintLayers(this.allBlocks) : null;
-    const key = `${v.cx}|${v.cz}|${v.s}|${this.fullCanvas.width}|${this.fullCanvas.height}|${this.searchHighlight}|${fp ? fp.version : 0}`;
+    const key = `${v.cx}|${v.cz}|${v.s}|${this.fullCanvas.width}|${this.fullCanvas.height}|${this.searchHighlight}|${this.recreationMode}|${fp ? fp.version : 0}`;
     if (!this.fullStatic) this.fullStatic = document.createElement('canvas');
     if (key !== this.fullStaticKey) {
       this.fullStaticKey = key;
@@ -1560,15 +1602,6 @@ class NYCMapSystem {
     v.screen(ctx);
     const toX = (wx) => v.toX(wx);
     const toY = (wz) => v.toY(wz);
-
-    // GPS route on the full map
-    if (this.waypoint) {
-      const wx = toX(this.waypoint.x);
-      const wy = toY(this.waypoint.z);
-      const route=getEdeMapRoute(ent.position.x,ent.position.z,this.waypoint.x,this.waypoint.z);
-      drawRoute(ctx, toX(ent.position.x), toY(ent.position.z), wx, wy, 4,route&&route.map(p=>({x:toX(p.x),z:toY(p.z)})));
-      drawWaypoint(ctx, wx, wy, 7);
-    }
 
     // Live Player Blip & Heading Arrow, with a slow pulse to find it at a glance
     const px = toX(ent.position.x);
@@ -1602,6 +1635,7 @@ class NYCMapSystem {
 
     // 2. The ground: boroughs, islands, Manhattan's blocks, parks, footprints, highways & bridges
     this.drawWorld(ctx, v, false);
+    this.drawRecreationOverlay(ctx, v);
 
     v.screen(ctx);
     const toX = (wx) => v.toX(wx);

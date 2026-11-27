@@ -628,6 +628,56 @@ uv run --python 3.12 --with pyproj==3.8.0 --with shapely==2.1.2 --with numpy \
   python -B tools/build-ede-woodland.py /tmp/ede-bgt-vegetation-municipality-20261126.zip
 ```
 
+### Refresh the nature habitat layer
+
+The De Ginkel and Planken Wambuis pilot uses 8 m cells from Gelderland’s Beheergebied 2027 layer. The bake reads polygons in RD New and uses the same pinned conversion as the other Ede assets. The layer classifies land for nature management. In the game it guides the placement of dry and damp heath, woodland edges, grassland and sand. The existing BGT and OSM cover fills gaps, including grass used for the daisy pilot. [Gelderland layer 96](https://geoportaal.gelderland.nl/gisserver/rest/services/Natuurbeheerplan/Natuurbeheerplan/MapServer/96) · [Plan and download](https://geodata.gelderland.nl/bestanden/geo-teksten/downloads/)
+
+```sh
+uv run --with pyproj==3.8.0 --with 'shapely>=2.1' --with numpy \
+  python -B tools/build-ede-nature-habitats.py /tmp/ede-beheergebied-2027.geojson --fetch
+```
+
+Omit `--fetch` to rebuild from the saved GeoJSON. The compact flowering profiles sample the FLORON and NDFF diagrams every seven days from day 4, rounded to hundredths from the export of 27 November 2026. The game interpolates between samples and limits visible flowers to each species’ main season. [FLORON and NDFF phenology diagrams, CC BY 4.0](https://www.verspreidingsatlas.nl/projecten/floron/fenologie/)
+
+### Refresh the crop and wildflower field layer
+
+`tools/build-ede-fields.py` clips the final RVO crop parcel registry for 15 May 2025 to municipality GM0228 and cuts out ground-level roads and paths, water, buildings and woody cover. Mapped travel surfaces include sand and gravel and get a planting setback. OpenStreetMap segments fill gaps in the survey. The bake writes an index and 512 m tiles to `assets/ede-fields-v1`. All 103 local registry codes have calendar mappings, including landscape codes that use existing map layers. Row bearings are estimates from parcel shape. The scene date advances planting, growth, ripening, cuts and harvest across the fixed 2025 layout. [PDOK crop registry](https://www.pdok.nl/-/brp-gewaspercelen-2025-definitief) · [WUR maize handbook](https://www.wur.nl/nl/onderzoek/producten-diensten/handboek-snijmais)
+
+Flower placement uses Gelderland management areas, surveyed FLORON verges, the Van Balverenweg planting and the De Ginkel lease strips. The supplied A6, G1 and G3 species lists are representative where sowing records are unavailable. The manifest records each site’s evidence and recipe. Flowering curves adapt FLORON and NDFF’s published flowering markers. [FLORON Nectarindex](https://www.verspreidingsatlas.nl/projecten/floron/nectarindex/) · [FLORON and NDFF flowering diagrams, CC BY 4.0](https://www.verspreidingsatlas.nl/projecten/floron/fenologie/) · [A6 arable](https://www.cruydthoeck.nl/a6-akkerbloemen) · [G1 dry](https://www.cruydthoeck.nl/g1-bloemrijk-grasland-lichte-grond) · [G3 wet](https://www.cruydthoeck.nl/g3-bloemrijk-grasland-natte-grond)
+
+```sh
+uv run --python 3.13 --with pyproj==3.8.0 --with shapely --with rasterio \
+  python -B tools/build-ede-fields.py /tmp/ede-fields-sources --fetch
+```
+
+Omit `--fetch` to reuse the source snapshots. Compare frame timings with `?perf=1&fields=off`. The aerial photos supply field texture, with colour graded to the simulated state when the photographed cover differs. At close range the game draws instanced plants. The distant maize canopy has sides along field boundaries and holes, with openings at tile cuts so continuous fields join across tiles.
+
+### Refresh the walking and cycling overlays
+
+The walking loop uses the ordered ways and mapped gates of Doesburgermolenpad. The cycling overlay uses OpenStreetMap regional node-network relations and nearby nodes carrying junction numbers. The bake clips the cycling geometry to Ede and the immediate travel area. OSM data is distributed under ODbL. [Walking route source](https://www.openstreetmap.org/relation/3926312) · [OpenStreetMap copyright](https://www.openstreetmap.org/copyright)
+
+```sh
+uv run --with pyproj==3.8.0 --with 'shapely>=2.1' \
+  python -B tools/build-ede-recreation-routes.py /tmp/ede-recreation-routes --fetch
+```
+
+Omit `--fetch` to use the cached OSM snapshots.
+
+### Refresh the local audio map
+
+The 64 m audio grid uses modeled long-term road and rail noise published by RIVM. The layers set the prominence of distant traffic beds. Nearby simulated traffic and trains provide separate positional sounds. [Road WCS metadata](https://doi.org/10.21945/BCCE7800-E866-4763-A7FE-AB477FDD8D3F) · [Rail WCS metadata](https://doi.org/10.21945/4DAE956F-E2E5-444A-8C9B-05BAAAFB239E)
+
+```sh
+uv run --with pyproj==3.8.0 --with rasterio --with numpy \
+  python -B tools/build-ede-ambient-noise.py /tmp/ede-ambient-noise --fetch
+```
+
+Omit `--fetch` to rebake from the cached raster crops.
+
+### Grotestraat and Dorpsstraat pilots
+
+The Grotestraat pilot places fitted shopfront details on the pedestrian block around numbers 27–57. In Lunteren, five 3DBAG shells near Wilbrinkstraat carry tile courses, gutters, roof details and two observed solar banks. The models use roof control geometry and PDOK imagery for alignment. [Current Ede shops](https://www.edecentrum.nl/winkelen/) · [3DBAG CC BY 4.0](https://docs.3dbag.nl/en/copyright/) · [PDOK aerial imagery](https://www.pdok.nl/introductie/-/article/pdok-luchtfoto-rgb-open-)
+
 ## Refresh the lamp-post inventory
 
 ```sh

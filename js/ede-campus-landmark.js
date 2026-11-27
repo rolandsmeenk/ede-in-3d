@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { CivicBatch, along, offsetEdge, facePanel, wallExtent, wallColliders, makeGroup, polygonNormal, addLandmarkLod } from './ede-civic-landmarks.js';
+import { CivicBatch, along, offsetEdge, facePanel, faceWindow, wallExtent, wallColliders, makeGroup, polygonNormal, addLandmarkLod } from './ede-civic-landmarks.js';
 import { terrainHeightAt } from './terrain.js';
 import { sampleRoofColor } from './aerial-colors.js';
 import { CHE_BRIDGE_SOFFIT } from './ede-grade.js';
@@ -403,12 +403,16 @@ function panel(batch, face, from, to, lo, hi, color, offset = 0.022, sheen = 0) 
 
 function curtainWall(batch, face, from, to, lo, hi, gap = 1.48) {
   if (hi <= lo || to <= from) return;
-  const bays = Math.max(1, Math.round(face.width * (to - from) / gap));
-  const mullion = Math.min(0.023, 0.026 / face.width);
+  const { a, b, n, width } = face;
+  const bays = Math.max(1, Math.round(width * (to - from) / gap));
+  const mullion = Math.min(0.023, 0.026 / width);
   panel(batch, face, from, to, lo - 0.055, hi + 0.055, steel);
   for (let i = 0; i < bays; i++) {
     const u = from + (to - from) * i / bays, v = from + (to - from) * (i + 1) / bays;
-    panel(batch, face, u + mullion, v - mullion, lo, hi, glazing[i % glazing.length], 0.039, 1);
+    if (v - u <= 2 * mullion) continue;
+    faceWindow(batch, a, b, n, u, v, lo, hi, {
+      color: glazing[i % glazing.length], frame: steel, border: [mullion * width, 0], sheen: 1,
+    }, 0.039);
   }
 }
 
@@ -507,7 +511,7 @@ function shell(batch, silhouette, colliders, [points, surfaces], { roofId, groun
     silhouette.polygon(vertices, color);
     if (!face) continue;
     groundWall(batch, silhouette, colliders, face, ground, color);
-    detail(face, id);
+    detail(face, id, color);
   }
 }
 
@@ -697,13 +701,16 @@ function knaap(batch, silhouette, colliders, labels) {
   shell(batch, silhouette, colliders, HALL, {
     roofId: 'w562784777', ground: -6.06, roofColor: 0xa4a49c,
     wallColor: (face, id) => face && face.hi < -1.8 ? 0x4b4a44 : copper[id % copper.length],
-    detail(face, id) {
-      const { lo, hi, width, n } = face;
+    detail(face, id, color) {
+      const { a, b, lo, hi, width, n } = face;
       if (width < 1.7 || hi - lo < 1.3) return;
       const east = n.x > 0.72, south = n.z > 0.72;
       if (hi > 1.32) {
-        for (let y = Math.max(-2.18, lo + 0.5); y < hi - 0.16; y += 1.22)
-          panel(batch, face, 0.009, 0.991, y, y + 0.013, 0x7e543e, 0.011);
+        for (let y = Math.max(-2.18, lo + 0.5); y < hi - 0.16; y += 1.22) {
+          faceWindow(batch, a, b, n, 0.009, 0.991, y - 0.05, y + 0.063, {
+            color: 0x7e543e, frame: color, border: [0, 0.05], sheen: 0,
+          }, 0.011);
+        }
       }
       if (east && width > 4.0) {
         curtainWall(batch, face, 0, 1, Math.max(lo + 0.20, -5.37), Math.min(-2.06, hi - 0.24), 1.51);

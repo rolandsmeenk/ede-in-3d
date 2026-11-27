@@ -9,6 +9,7 @@ import { windmillLightingFor } from './ede-windmill.js';
 import { createStingerbol } from './ede-stingerbol.js';
 import { createEnkaChimney } from './ede-enka-chimneys.js';
 import { createAstrant, createPegasusFlat } from './ede-mural-landmarks.js';
+import { createWeerdesteinFoxBuilding } from './ede-weerdestein-mural.js';
 import { createPlantion } from './ede-plantion.js';
 import { createFrisoKazerne } from './ede-friso-kazerne.js';
 import { createAkoesticumFlags } from './ede-akoesticum-flags.js';
@@ -28,6 +29,7 @@ import { createEderKuil, createPallasAthene, createTechnova, createTesqua } from
 import { createCropOffice, createPatheEde, createStadspoort } from './ede-retail-landmarks.js';
 import { createRiedelSilos, createKappaDocie } from './ede-riedel-silos.js';
 import { buildMuralWalls } from './ede-mural-surfaces.js';
+import { buildPaintedUtilities, POLLENSTEIN_TRANSFORMER } from './ede-painted-utilities.js';
 import { createRaadhuis, createCultura } from './ede-civic-landmarks.js';
 import { createWaterzuivering } from './ede-waterzuivering.js';
 import { createOudeHofstede, createProosdij } from './ede-kinderboerderij.js';
@@ -54,6 +56,8 @@ import { WEST_EXPANSION_LANDMARK_FACTORIES } from './ede-west-expansion-landmark
 import { GINKEL_LANDMARK_FACTORIES } from './ede-ginkel-landmarks.js';
 import { ZONNEOORD_LANDMARK_FACTORIES } from './ede-zonneoord-landmarks.js';
 import { LUNTEREN_LANDMARK_FACTORIES } from './ede-lunteren-landmarks.js';
+import { buildDorpsstraatRoofs, buildGrotestraatShopfronts } from './ede-street-pilots.js';
+import { DORPSSTRAAT_BUILDINGS } from './ede-dorpsstraat-survey.js';
 import { createWesthoffhuis } from './ede-westhoffhuis.js';
 import { createLunterenFireStation } from './ede-lunteren-fire.js';
 import { createKulturhus } from './ede-kulturhus.js';
@@ -119,7 +123,7 @@ export const LANDMARK_EXCLUSIONS = [
   ...[chicoSite, chicaSite].map(({ x, z }) => ({ minX: x - 1.8, maxX: x + 1.8, minZ: z - 1.8, maxZ: z + 1.8 })),
 ];
 
-export function buildLandmarks(scene, { historicUtilities } = {}) {
+export function buildLandmarks(scene, { historicUtilities, stationPlatforms } = {}) {
   const group = new THREE.Group();
   group.name = 'EdeLandmarks';
   const colliders = [], platforms = [], helipads = [], nearDetails = [], windUpdates = [], weatherCovers = [], forecourtLights = [];
@@ -158,6 +162,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     'grote-enka-schoorsteen': () => createEnkaChimney('grote'),
     'kleine-enka-schoorsteen': () => createEnkaChimney('kleine'),
     astrant: createAstrant,
+    'weerdestein-fox': createWeerdesteinFoxBuilding,
     'pegasus-flat': createPegasusFlat,
     plantion: createPlantion,
     'johan-willem-friso': createFrisoKazerne,
@@ -279,6 +284,7 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
       : models[site.id](footprints, site);
     model.name = site.name;
     platforms.push(...(model.userData.platforms ?? []));
+    weatherCovers.push(...(model.userData.weatherCovers ?? []));
     treeClearance.push(...(model.userData.treeClearance ?? []));
     for (const source of site.replaceParcelSources ?? []) replacements.parcelSources.add(source);
     helipads.push(...(model.userData.helipads ?? []));
@@ -288,6 +294,19 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     if (model.userData.landmarkLod) {
       const lod = model.userData.landmarkLod;
       landmarkLods.push({ ...lod, bounds: new THREE.Box3().setFromObject(model), far: false });
+    }
+  }
+  const shopfronts = buildGrotestraatShopfronts();
+  group.add(shopfronts);
+  shopfronts.traverse(registerDetail);
+  if (containsPlayablePoint(-3543, -4426)) {
+    const roofscape = buildDorpsstraatRoofs();
+    group.add(roofscape);
+    colliders.push(...roofscape.userData.colliders);
+    roofscape.traverse(registerDetail);
+    for (const { bagId, osmIds } of DORPSSTRAAT_BUILDINGS) {
+      replacements.bag.add(bagId);
+      for (const id of osmIds) replacements.osm.add(id);
     }
   }
   const mastLod = createZendmastLod(masts);
@@ -328,7 +347,13 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     group.add(model);
     colliders.push(...model.userData.colliders);
   }
-  const station = createEdeStationLandmark();
+  for (const model of buildPaintedUtilities()) {
+    group.add(model);
+    colliders.push(...model.userData.colliders);
+  }
+  replacements.osm.add(POLLENSTEIN_TRANSFORMER.osmId);
+  replacements.bag.add(POLLENSTEIN_TRANSFORMER.bagId);
+  const station = createEdeStationLandmark(stationPlatforms);
   group.add(station);
   station.traverse(registerDetail);
   colliders.push(...station.userData.colliders);
@@ -360,5 +385,5 @@ export function buildLandmarks(scene, { historicUtilities } = {}) {
     for (const update of millLightUpdates) update(state);
   }
   return { group, colliders, platforms, helipads, weatherCovers, forecourtLights, treeClearance, replacements,
-    exclusions: LANDMARK_EXCLUSIONS, update, updateWind, setClockMinutes, setMillLighting, updateMastLod: mastLod.update };
+    stationDepartureDisplay: station.userData.departureDisplay, exclusions: LANDMARK_EXCLUSIONS, update, updateWind, setClockMinutes, setMillLighting, updateMastLod: mastLod.update };
 }

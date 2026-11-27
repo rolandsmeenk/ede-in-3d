@@ -21,6 +21,26 @@ test('the mural asset matches the offline wall catalogue and uses bundled textur
 });
 
 
+test('Bellefleur clears the shared trim on the surveyed Groenendaal Zuid end wall', async () => {
+  const { SKYLINE_SHELLS } = await import('../js/ede-skyline-survey.js');
+  const [survey] = SKYLINE_SHELLS['groenendaal-zuid'];
+  const [, [topLeft, , bottomRight]] = survey.faces[21];
+  const [x, , z] = survey.points[topLeft];
+  const [rightX, , rightZ] = survey.points[bottomRight];
+  const dx = rightX - x, dz = rightZ - z;
+  const width = Math.hypot(dx, dz);
+  const { sites } = await readJSON(resolve(assets, 'placements-v1.json'));
+  const [atlas] = sites.find(site => site.id === 'bellefleur').atlases;
+  assert.equal(atlas.f, undefined);
+  for (let i = 0; i < atlas.p.length; i += 3) {
+    const offsetX = atlas.p[i] - x, offsetZ = atlas.p[i + 2] - z;
+    const distance = (offsetZ * dx - offsetX * dz) / width;
+    const along = (offsetX * dx + offsetZ * dz) / width;
+    assert.ok(distance > 0.12 && distance < 0.13);
+    assert.ok(along > 0.20 && along < width - 0.20);
+  }
+});
+
 test('Groot Derxsgoed uses its modeled east-wall paint plane with the fallback building excluded', async () => {
   const three = await import('../vendor/three/build/three.webgpu.js');
   const { sites } = await readJSON(resolve(assets, 'placements-v1.json'));

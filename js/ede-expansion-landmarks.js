@@ -6,7 +6,6 @@ import { DE_KLOMP_PLATFORMS, EXPANSION_LANDMARK_SURVEYS, GINKEL_SHEEPFOLD_FENCES
 import { createSurveyLandmark, surveyLabel, surveyPanel, surveyWindow } from './ede-survey-landmark.js';
 import { addWindmillSailcloth, createWindmillRig, windmillUplight } from './ede-windmill.js';
 import { terrainHeightAt } from './terrain.js';
-import { sheepFleeceInfluences } from './tree-seasons.js';
 
 function box(batch, x, y, z, width, height, depth, color, heading = 0) {
   batch.solid(new THREE.BoxGeometry(width, height, depth).rotateY(heading).translate(x, y, z), color);
@@ -53,7 +52,11 @@ function sheepfoldWall(wall) {
 function addSheepfoldFences({ trim, colliders }) {
   const posts = new Set();
   const color = 0x62503b;
-  for (const { points } of GINKEL_SHEEPFOLD_FENCES) {
+  // Leave a walk-through in the scene's paddock rail for the simulated flock.
+  const fences = GINKEL_SHEEPFOLD_FENCES.flatMap(({ id, points }) => id === 'w653710014'
+    ? [[...points.slice(0, 3), [4320.25, 1091.18]], [[4318.35, 1091.23], ...points.slice(3)]]
+    : [points]);
+  for (const points of fences) {
     for (let j = 1; j < points.length; j++) {
       const [ax, az] = points[j - 1], [bx, bz] = points[j];
       const dx = bx - ax, dz = bz - az;
@@ -82,83 +85,6 @@ function addSheepfoldFences({ trim, colliders }) {
       }
     }
   }
-}
-
-function sheepfoldFlockBatch(coat) {
-  // Positions inside the fenced paddock alongside the main sheepfold.
-  const placements = [
-    [4320.6, 1066.8, 0.48, 1.02, true],
-    [4322.5, 1067.5, 1.86, 0.69, false],
-    [4327.1, 1065.2, -0.63, 0.98, false],
-    [4328.8, 1070.3, 2.28, 1.04, true],
-    [4322.1, 1072.8, -1.75, 0.96, true],
-    [4325.7, 1074.0, 0.83, 1.00, false],
-    [4329.7, 1078.1, -2.74, 0.91, true],
-    [4322.0, 1078.4, -0.30, 1.06, true],
-    [4319.5, 1083.4, -0.88, 1.03, false],
-    [4321.3, 1084.4, -1.42, 0.73, true],
-    [4325.4, 1083.1, 2.96, 0.95, true],
-    [4328.6, 1087.0, 1.34, 1.04, false],
-  ];
-  const batch = new CivicBatch();
-  const fleece = [0xe4d9c2, 0xf2e9d4, 0xd2c3a9, 0xe8dfcc];
-  const face = 0xd7cbb2;
-  const hoof = 0x50483c;
-
-  for (const [i, [x, z, heading, size, grazing]] of placements.entries()) {
-    const ground = terrainHeightAt(x, z);
-    const cos = Math.cos(heading), sin = Math.sin(heading);
-    const wool = fleece[i % fleece.length];
-    const part = (color, px, py, pz, rx, ry, rz, tilt = 0, roll = 0) => {
-      const shape = new THREE.SphereGeometry(1, 10, 6).scale(rx, ry, rz)
-        .rotateX(tilt).rotateZ(roll).translate(px, py, pz)
-        .scale(size, size, size).rotateY(heading).translate(x, ground, z);
-      batch.solid(shape, color);
-    };
-
-    part(wool, 0, 0.71, -0.05, 0.24 + 0.14 * coat, 0.22 + 0.14 * coat, 0.53 + 0.07 * coat);
-    part(wool, 0, 0.70, -0.38, 0.21 + 0.135 * coat, 0.20 + 0.12 * coat, 0.245 + 0.055 * coat);
-    part(wool, 0, 0.74, 0.28, 0.21 + 0.14 * coat, 0.22 + 0.115 * coat, 0.265 + 0.06 * coat);
-    part(wool, 0, 0.42, -0.59, 0.052 + 0.047 * coat, 0.26, 0.065 + 0.045 * coat, 0.18);
-
-    for (const side of [-1, 1]) for (const end of [-1, 1]) {
-      const px = side * 0.17 * size, pz = (end * 0.37 - 0.04) * size;
-      const wx = x + px * cos + pz * sin, wz = z - px * sin + pz * cos;
-      const foot = terrainHeightAt(wx, wz);
-      const leg = ground + 0.63 * size - foot;
-      batch.solid(new THREE.CylinderGeometry(0.043 * size, 0.026 * size, leg, 6)
-        .translate(wx, foot + leg / 2, wz), face);
-      batch.solid(new THREE.CylinderGeometry(0.039 * size, 0.043 * size, 0.068 * size, 6)
-        .rotateY(heading).translate(wx, foot + 0.034 * size, wz), hoof);
-    }
-
-    const headY = grazing ? 0.30 : 1.04, headZ = grazing ? 0.77 : 0.59;
-    part(wool, 0, grazing ? 0.51 : 0.85, grazing ? 0.51 : 0.43,
-      0.116 + 0.066 * coat, grazing ? 0.32 : 0.25, 0.13 + 0.052 * coat, grazing ? -0.72 : 0.59);
-    part(face, 0, headY, headZ, 0.103, 0.15, 0.12, grazing ? -0.22 : 0.52);
-    part(0xb1a58c, 0, headY - 0.092, headZ + 0.062, 0.073, 0.064, 0.092);
-    part(hoof, 0, headY - 0.095, headZ + 0.143, 0.050, 0.026, 0.017);
-    for (const side of [-1, 1]) {
-      part(face, side * 0.135, headY + 0.048, headZ - 0.046, 0.10, 0.025, 0.042, 0, -side * 0.23);
-      part(0x32281e, side * 0.083, headY + 0.033, headZ + 0.063, 0.019, 0.020, 0.021);
-    }
-  }
-
-  return batch;
-}
-
-function addSheepfoldFlock(group) {
-  const flock = sheepfoldFlockBatch(0).mesh();
-  const winter = sheepfoldFlockBatch(1);
-  winter.geometry.setAttribute('position', new THREE.Float32BufferAttribute(winter.vertices, 3));
-  winter.geometry.computeVertexNormals();
-  flock.geometry.morphAttributes.position = [winter.geometry.attributes.position];
-  flock.geometry.morphAttributes.normal = [winter.geometry.attributes.normal];
-  flock.geometry.computeBoundingBox();
-  flock.updateMorphTargets();
-  flock.morphTargetInfluences = sheepFleeceInfluences;
-  flock.name = 'Ginkelse Heide sheep flock';
-  group.add(flock);
 }
 
 function addDeKlompPlatforms({ group, platforms }) {
@@ -540,7 +466,6 @@ export const EXPANSION_LANDMARK_FACTORIES = {
   'schaapskooi-ginkelse-heide': (_, site) => createSurveyLandmark(site, EXPANSION_LANDMARK_SURVEYS[site.id], sheepfoldWall, details => {
     addSheepfoldFences(details);
     addSheepfoldRoofs(details.trim);
-    addSheepfoldFlock(details.group);
   }),
   'juffrouw-tok': (_, site) => buildRestaurant(site),
   doesburgermolen: createDoesburgermolen,

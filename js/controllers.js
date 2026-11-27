@@ -17,7 +17,6 @@ import {
 import { cityUniforms, createCarPaintMaterial, createContactShadowMaterial } from './tsl-materials.js';
 import {
   BODY_SPECS,
-  PARKED_CAR_LAMPS,
   buildCarGeometry,
   buildCarSidePatch,
   buildSteerableWheelGeo,
@@ -112,9 +111,25 @@ const CAR_DRIVE = {
   wheelbase: 2.76, grip: 9.5, cornering: 10.5 // Wheelbase (m), tire and steering acceleration limits (m/s²).
 };
 const BICYCLE_DRIVE = {
-  speed: 19, reverseSpeed: 4.5, acceleration: 9,
+  speed: 30 / 3.6, reverseSpeed: 1.2, acceleration: 1.8,
   rolling: 0.08, drag: 0.004, coast: 0.2, brake: 7.5 // Backward input is scaled to 0.6, giving 4.5 m/s² braking.
 };
+const BIKE_DRIVES = {
+  transportfiets: { ...BICYCLE_DRIVE, speed: 28 / 3.6 },
+  ebike: { ...BICYCLE_DRIVE, speed: 35 / 3.6, acceleration: 2.4 },
+  fatbike: { ...BICYCLE_DRIVE, speed: 35 / 3.6, acceleration: 2.1 },
+  cargobike: { ...BICYCLE_DRIVE, speed: 16 / 3.6, acceleration: 1.4 }
+};
+
+function bikeDrive(bike, mode = bike.type) {
+  return BIKE_DRIVES[mode === 'cargobike' ? mode : bike.bikeStyle] ?? BICYCLE_DRIVE;
+}
+
+function setEntityVisible(entity, visible) {
+  entity.mesh.visible = visible;
+  if (entity.helmet) entity.helmet.visible = visible;
+  for (const mesh of (entity.crowd ?? entity.riderCrowd)?.meshes ?? []) mesh.visible = visible;
+}
 
 function driveSpeed(speed, throttle, dt, drive) {
   // Turning can project tiny sideways motion back into speed after braking to zero.
@@ -483,6 +498,7 @@ class ThirdPersonControllerManager {
         : this.getGroundHeight(x, z, ent.type);
       if (ent.mesh) {
         placeEntityMesh(ent);
+        setEntityVisible(ent, ent.type === this.activeMode);
         ent.mesh.traverse((child) => {
           if (
             child.isMesh &&
@@ -591,39 +607,56 @@ class ThirdPersonControllerManager {
   }
 
   setMode(mode) {
-    if (!this.entities[mode]) return;
-    this.activeMode = mode;
-    const active = this.entities[mode];
-    if (active.mesh) active.mesh.visible = true;
-    if (active.helmet) active.helmet.visible = true;
-    if (mode === 'person') active._charHidden = false;
-    else if (mode === 'cyclist' || mode === 'cargobike') {
-      active._riderHidden = false;
-      active._posedX = NaN;
-    }
-    const car = this.entities.car;
-    if (car?.carState) {
-      if (mode !== 'car') {
-        car.carState.value.x = PARKED_CAR_LAMPS;
-        car.carState.value.w = 0;
-      } else if (car.carState.value.x === PARKED_CAR_LAMPS) {
-        car.carState.value.x = 0;
+    if (!Object.hasOwn(this.entities, mode) || mode === this.activeMode) return;
+    const { position: { x, y, z }, heading } = this.getActiveEntity();
+    const altitude = mode === 'helicopter' ? this.helicopterSpawnAltitude(x, z) : y;
+    this.teleportActiveTo(x, z, heading, altitude, mode);
+  }
+
+  helicopterSpawnAltitude(x, z) {
+    const radius = 100;
+    let highest = helicopterAltitude(x, z, -Infinity, 0);
+    for (let dx = -radius; dx <= radius; dx += 5) {
+      for (let dz = -radius; dz <= radius; dz += 5) {
+        if (dx * dx + dz * dz <= radius * radius) {
+          highest = Math.max(highest, terrainHeightAt(x + dx, z + dz));
+        }
       }
     }
+    for (const c of this.nearColliders(x, z, radius)) {
+      if (!(c.maxY > highest) || c.isRoofVisible?.() === false) continue;
+      // The spatial index can return obstacles beyond the radius in the same cell.
+      const dx = Math.max(c.minX - x, 0, x - c.maxX);
+      const dz = Math.max(c.minZ - z, 0, z - c.maxZ);
+      if (dx * dx + dz * dz <= radius * radius) highest = c.maxY;
+    }
+    return highest + 15;
   }
 
   getActiveEntity() {
     return this.entities[this.activeMode];
   }
 
-  teleportActiveTo(x, z, heading = Math.PI, savedAltitude = null) {
-    const ent = this.getActiveEntity();
-    this.resetInput();
-    if (!Number.isFinite(heading)) heading = ent.heading;
-    const heli = this.activeMode === 'helicopter';
+  getBikeTopSpeedKmh() {
+    return bikeDrive(this.getActiveEntity()).speed * 3.6;
+  }
+
+  teleportActiveTo(x, z, heading = Math.PI, savedAltitude = null, mode = this.activeMode) {
+    const previousMode = this.activeMode;
+    const previous = this.getActiveEntity();
+    const ent = Object.hasOwn(this.entities, mode) ? this.entities[mode] : previous;
+    if (!Number.isFinite(heading)) heading = previous.heading;
+    const heli = ent.type === 'helicopter';
     const altitude = savedAltitude ?? (heli ? ent.position.y : null);
-    const clearance = savedAltitude == null ? 92 : 0.25;
-    const destination = this.findTeleportPosition(x, z, heading, altitude, clearance);
+    const clearance = savedAltitude == null ? 92 : HELICOPTER_CLEARANCE;
+    this.activeMode = ent.type;
+    const switching = ent !== previous;
+    const destination = this.findTeleportPosition(x, z, heading, altitude, clearance, switching ? 0 : 0.1);
+    if (switching && !destination) {
+      this.activeMode = previousMode;
+      return { x: previous.position.x, z: previous.position.z };
+    }
+    this.resetInput();
     if (destination) {
       ent.position.x = destination.x;
       ent.position.z = destination.z;
@@ -631,12 +664,15 @@ class ThirdPersonControllerManager {
       ent.position.y = heli
         ? helicopterAltitude(destination.x, destination.z, altitude, clearance)
         : this.getGroundHeight(destination.x, destination.z, this.activeMode, savedAltitude ?? terrainHeightAt(destination.x, destination.z));
+      ent._lastDryPosition = { x: destination.x, z: destination.z };
+    }
+    if (switching) {
+      setEntityVisible(previous, false);
+      setEntityVisible(ent, true);
     }
     ent.speed = 0;
     if (this.activeMode === 'person') {
       ent.verticalVel = 0;
-      ent._charHidden = false;
-      if (ent.mesh) ent.mesh.visible = true;
       ent.rig.reset(ent.position.x, ent.position.z, ent.heading, personGround, this);
       ent.crowd.begin();
       ent.crowd.add(ent.rig, 0);
@@ -656,9 +692,6 @@ class ThirdPersonControllerManager {
       if (ent.frontSteerPivot) ent.frontSteerPivot.rotation.y = 0;
       if (ent.handlebarPivot) ent.handlebarPivot.rotation.y = 0;
       if (ent.bikeFrame) ent.bikeFrame.steerAngle = 0;
-      ent._riderHidden = false;
-      ent._posedX = NaN;
-      if (ent.helmet) ent.helmet.visible = true;
     } else if (heli) {
       ent.verticalSpeed = ent.pitchAngle = ent.rollAngle = 0;
       ent.tiltPivot.rotation.x = ent.tiltPivot.rotation.z = 0;
@@ -670,21 +703,12 @@ class ThirdPersonControllerManager {
 
   // Find a fully clear arrival before moving the player. Sequential collision pushes can leave a player trapped
   // between overlapping buildings, so test whole candidate footprints instead; retain the old position if none fits.
-  findTeleportPosition(x, z, heading, altitude, clearance = 0.25) {
+  findTeleportPosition(x, z, heading, altitude, clearance = HELICOPTER_CLEARANCE, padding = 0.1) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
     const heli = this.activeMode === 'helicopter';
     const radius = heli ? 4.5 : this.activeMode === 'person' ? 0.48 : 0.65;
-    const shape = collisionBody(this.activeMode, radius, heading, 0.1);
+    const shape = collisionBody(this.activeMode, radius, heading, padding);
     const margin = heli ? 6000 : 0;
-    const entity = this.getActiveEntity();
-    // Conservative body cylinders, including the taxi's corners, bicycle wheels and helicopter tail/rotor.
-    const body = { person: [0.48, 1.9], car: [2.4, 1.9], cyclist: [1.0, 1.9], cargobike: [1.45, 1.9], helicopter: [6.2, 3.2] };
-    const others = Object.values(this.entities).filter(e => e !== entity).map(e => ({
-      x: e.position.x, z: e.position.z, radius: body[e.type][0],
-      bottom: e.position.y - (e.type === 'helicopter' ? 0.7 : 0), top: e.position.y + body[e.type][1]
-    }));
-    const cameraBack = Math.cos(0.09) * entity.chaseDistance;
-    const cameraUp = entity.chaseHeight + Math.sin(0.09) * entity.chaseDistance * 0.85;
     const clampPoint = (px, pz) => {
       if (navigationBoundary?.length) return constrainNavigation(px, pz);
       pz = Math.max(ISLAND_BOUNDS.minZ + (heli ? -6000 : 30), Math.min(ISLAND_BOUNDS.maxZ + margin, pz));
@@ -701,16 +725,7 @@ class ThirdPersonControllerManager {
       if (!p) return false;
       if (!heli && this.isUnbridgedWater(p.x, p.z)) return false;
       const baseY = heli ? helicopterAltitude(p.x, p.z, altitude, clearance)
-        : this.getGroundHeight(p.x, p.z, this.activeMode, altitude ?? terrainHeightAt(p.x, p.z));
-      // Keep other player models out of both the arrival and its default chase view. A corridor also prevents a
-      // parked car between camera and character from hiding the character even when the camera itself is outside it.
-      const viewTop = baseY + Math.max(body[entity.type][1], cameraUp);
-      for (const other of others) {
-        if (other.bottom > viewTop + 0.3 || other.top < baseY - (heli ? 0.7 : 0) - 0.3) continue;
-        const dx = other.x - p.x, dz = other.z - p.z;
-        const back = Math.max(0, Math.min(cameraBack, -dx * shape.sin - dz * shape.cos));
-        if (Math.hypot(dx + shape.sin * back, dz + shape.cos * back) < other.radius + Math.max(body[entity.type][0], 0.5) + 0.1) return false;
-      }
+        : this.getGroundHeight(p.x, p.z, this.activeMode, altitude ?? terrainHeightAt(p.x, p.z), Math.atan2(shape.sin, shape.cos));
       const reach = Math.max(shape.extX, shape.extZ);
       for (const c of this.nearColliders(p.x, p.z, reach)) {
         if (buildingContact(c, p.x, baseY, p.z, shape)) return false;
@@ -719,7 +734,7 @@ class ThirdPersonControllerManager {
     };
     const origin = clampPoint(x, z);
     if (clear(origin, shape)) return { ...origin, heading };
-    if (origin && this.activeMode === 'cyclist') {
+    if (origin && padding && this.activeMode === 'cyclist') {
       const surface = gradeProfileAt(origin.x, origin.z, this.activeMode, heading,
         altitude ?? terrainHeightAt(origin.x, origin.z));
       // A surveyed narrow deck can fit the bike itself without its normal spawn padding.
@@ -729,7 +744,7 @@ class ThirdPersonControllerManager {
     }
     if (origin && shape.oriented) {
       const aligned = buildingPassageHeadingAt(origin.x, origin.z, altitude, heading);
-      if (Number.isFinite(aligned) && clear(origin, collisionBody(this.activeMode, radius, aligned, 0.1))) {
+      if (Number.isFinite(aligned) && clear(origin, collisionBody(this.activeMode, radius, aligned, padding))) {
         return { ...origin, heading: aligned };
       }
     }
@@ -1028,7 +1043,7 @@ class ThirdPersonControllerManager {
     bike.bikeStyle = id;
     bike.label = style.label;
     bike.bikeFrame.lean = id === 'fatbike' ? 0.29 : 0.16;
-    bike._posedX = NaN;
+    bike.speed = Math.min(bike.speed, bikeDrive(bike).speed);
     return true;
   }
 
@@ -1702,8 +1717,8 @@ class ThirdPersonControllerManager {
     return typeof waterAt === 'function' && waterAt(x, z) && !roadCrossesWater(x, z, this.activeMode !== 'helicopter');
   }
 
-  getGroundHeight(x, z, mode = 'person', referenceY = this.entities?.[mode]?.position.y) {
-    const surface = gradeProfileAt(x, z, mode, this.entities?.[mode]?.heading, referenceY ?? terrainHeightAt(x, z));
+  getGroundHeight(x, z, mode = 'person', referenceY = this.entities?.[mode]?.position.y, heading = this.entities?.[mode]?.heading) {
+    const surface = gradeProfileAt(x, z, mode, heading, referenceY ?? terrainHeightAt(x, z));
     if (surface && surface.kind !== 'surface') return gradeContactHeight(surface.id, surface.y);
     const y = surface?.y ?? gradeGroundHeightAt(x, z, referenceY);
     const curb = gradeCurbHeightAt(x, z, y, referenceY, surface ? 0 : undefined);
@@ -1895,82 +1910,27 @@ class ThirdPersonControllerManager {
     return roofFloor;
   }
 
-  // Pose the skinned characters once every entity has moved: the pedestrian's rig walks (or runs, turns, jumps) it to
-  // where it now is, planting its feet on the ground; the cyclist sits on the bike, hands on the grips, feet on the
-  // pedals, helmet on its head
-  poseCharacters(dt, focusPos = null) {
-    const focus = focusPos || this.getActiveEntity()?.position;
-    const maxDistSq = 320 * 320;
-
-    const p = this.entities.person;
-    if (p) {
-      const dx = focus ? p.position.x - focus.x : 0;
-      const dz = focus ? p.position.z - focus.z : 0;
-      if (this.activeMode === 'person' || dx * dx + dz * dz <= maxDistSq) {
-        p._charHidden = false;
-        if (p.mesh) p.mesh.visible = true;
-        const air = p.position.y - this.getGroundHeight(p.position.x, p.position.z, 'person');
-        p.rig.update(dt, p.position.x, p.position.z, p.heading, personGround, this, air > 0.02 ? air : 0);
-        p.crowd.begin();
-        p.crowd.add(p.rig, 0);
-        p.crowd.end();
-      } else if (!p._charHidden) {
-        p.rig.placed = false;
-        p.crowd.begin();
-        p.crowd.end();
-        if (p.crowd.updates > 2) {
-          if (p.mesh) p.mesh.visible = false;
-          p._charHidden = true;
-        }
-      }
-    }
-
-    for (const mode of ['cyclist', 'cargobike']) {
-      const b = this.entities[mode];
-      if (!b) continue;
-      const dx = focus ? b.position.x - focus.x : 0;
-      const dz = focus ? b.position.z - focus.z : 0;
-      if (this.activeMode === mode || dx * dx + dz * dz <= maxDistSq) {
-        if (b.helmet) b.helmet.visible = true;
-        const moved =
-          this.activeMode === mode ||
-          b._riderHidden ||
-          b._posedX !== b.position.x ||
-          b._posedY !== b.position.y ||
-          b._posedZ !== b.position.z ||
-          b._posedH !== b.heading ||
-          b._posedLean !== b.leanAngle ||
-          b._posedPedal !== b.pedalPhase ||
-          b._posedSteer !== b.bikeFrame?.steerAngle;
-        b._riderHidden = false;
-        if (moved) {
-          b.riderRig.ride(b.leanPivot, b.pedalPhase, b.bikeFrame);
-          b.riderCrowd.begin();
-          b.riderCrowd.add(b.riderRig, 0);
-          b.riderCrowd.end();
-          b.helmet.quaternion.copy(b.riderRig.headQuaternion);
-          b.helmet.position.set(0, 0.175, -0.012).applyQuaternion(b.helmet.quaternion).add(b.riderRig.headPosition);
-          b._posedX = b.position.x;
-          b._posedY = b.position.y;
-          b._posedZ = b.position.z;
-          b._posedH = b.heading;
-          b._posedLean = b.leanAngle;
-          b._posedPedal = b.pedalPhase;
-          b._posedSteer = b.bikeFrame?.steerAngle;
-        }
-      } else if (!b._riderHidden) {
-        b.riderCrowd.begin();
-        b.riderCrowd.end();
-        if (b.riderCrowd.updates > 2) {
-          if (b.helmet) b.helmet.visible = false;
-          b._riderHidden = true;
-          b._posedX = NaN;
-        }
-      }
+  poseCharacter(dt) {
+    const entity = this.getActiveEntity();
+    if (entity.type === 'person') {
+      const { x, y, z } = entity.position;
+      const air = y - this.getGroundHeight(x, z, 'person');
+      entity.rig.update(dt, x, z, entity.heading, personGround, this, air > 0.02 ? air : 0);
+      entity.crowd.begin();
+      entity.crowd.add(entity.rig, 0);
+      entity.crowd.end();
+    } else if (entity.riderRig) {
+      const { riderRig, riderCrowd, helmet } = entity;
+      riderRig.ride(entity.leanPivot, entity.pedalPhase, entity.bikeFrame);
+      riderCrowd.begin();
+      riderCrowd.add(riderRig, 0);
+      riderCrowd.end();
+      helmet.quaternion.copy(riderRig.headQuaternion);
+      helmet.position.set(0, 0.175, -0.012).applyQuaternion(helmet.quaternion).add(riderRig.headPosition);
     }
   }
 
-  update(dt, elapsed, focusPos = null) {
+  update(dt, elapsed, binoculars = false) {
     const heli = this.entities.helicopter;
     heli.mainRotorPivot.rotation.y = (heli.mainRotorPivot.rotation.y + dt * MAIN_ROTOR.rate) % (Math.PI * 2);
     heli.tailRotorPivot.rotation.x = (heli.tailRotorPivot.rotation.x + dt * TAIL_ROTOR.rate) % (Math.PI * 2);
@@ -1980,21 +1940,8 @@ class ThirdPersonControllerManager {
     heli.beacon.visible = elapsed % 1 < 0.15;
 
     if (this.activeMode === 'person') {
-      this.updatePerson(dt, elapsed);
-    } else {
-      // Keep the sidewalk pedestrian walking naturally when not actively controlled
-      const p = this.entities.person;
-      const walkSpeed = 1.48;
-      p.speed = walkSpeed;
-      p.position.x += Math.sin(p.heading) * walkSpeed * dt;
-      p.position.z += Math.cos(p.heading) * walkSpeed * dt;
-      p.position.y = this.getGroundHeight(p.position.x, p.position.z, 'person');
-      p.verticalVel = 0;
-      if (p.position.z < -340) p.heading = 0;
-      else if (p.position.z > 340) p.heading = Math.PI;
-    }
-
-    if (this.activeMode === 'car') {
+      this.updatePerson(dt, binoculars);
+    } else if (this.activeMode === 'car') {
       this.updateCar(dt, elapsed);
     } else if (this.activeMode === 'cyclist') {
       this.updateCyclist(dt, this.entities.cyclist, 'cyclist');
@@ -2004,10 +1951,7 @@ class ThirdPersonControllerManager {
       this.updateHelicopter(dt, elapsed);
     }
 
-    for (const key of Object.keys(this.entities)) {
-      const e = this.entities[key];
-      placeEntityMesh(e);
-    }
+    placeEntityMesh(this.getActiveEntity());
 
     // Modulate clustered vehicle & bike lights by time of day (off during Midday & Golden Hour; fade in at Dusk & Night)
     const glow = cityUniforms && cityUniforms.uInteriorGlow ? cityUniforms.uInteriorGlow.value : 0.48;
@@ -2033,12 +1977,12 @@ class ThirdPersonControllerManager {
       if (bike?.headLight) bike.headLight.intensity = this.activeMode === mode ? 115 * beamScale : 0;
     }
 
-    this.poseCharacters(dt, focusPos);
+    this.poseCharacter(dt);
   }
 
-  updatePerson(dt) {
+  updatePerson(dt, binoculars = false) {
     const p = this.entities.person;
-    const maxSpeed = 8.2;
+    const maxSpeed = binoculars ? 1.5 : 8.2;
     const turnRate = 2.6;
 
     let targetSpeed = 0;
@@ -2174,13 +2118,13 @@ class ThirdPersonControllerManager {
     if (this.keys.forward) throttle = this.keys.forward;
     else if (this.keys.backward) throttle = -0.6 * this.keys.backward;
 
-    b.speed = driveSpeed(b.speed, throttle, dt, BICYCLE_DRIVE);
+    b.speed = driveSpeed(b.speed, throttle, dt, bikeDrive(b, mode));
 
     let turnInput = 0;
     if (this.keys.left) turnInput = this.keys.left;
     if (this.keys.right) turnInput = -this.keys.right;
 
-    if (Math.abs(b.speed) > 0.15) {
+    if (b.speed !== 0) {
       const dirSign = b.speed >= 0 ? 1 : -1;
       b.heading += turnInput * 2.15 * dirSign * dt;
     }
@@ -2218,7 +2162,7 @@ class ThirdPersonControllerManager {
       );
     }
 
-    // The cranks turn with the rear wheel through the gears while pedalling (~110 rpm at cruising speed) and
+    // The cranks turn with the rear wheel through the gears while pedalling and
     // freewheel otherwise; the rider's feet follow the pedals (see poseCharacters)
     if (throttle > 0 && rearWheelDelta > 0) b.pedalPhase += rearWheelDelta / 3.2;
     b.crankPivot.rotation.x = b.pedalPhase;

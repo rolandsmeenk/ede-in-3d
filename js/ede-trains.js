@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute } from 'three/tsl';
 import { makeTrainModels } from './ede-train-models.js';
+import { createValleilijnArrivalSounds } from './ede-valleilijn-arrival.js';
 import { buildEdeTrainTracks } from './ede-train-tracks.js';
 import { createEdeTrainTraffic, trainCarOffset, trainModel, watchEdeTrains } from './ede-train-traffic.js';
 
@@ -44,7 +45,9 @@ export function createEdeTrainSystem(scene, timetable, hud, options) {
   const pool = Array.from({ length: POOL_SIZE }, () => makeActor(group, material, models.intercity));
   const active = new Map();
   const front = {}, rear = {}, location = {};
-  let hudText = '', syncedAt = -Infinity;
+  const departureDisplay = options?.departureDisplay;
+  const arrivalSounds = createValleilijnArrivalSounds();
+  let hudText = '', syncedAt = -Infinity, displayAt = -Infinity, trainClock;
 
   function retire(key, actor) {
     active.delete(key);
@@ -120,6 +123,12 @@ export function createEdeTrainSystem(scene, timetable, hud, options) {
     group, traffic, tracks, pool,
     update(dt, camera, at = Date.now() / 1000) {
       traffic.advance(dt, at);
+      trainClock = at;
+      if (departureDisplay && Math.hypot(camera.x - departureDisplay.x, camera.z - departureDisplay.z) < 145 &&
+          (at < displayAt || at - displayAt >= 8)) {
+        displayAt = at;
+        departureDisplay.update(traffic.nextValleilijnDepartures(at));
+      }
       if (at < syncedAt || at - syncedAt >= 0.25) {
         syncedAt = at;
         sync(camera);
@@ -128,6 +137,9 @@ export function createEdeTrainSystem(scene, timetable, hud, options) {
         if (traffic.progress.get(actor.train.plan.key) === actor.train) positionActor(actor);
         else retire(key, actor);
       }
+    },
+    pollArrivalSounds(listener, emit) {
+      arrivalSounds(traffic.progress.values(), trainClock, listener, emit);
     },
     get active() { return [...active].map(([key, actor]) => ({
       key, status: actor.train.plan.status, path: actor.train.plan.path.id, updateAt: actor.train.plan.updateAt,

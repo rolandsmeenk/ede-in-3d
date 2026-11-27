@@ -3,7 +3,7 @@ import { pass, mrt, output, normalView, positionView, metalness, roughness, floa
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { createPostProcessing } from './post-processing.js?v=20261119-perf';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
-import { getLocationLabel, isTypingInField, containsPlayablePoint, constrainToTravelArea, EDE_DATA, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
+import { getLocationLabel, isTypingInField, containsPlayablePoint, constrainToTravelArea, blockAt, waterAt, EDE_DATA, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
 import { buildLandmarks } from './landmarks.js';
 import { createEdeMurals } from './ede-murals.js';
@@ -34,12 +34,12 @@ import { createKiteFlyers } from './ede-kites.js';
 import { formatEdeTime } from './live-sky.js';
 import { NYCMapSystem } from './nyc-map.js?v=20261122-municipal-coverage';
 import { createExpansionCulling, setupSceneCulling, updateSceneCulling, updateViewRange } from './scene-culling.js?v=20261126-iphone-range';
-import { CityAudioSystem } from './audio-system.js?v=20261126-soundscape';
-import { getExpansionTerrain, loadTerrain, terrainHeightAt } from './terrain.js';
+import { CityAudioSystem } from './audio-system.js?v=20261127-travel-modes';
+import { getExpansionTerrain, loadTerrain, renderedTerrainHeightAt, terrainHeightAt } from './terrain.js';
 import { createTerrainTiles } from './ede-terrain-tiles.js';
 import { createEdeHeathCover } from './ede-heath.js';
 import { createForestCanopy, loadForestCanopy } from './ede-forest-canopy.js';
-import { loadAerialColors, loadExpansionGroundColors } from './aerial-colors.js';
+import { getAerialColors, loadAerialColors, loadExpansionGroundColors } from './aerial-colors.js';
 import { loadEdeTrees, loadEdeWoodland } from './ede-tree-data.js?v=20261122-safari-cache';
 import { TREE_SEASONS, setTreeSeason, getTreeSeason, seasonPresetFor } from './tree-seasons.js';
 import { loadEdeLamps } from './ede-lamp-data.js?v=20261122-safari-cache';
@@ -48,16 +48,23 @@ import { setEdeAdCampaign } from './ede-advertising.js';
 import { edeEventCampaign, upcomingEdeEvents } from './ede-event-calendar.js';
 import { clockTime, createEdeCityActivity, parseAmsterdamPreview } from './ede-city-clock.js';
 import { createEdeSportActivity } from './ede-sport-activity.js';
+import { createEdeHabitatSampler, EDE_NATURE_BOUNDS, loadEdeNatureHabitats } from './ede-nature-habitats.js';
+import { edeFlowerBloom } from './ede-nature-phenology.js';
+import { createEdeWildflowers } from './ede-wildflowers.js';
+import { createEdeFields } from './ede-fields.js';
+import { createEdeWildlife } from './ede-wildlife.js';
+import { buildEdeMarkets } from './ede-market.js';
+import { buildEdeRecreationRoutes } from './ede-recreation-routes.js';
 import { buildEdeSeasonalDecorations } from './ede-seasonal-decorations.js';
 import { localClock } from './ede-transit-time.js';
 import { buildEdeLunterenPlatforms } from './ede-lunteren-platforms.js';
 import { gradeDeckAt, gradeProfileAt, gradeWayAt, loadEdeGrade, nearbyRailHeightAt, setEdeHelipads, setEdePlatforms, setEdeStructureRoofs } from './ede-grade.js';
-import { buildEdeSports, loadEdeSports, setEdeSportsIceCover } from './ede-sports.js?v=20261127-weather-surfaces';
+import { buildEdeSports, loadEdeSports, setEdeSportsIceCover } from './ede-sports.js?v=20261127-black-ice';
 import { buildEdeGradeWorld } from './ede-grade-world.js';
 import { buildEdeBgtWorld } from './ede-bgt-world.js';
 import { loadEdeBusSchedule } from './ede-bus-schedule.js';
 import { loadEdeTrainTimetable } from './ede-train-schedule.js';
-import { createEdeTrainSystem } from './ede-trains.js?v=20261120-train-models';
+import { createEdeTrainSystem } from './ede-trains.js?v=20261127-station-bay';
 import { createEdeLevelCrossings } from './ede-level-crossings.js';
 import { BICYCLE, FOOT } from './road-access.js?v=20261122-startup';
 import { createEdeRoadTraffic, loadEdePostedSpeeds, watchEdeTraffic } from './ede-road-traffic.js?v=20261122-p2000';
@@ -133,7 +140,7 @@ export async function initApp() {
     });
   }
 
-  await showLoadingStage('Initializing graphics...');
+  await showLoadingStage('Starting graphics…');
 
   // 1. Initialize Three.js WebGPURenderer with 32-bit float reversedDepthBuffer
   const renderer = new THREE.WebGPURenderer({
@@ -172,7 +179,7 @@ export async function initApp() {
   container.dataset.quality = graphics.quality;
 
   // 2. Scene, atmosphere and lighting
-  await showLoadingStage('Creating sky and environment lighting...');
+  await showLoadingStage('Setting the sky and lighting…');
   const scene = new THREE.Scene();
   const lightingSystem = new LightingSystem(scene, renderer, compactGraphics ? 6 : standard ? 12 : 8);
   lightingSystem.sunLight.castShadow = graphics.shadows;
@@ -180,7 +187,7 @@ export async function initApp() {
   const kiteFlyers = createKiteFlyers(scene, terrainHeightAt);
   markInit('lighting');
 
-  await showLoadingStage('Loading Ede’s map and timetables…');
+  await showLoadingStage('Reading the map and timetables…');
   const useUtilityDetails = enabled('detail') && enabled('utilityDetail');
   const loadAssets = async () => {
     const first = () => Promise.allSettled([
@@ -211,6 +218,7 @@ export async function initApp() {
       loadEdePondLevels(),
       enabled('curbs', !compactGraphics) ? loadEdeCurbs(enabled('curbRollout') && !compactGraphics) : null,
       compactGraphics ? null : loadEdeWoodland(),
+      loadEdeNatureHabitats(),
     ]);
     if (compactGraphics) {
       const a = await first();
@@ -221,7 +229,7 @@ export async function initApp() {
     return [...a, ...b];
   };
   let [terrainResult, aerialResult, treeResult, lampResult, busResult, gradeResult, speedResult, motorwayResult, trainResult,
-    featureResult, roadSurfaceResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, liveSignalsResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult, woodlandResult] = await loadAssets();
+    featureResult, roadSurfaceResult, parkingResult, detailResult, laneFitResult, sportsResult, corridorFacadesResult, forestCanopyResult, historicUtilitiesResult, signalHardwareResult, liveSignalsResult, waterWorksResult, exteriorFootprintsResult, roadFurnitureResult, pondLevelsResult, curbResult, woodlandResult, natureResult] = await loadAssets();
   if (curbResult.status === 'rejected') console.warn('[curbs] using original pavement:', curbResult.reason);
   else bindEdeCurbPaving(roadSurfaceResult.value?.surfaces ?? []);
   if (terrainResult.status === 'fulfilled') {
@@ -270,6 +278,31 @@ export async function initApp() {
   markInit('sports fields');
   await loadExpansionGroundColors();
   const heath = treeSeasonsEnabled ? createEdeHeathCover(EDE_DATA.parks, EDE_DATA.meta.bounds, detailData?.landCover) : null;
+  if (natureResult.status === 'rejected') console.warn('[nature] using existing land cover:', natureResult.reason);
+  const habitatAt = createEdeHabitatSampler(natureResult.value,
+    detailData?.fringeLandCover ?? detailData?.landCover, heath, woodlandResult.value);
+  const wildflowers = graphics.vegetation ? createEdeWildflowers(scene, {
+    bounds: EDE_NATURE_BOUNDS,
+    heightAt: terrainHeightAt,
+    habitatAt: (x, z) => {
+      const habitat = habitatAt(x, z);
+      return habitat && !overlapsEdeTravelPavement(x, z, 0, 0.35) ? habitat : null;
+    }
+  }) : null;
+  const fields = graphics.vegetation && enabled('fields')
+    ? createEdeFields(scene, { heightAt: renderedTerrainHeightAt, compact: compactGraphics,
+      aerial: loadExpansionGroundColors({ overview: true }).then(getAerialColors) }) : null;
+  const wildlife = createEdeWildlife(scene, terrainHeightAt, (x, z) => {
+    const habitat = habitatAt(x, z);
+    return {
+      heath: habitat === 'dry-heath' || habitat === 'damp-heath',
+      woodland: habitat === 'woodland',
+      edge: habitat === 'woodland-edge',
+      sand: habitat === 'sand',
+      grass: habitat === 'grassland',
+      pavement: overlapsEdeTravelPavement(x, z, 0, 0.5),
+    };
+  });
   const exteriorBag = compactGraphics ? null : createExteriorBagStream(scene);
   const forest = getExpansionTerrain() && forestCanopyResult.value;
   if (pondLevelsResult.status === 'rejected') console.warn('[water] using terrain-draped ponds:', pondLevelsResult.reason);
@@ -279,7 +312,7 @@ export async function initApp() {
   const terrainTiles = createTerrainTiles(scene, heath, detailData?.fringeLandCover, cityGrid.shorelineCuts,
     compactGraphics ? { maxBytes: 12 * 1024 * 1024, maxActiveTiles: 48 } : undefined);
   markInit('cityGrid');
-  await showLoadingStage('Building bridges, tunnels and railway platforms…');
+  await showLoadingStage('Building bridges, tunnels and railways…');
   let bgtWorld;
   try {
     bgtWorld = await buildEdeBgtWorld(scene, (x, z, kind) => {
@@ -322,9 +355,11 @@ export async function initApp() {
   } catch (error) {
     console.warn('[water works] weirs unavailable:', error);
   }
-  await showLoadingStage('Building landmarks...');
+  await showLoadingStage('Building landmarks…');
   if (historicUtilitiesResult.status === 'rejected') console.warn('[electricity landmarks] using existing buildings:', historicUtilitiesResult.reason);
-  const landmarks = buildLandmarks(scene, { historicUtilities: historicUtilitiesResult.value });
+  const landmarks = buildLandmarks(scene, {
+    historicUtilities: historicUtilitiesResult.value, stationPlatforms: bgtWorld?.platforms,
+  });
   const lunterenPlatforms = buildEdeLunterenPlatforms(scene);
   setEdePlatforms([...(bgtWorld?.platforms ?? []), ...landmarks.platforms, ...lunterenPlatforms]);
   setEdeHelipads(landmarks.helipads);
@@ -363,18 +398,18 @@ export async function initApp() {
   const streamBag = graphics.buildingDetail && !eagerBag;
   let bagBuildings = null;
   if (eagerBag) {
-    await showLoadingStage('Loading 3D BAG buildings...');
+    await showLoadingStage('Loading detailed buildings…');
     try {
       bagBuildings = await loadBagBuildings(scene, {
         replacementBagIds: replacements?.bag,
-        onProgress: (done, total) => { if (loadingStatus) loadingStatus.textContent = `Loading 3D BAG buildings ${done}/${total}…`; }
+        onProgress: (done, total) => { if (loadingStatus) loadingStatus.textContent = `Loading detailed buildings… ${done}/${total}`; }
       });
     } catch (error) {
       console.warn('[bag3d] falling back to OSM buildings:', error);
     }
     markInit('bag3d');
   }
-  await showLoadingStage('Generating building facades...');
+  await showLoadingStage('Adding building façades…');
   if (corridorFacadesResult.status === 'rejected') console.warn('[facades] using basic corridor fallback walls:', corridorFacadesResult.reason);
   const cityBlocks = buildCityBlocks(scene, { bag: !!bagBuildings, streamBag, aerialLod: !compactGraphics && Boolean(terrainTiles),
     compact: compactGraphics, corridorFacades: corridorFacadesResult.value, replacementOsmIds: replacements?.osm });
@@ -386,7 +421,7 @@ export async function initApp() {
   const allColliders = [...landmarks.colliders, ...exteriorColliders, ...cityBlocks.colliders, ...(cityGrid.colliders || []),
     ...gradeWorld.colliders, ...(bgtWorld?.colliders || [])];
 
-  await showLoadingStage('Placing trees, streetlights and street furniture...');
+  await showLoadingStage('Planting trees and adding streetlights…');
   const busStops = buildEdeBusStops(scene, busSchedule, {
     surveyed: importedDetail ? detailData?.features.filter(feature => feature.type === 'shelter') : undefined
   });
@@ -419,14 +454,17 @@ export async function initApp() {
   treeField.group.visible = graphics.vegetation;
   if (importedDetail) allColliders.push(...importedDetail.colliders);
   markInit('streetDetails');
-  await showLoadingStage('Creating traffic and pedestrian routes...');
+  await showLoadingStage('Preparing traffic and walking routes…');
   // Buildings turned along non-grid streets have oriented colliders whose world bounds reach past their lots: they stay
   // inside the property line anyway, so the road network (lanes & sidewalks) doesn't need them.
   // Elevated building sections that clear even a bus don't obstruct ground traffic.
   let trainSystem;
   try {
     trainSystem = createEdeTrainSystem(scene, trainResult.status === 'fulfilled' ? trainResult.value : undefined,
-      document.getElementById('hud-rail-status'), { predictionSeconds: Number(container.dataset.trainPredictionSeconds) });
+      document.getElementById('hud-rail-status'), {
+        predictionSeconds: Number(container.dataset.trainPredictionSeconds),
+        departureDisplay: landmarks.stationDepartureDisplay,
+      });
   } catch (error) {
     console.warn('[trains] rail simulation unavailable:', error);
   }
@@ -480,7 +518,7 @@ export async function initApp() {
     for (const group of trafficGroups) group.visible = draw;
   }
   setTrafficDraw(enabled('trafficDraw'));
-  await showLoadingStage('Adding road markings...');
+  await showLoadingStage('Painting road markings…');
   if (streetFeatures) {
     try {
       const replacedMsiSigns = new Set(liveSignalsResult.value?.replacedSignIds ?? []);
@@ -511,21 +549,28 @@ export async function initApp() {
     exteriorFootprintsResult = roadFurnitureResult = pondLevelsResult = curbResult = woodlandResult = null;
 
   // 4. Initialize Third-Person Controllers (Person, Car, Cyclist, Helicopter) & Multi-Camera System
-  await showLoadingStage('Preparing player, vehicles and controls...');
+  await showLoadingStage('Getting your controls ready…');
+  const markets = buildEdeMarkets(scene);
+  buildEdeRecreationRoutes(scene, terrainHeightAt, (x, z) => {
+    const block = blockAt(x, z, false);
+    return (!block || block.park || block.sidewalk) && !waterAt(x, z) &&
+      !overlapsEdeTravelPavement(x, z, 0, 0.35);
+  });
+  allColliders.push(...markets.colliders);
   const controllerManager = new ThirdPersonControllerManager(scene, allColliders);
   // The old flat-world Y and current saved Y both measure height above local ground.
   try {
     const saved = JSON.parse(localStorage.getItem('slop-ede-player-state'));
     if (saved?.version === 1 || saved?.version === 2) {
       if (saved.bikeStyle) controllerManager.setBikeStyle(saved.bikeStyle);
-      for (const mode of Object.keys(controllerManager.entities)) {
-        const p = saved.entities?.[mode];
-        if (!p || ![p.x, p.y, p.z, p.heading].every(Number.isFinite)) continue;
-        controllerManager.setMode(mode);
+      const mode = Object.hasOwn(controllerManager.entities, saved.activeMode) ? saved.activeMode : 'car';
+      const p = saved.entities?.[mode];
+      if (p && [p.x, p.y, p.z, p.heading].every(Number.isFinite)) {
         const { x, z } = constrainToTravelArea(p.x, p.z);
-        controllerManager.teleportActiveTo(x, z, p.heading, terrainHeightAt(x, z) + p.y);
+        controllerManager.teleportActiveTo(x, z, p.heading, terrainHeightAt(x, z) + p.y, mode);
+      } else {
+        controllerManager.setMode(mode);
       }
-      controllerManager.setMode(Object.hasOwn(controllerManager.entities, saved.activeMode) ? saved.activeMode : 'car');
     }
   } catch { /* Missing or unavailable storage does not prevent playing. */ }
 
@@ -546,7 +591,7 @@ export async function initApp() {
   const soundButton = document.getElementById('btn-sound');
   const audioSystem = new CityAudioSystem({
     controllerManager, trafficSystem, highwayTraffic, streetDetails,
-    trainSystem, levelCrossings, heath, turbines: bgtWorld?.turbines
+    trainSystem, levelCrossings, heath, habitatAt, turbines: bgtWorld?.turbines
   }, {
     onStateChange: updateSoundButton
   });
@@ -559,6 +604,8 @@ export async function initApp() {
     soundButton.querySelector('use').setAttribute('href', audioSystem.enabled ? '#i-sound' : '#i-sound-off');
   }
   soundButton?.addEventListener('click', () => audioSystem.setEnabled(!audioSystem.enabled));
+  const touchBikeBell = document.getElementById('touch-bike-bell');
+  touchBikeBell.addEventListener('click', () => audioSystem.soundPlayerSignal(controllerManager.getActiveEntity()));
   updateSoundButton();
   // pagehide also covers navigation away on mobile; preserve the context across back-forward cache restores.
   window.addEventListener('pagehide', (event) => {
@@ -575,10 +622,10 @@ export async function initApp() {
 
   // Island-wide static geometry: chunk & distance-cull the small props, shadow stand-ins for the big casters
   // (scene-culling.js)
-  await showLoadingStage('Preparing scene visibility and shadows...');
+  await showLoadingStage('Preparing shadows…');
   const cullingRoots = ['EdeCityGrid', 'EdeCityBlocks', 'EdeStreetDetails', 'EdeGradeWorld', 'Ede BGT structures', 'Ede sports fields',
     'EdeLandmarks', 'Ede Lunteren platforms', 'EdeBoundaryContext', 'RoadMarkings', 'EdeStreetFeatures', 'EdeImportedDetail',
-    'EdeBusStops', 'Ede Water Works']
+    'EdeBusStops', 'Ede Water Works', 'Ede walking and cycling markers']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
   setupSceneCulling(scene, cullingRoots, graphics.shadows ? lightingSystem.sunLight.shadow : null);
@@ -613,7 +660,7 @@ export async function initApp() {
 
   // 5. TSL RenderPipeline with reduced-resolution screen-space reflections, bloom and filmic toning.
   //    Fade out distant and matte surfaces so SSR spends its rays on visible glossy reflections.
-  await showLoadingStage('Setting up visual effects, map and interface...');
+  await showLoadingStage('Setting up the map and menus…');
   const scenePass = pass(scene, cameraSystem.camera);
   // The multisampled colour attachments (output, normal, metalRough) only need resolving, never storing: discarding
   // them spares the GPU writing 3 x 4 samples per pixel to memory every frame (transient, memoryless attachments where
@@ -628,7 +675,7 @@ export async function initApp() {
     // Supply bare ice reflectivity to SSR without changing its surface lighting.
     const iceReflectivity = Fn(({ material }) => {
       const ice = material.iceCoverageNode;
-      return ice ? ice.mul(material.snowCoverageNode?.oneMinus() ?? 1).mul(0.35) : float(0);
+      return ice ? ice.mul(material.snowCoverageNode?.oneMinus() ?? 1).mul(0.90) : float(0);
     })();
     const reflectivity = metalness.max(iceReflectivity).mul(ssrFade);
     sceneMRT = mrt({
@@ -660,6 +707,9 @@ export async function initApp() {
   const modeButtons = document.querySelectorAll('[data-mode]');
   const modes = Array.from(modeButtons, (button) => button.dataset.mode);
   const cameraButtons = document.querySelectorAll('[data-camera]');
+  const binocularsButton = document.getElementById('btn-binoculars');
+  const binocularsMask = document.getElementById('binoculars-mask');
+  let cameraBeforeBinoculars = 'chase';
   const treeQualityButtons = document.querySelectorAll('[data-tree-quality]');
   const environmentButtons = document.querySelectorAll('[data-environment]');
   const environmentLabel = document.getElementById('environment-label');
@@ -678,7 +728,7 @@ export async function initApp() {
   const agendaList = document.getElementById('agenda-list');
   let previewInstant = null;
   let customWeatherId = customWeather.value;
-  let activityClock, activitySeason, activityWeather, cityActivity;
+  let activityClock, activitySeason, activityWeather, cityActivity, natureState;
   const snowOption = customWeather.querySelector('[value="snow"]');
   customSeason.value = initialTreeSeason;
   const liveClock = document.getElementById('time-live-clock');
@@ -751,11 +801,10 @@ export async function initApp() {
   const controlHints = {
     person: [[['W', 'S'], 'Walk'], [['A', 'D'], 'Turn'], [['Shift'], 'Sprint'], [['Space'], 'Jump'], [['Drag'], 'Orbit']],
     car: [[['W', 'S'], 'Drive / Reverse'], [['A', 'D'], 'Steer'], [['Shift'], 'Boost'], [['B'], 'Horn'], [['Drag'], 'Orbit']],
-    cyclist: [[['W', 'S'], 'Pedal / Brake'], [['A', 'D'], 'Lean & Turn'], [['Shift'], 'Sprint'], [['Drag'], 'Orbit']],
+    cyclist: [[['W', 'S'], 'Pedal / Brake'], [['A', 'D'], 'Lean & Turn'], [['B'], 'Bell'], [['Drag'], 'Orbit']],
     helicopter: [[['W', 'S'], 'Pitch'], [['A', 'D'], 'Yaw'], [['Space', 'E'], 'Ascend'], [['Q', 'C'], 'Descend'], [['Shift'], 'Boost']]
   };
-  // Boosted top speeds in km/h (controllers.js caps them at 8.2, 36, 19 & 52 m/s): full scale of the speed meter
-  const topSpeedKmh = { person: 30, car: 130, cyclist: 69, helicopter: 188 };
+  const topSpeedKmh = { person: 30, car: 130, helicopter: 188 };
 
   function renderControlHints(mode) {
     if (!elControlsHint) return;
@@ -787,13 +836,19 @@ export async function initApp() {
   function selectMode(mode) {
     if (!modes.includes(mode)) return;
     controllerManager.setMode(mode);
-    touchControls.setMode(controllerManager.activeMode);
+    mode = controllerManager.activeMode;
+    touchControls.setMode(mode);
     gamepadControls.reset();
     modeButtons.forEach((btn) => {
       btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
     });
     document.body.dataset.mode = mode;
     bikeStyleControl.hidden = mode !== 'cyclist';
+    touchBikeBell.hidden = mode !== 'cyclist' && mode !== 'cargobike';
+    binocularsButton.hidden = mode !== 'person';
+    if (mode !== 'person' && cameraSystem.activePresetId === 'binoculars') {
+      selectCamera(cameraBeforeBinoculars, true);
+    }
     placeModeIndicator();
     const ent = controllerManager.getActiveEntity();
     if (elMode) elMode.textContent = ent.label;
@@ -807,7 +862,12 @@ export async function initApp() {
   }
 
   function selectCamera(camId, snap = false) {
-    cameraSystem.setCameraPreset(camId, snap);
+    const previous = cameraSystem.activePresetId;
+    if (!cameraSystem.setCameraPreset(camId, snap)) return;
+    const binoculars = camId === 'binoculars';
+    if (binoculars && previous !== camId) cameraBeforeBinoculars = previous;
+    binocularsButton.setAttribute('aria-pressed', String(binoculars));
+    binocularsMask.hidden = !binoculars;
     cameraButtons.forEach((btn) => {
       btn.classList.toggle('active', btn.getAttribute('data-camera') === camId);
     });
@@ -815,10 +875,16 @@ export async function initApp() {
     if (elCamera) elCamera.textContent = preset.name;
   }
 
+  function toggleBinoculars() {
+    if (controllerManager.activeMode !== 'person' || mapSystem.isFullMapOpen) return;
+    selectCamera(cameraSystem.activePresetId === 'binoculars' ? cameraBeforeBinoculars : 'binoculars', true);
+  }
+
   // Steps through CAMERA_PRESETS (V / Shift+V, and the arrows either side of the camera name)
   function cycleCamera(step) {
     const n = CAMERA_PRESETS.length;
-    const idx = CAMERA_PRESETS.findIndex((p) => p.id === cameraSystem.activePresetId);
+    const current = cameraSystem.activePresetId === 'binoculars' ? cameraBeforeBinoculars : cameraSystem.activePresetId;
+    const idx = CAMERA_PRESETS.findIndex((p) => p.id === current);
     selectCamera(CAMERA_PRESETS[(idx + step + n) % n].id, true);
   }
 
@@ -832,6 +898,20 @@ export async function initApp() {
       daylight: lightingSystem.sky.sunPosition.value.y > 0,
       ...activityWeather,
     });
+    const year = Number(cityActivity.date.slice(0, 4));
+    const presetDay = TREE_SEASONS[activitySeason]?.day;
+    const date = cityActivity.calendar || presetDay == null ? cityActivity.date
+      : new Date(Date.UTC(year, 0, 1 + presetDay)).toISOString().slice(0, 10);
+    const skyElevation = THREE.MathUtils.radToDeg(Math.asin(lightingSystem.sky.sunPosition.value.y));
+    const sunElevation = !cityActivity.calendar && lightingSystem.activePresetId === 'twilight' &&
+      lightingSystem.presetSunElevation === undefined ? -3 : skyElevation;
+    const temperature = liveWeather.activeReading?.temperature ??
+      (activitySeason === 'summer' ? 21 : activitySeason === 'winter' ? -4 : 12);
+    natureState = {
+      ...cityActivity, date, month: Number(date.slice(5, 7)), sunElevation,
+      daylight: sunElevation > 0, temperature, windSpeed: liveWeather.windReading?.windSpeed,
+      bloom: natureState?.date === date ? natureState.bloom : edeFlowerBloom(date),
+    };
   }
 
   function applyDatedEnvironment(date) {
@@ -1157,6 +1237,7 @@ export async function initApp() {
     });
   });
 
+  binocularsButton.addEventListener('click', toggleBinoculars);
   const camPrevBtn = document.getElementById('cam-prev');
   const camNextBtn = document.getElementById('cam-next');
   if (camPrevBtn) camPrevBtn.addEventListener('click', () => cycleCamera(-1));
@@ -1213,8 +1294,10 @@ export async function initApp() {
     elLocation.replaceChildren(...nodes);
   }
 
-  function teleportTo(x, z, heading = Math.PI, altitude = null, focus = null) {
-    const destination = controllerManager.teleportActiveTo(x, z, heading, altitude);
+  function teleportTo(x, z, heading = Math.PI, altitude = null, focus = null, mode = controllerManager.activeMode) {
+    const previousMode = controllerManager.activeMode;
+    const destination = controllerManager.teleportActiveTo(x, z, heading, altitude, mode);
+    if (controllerManager.activeMode !== previousMode) selectMode(controllerManager.activeMode);
     touchControls.reset();
     gamepadControls.reset();
     cameraSystem.resetForTeleport(focus && {
@@ -1257,7 +1340,10 @@ export async function initApp() {
       }
     },
     onTeleport: teleportTo,
-    onLandmark: teleportToLandmark
+    onLandmark: teleportToLandmark,
+    onWalkStart: (x, z, heading) => {
+      teleportTo(x, z, heading, null, null, 'person');
+    }
   });
 
   teleportButtons.forEach((btn) => {
@@ -1291,8 +1377,7 @@ export async function initApp() {
     const teleports = document.getElementById('crossing-debug-teleports');
     teleports.hidden = false;
     mountCrossingTeleports(teleports, (mode, x, z, heading, altitude) => {
-      selectMode(mode);
-      teleportTo(x, z, heading, altitude);
+      teleportTo(x, z, heading, altitude, null, mode);
       closePopovers();
     });
   }
@@ -1316,10 +1401,10 @@ export async function initApp() {
         selectMode('person');
         break;
       case 'Digit2':
-        selectMode('car');
+        selectMode('cyclist');
         break;
       case 'Digit3':
-        selectMode('cyclist');
+        selectMode('car');
         break;
       case 'Digit4':
         selectMode('helicopter');
@@ -1349,7 +1434,17 @@ export async function initApp() {
         if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) audioSystem.setEnabled(!audioSystem.enabled);
         break;
       case 'KeyB':
-        if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !mapSystem.isFullMapOpen) audioSystem.honk(controllerManager.getActiveEntity());
+        if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !mapSystem.isFullMapOpen) {
+          if (controllerManager.activeMode === 'person') {
+            if (!e.shiftKey) toggleBinoculars();
+          } else {
+            audioSystem.soundPlayerSignal(controllerManager.getActiveEntity());
+          }
+        }
+        break;
+      case 'ShiftLeft':
+      case 'ShiftRight':
+        if (cameraSystem.activePresetId === 'binoculars') toggleBinoculars();
         break;
     }
   });
@@ -1379,7 +1474,7 @@ export async function initApp() {
   const compilePool = appleBrowser ? 2 : 16;
   const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0)));
   async function precompileShaders(warmWholeScene) {
-    await showLoadingStage('Preparing the render pipeline...');
+    await showLoadingStage('Preparing graphics…');
     // An empty frame first: it sets up the post-processing chain, which configures the scene pass's render target
     // (MSAA samples, depth format), so the pipelines compiled below are the very ones the scene pass asks for
     scene.visible = false;
@@ -1426,7 +1521,7 @@ export async function initApp() {
       job.push(o);
     });
 
-    await showLoadingStage(`Compiling scene shaders... 0 / ${jobs.length} batches`);
+    await showLoadingStage('Preparing scene materials…');
     setLoadingProgress(0);
     renderer.setRenderTarget(scenePass.renderTarget);
     renderer.setMRT(sceneMRT);
@@ -1447,9 +1542,6 @@ export async function initApp() {
         const job = jobs[next++];
         for (const object of job) await compile(object);
         done++;
-        if (loadingStatus) {
-          loadingStatus.textContent = `Compiling scene shaders... ${done} / ${jobs.length} batches (${Math.round((done / jobs.length) * 100)}%)`;
-        }
         setLoadingProgress(done / jobs.length);
       }
     };
@@ -1476,7 +1568,7 @@ export async function initApp() {
     terrainHeightAt(camera.position.x, camera.position.z), compactGraphics);
   cameraSystem.update(0, 0);
   const initialView = updateRenderView();
-  await showLoadingStage('Building paving near your starting point...');
+  await showLoadingStage('Preparing your starting area…');
   while (cityGrid.pavingTiles.update(cameraSystem.camera.position, 140)) {
     await (cityGrid.pavingTiles.pendingWork() ?? nextTask());
   }
@@ -1500,7 +1592,7 @@ export async function initApp() {
     }
     markInit('compile');
   }
-  await showLoadingStage('Drawing the first frame...');
+  await showLoadingStage('Preparing your first view…');
 
   // 6. Animation Loop
   let lastTime = performance.now();
@@ -1526,7 +1618,7 @@ export async function initApp() {
 
     // Update 3rd-person controllers, camera, signals, traffic & vehicle collisions, building LODs, and dynamic shadow focus
     gamepadControls.update(dt);
-    controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
+    controllerManager.update(dt, elapsed, cameraSystem.activePresetId === 'binoculars');
     cameraSystem.update(dt, elapsed);
     const renderView = updateRenderView();
     laneDebug?.update(camera.position);
@@ -1597,7 +1689,16 @@ export async function initApp() {
     if (parcelTiles) profiler?.stage('Parcel tiles');
     const weatherEffects = liveWeather.update(dt);
     setEdeSportsIceCover(weatherEffects.rinkIce);
-    sportActivity?.update(dt, cameraSystem.camera.position, cityActivity, weatherEffects);
+    const cameraPosition = cameraSystem.camera.position;
+    sportActivity?.update(dt, cameraPosition, cityActivity, weatherEffects);
+    const playerPosition = controllerManager.getActiveEntity().position;
+    wildflowers?.update(cameraPosition, natureState, playerPosition);
+    if (warmedUp && fields) {
+      fields.update(camera, natureState?.date, renderView);
+      profiler?.stage('Crops and wildflower fields');
+    }
+    wildlife.update(dt, cameraPosition, natureState);
+    markets.update(dt, cameraPosition, cityActivity);
     const windReading = liveWeather.windReading;
     const windDt = fixedStep ? dt : THREE.MathUtils.clamp(rawDt, 0, 0.25);
     updateSceneWind(windDt, weatherEffects.windX, weatherEffects.windZ);
@@ -1607,7 +1708,7 @@ export async function initApp() {
     bgtWorld?.updateWind(windDt, liveWeather.turbineWind, now / 1000, lightingSystem.uNightFactor.value);
     precipitation.update(dt, cameraSystem.camera, weatherEffects);
     profiler?.stage('Lighting and weather');
-    const { x: playerX, z: playerZ } = controllerManager.getActiveEntity().position;
+    const { x: playerX, z: playerZ } = playerPosition;
     const outside = !containsPlayablePoint(playerX, playerZ);
     if (outside !== outsideMunicipality) {
       outsideMunicipality = outside;
@@ -1617,7 +1718,10 @@ export async function initApp() {
     mapSystem.update();
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight', {
       windSpeed: windReading?.windSpeed,
-      turbineWindSpeed: liveWeather.turbineWind?.windSpeed
+      turbineWindSpeed: liveWeather.turbineWind?.windSpeed,
+      wildlifeSources: wildlife.soundSources,
+      market: markets.audioSource,
+      bellPreviewTime: previewingDate() ? previewInstant.getTime() : null
     });
     profiler?.stage('Map and audio');
     if (warmedUp || !warmWholeScene) {
@@ -1690,7 +1794,10 @@ export async function initApp() {
         elFps.className = currentFps >= 50 ? 'fps-ok' : currentFps >= 30 ? 'fps-warn' : 'fps-bad';
       }
       if (elSpeed) elSpeed.textContent = String(kmh);
-      if (elSpeedMeter) elSpeedMeter.style.transform = `scaleX(${Math.min(1, kmh / (topSpeedKmh[mode] || 80))})`;
+      if (elSpeedMeter) {
+        const topSpeed = topSpeedKmh[mode] ?? controllerManager.getBikeTopSpeedKmh();
+        elSpeedMeter.style.transform = `scaleX(${Math.min(1, kmh / topSpeed)})`;
+      }
       document.body.classList.toggle('is-boosting', controllerManager.keys.boost && kmh > 0);
       if (elAltitude) elAltitude.textContent = altitudeM.toLocaleString('nl-NL');
       // The street corner of the player on the follow cameras, of the camera itself on the scenic ones
@@ -1713,7 +1820,7 @@ export async function initApp() {
     if (device) {
       // A saved helicopter can see a new set of terrain and shaders as soon as it turns.
       if (canPrecompile && terrainTiles && controllerManager.activeMode === 'helicopter' && initialView.altitude > 40) {
-        await showLoadingStage('Preparing the aerial view...');
+        await showLoadingStage('Preparing your aerial view…');
         const rotation = camera.quaternion.clone();
         const up = new THREE.Vector3(0, 1, 0);
         const yaw = new THREE.Quaternion();
@@ -1733,7 +1840,6 @@ export async function initApp() {
         renderPipeline.render();
         markInit('aerial warmup');
       }
-      if (loadingStatus) loadingStatus.textContent = 'Finishing the first frame...';
       await Promise.race([
         device.queue.onSubmittedWorkDone(),
         device.lost.then(({ message }) => { throw new Error(message || 'WebGPU device lost during startup'); }),
@@ -1766,6 +1872,7 @@ export async function initApp() {
     expansionCulling: expansionCulling?.stats,
     roadFurniture: roadFurniture?.stats,
     forestCanopy: forestCanopy?.stats,
+    fields,
     treeStats: treeField.stats,
     treeInventory: {
       source: loadedTrees?.inventory ?? 'osm', records: cityGrid.group.userData.treeInventory,
@@ -1778,7 +1885,8 @@ export async function initApp() {
     get advertisingDate() { return adDate; },
     sportActivity,
     previewDateTime, clearDatePreview,
-    get weather() { return liveWeather.state; }, streetFeatures, importedDetail, parcelTiles: parcelTiles?.stats, murals: murals.statistics,
+    get weather() { return liveWeather.state; }, wildlife, wildflowers, markets, habitatAt,
+    get natureState() { return natureState; }, streetFeatures, importedDetail, parcelTiles: parcelTiles?.stats, murals: murals.statistics,
     get waterLevels() { return cityGrid.waterLevels; },
     waterWorks: waterWorks?.userData.counts,
     teleport: teleportToLandmark,

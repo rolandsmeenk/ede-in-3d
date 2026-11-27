@@ -9,6 +9,13 @@ export const waterSnowCover = uniform(0);
 export const rinkSnowCover = uniform(0);
 export const snowBuildup = (retention = 1, cover = snowCover) => smoothstep(0.02, 0.80, cover.mul(retention));
 
+export const iceSnowRetention = Fn(() => {
+  const ground = positionWorld.xz;
+  const drifts = mx_noise_float(ground.mul(0.22), 0.74, 0.50);
+  const edges = mx_noise_float(ground.mul(1.15), 0.22);
+  return smoothstep(0.40, 0.62, drifts.add(edges));
+});
+
 const SAMPLES_PER_METRE = 2;
 const TILE_SIZE = 32;
 const ATLAS_COLUMNS = 32;

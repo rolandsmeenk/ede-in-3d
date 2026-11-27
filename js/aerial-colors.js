@@ -51,13 +51,19 @@ async function decodeGround({ width, height, minX, minZ, step }, blob, downsampl
   }
 }
 
-export async function loadExpansionGroundColors() {
+export async function loadExpansionGroundColors({ overview = false } = {}) {
   const expansion = getExpansionTerrain();
-  if (!aerial || !expansion?.manifest.ground) return;
+  if (!aerial || aerial.expansion || (!expansion && !overview)) return;
+  const directory = expansion?.directory ?? new URL('../assets/ede-terrain-tiles/', import.meta.url);
   try {
-    const response = await fetch(new URL('ground.jpg', expansion.directory));
+    const manifest = expansion?.manifest ?? await fetch(new URL('manifest.json?v=20261123-municipal', directory)).then(response => {
+      if (!response.ok) throw new Error(`PDOK overview manifest HTTP ${response.status}`);
+      return response.json();
+    });
+    if (!manifest.ground) return;
+    const response = await fetch(new URL('ground.jpg', directory));
     if (!response.ok) throw new Error(`PDOK overview HTTP ${response.status}`);
-    aerial.expansion = await decodeGround(expansion.manifest.ground, await response.blob());
+    aerial.expansion = await decodeGround(manifest.ground, await response.blob());
   } catch (error) {
     console.warn('[aerial] expansion overview unavailable:', error);
   }

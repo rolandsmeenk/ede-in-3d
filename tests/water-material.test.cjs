@@ -141,6 +141,7 @@ function If(cond, body) {
   return api;
 }
 
+const iceSnowMask = wrap(0.5);
 const sandbox = {
   Math,
   Infinity,
@@ -153,6 +154,7 @@ const sandbox = {
   ISLAND_BOUNDS: { minX: -1100, maxX: 1100, minZ: -5600, maxZ: 6400, waterLevel: -2.2 },
   EDE_DATA: null,
   waterSnowCover: wrap(0),
+  iceSnowRetention: () => iceSnowMask,
   applySnowMaterial: (material, options) => Object.assign(material, { snowOptions: options }),
   getEdeReflectionBanks: () => [[-950, -6000, -950, 6000, 70], [950, 6000, 950, -6000, 70]],
   CENTRAL_PARK_BOUNDS: { minX: -420, maxX: 420, minZ: -3800, maxZ: -600 },
@@ -311,9 +313,17 @@ test('water emissiveNode evaluates skyline reflections at twilight/midnight in u
   const midnight = waterMat.emissiveNode.eval();
   assert.equal(env.fwidthInsideBranch, 0);
   assert.ok(midnight[0] > twilight[0], 'midnight reflection is brighter than twilight');
+
+  env.waterIce = 1;
+  try {
+    assert.ok(waterMat.emissiveNode.eval().every(channel => channel > 0), 'bare ice reflects bank lights at night');
+    assert.equal(env.fwidthInsideBranch, 0);
+  } finally {
+    env.waterIce = 0;
+  }
 });
 
-test('frozen Ede water becomes glossy blue ice with its own snow cover', () => {
+test('bare Ede ice is darker and smoother than liquid water and retains its own snow cover', () => {
   env.posWorld = [20, -2.2, 10];
   env.camPos = [80, 14, 90];
   env.wind = [1, 0, 1];
@@ -323,16 +333,18 @@ test('frozen Ede water becomes glossy blue ice with its own snow cover', () => {
   env.waterIce = 0;
   assert.notEqual(edeWater.normalNode.eval()[0], 0);
   const liquid = edeWater.colorNode.eval();
+  const liquidRoughness = edeWater.roughnessNode.eval()[0];
   env.waterIce = 1;
   try {
     const [x, y, z] = edeWater.normalNode.eval();
     assert.ok(Math.abs(x) < 1e-8 && y === 1 && Math.abs(z) < 1e-8);
-    assert.ok(edeWater.roughnessNode.eval()[0] < 0.2);
+    assert.ok(edeWater.roughnessNode.eval()[0] < Math.min(0.1, liquidRoughness));
     assert.equal(edeWater.metalnessNode.eval()[0], 0);
     assert.equal(edeWater.snowOptions.cover, sandbox.waterSnowCover);
+    assert.equal(edeWater.snowOptions.retention, iceSnowMask);
     assert.equal(edeWater.snowOptions.exposure, edeWater.iceCoverageNode);
     const frozen = edeWater.colorNode.eval();
-    assert.ok(frozen[2] > frozen[0] && frozen[2] > liquid[2] && frozen[2] < 0.6);
+    assert.ok(frozen.every((channel, i) => channel < liquid[i] * 0.5));
   } finally {
     env.waterIce = 0;
   }
